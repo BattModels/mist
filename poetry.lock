@@ -2222,6 +2222,19 @@ files = [
 ]
 
 [[package]]
+name = "smirk"
+version = "0.1.0"
+description = ""
+optional = false
+python-versions = ">=3.7"
+files = []
+develop = false
+
+[package.source]
+type = "directory"
+url = "smirk"
+
+[[package]]
 name = "smmap"
 version = "5.0.1"
 description = "A pure Python implementation of a sliding window memory map manager"
@@ -2905,4 +2918,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "9f76e935529b8850d8c39d1492d8cc55911548e92f60167a9acaf4c136205e6a"
+content-hash = "61f9ee99731698b6ac6d5ac92d49fff56a5d27bd6c8fdfd9f656c5175a3c4945"

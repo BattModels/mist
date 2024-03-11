@@ -1,0 +1,20 @@
+[package]
+name = "smirk"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "smirk"
+
+# "cdylib" is necessary to produce a shared library for Python to import from.
+crate-type = ["cdylib"]
+
+[dependencies]
+clap = "4.5.1"
+const_format = "0.2.32"
+macro_rules_attribute = "0.2.0"
+paste = "1.0.14"
+pyo3 = { version = "0.16.5", features = ["extension-module"] }
+regex = "1.10.3"
+serde = "1.0.197"
+tokenizers = { version = "0.15.2", features = ["http"] }
