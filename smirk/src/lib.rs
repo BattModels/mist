@@ -1,11 +1,12 @@
 mod split;
 
 use pyo3::{prelude::*, types::PyString};
+use split::split_chemically_consistent;
 
 /// Formats the sum of two numbers as string.
 #[pyfunction]
-fn chemically_consistent_split(a: &PyString) -> PyResult<String> {
-    Ok(a.to_string())
+fn chemically_consistent_split(a: &PyString) -> PyResult<Vec<String>> {
+    Ok(split_chemically_consistent(a.to_str().unwrap()))
 }
 
 

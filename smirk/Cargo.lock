@@ -1104,6 +1104,7 @@ dependencies = [
  "clap",
  "const_format",
  "macro_rules_attribute",
+ "once_cell",
  "paste",
  "pyo3",
  "regex",
