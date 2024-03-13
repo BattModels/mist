@@ -1,8 +1,12 @@
 import smirk
+from pathlib import Path
+
+VOCAB_FILE = Path(__file__).parent.parent.joinpath("vocab.json").resolve()
+assert VOCAB_FILE.is_file()
 
 
 def test_smirk():
-    tok = smirk.SmirkTokenizer("vocab.json")
+    tok = smirk.SmirkTokenizer(str(VOCAB_FILE))
     smile = "COCCC(=O)N1CCN(C)C(C2=CN([C@@H](C)C3=CC=C(C(F)(F)F)C=C3)N=N2)C1"
     emb = tok.encode(smile)
     assert len(emb.ids) == 62
@@ -12,7 +16,7 @@ def test_smirk():
 
 
 def test_encode_batch():
-    tok = smirk.SmirkTokenizer("vocab.json")
+    tok = smirk.SmirkTokenizer(str(VOCAB_FILE))
     smile = [
         "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
         "CCN(CC)C(=O)[C@H]1CN([C@@H]2Cc3c[nH]c4c3c(ccc4)C2=C1)C",
