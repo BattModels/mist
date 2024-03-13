@@ -3,7 +3,7 @@ use pyo3::types::PyString;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::decoders::fuse::Fuse;
 use tokenizers::normalizers::Strip;
-use tokenizers::{EncodeInput, Encoding, PostProcessorWrapper, TokenizerBuilder, TokenizerImpl};
+use tokenizers::{EncodeInput, Encoding, OffsetReferential, OffsetType, PostProcessorWrapper, PreTokenizedString, PreTokenizer, TokenizerBuilder, TokenizerImpl};
 use crate::pretokenizer::SmirkPreTokenizer;
 
 #[pyclass]
@@ -26,6 +26,18 @@ impl SmirkTokenizer {
             .build()
             .unwrap();
         return Self { tokenizer }
+    }
+
+
+    fn pretokenize(&self, smile: &PyString) -> PyResult<Vec<String>>{
+        let mut pretokenized = PreTokenizedString::from(smile.to_str().unwrap());
+        let _ = self.tokenizer.get_pre_tokenizer().unwrap().pre_tokenize(&mut pretokenized);
+        let splits = pretokenized.get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, _, _)| s.to_string())
+            .collect::<Vec<String>>()
+        ;
+        Ok(splits)
     }
 
     #[pyo3(signature = (smile, add_special_tokens = true))]
