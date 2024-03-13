@@ -34,7 +34,7 @@ const ATOMIC_SYMBOLS: &'static str = concatcp!(
     r"Y[b]?",
 );
 
-// Capture bound symbols
+// Capture bond symbols
 const BONDS: &'static str = r"[\.\-=#\$:/\\]";
 
 // Capture Rings, Branching, and Sterochemistry
@@ -46,7 +46,7 @@ const BRACKETED: &'static str = r"\[.*?\]";
 const CHARGE_OR_COUNT: &'static str = r"\d|\+|\-";
 
 // Capture tokens outside of brackets
-static MATCH_OUTER: Lazy<Regex> = Lazy::new(|| {
+pub static MATCH_OUTER: Lazy<Regex> = Lazy::new(|| {
     Regex::new(concatcp!(
         ORGANIC_SUBSET,
         "|",
@@ -64,7 +64,7 @@ static MATCH_OUTER: Lazy<Regex> = Lazy::new(|| {
 });
 
 // Capture tokens within brackets
-static MATCH_INNER: Lazy<Regex> = Lazy::new(|| {
+pub static MATCH_INNER: Lazy<Regex> = Lazy::new(|| {
     Regex::new(concatcp!(
         ATOMIC_SYMBOLS,
         "|",
