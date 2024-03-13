@@ -5,8 +5,10 @@ def test_smirk():
     tok = smirk.SmirkTokenizer("vocab.json")
     smile = "COCCC(=O)N1CCN(C)C(C2=CN([C@@H](C)C3=CC=C(C(F)(F)F)C=C3)N=N2)C1"
     emb = tok.encode(smile)
-    print(emb)
-    print(emb.ids)
+    assert len(emb.ids) == 62
+    smile_out = tok.decode(emb.ids)
+    print(smile_out)
+    assert smile_out == smile
 
 
 def test_encode_batch():
@@ -21,3 +23,7 @@ def test_encode_batch():
     assert len(emb[1].ids) == 53  # `@@` is one token
     assert len(emb[0].ids) == len(emb[0].attention_mask)
     assert len(emb[0].ids) == len(emb[0].type_ids)
+    smile_out = tok.decode_batch([e.ids for e in emb])
+    assert len(smile_out) == len(smile)
+    assert smile_out == smile
+    assert smile_out[0] == smile[0]

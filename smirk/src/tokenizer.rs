@@ -1,14 +1,14 @@
 use pyo3::{pyclass, pymethods, PyResult, FromPyObject, Python};
 use pyo3::types::{PyAny, PyString};
 use tokenizers::models::wordlevel::WordLevel;
-use tokenizers::decoders::strip::Strip as DecodeStrip;
+use tokenizers::decoders::fuse::Fuse;
 use tokenizers::normalizers::Strip;
 use tokenizers::{EncodeInput, Encoding, InputSequence, PostProcessorWrapper, Result, TokenizerBuilder, TokenizerImpl};
 use crate::pretokenizer::SmirkPreTokenizer;
 
 #[pyclass]
 pub struct SmirkTokenizer {
-    tokenizer:TokenizerImpl<WordLevel, Strip, SmirkPreTokenizer, PostProcessorWrapper, DecodeStrip>
+    tokenizer:TokenizerImpl<WordLevel, Strip, SmirkPreTokenizer, PostProcessorWrapper, Fuse>
 }
 
 
@@ -21,7 +21,7 @@ impl SmirkTokenizer {
             .with_model(model)
             .with_pre_tokenizer(Some(SmirkPreTokenizer))
             .with_normalizer(Some(Strip::new(true, true)))
-            .with_decoder(None::<DecodeStrip>)
+            .with_decoder(Some(Fuse::new()))
             .with_post_processor(None::<PostProcessorWrapper>)
             .build()
             .unwrap();
@@ -33,6 +33,11 @@ impl SmirkTokenizer {
         let input = EncodeInput::from(smile.to_str().unwrap());
         let encoding = self.tokenizer.encode_char_offsets(input, add_special_tokens).unwrap();
         return Ok(PyEncoding::from(encoding))
+    }
+
+    #[pyo3(signature = (ids, skip_special_tokens = true))]
+    fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> PyResult<String> {
+        Ok(self.tokenizer.decode(&ids, skip_special_tokens).unwrap())
     }
 
     #[pyo3(signature = (examples, add_special_tokens = true))]
@@ -52,6 +57,17 @@ impl SmirkTokenizer {
                 .collect()
         });
         Ok(out)
+    }
+
+    #[pyo3(signature = (ids, skip_special_tokens = true))]
+    fn decode_batch(&self, py: Python<'_>, ids: Vec<Vec<u32>>, skip_special_tokens: bool) -> PyResult<Vec<String>> {
+        py.allow_threads(|| {
+            let sequences = ids.iter().map(|x| &x[..]).collect::<Vec<&[u32]>>();
+            Ok(self.tokenizer
+                .decode_batch(&sequences, skip_special_tokens)
+                .unwrap()
+            )
+        })
     }
 }
 
