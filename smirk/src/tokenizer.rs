@@ -1,9 +1,9 @@
-use pyo3::{pyclass, pymethods, PyResult, FromPyObject, Python};
-use pyo3::types::{PyAny, PyString};
+use pyo3::{pyclass, pymethods, PyResult, Python};
+use pyo3::types::PyString;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::decoders::fuse::Fuse;
 use tokenizers::normalizers::Strip;
-use tokenizers::{EncodeInput, Encoding, InputSequence, PostProcessorWrapper, Result, TokenizerBuilder, TokenizerImpl};
+use tokenizers::{EncodeInput, Encoding, PostProcessorWrapper, TokenizerBuilder, TokenizerImpl};
 use crate::pretokenizer::SmirkPreTokenizer;
 
 #[pyclass]
