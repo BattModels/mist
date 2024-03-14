@@ -1,5 +1,6 @@
 use tokenizers::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior, Offsets};
 use tokenizers::tokenizer::pattern::Pattern;
+use serde::{Deserialize, Serialize};
 
 use regex::Match;
 use crate::split::{MATCH_OUTER, MATCH_INNER};
@@ -34,7 +35,7 @@ impl Pattern for AtomicComponent {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SmirkPreTokenizer;
 
 impl PreTokenizer for SmirkPreTokenizer {

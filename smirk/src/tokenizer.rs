@@ -81,6 +81,12 @@ impl SmirkTokenizer {
             )
         })
     }
+
+    #[pyo3(signature = (path, pretty = true))]
+    fn save(&self, path: &str, pretty: bool) -> PyResult<()> {
+        self.tokenizer.save(path, pretty).unwrap();
+        Ok(())
+    }
 }
 
 #[pyclass]

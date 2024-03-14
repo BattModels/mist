@@ -1122,6 +1122,8 @@ dependencies = [
  "pyo3",
  "regex",
  "serde",
+ "serde_json",
+ "tempfile",
  "tokenizers",
 ]
 
