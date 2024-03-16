@@ -1,4 +1,5 @@
 mod split;
+mod split_selfies;
 mod pretokenizer;
 mod tokenizer;
 

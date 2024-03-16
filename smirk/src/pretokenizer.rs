@@ -7,7 +7,7 @@ use regex::Match;
 use crate::split::{MATCH_OUTER, MATCH_INNER};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-struct AtomicComponent;
+struct SMILES;
 
 fn append_split(splits: &mut Vec<(Offsets, bool)>, prev: &mut usize, m: Match, offset: usize) {
     let start = m.start() + offset;

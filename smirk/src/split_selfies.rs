@@ -37,8 +37,8 @@ const ATOMIC_SYMBOLS: &'static str = concatcp!(
 // Capture bond symbols
 const BONDS: &'static str = r"[\.\-=#\$:/\\]";
 
-// Capture Rings, Branching, and Sterochemistry
-const STRUCTURE: &'static str = r"Ring[1,2]|Branch[1,2]|@{1,2}";
+// Capture Rings and Branching
+const STRUCTURE: &'static str = r"Ring|Branch";
 
 // Capture brackets
 const BRACKETED: &'static str = r"\[.*?\]";
@@ -111,7 +111,7 @@ mod tests {
         let split = check_split("[NH1][C][=C][C][=C][Ring1][Branch1]");
         assert_eq!(split, [
             "[", "N", "H", "1", "]", "[", "C", "]", "[", "=", "C", "]", "[",
-            "C", "]", "[", "=", "C", "]", "[", "Ring1", "]","[", "Branch1", "]"
+            "C", "]", "[", "=", "C", "]", "[", "Ring", "1", "]","[", "Branch", "1", "]"
             ]);
     }
 

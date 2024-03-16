@@ -7,17 +7,14 @@ vocab = set()
 for sym in fileinput.input():
     vocab.add(sym.strip())
 
-# Add Aromatics
-vocab.update(["b", "c", "n", "o", "p", "s"])
-
 # Add Bonds
 vocab.update([".", "-", "=", "#", "$", ":", "/", "\\"])
 
 # Structure
-vocab.update(["%", "(", ")", "/", "\\", "@", "@@"])
+vocab.update(["%", "(", ")", "/", "\\", "@", "@@", "Branch", "Ring", "_"])
 
 # Brackets and numbers
-vocab.update(["[", "]", "+", "-", *(str(x) for x in range(9))])
+vocab.update(["[", "]", "Expl", "+", "-", *(str(x) for x in range(9))])
 
 # Special tokens
 vocab.update(["[UNK]", "[PAD]", "[MASK]", "[CLS]", "[SEP]", "[BOS]", "[EOS]"])
