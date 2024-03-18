@@ -11,3 +11,9 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
+[project.optional-dependencies]
+tests = [
+    "pytest",
+    "torch",
+    "transformers ~= 4.37.2",
+]
