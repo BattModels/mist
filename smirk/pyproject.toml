@@ -10,10 +10,12 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
+dependencies = [
+    "transformers ~= 4.37.2",
+]
 
 [project.optional-dependencies]
 tests = [
     "pytest",
     "torch",
-    "transformers ~= 4.37.2",
 ]
