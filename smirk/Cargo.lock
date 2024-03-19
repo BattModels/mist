@@ -303,6 +303,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dict_derive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b46bc7c421493b2f684e78cee446c4537ad816ee452e7b0f2edb36ef4f29d5d6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "dirs"
 version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1116,6 +1127,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "const_format",
+ "dict_derive",
  "macro_rules_attribute",
  "once_cell",
  "paste",

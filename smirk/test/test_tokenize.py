@@ -1,17 +1,15 @@
-import smirk
+from smirk.smirk import SmirkTokenizer
 import pytest
 import json
 from copy import deepcopy
 from pathlib import Path
-from collections.abc import Mapping
-from transformers.data import DataCollatorForLanguageModeling
 
 
 @pytest.fixture
 def tokenizer():
     VOCAB_FILE = Path(__file__).parent.parent.joinpath("vocab.json").resolve()
     assert VOCAB_FILE.is_file()
-    return smirk.SmirkTokenizer(str(VOCAB_FILE), padding=False)
+    return SmirkTokenizer(str(VOCAB_FILE))
 
 
 @pytest.fixture
@@ -25,24 +23,24 @@ def smile_strings():
 def test_encode(tokenizer, smile_strings):
     smile = "COCCC(=O)N1CCN(C)C(C2=CN([C@@H](C)C3=CC=C(C(F)(F)F)C=C3)N=N2)C1"
     emb = tokenizer.encode(smile)
-    assert len(emb.ids) == 62
-    smile_out = tokenizer.decode(emb.ids)
+    assert len(emb["input_ids"]) == 62
+    smile_out = tokenizer.decode(emb["input_ids"])
     assert smile_out == smile
 
 
 def test_encode_batch(tokenizer, smile_strings):
     emb = tokenizer.encode_batch(smile_strings)
     assert len(emb) == 2
-    assert len(emb[0].ids) == 28
-    assert len(emb[1].ids) == 53  # `@@` is one token
-    assert len(emb[0].ids) == len(emb[0].attention_mask)
-    assert len(emb[0].ids) == len(emb[0].type_ids)
-    smile_out = tokenizer.decode_batch([e.ids for e in emb])
+    assert len(emb[0]["input_ids"]) == 28
+    assert len(emb[1]["input_ids"]) == 53  # `@@` is one token
+    assert len(emb[0]["input_ids"]) == len(emb[0]["attention_mask"])
+    assert len(emb[0]["input_ids"]) == len(emb[0]["token_type_ids"])
+    assert len(emb[0]["input_ids"]) == len(emb[0]["special_tokens_mask"])
+    smile_out = tokenizer.decode_batch([e["input_ids"] for e in emb])
     assert len(smile_out) == len(smile_strings)
     assert smile_out == smile_strings
     assert smile_out[0] == smile_strings[0]
     assert smile_out[1] == smile_strings[1]
-    print(f"{smile_out[0]} => {emb[0].ids}")
 
 
 def test_serialize(tokenizer):
@@ -53,16 +51,11 @@ def test_serialize(tokenizer):
     assert config["pre_tokenizer"] == {"type": "SmirkPreTokenizer"}
 
 
-def test_padding():
-    tokenizer = smirk.SmirkTokenizer(padding=False)
-    assert tokenizer.pad_token == ""
-    tokenizer = smirk.SmirkTokenizer(padding=True)
-    assert tokenizer.pad_token == "[PAD]"
-
-
-def test_collate(tokenizer, smile_strings):
-    collate = DataCollatorForLanguageModeling(tokenizer)
-    embed = tokenizer.encode_batch(smile_strings)
-    assert len(embed) == len(smile_strings)
-    # assert isinstance(embed[0], Mapping)
-    collated_batch = collate(embed)
+def test_special(tokenizer):
+    assert tokenizer.special_tokens["bos_token"] == "[BOS]"
+    assert tokenizer.special_tokens["eos_token"] == "[EOS]"
+    assert tokenizer.special_tokens["pad_token"] == "[PAD]"
+    assert tokenizer.special_tokens["sep_token"] == "[SEP]"
+    assert tokenizer.special_tokens["cls_token"] == "[CLS]"
+    assert tokenizer.special_tokens["mask_token"] == "[MASK]"
+    assert tokenizer.special_tokens["unk_token"] == "[UNK]"
