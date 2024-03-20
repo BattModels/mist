@@ -1,6 +1,6 @@
 [build-system]
-requires = ["maturin>=0.12,<0.13"]
 build-backend = "maturin"
+requires = ["maturin~=1.5"]
 
 [project]
 name = "smirk"
@@ -19,3 +19,6 @@ tests = [
     "pytest",
     "torch",
 ]
+
+[tool.maturin]
+include = [ "./smirk/vocab.json"]

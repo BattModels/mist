@@ -2,12 +2,12 @@ from smirk.smirk import SmirkTokenizer
 import pytest
 import json
 from copy import deepcopy
-from pathlib import Path
+from importlib.resources import files
 
 
 @pytest.fixture
 def tokenizer():
-    VOCAB_FILE = Path(__file__).parent.parent.joinpath("vocab.json").resolve()
+    VOCAB_FILE = files("smirk").joinpath("vocab.json")
     assert VOCAB_FILE.is_file()
     return SmirkTokenizer(str(VOCAB_FILE))
 

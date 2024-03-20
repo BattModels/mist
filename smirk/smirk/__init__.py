@@ -3,8 +3,7 @@ from . import smirk as rs_smirk
 from pathlib import Path
 from typing import Union
 from transformers import PreTrainedTokenizerBase
-
-VOCAB_FILE = str(Path(__file__).parent.parent.joinpath("vocab.json"))
+from importlib.resources import files
 
 # Expose chemically_consistent_split
 from .smirk import chemically_consistent_split
@@ -13,9 +12,10 @@ from .smirk import chemically_consistent_split
 class SmirkTokenizerFast(PreTrainedTokenizerBase):
     def __init__(self, **kwargs):
         # Create SmirkTokenizer
+        default_vocab_file = str(files("smirk").joinpath("vocab.json"))
         if tokenizer_file := kwargs.pop("tokenizer_file", None):
             tokenizer = rs_smirk.SmirkTokenizer.from_file(tokenizer_file)
-        elif vocab_file := kwargs.pop("vocab_file", VOCAB_FILE):
+        elif vocab_file := kwargs.pop("vocab_file", default_vocab_file):
             padding = kwargs.pop("padding", False)
             tokenizer = rs_smirk.SmirkTokenizer(vocab_file)
         self._tokenizer = tokenizer
