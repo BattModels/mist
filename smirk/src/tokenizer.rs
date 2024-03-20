@@ -8,7 +8,7 @@ use tokenizers::normalizers::Strip;
 use tokenizers;
 use tokenizers::{AddedToken, EncodeInput, OffsetReferential, OffsetType, PaddingDirection, PaddingParams, PaddingStrategy, PostProcessorWrapper, PreTokenizedString, PreTokenizer, TokenizerBuilder, TokenizerImpl};
 use dict_derive::{FromPyObject, IntoPyObject};
-use crate::pretokenizer::SmirkPreTokenizer;
+use crate::pretokenizer::{AtomicComponent, SmirkPreTokenizer};
 
 #[derive(Clone, Debug, FromPyObject, IntoPyObject)]
 struct SpecialTokenConfig {
@@ -63,14 +63,15 @@ impl Into<Vec<AddedToken>> for SpecialTokenConfig {
 #[pyclass]
 pub struct SmirkTokenizer {
     tokenizer:TokenizerImpl<WordLevel, Strip, SmirkPreTokenizer, PostProcessorWrapper, Fuse>,
-    special_tokens:SpecialTokenConfig
+    special_tokens:SpecialTokenConfig,
 }
 
 impl SmirkTokenizer {
-    fn from_model(model: WordLevel, special_tokens: Option<SpecialTokenConfig>) -> Self {
+    fn from_model(model: WordLevel, special_tokens: Option<SpecialTokenConfig>, is_smiles: bool) -> Self {
+        let component = AtomicComponent {is_smiles: is_smiles};
         let mut tokenizer = TokenizerBuilder::new()
             .with_model(model)
-            .with_pre_tokenizer(Some(SmirkPreTokenizer {is_smiles: is_smiles}))
+            .with_pre_tokenizer(Some(SmirkPreTokenizer {atomic_component: component}))
             .with_normalizer(Some(Strip::new(true, true)))
             .with_decoder(Some(Fuse::new()))
             .with_post_processor(None::<PostProcessorWrapper>)
@@ -81,15 +82,15 @@ impl SmirkTokenizer {
         let special_tokens = special_tokens.unwrap_or_default().to_owned();
         let added_tokens: Vec<AddedToken> = special_tokens.clone().into();
         tokenizer.add_special_tokens(&added_tokens);
-        Self { tokenizer, special_tokens }
+        Self { tokenizer, special_tokens}
     }
 }
 
 #[pymethods]
 impl SmirkTokenizer {
     #[new]
-    #[pyo3(signature=(file=None))]
-    fn __new__(file: Option<&str>) -> Self {
+    #[pyo3(signature=(file=None, is_smiles=true))]
+    fn __new__(file: Option<&str>, is_smiles: bool) -> Self {
         let special_tokens = SpecialTokenConfig::default();
         let model = match file {
             Some(f) => WordLevel::from_file(f, special_tokens.unk_token.to_owned()).unwrap(),

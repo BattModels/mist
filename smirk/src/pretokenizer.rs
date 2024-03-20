@@ -1,5 +1,6 @@
 use tokenizers::tokenizer::{PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior, Offsets};
 use tokenizers::tokenizer::pattern::Pattern;
+use serde::{Serialize, Deserialize};
 use macro_rules_attribute::macro_rules_attribute;
 use tokenizers::impl_serde_type;
 
@@ -7,9 +8,9 @@ use regex::Match;
 use crate::split_smiles ::{MATCH_OUTER as smiles_MATCH_OUTER, MATCH_INNER as smiles_MATCH_INNER};
 use crate::split_selfies ::{MATCH_OUTER as selfies_MATCH_OUTER, MATCH_INNER as selfies_MATCH_INNER};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-struct AtomicComponent {
-    is_smiles: bool,
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AtomicComponent {
+    pub is_smiles: bool,
 }
 
 fn append_split(splits: &mut Vec<(Offsets, bool)>, prev: &mut usize, m: Match, offset: usize) {
@@ -53,14 +54,14 @@ impl Pattern for AtomicComponent {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
+#[macro_rules_attribute(impl_serde_type!)]
 pub struct SmirkPreTokenizer {
-    pub is_smiles: bool,
+    pub atomic_component: AtomicComponent,
 }
 
 impl PreTokenizer for SmirkPreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        let atomic_comp = AtomicComponent { is_smiles: self.is_smiles,};
-        pretokenized.split(|_, s| s.split(atomic_comp, SplitDelimiterBehavior::Isolated))
+        pretokenized.split(|_, s| s.split(self.atomic_component, SplitDelimiterBehavior::Isolated))
     }
 }
 
@@ -105,8 +106,9 @@ mod tests {
 
     #[test]
     fn basic_smiles() {
-        let pretok = SmirkPreTokenizer {is_smiles: true};
-        let mut smile = PreTokenizedString::from("OC[C@@H]");
+        let component = AtomicComponent {is_smiles: true};
+        let pretok = SmirkPreTokenizer {atomic_component: component};
+        let mut smile = PreTokenizedString::from("OC[C@@H][OH]");
         pretok.pre_tokenize(&mut smile).unwrap();
         let split: Vec<_> = smile
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -119,7 +121,8 @@ mod tests {
 
     #[test]
     fn basic_selfies() {
-        let pretok = SmirkPreTokenizer {is_smiles: false};
+        let component = AtomicComponent {is_smiles: false};
+        let pretok = SmirkPreTokenizer {atomic_component: component};
         let mut smile = PreTokenizedString::from("[C][N][=C][=O]");
         pretok.pre_tokenize(&mut smile).unwrap();
         let split: Vec<_> = smile
