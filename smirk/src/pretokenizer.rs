@@ -75,7 +75,7 @@ mod tests {
         assert!(all_matches("OC[C@@H][(O)(H)]"));
         assert!(!all_matches("OC[C@@H](O)(H)"));    // Final (H) is not allowed (not organic)
         assert!(all_matches("OC[C@@H](O)([H])"));   // This is fine (In brackets)
-        assert!(!all_matches("OC[C@@H](O)(C)"));    // This is fine (carbon)
+        assert!(all_matches("OC[C@@H](O)(C)"));     // This is fine (carbon)
     }
 
     #[test]
