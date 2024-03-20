@@ -25,9 +25,19 @@ impl Pattern for AtomicComponent {
         for m in MATCH_OUTER.find_iter(inside){
             // Check for Brackets
             if m.as_str().starts_with("[") {
+                // Record opening [
+                splits.push(((prev, m.start()), true));
+                prev += 1;
+
+                // Record contents between brackets
                 for i in MATCH_INNER.find_iter(m.as_str()) {
                     append_split(&mut splits, &mut prev, i, m.start())
                 }
+
+                // Record closing [
+                assert!(m.as_str().ends_with("]"));
+                splits.push(((prev, m.end()), true));
+                prev += 1;
             } else {
                 append_split(&mut splits, &mut prev, m, 0);
             }
@@ -49,13 +59,29 @@ impl PreTokenizer for SmirkPreTokenizer {
 
 #[cfg(test)]
 mod tests {
-    use tokenizers::tokenizer::{OffsetType, OffsetReferential};
+    use tokenizers::tokenizer::{OffsetReferential, OffsetType};
     use super::*;
+
+    fn all_matches(smile: &str) -> bool {
+        let splits = AtomicComponent.find_matches(smile).unwrap();
+        print!("split: {:?}\n", splits);
+        splits.into_iter().all(|(_s, m)| m)
+    }
+
+    #[test]
+    fn check_matches() {
+        assert!(all_matches("OC[C@@H]"));
+        assert!(all_matches("OC[C@@H][OH]"));
+        assert!(all_matches("OC[C@@H][(O)(H)]"));
+        assert!(!all_matches("OC[C@@H](O)(H)"));    // Final (H) is not allowed (not organic)
+        assert!(all_matches("OC[C@@H](O)([H])"));   // This is fine (In brackets)
+        assert!(!all_matches("OC[C@@H](O)(C)"));    // This is fine (carbon)
+    }
 
     #[test]
     fn basic() {
         let pretok = SmirkPreTokenizer;
-        let mut smile = PreTokenizedString::from("OC[C@@H]");
+        let mut smile = PreTokenizedString::from("OC[C@@H][OH]");
         pretok.pre_tokenize(&mut smile).unwrap();
         let split: Vec<_> = smile
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -63,6 +89,5 @@ mod tests {
             .map(|(s, o, _)| (s, o))
             .collect();
         print!("split: {:?}", split);
-
     }
 }

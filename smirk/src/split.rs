@@ -132,8 +132,8 @@ mod tests {
 
     #[test]
     fn test_brackets() {
-        let split = check_split("[14c]");
-        assert_eq!(split, ["[", "1", "4", "c", "]"]);
+        let split = check_split("[14c][o3]");
+        assert_eq!(split, ["[", "1", "4", "c", "]", "[", "o", "3", "]"]);
     }
 
     #[test]
