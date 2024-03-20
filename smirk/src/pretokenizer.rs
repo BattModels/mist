@@ -54,7 +54,6 @@ impl Pattern for AtomicComponent {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
-#[macro_rules_attribute(impl_serde_type!)]
 pub struct SmirkPreTokenizer {
     pub atomic_component: AtomicComponent,
 }
@@ -72,7 +71,7 @@ mod tests {
     use super::*;
 
     fn all_matches(smile: &str) -> bool {
-        let splits = AtomicComponent.find_matches(smile).unwrap();
+        let splits = AtomicComponent {is_smiles: true} .find_matches(smile).unwrap();
         print!("split: {:?}\n", splits);
         splits.into_iter().all(|(_s, m)| m)
     }
@@ -99,7 +98,8 @@ mod tests {
 
     #[test]
     fn check_splits() {
-        let pretok = SmirkPreTokenizer {is_smiles: true};
+        let component = AtomicComponent {is_smiles: true};
+        let pretok = SmirkPreTokenizer {atomic_component: component};
         assert_eq!(get_split_tokens(pretok, "H2O"), ["H", "2", "O"]);
         assert_eq!(get_split_tokens(pretok, "OC[C@@H]"), ["O", "C", "[", "C", "@@", "H", "]"]);
     }

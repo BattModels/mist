@@ -14,7 +14,7 @@ from .smirk import chemically_consistent_split
 class SmirkTokenizerFast(PreTrainedTokenizerBase):
     def __init__(self, **kwargs):
         # Create SmirkTokenizer
-        default_vocab_file = str(files("smirk").joinpath("vocab.json"))
+        default_vocab_file = str(files("smirk").joinpath("vocab_smiles.json"))
         if tokenizer_file := kwargs.pop("tokenizer_file", None):
             tokenizer = rs_smirk.SmirkTokenizer.from_file(tokenizer_file)
         elif vocab_file := kwargs.pop("vocab_file", default_vocab_file):

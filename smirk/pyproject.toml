@@ -21,7 +21,4 @@ test = [
 ]
 
 [tool.maturin]
-include = [ "./smirk/vocab.json"]
-
-[tool.maturin]
 include = [ "./smirk/vocab_smiles.json", "./smirk/vocab_selfies.json"]

@@ -96,15 +96,15 @@ impl SmirkTokenizer {
             Some(f) => WordLevel::from_file(f, special_tokens.unk_token.to_owned()).unwrap(),
             None => WordLevel::default(),
         };
-        SmirkTokenizer::from_model(model, Some(special_tokens))
+        SmirkTokenizer::from_model(model, Some(special_tokens), is_smiles)
     }
 
 
     #[staticmethod]
-    fn from_vocab(file: &str) -> Self {
+    fn from_vocab(file: &str, is_smiles: bool) -> Self {
         let special_tokens = SpecialTokenConfig::default();
         let model = WordLevel::from_file(file, special_tokens.unk_token.to_owned()).unwrap();
-        SmirkTokenizer::from_model(model, Some(special_tokens))
+        SmirkTokenizer::from_model(model, Some(special_tokens), is_smiles)
     }
 
     fn set_padding(&mut self){
