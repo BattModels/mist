@@ -5,6 +5,8 @@ from typing import Union
 from transformers import PreTrainedTokenizerBase
 from importlib.resources import files
 
+
+VOCAB_FILE = str(Path(__file__).parent.parent.joinpath("vocab_smiles.json"))
 # Expose chemically_consistent_split
 from .smirk import chemically_consistent_split
 

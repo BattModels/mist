@@ -3,7 +3,7 @@ import pytest
 import re
 from collections.abc import Mapping
 from transformers.data import DataCollatorForLanguageModeling
-from test_tokenize import smile_strings
+from test_tokenize_smiles import smile_strings
 
 
 def test_special_tokens():
