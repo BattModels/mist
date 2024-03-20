@@ -25,6 +25,12 @@ def check_encode(tok, x):
     assert img == x
 
 
+def test_pretokenize(tokenizer):
+    splits = tokenizer.pretokenize("OC[C@@H][OH]")
+    assert splits == ["O", "C", "[", "C", "@@", "H", "]", "[", "O", "H", "]"]
+    assert len(splits) == 11
+
+
 def test_image(tokenizer, smile_strings):
     check_encode(tokenizer, "OC[C@@H][OH]")
     assert len(tokenizer.encode("OC[C@@H][OH]")["input_ids"]) == 11

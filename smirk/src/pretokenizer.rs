@@ -26,7 +26,7 @@ impl Pattern for AtomicComponent {
             // Check for Brackets
             if m.as_str().starts_with("[") {
                 // Record opening [
-                splits.push(((prev, m.start()), true));
+                splits.push(((m.start(), m.start()+1), true));
                 prev += 1;
 
                 // Record contents between brackets
@@ -76,6 +76,23 @@ mod tests {
         assert!(!all_matches("OC[C@@H](O)(H)"));    // Final (H) is not allowed (not organic)
         assert!(all_matches("OC[C@@H](O)([H])"));   // This is fine (In brackets)
         assert!(all_matches("OC[C@@H](O)(C)"));     // This is fine (carbon)
+    }
+
+    fn get_split_tokens(tok: SmirkPreTokenizer, smile: &str) -> Vec<String>{
+        let mut smile = PreTokenizedString::from(smile);
+        tok.pre_tokenize(&mut smile).unwrap();
+        smile
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, _, _)| s.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn check_splits() {
+        let pretok = SmirkPreTokenizer;
+        assert_eq!(get_split_tokens(pretok, "H2O"), ["H", "2", "O"]);
+        assert_eq!(get_split_tokens(pretok, "OC[C@@H]"), ["O", "C", "[", "C", "@@", "H", "]"]);
     }
 
     #[test]
