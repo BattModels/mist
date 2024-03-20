@@ -4,10 +4,13 @@ use macro_rules_attribute::macro_rules_attribute;
 use tokenizers::impl_serde_type;
 
 use regex::Match;
-use crate::split::{MATCH_OUTER, MATCH_INNER};
+use crate::split_smiles ::{MATCH_OUTER as smiles_MATCH_OUTER, MATCH_INNER as smiles_MATCH_INNER};
+use crate::split_selfies ::{MATCH_OUTER as selfies_MATCH_OUTER, MATCH_INNER as selfies_MATCH_INNER};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-struct SMILES;
+struct AtomicComponent {
+    is_smiles: bool,
+}
 
 fn append_split(splits: &mut Vec<(Offsets, bool)>, prev: &mut usize, m: Match, offset: usize) {
     let start = m.start() + offset;
@@ -22,7 +25,9 @@ impl Pattern for AtomicComponent {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         let mut splits = Vec::with_capacity(inside.len());
         let mut prev = 0;
-        for m in MATCH_OUTER.find_iter(inside){
+        let match_outer = if self.is_smiles {&smiles_MATCH_OUTER} else {&selfies_MATCH_OUTER};
+        let match_inner = if self.is_smiles {&smiles_MATCH_INNER} else {&selfies_MATCH_INNER};
+        for m in match_outer.find_iter(inside){
             // Check for Brackets
             if m.as_str().starts_with("[") {
                 // Record opening [
@@ -30,7 +35,7 @@ impl Pattern for AtomicComponent {
                 prev += 1;
 
                 // Record contents between brackets
-                for i in MATCH_INNER.find_iter(m.as_str()) {
+                for i in match_inner.find_iter(m.as_str()) {
                     append_split(&mut splits, &mut prev, i, m.start())
                 }
 
@@ -48,11 +53,14 @@ impl Pattern for AtomicComponent {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[macro_rules_attribute(impl_serde_type!)]
-pub struct SmirkPreTokenizer;
+pub struct SmirkPreTokenizer {
+    pub is_smiles: bool,
+}
 
 impl PreTokenizer for SmirkPreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, s| s.split(AtomicComponent, SplitDelimiterBehavior::Isolated))
+        let atomic_comp = AtomicComponent { is_smiles: self.is_smiles,};
+        pretokenized.split(|_, s| s.split(atomic_comp, SplitDelimiterBehavior::Isolated))
     }
 }
 
@@ -90,15 +98,15 @@ mod tests {
 
     #[test]
     fn check_splits() {
-        let pretok = SmirkPreTokenizer;
+        let pretok = SmirkPreTokenizer {is_smiles: true};
         assert_eq!(get_split_tokens(pretok, "H2O"), ["H", "2", "O"]);
         assert_eq!(get_split_tokens(pretok, "OC[C@@H]"), ["O", "C", "[", "C", "@@", "H", "]"]);
     }
 
     #[test]
-    fn basic() {
-        let pretok = SmirkPreTokenizer;
-        let mut smile = PreTokenizedString::from("OC[C@@H][OH]");
+    fn basic_smiles() {
+        let pretok = SmirkPreTokenizer {is_smiles: true};
+        let mut smile = PreTokenizedString::from("OC[C@@H]");
         pretok.pre_tokenize(&mut smile).unwrap();
         let split: Vec<_> = smile
             .get_splits(OffsetReferential::Original, OffsetType::Byte)
@@ -106,5 +114,20 @@ mod tests {
             .map(|(s, o, _)| (s, o))
             .collect();
         print!("split: {:?}", split);
+
+    }
+
+    #[test]
+    fn basic_selfies() {
+        let pretok = SmirkPreTokenizer {is_smiles: false};
+        let mut smile = PreTokenizedString::from("[C][N][=C][=O]");
+        pretok.pre_tokenize(&mut smile).unwrap();
+        let split: Vec<_> = smile
+            .get_splits(OffsetReferential::Original, OffsetType::Byte)
+            .into_iter()
+            .map(|(s, o, _)| (s, o))
+            .collect();
+        print!("split: {:?}", split);
+
     }
 }

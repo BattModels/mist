@@ -1,15 +1,20 @@
-mod split;
+mod split_smiles;
 mod split_selfies;
 mod pretokenizer;
 mod tokenizer;
 
 use pyo3::{prelude::*, types::PyString};
-use split::split_chemically_consistent;
+use split_smiles::split_chemically_consistent as smiles_split_chemically_consistent;
+use split_selfies::split_chemically_consistent as selfies_split_chemically_consistent;
 use tokenizer::SmirkTokenizer;
 
 #[pyfunction]
-fn chemically_consistent_split(a: &PyString) -> PyResult<Vec<String>> {
-    Ok(split_chemically_consistent(a.to_str().unwrap()))
+fn chemically_consistent_split(a: &PyString, is_smiles: bool) -> PyResult<Vec<String>> {
+    if is_smiles {
+        Ok(smiles_split_chemically_consistent(a.to_str().unwrap()))
+    } else {
+        Ok(selfies_split_chemically_consistent(a.to_str().unwrap()))
+    }
 }
 
 /// A Python module implemented in Rust.

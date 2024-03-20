@@ -70,7 +70,7 @@ impl SmirkTokenizer {
     fn from_model(model: WordLevel, special_tokens: Option<SpecialTokenConfig>) -> Self {
         let mut tokenizer = TokenizerBuilder::new()
             .with_model(model)
-            .with_pre_tokenizer(Some(SmirkPreTokenizer))
+            .with_pre_tokenizer(Some(SmirkPreTokenizer {is_smiles: is_smiles}))
             .with_normalizer(Some(Strip::new(true, true)))
             .with_decoder(Some(Fuse::new()))
             .with_post_processor(None::<PostProcessorWrapper>)

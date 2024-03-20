@@ -1,49 +1,12 @@
 use const_format::concatcp;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use crate::split_smiles::{ATOMIC_SYMBOLS, BONDS, BRACKETED, CHARGE_OR_COUNT};
 
-// Capture the organic subset
-const ORGANIC_SUBSET: &'static str = r"Cl?|Br?|N|P|S|O|I|F";
+// Capture Rings and Branching and Stereochemistry
+const STRUCTURE: &'static str = r"Ring|Branch|@{1,2}";
 
-const AROMATIC_ORGANIC: &'static str = r"b|c|n|o|p|s";
-
-// Capture elements (Generated with opt/element_regex.py)
-const ATOMIC_SYMBOLS: &'static str = concatcp!(
-    r"A[c|g|l|m|r|s|t|u]|",
-    r"B[a|e|h|i|k|r]?|",
-    r"C[a|d|e|f|l|m|n|o|r|s|u]?|",
-    r"D[b|s|y]|",
-    r"E[r|s|u]|",
-    r"F[e|l|m|r]?|",
-    r"G[a|d|e]|",
-    r"H[e|f|g|o|s]?|",
-    r"I[n|r]?|",
-    r"K[r]?|",
-    r"L[a|i|r|u|v]|",
-    r"M[c|d|g|n|o|t]|",
-    r"N[a|b|d|e|h|i|o|p]?|",
-    r"O[g|s]?|",
-    r"P[a|b|d|m|o|r|t|u]?|",
-    r"R[a|b|e|f|g|h|n|u]|",
-    r"S[b|c|e|g|i|m|n|r]?|",
-    r"T[a|b|c|e|h|i|l|m|s]|",
-    r"U|",
-    r"V|",
-    r"W|",
-    r"X[e]|",
-    r"Y[b]?",
-);
-
-// Capture bond symbols
-const BONDS: &'static str = r"[\.\-=#\$:/\\]";
-
-// Capture Rings and Branching
-const STRUCTURE: &'static str = r"Ring|Branch";
-
-// Capture brackets
-const BRACKETED: &'static str = r"\[.*?\]";
-
-const CHARGE_OR_COUNT: &'static str = r"\d|\+|\-";
+// Capture Hydrogen
 const HCOUNT: &'static str = r"[H]\d+";
 
 

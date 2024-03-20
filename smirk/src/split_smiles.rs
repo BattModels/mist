@@ -8,7 +8,7 @@ const ORGANIC_SUBSET: &'static str = r"Cl?|Br?|N|P|S|O|I|F";
 const AROMATIC_ORGANIC: &'static str = r"b|c|n|o|p|s";
 
 // Capture elements (Generated with opt/element_regex.py)
-const ATOMIC_SYMBOLS: &'static str = concatcp!(
+pub const ATOMIC_SYMBOLS: &'static str = concatcp!(
     r"A[c|g|l|m|r|s|t|u]|",
     r"B[a|e|h|i|k|r]?|",
     r"C[a|d|e|f|l|m|n|o|r|s|u]?|",
@@ -35,15 +35,15 @@ const ATOMIC_SYMBOLS: &'static str = concatcp!(
 );
 
 // Capture bond symbols
-const BONDS: &'static str = r"[\.\-=#\$:/\\]";
+pub const BONDS: &'static str = r"[\.\-=#\$:/\\]";
 
-// Capture Rings, Branching, and Sterochemistry
-const STRUCTURE: &'static str = r"%|[\(\)]|[/\\]|@{1,2}";
+// Capture Rings, Branching, and Stereochemistry
+pub const STRUCTURE: &'static str = r"%|[\(\)]|[/\\]|@{1,2}";
 
 // Capture brackets
-const BRACKETED: &'static str = r"\[.*?\]";
+pub const BRACKETED: &'static str = r"\[.*?\]";
 
-const CHARGE_OR_COUNT: &'static str = r"\d|\+|\-";
+pub const CHARGE_OR_COUNT: &'static str = r"\d|\+|\-";
 
 // Capture tokens outside of brackets
 pub static MATCH_OUTER: Lazy<Regex> = Lazy::new(|| {
