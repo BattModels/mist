@@ -1,6 +1,5 @@
 import os
 import torch
-from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.cli import (
     LightningCLI,
@@ -44,11 +43,12 @@ def cli_main(args=None):
             save_last="link",
             monitor=monitor,
             save_top_k=5,
+            verbose=True,
         ),
     ]
 
-    num_nodes = int(os.environ.get("NRANKS"))
-    rank = int(os.environ.get("PMI_RANK"))
+    num_nodes = int(os.environ.get("NRANKS", 1))
+    rank = int(os.environ.get("PMI_RANK", 1))
     os.environ["NODE_RANK"] = str(rank % num_nodes)
     os.environ["GLOBAL_RANK"] = str(rank % num_nodes)
     print(f"PY: NUM_NODES: {num_nodes} PMI_RANK: {rank} PID {os.getpid()}")

@@ -15,6 +15,3 @@ jobs:
           cache: 'poetry'
       - run: poetry install
       - run: source activate && pytest
-    env:
-      NRANKS: 1
-      PMI_RANK: 1
