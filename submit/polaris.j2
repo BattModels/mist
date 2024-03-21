@@ -35,8 +35,6 @@ module load conda
 conda activate base
 source ${PBS_O_WORKDIR}/activate
 
-export TOKENIZERS_PARALLELISM=false
-
 # Logging
 echo "$(df -h /local/scratch)"
 
