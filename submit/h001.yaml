@@ -1,3 +1,6 @@
 mpiexe:
   np: 2
   ppn: 2
+train:
+  data.path: /home/awadell/realspace_v2_dev/
+  data.num_workers: 1  # Only have one shard per GPU in realspace_v2_dev
