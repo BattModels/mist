@@ -1,7 +1,10 @@
-queue: "debug-scaling"
-nodes: 8
+queue: "prod"
+nodes: 16
+walltime: "3:00:00"
+mpiexe:
+  np: "${NRANKS}"
+  ppn: 1
+  depth: 64
+  cpu-bind: depth
 train:
   data.path: /eagle/FoundEnergy/realspace_v2
-  trainer.max_epochs: 5
-  trainer.limit_val_batches: 200
-  trainer.limit_train_batches: 200
