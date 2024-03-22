@@ -10,9 +10,14 @@ import json
 from copy import deepcopy
 from pathlib import Path
 from typing import List
-
+import rich
+from rich.json import JSON
+from rich.panel import Panel
+from rich.prompt import Confirm
+from rich.syntax import Syntax
 
 cli = typer.Typer(rich_markup_mode="markdown")
+console = rich.console.Console(stderr=True)
 
 
 def parse_data(path) -> dict:
@@ -64,6 +69,10 @@ def compose(
         True,
         help="Apply the *.yaml file next to the template",
     ),
+    confirm: bool = typer.Option(
+        __name__ == "__main__",  # Default to asking for confirmation if interactive
+        help="Display configuration and script befor printing",
+    ),
 ):
     """
     Render a template `file` with using the values from `data`
@@ -99,7 +108,25 @@ def compose(
     for file in data:
         config = merge_config(config, parse_data(Path(file)))
 
-    print(template.render(config))
+    # Generate Script
+    script = template.render(config)
+
+    if not confirm:
+        print(script)
+    else:
+        console.print(
+            Panel(
+                JSON(json.dumps(config)),
+                title="Configuration",
+            ),
+            Panel(
+                Syntax(script, "bash", background_color="default"),
+                title="Script",
+            ),
+        )
+
+        if Confirm.ask("Submit?", console=console):
+            print(script)
 
 
 if __name__ == "__main__":
