@@ -61,6 +61,11 @@ def compose(
         dir_okay=False,
         help="YAML or JSON file specifying the template's variables. Multiple files can be provided and will be resolved sequentially",
     ),
+    json_config: str = typer.Option(
+        "{}",
+        "--json",
+        help="Additional configuration to apply last",
+    ),
     default: bool = typer.Option(
         True,
         help="Use the default.yaml file next to the template",
@@ -107,6 +112,9 @@ def compose(
     # Overlay data files
     for file in data:
         config = merge_config(config, parse_data(Path(file)))
+
+    # Overlay cli json
+    config = merge_config(config, json.loads(json_config))
 
     # Generate Script
     script = template.render(config)
