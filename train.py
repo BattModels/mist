@@ -1,5 +1,7 @@
 import os
 import torch
+
+from datetime import timedelta
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.cli import (
     LightningCLI,
@@ -35,15 +37,26 @@ class MyLightningCLI(LightningCLI):
 
 
 def cli_main(args=None):
-    monitor = "val/perplexity"
+    monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
         EarlyStopping(monitor=monitor),
         ModelCheckpoint(
             save_last="link",
+            filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
             save_top_k=5,
             verbose=True,
+            auto_insert_metric_name=False,
+        ),
+        ModelCheckpoint(
+            filename="epoch={epoch}-step={step}",
+            save_top_k=2,
+            monitor="step",
+            verbose=True,
+            mode="max",
+            train_time_interval=timedelta(minutes=30),
+            auto_insert_metric_name=False,
         ),
     ]
 
