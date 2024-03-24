@@ -1,12 +1,12 @@
-import torch
 import os
-import pytorch_lightning as pl
+
 import pandas as pd
+import pytorch_lightning as pl
+import torch
 from torch.utils.data import DataLoader
-from transformers import (
-    AutoTokenizer,
-    PreTrainedTokenizerBase,
-)
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
+
+
 class PropertyPredictionDataset(torch.utils.data.Dataset):
     def __init__(self, df, measure_name):
         df = df[['smiles', measure_name]]
