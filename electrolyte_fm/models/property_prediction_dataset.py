@@ -1,14 +1,12 @@
-import os
-
-import numpy as np
-import pandas as pd
-import pytorch_lightning as pl
 import torch
+import os
+import pytorch_lightning as pl
+import pandas as pd
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, PreTrainedTokenizerBase
-from utils import normalize_smiles
-
-
+from transformers import (
+    AutoTokenizer,
+    PreTrainedTokenizerBase,
+)
 class PropertyPredictionDataset(torch.utils.data.Dataset):
     def __init__(self, df, measure_name):
         df = df[['smiles', measure_name]]
@@ -23,14 +21,30 @@ class PropertyPredictionDataset(torch.utils.data.Dataset):
         return len(self.df)
 
 class PropertyPredictionDataModule(pl.LightningDataModule):
-    def __init__(self, tokenizer, dataset_name):
+    def __init__(
+            self, 
+            path: str,
+            tokenizer: str,
+            dataset_name: str,
+            batch_size: int = 64,
+            val_batch_size=None,
+            num_workers=1,
+            prefetch_factor=4,
+    ):
         super().__init__()
+
         self.tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(
             tokenizer,
             trust_remote_code=True,
             cache_dir=".cache",  # Cache Tokenizer in working directory
         )
         self.vocab_size = len(self.tokenizer.get_vocab())
+        self.path: Path = Path(path)
+        assert self.path.is_dir() or self.path.is_file()
+        self.batch_size = batch_size
+        self.val_batch_size = val_batch_size if val_batch_size else batch_size
+        self.num_workers = num_workers
+        self.prefetch_factor = prefetch_factor
         self.dataset_name = dataset_name
         self.save_hyperparameters()
 
@@ -38,7 +52,7 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         return dataset_name + "_" + split + ".csv"
 
     def prepare_data(self):
-        print("Inside prepare_dataset")
+
         train_filename = PropertyPredictionDataModule.get_split_dataset_filename(
             self.dataset_name, "train"
         )
@@ -72,30 +86,45 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
             measure_name=self.measure_name,
         )
 
-    def collate(self, batch):
-        tokens = self.tokenizer.batch_encode_plus([ smile[0] for smile in batch], padding=True, add_special_tokens=True)
+    def data_collate(self, batch):
+        tokens = self.tokenizer.batch_encode_plus(
+            [smile[0] for smile in batch], 
+            padding=True, 
+            add_special_tokens=True
+            )
         tokens["targets"] = torch.tensor([smile[1] for smile in batch])
         return tokens
     
-    def val_dataloader(self):
-        return [
-            DataLoader(
-                ds,
-                batch_size=self.hparams.batch_size,
-                num_workers=self.hparams.num_workers,
-                shuffle=False,
-                collate_fn=self.collate,
-            )
-            for ds in self.val_ds
-        ]
-
     def train_dataloader(self):
         return DataLoader(
-            self.train_ds,
-            batch_size=self.hparams.batch_size,
-            num_workers=self.hparams.num_workers,
-            shuffle=True,
-            collate_fn=self.collate,
+            self.train_dataset,
+            collate_fn=self.data_collator,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
+            pin_memory=True,
+            persistent_workers=True,
+        )
+
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            collate_fn=self.data_collator,
+            batch_size=self.val_batch_size,
+            num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
+            pin_memory=True,
+            persistent_workers=True,
+            shuffle=False
+        )
+
+    def test_dataset(self):
+        return DataLoader(
+            self.test_dataset,
+            collate_fn=self.data_collator,
+            batch_size=self.val_batch_size,
+            num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
         )
     
 def get_dataset(data_root, filename, dataset_len, measure_name):
