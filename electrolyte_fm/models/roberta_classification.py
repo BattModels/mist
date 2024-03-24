@@ -14,8 +14,9 @@ class RoBERTaClassification(pl.LightningModule):
     def __init__(
         self,
         pretrained_checkpoint: str,
+        freeze_encoder: bool = True,
         learning_rate: float = 1.6e-4,
-        num_classes: int = 1, 
+        num_classes: int = 2, 
         dropout: float = 0.2
 
     ) -> None:
@@ -30,19 +31,22 @@ class RoBERTaClassification(pl.LightningModule):
                                                num_classes=num_classes,
                                                dropout=self.dropout)
         self.loss = torch.nn.CrossEntropyLoss()
+        self.freeze_encoder = freeze_encoder
 
     def forward(self, batch, **kwargs):  # type: ignore[override]
         embedding = self.encoder(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],
             **kwargs,
+            return_dict=False
         )
-        out = self.task_network(embedding.last_hidden_state)
+        
+        sequence_output = embedding[0]
+        print(f"embedding {sequence_output.shape}")
+        out = self.task_network(sequence_output)
         return out
 
     def on_train_epoch_start(self) -> None:
-        # Update the dataset's internal epoch counter
-        self.trainer.train_dataloader.dataset.set_epoch(self.trainer.current_epoch)
         self.log(
             "train/dataloader_epoch",
             self.trainer.train_dataloader.dataset._epoch,
@@ -53,7 +57,8 @@ class RoBERTaClassification(pl.LightningModule):
 
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        loss = self.loss(outputs, targets)
+        
+        loss = self.loss(outputs, batch['targets'])
         self.log(
             "train/loss",
             loss,
@@ -66,7 +71,9 @@ class RoBERTaClassification(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        loss = self.loss(outputs, targets)
+        print(outputs.shape)
+        print(batch['targets'].shape)
+        loss = self.loss(outputs, batch['targets'])
         self.log(
             "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
         )
@@ -74,20 +81,23 @@ class RoBERTaClassification(pl.LightningModule):
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        # loss = self.loss(outputs, targets)
-        # self.log(
-        #     "test/loss",
-        #     loss,
-        #     on_step=True,
-        #     on_epoch=True,
-        #     prog_bar=True,
-        #     sync_dist=True,
-        # )
+        loss = self.loss(outputs, batch['targets'])
+        self.log(
+            "test/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
         return outputs
 
-    def configure_optimizers(self):
+    def configure_optimizers(self): # TODO: add learnable param filtering for frozen embeddings
+        learnable_params = [p for _, p in self.task_network.named_parameters()]
+        if not self.freeze_encoder:
+            learnable_params.extend([p for _, p in self.encoder.named_parameters()])
         optimizer = torch.optim.AdamW(
-            [p for _, p in self.model.named_parameters()],
+            learnable_params,
             lr=self.learning_rate,
         )
         return optimizer

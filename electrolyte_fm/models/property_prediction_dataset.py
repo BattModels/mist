@@ -1,24 +1,31 @@
 import os
+from pathlib import Path
 
-import pandas as pd
-import pytorch_lightning as pl
 import torch
+from typing import Optional
+import pytorch_lightning as pl
+import pandas as pd
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, PreTrainedTokenizerBase
-
-
+from transformers import (
+    AutoTokenizer,
+    PreTrainedTokenizerBase,
+)
 class PropertyPredictionDataset(torch.utils.data.Dataset):
     def __init__(self, df, measure_name):
         df = df[['smiles', measure_name]]
         df = df.dropna()
         self.measure_name = measure_name
         self.df = df.reset_index(drop=True)
+        self._epoch = 0
 
     def __getitem__(self, index):
         return self.df.loc[index, 'smiles'], self.df.loc[index, self.measure_name]
   
     def __len__(self):
         return len(self.df)
+    
+    def set_epoch(self, epoch: int):
+        self._epoch = epoch
 
 class PropertyPredictionDataModule(pl.LightningDataModule):
     def __init__(
@@ -26,10 +33,14 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
             path: str,
             tokenizer: str,
             dataset_name: str,
+            measure_name: str,
             batch_size: int = 64,
-            val_batch_size=None,
-            num_workers=1,
-            prefetch_factor=4,
+            num_workers: int = 1,
+            prefetch_factor: int = 4,
+            val_batch_size: Optional[int] = None,
+            train_dataset_length: Optional[int] = None,
+            val_dataset_length: Optional[int] = None,
+            test_dataset_length: Optional[int] = None,
     ):
         super().__init__()
 
@@ -46,22 +57,26 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.dataset_name = dataset_name
+        self.train_dataset_length = train_dataset_length
+        self.val_dataset_length = val_dataset_length
+        self.test_dataset_length = test_dataset_length
+        self.measure_name = measure_name
         self.save_hyperparameters()
 
-    def get_split_dataset_filename(dataset_name, split):
-        return dataset_name + "_" + split + ".csv"
+    def _get_split_dataset_filename(self, dataset_name, split):
+        return os.path.join(dataset_name, split + ".csv")
 
-    def prepare_data(self):
+    def setup(self, stage: str) -> None:
 
-        train_filename = PropertyPredictionDataModule.get_split_dataset_filename(
+        train_filename = self._get_split_dataset_filename(
             self.dataset_name, "train"
         )
 
-        valid_filename = PropertyPredictionDataModule.get_split_dataset_filename(
+        valid_filename = self._get_split_dataset_filename(
             self.dataset_name, "valid"
         )
 
-        test_filename = PropertyPredictionDataModule.get_split_dataset_filename(
+        test_filename = self._get_split_dataset_filename(
             self.dataset_name, "test"
         )
 
@@ -80,16 +95,17 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         )
 
         self.test_dataset = get_dataset(
-            self.hparams.data_root,
+            self.path,
             test_filename,
-            self.val_dataset_length,
+            self.test_dataset_length,
             measure_name=self.measure_name,
         )
 
-    def data_collate(self, batch):
+    def data_collator(self, batch):
         tokens = self.tokenizer.batch_encode_plus(
             [smile[0] for smile in batch], 
             padding=True, 
+            return_tensors="pt",
             add_special_tokens=True
             )
         tokens["targets"] = torch.tensor([smile[1] for smile in batch])
