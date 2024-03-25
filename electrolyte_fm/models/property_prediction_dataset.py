@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+from datasets import load_dataset
 import torch
 from typing import Optional
 import pytorch_lightning as pl
@@ -10,23 +11,6 @@ from transformers import (
     AutoTokenizer,
     PreTrainedTokenizerBase,
 )
-class PropertyPredictionDataset(torch.utils.data.Dataset):
-    def __init__(self, df, measure_name):
-        df = df[['smiles', measure_name]]
-        df = df.dropna()
-        self.measure_name = measure_name
-        self.df = df.reset_index(drop=True)
-        self._epoch = 0
-
-    def __getitem__(self, index):
-        return self.df.loc[index, 'smiles'], self.df.loc[index, self.measure_name]
-  
-    def __len__(self):
-        return len(self.df)
-    
-    def set_epoch(self, epoch: int):
-        self._epoch = epoch
-
 class PropertyPredictionDataModule(pl.LightningDataModule):
     def __init__(
             self, 
@@ -63,52 +47,20 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         self.measure_name = measure_name
         self.save_hyperparameters()
 
-    def _get_split_dataset_filename(self, dataset_name, split):
-        return os.path.join(dataset_name, split + ".csv")
-
     def setup(self, stage: str) -> None:
-
-        train_filename = self._get_split_dataset_filename(
-            self.dataset_name, "train"
-        )
-
-        valid_filename = self._get_split_dataset_filename(
-            self.dataset_name, "valid"
-        )
-
-        test_filename = self._get_split_dataset_filename(
-            self.dataset_name, "test"
-        )
-
-        self.train_dataset = get_dataset(
-            self.path,
-            train_filename,
-            self.train_dataset_length,
-            measure_name=self.measure_name,
-        )
-
-        self.val_dataset = get_dataset(
-            self.path,
-            valid_filename,
-            self.val_dataset_length,
-            measure_name=self.measure_name,
-        )
-
-        self.test_dataset = get_dataset(
-            self.path,
-            test_filename,
-            self.test_dataset_length,
-            measure_name=self.measure_name,
-        )
+        full_dataset = load_dataset(os.path.join(self.path, self.dataset_name))
+        self.train_dataset = full_dataset['train']
+        self.val_dataset = full_dataset['validation']
+        self.test_dataset = full_dataset['validation']
 
     def data_collator(self, batch):
-        tokens = self.tokenizer.batch_encode_plus(
-            [smile[0] for smile in batch], 
+        tokens = self.tokenizer(
+            [sample['smiles'] for sample in batch], 
             padding=True, 
             return_tensors="pt",
             add_special_tokens=True
             )
-        tokens["targets"] = torch.tensor([smile[1] for smile in batch])
+        tokens["targets"] = torch.tensor([sample[self.measure_name] for sample in batch])
         return tokens
     
     def train_dataloader(self):
