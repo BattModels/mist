@@ -2,11 +2,9 @@ import json
 from pathlib import Path
 import torch
 import pytorch_lightning as pl
-from electrolyte_fm.models import RoBERTa, ClassificationHead
-from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+from electrolyte_fm.models import ClassificationHead, DeepSpeedMixin, RoBERTa
 
-
-class RoBERTaClassification(pl.LightningModule):
+class LMClassification(pl.LightningModule):
     """
     PyTorch Lightning module for RoBERTa model classification finetuning.
     """
@@ -24,7 +22,7 @@ class RoBERTaClassification(pl.LightningModule):
         self.learning_rate = learning_rate
         self.dropout = dropout
         self.save_hyperparameters()
-        self.pretrained_model = RoBERTa.load_deepspeed(checkpoint_dir= pretrained_checkpoint)
+        self.pretrained_model = DeepSpeedMixin.load_deepspeed(checkpoint_dir= pretrained_checkpoint)
         # Expose encoder
         self.encoder = self.pretrained_model.model.roberta
         self.task_network = ClassificationHead(embed_dim=self.encoder.config.hidden_size, 
@@ -75,7 +73,12 @@ class RoBERTaClassification(pl.LightningModule):
         print(batch['targets'].shape)
         loss = self.loss(outputs, batch['targets'])
         self.log(
-            "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
+            "val/loss", 
+            loss, 
+            on_step=True,
+            on_epoch=True, 
+            prog_bar=True, 
+            sync_dist=True
         )
         return loss
 
@@ -104,24 +107,4 @@ class RoBERTaClassification(pl.LightningModule):
 
     @classmethod
     def load_deepspeed(cls, checkpoint_dir, config_path=None):
-        """Restore from a deepspeed checkpoint, mainly used for downstream tasks"""
-        checkpoint_dir = Path(checkpoint_dir).resolve()
-        print("checkpoint_dir.parent.parent")
-        print(checkpoint_dir.parent.parent)
-        config_path = config_path or checkpoint_dir.parent.parent.joinpath(
-            "model_hparams.json"
-        )
-        assert (
-            checkpoint_dir.is_dir()
-        ), f"Missing deepspeed checkpoint director {checkpoint_dir}"
-        assert config_path.is_file(), f"Missing model config file {config_path}"
-
-        # Restore mode from config
-        with open(config_path, "r") as fid:
-            model_config = json.load(fid)
-        model = cls(**model_config)
-
-        # Load model weights from checkpoint
-        state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
-        model.load_state_dict(state, strict=True, assign=True)
-        return model
+        DeepSpeedMixin.load(checkpoint_dir, config_path)
