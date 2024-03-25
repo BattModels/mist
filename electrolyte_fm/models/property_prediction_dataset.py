@@ -94,12 +94,3 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
         )
-    
-def get_dataset(data_root, filename, dataset_len, measure_name):
-    df = pd.read_csv(os.path.join(data_root, filename))
-    print("Length of dataset:", len(df))
-    if dataset_len:
-        df = df.head(dataset_len)
-        print("Warning entire dataset not used:", len(df))
-    dataset = PropertyPredictionDataset(df,  measure_name)
-    return dataset
