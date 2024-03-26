@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 import pytorch_lightning as pl
 from transformers import RobertaConfig, RobertaForMaskedLM
-from electrolyte_fm.models.model_utils import DeepSpeedMixin
+from electrolyte_fm.models import DeepSpeedMixin
 class RoBERTa(pl.LightningModule):
     """
     PyTorch Lightning module for RoBERTa model MLM pre-training.
@@ -45,51 +45,6 @@ class RoBERTa(pl.LightningModule):
             **kwargs,
         )
         return out
-
-    def on_train_epoch_start(self) -> None:
-        # Update the dataset's internal epoch counter
-        self.trainer.train_dataloader.dataset.set_epoch(self.trainer.current_epoch)
-        self.log(
-            "train/dataloader_epoch",
-            self.trainer.train_dataloader.dataset._epoch,
-            rank_zero_only=True,
-            sync_dist=True,
-        )
-        return super().on_train_epoch_start()
-
-    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = outputs.loss
-        self.log(
-            "train/loss",
-            loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        return loss
-
-    def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = outputs.loss
-        self.log(
-            "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
-        )
-        return loss
-
-    def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = outputs.loss
-        self.log(
-            "test/loss",
-            loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
