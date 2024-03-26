@@ -2,16 +2,19 @@ import json
 from pathlib import Path
 import torch
 import pytorch_lightning as pl
-from electrolyte_fm.models import ClassificationHead, DeepSpeedMixin, RoBERTa
-
-class LMClassification(pl.LightningModule):
+from electrolyte_fm.models import (
+    ClassificationHead, DeepSpeedMixin, LoggingMixin
+)
+class LMClassification(LoggingMixin):
     """
-    PyTorch Lightning module for RoBERTa model classification finetuning.
+    PyTorch Lightning module for finetuning LM encoder model on classification 
+    tasks.
     """
 
     def __init__(
         self,
         pretrained_checkpoint: str,
+        encoder_class: str = "roberta",
         freeze_encoder: bool = True,
         learning_rate: float = 1.6e-4,
         num_classes: int = 2, 
@@ -21,8 +24,12 @@ class LMClassification(pl.LightningModule):
         super().__init__()
         self.learning_rate = learning_rate
         self.dropout = dropout
+        self.encoder_class = encoder_class
         self.save_hyperparameters()
-        self.pretrained_model = DeepSpeedMixin.load_deepspeed(checkpoint_dir= pretrained_checkpoint)
+        self.pretrained_model = DeepSpeedMixin.load_deepspeed(
+            encoder_class = self.encoder_class,
+            checkpoint_dir= pretrained_checkpoint
+            )
         # Expose encoder
         self.encoder = self.pretrained_model.model.roberta
         self.task_network = ClassificationHead(embed_dim=self.encoder.config.hidden_size, 
@@ -40,62 +47,10 @@ class LMClassification(pl.LightningModule):
         )
         
         sequence_output = embedding[0]
-        print(f"embedding {sequence_output.shape}")
         out = self.task_network(sequence_output)
         return out
 
-    def on_train_epoch_start(self) -> None:
-        self.log(
-            "train/dataloader_epoch",
-            self.trainer.train_dataloader.dataset._epoch,
-            rank_zero_only=True,
-            sync_dist=True,
-        )
-        return super().on_train_epoch_start()
-
-    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        
-        loss = self.loss(outputs, batch['targets'])
-        self.log(
-            "train/loss",
-            loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        return loss
-
-    def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        print(outputs.shape)
-        print(batch['targets'].shape)
-        loss = self.loss(outputs, batch['targets'])
-        self.log(
-            "val/loss", 
-            loss, 
-            on_step=True,
-            on_epoch=True, 
-            prog_bar=True, 
-            sync_dist=True
-        )
-        return loss
-
-    def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = self.loss(outputs, batch['targets'])
-        self.log(
-            "test/loss",
-            loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        return outputs
-
-    def configure_optimizers(self): # TODO: add learnable param filtering for frozen embeddings
+    def configure_optimizers(self):
         learnable_params = [p for _, p in self.task_network.named_parameters()]
         if not self.freeze_encoder:
             learnable_params.extend([p for _, p in self.encoder.named_parameters()])
@@ -104,7 +59,3 @@ class LMClassification(pl.LightningModule):
             lr=self.learning_rate,
         )
         return optimizer
-
-    @classmethod
-    def load_deepspeed(cls, checkpoint_dir, config_path=None):
-        DeepSpeedMixin.load(checkpoint_dir, config_path)

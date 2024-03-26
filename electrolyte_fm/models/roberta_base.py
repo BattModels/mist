@@ -100,4 +100,4 @@ class RoBERTa(pl.LightningModule):
     
     @classmethod
     def load_deepspeed(cls, checkpoint_dir, config_path=None):
-        DeepSpeedMixin.load(checkpoint_dir, config_path)
+        DeepSpeedMixin.load("roberta", checkpoint_dir, config_path)
