@@ -3,9 +3,11 @@ from pathlib import Path
 import torch
 import pytorch_lightning as pl
 from electrolyte_fm.models import (
-    ClassificationHead, DeepSpeedMixin, LoggingMixin
+    ClassificationHead, # DeepSpeedMixin, LoggingMixin
 )
-class LMClassification(LoggingMixin):
+from .roberta_base import RoBERTa
+from .model_utils import DeepSpeedMixin, LoggingMixin
+class LMClassification(LoggingMixin, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on classification 
     tasks.
@@ -26,10 +28,8 @@ class LMClassification(LoggingMixin):
         self.dropout = dropout
         self.encoder_class = encoder_class
         self.save_hyperparameters()
-        self.pretrained_model = DeepSpeedMixin.load_deepspeed(
-            encoder_class = self.encoder_class,
-            checkpoint_dir= pretrained_checkpoint
-            )
+        self.pretrained_model = RoBERTa.load(checkpoint_dir= pretrained_checkpoint)
+
         # Expose encoder
         self.encoder = self.pretrained_model.model.roberta
         self.task_network = ClassificationHead(embed_dim=self.encoder.config.hidden_size, 
@@ -37,7 +37,7 @@ class LMClassification(LoggingMixin):
                                                dropout=self.dropout)
         self.loss = torch.nn.CrossEntropyLoss()
         self.freeze_encoder = freeze_encoder
-
+    
     def forward(self, batch, **kwargs):  # type: ignore[override]
         embedding = self.encoder(
             batch["input_ids"],
@@ -50,6 +50,45 @@ class LMClassification(LoggingMixin):
         out = self.task_network(sequence_output)
         return out
 
+    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
+        outputs = self(batch)
+        loss = outputs.loss
+        self.log(
+            "train/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        return loss
+
+    def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
+        outputs = self(batch)
+        loss = outputs.loss
+        self.log(
+            "val/loss", 
+            loss, 
+            on_step=True, 
+            on_epoch=True, 
+            prog_bar=True, 
+            sync_dist=True
+        )
+        return loss
+
+    def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
+        outputs = self(batch)
+        loss = outputs.loss
+        self.log(
+            "test/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        return loss
+    
     def configure_optimizers(self):
         learnable_params = [p for _, p in self.task_network.named_parameters()]
         if not self.freeze_encoder:

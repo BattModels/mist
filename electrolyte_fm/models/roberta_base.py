@@ -1,10 +1,8 @@
-import json
-from pathlib import Path
 import torch
-import pytorch_lightning as pl
 from transformers import RobertaConfig, RobertaForMaskedLM
-from electrolyte_fm.models import DeepSpeedMixin
-class RoBERTa(pl.LightningModule):
+
+from .model_utils import DeepSpeedMixin, LoggingMixin
+class RoBERTa(DeepSpeedMixin, LoggingMixin):
     """
     PyTorch Lightning module for RoBERTa model MLM pre-training.
     """
@@ -19,6 +17,7 @@ class RoBERTa(pl.LightningModule):
         hidden_size: int = 768,
         learning_rate: float = 1.6e-4,
     ) -> None:
+        
         super().__init__()
         self.learning_rate = learning_rate
         self.vocab_size = vocab_size
@@ -45,14 +44,49 @@ class RoBERTa(pl.LightningModule):
             **kwargs,
         )
         return out
+    
+    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
+        outputs = self(batch)
+        loss = outputs.loss
+        self.log(
+            "train/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        return loss
 
+    def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
+        outputs = self(batch)
+        loss = outputs.loss
+        self.log(
+            "val/loss", 
+            loss, 
+            on_step=True, 
+            on_epoch=True, 
+            prog_bar=True, 
+            sync_dist=True
+        )
+        return loss
+
+    def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
+        outputs = self(batch)
+        loss = outputs.loss
+        self.log(
+            "test/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        return loss
+    
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
             [p for _, p in self.model.named_parameters()],
             lr=self.learning_rate,
         )
         return optimizer
-    
-    @classmethod
-    def load_deepspeed(cls, checkpoint_dir, config_path=None):
-        DeepSpeedMixin.load("roberta", checkpoint_dir, config_path)
