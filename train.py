@@ -3,13 +3,9 @@ import torch
 
 from datetime import timedelta
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.cli import (
-    LightningCLI,
-    LightningArgumentParser,
-)
+from pytorch_lightning.cli import LightningCLI, LightningArgumentParser
 from pytorch_lightning import seed_everything
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from electrolyte_fm.utils.callbacks import ThroughputMonitor
 from jsonargparse import lazy_instance
 
@@ -21,13 +17,14 @@ from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 class MyLightningCLI(LightningCLI):
     def before_fit(self):
-        self.trainer.logger.log_hyperparams(
-            {
-                "n_gpus_per_node": self.trainer.num_devices,
-                "n_nodes": self.trainer.num_nodes,
-                "world_size": self.trainer.world_size,
-            }
-        )
+        if logger := self.trainer.logger:
+            logger.log_hyperparams(
+                {
+                    "n_gpus_per_node": self.trainer.num_devices,
+                    "n_nodes": self.trainer.num_nodes,
+                    "world_size": self.trainer.world_size,
+                }
+            )
 
     def add_arguments_to_parser(self, parser: LightningArgumentParser) -> None:
         # Set model vocab_size from the dataset's vocab size
@@ -40,7 +37,6 @@ def cli_main(args=None):
     monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
-        EarlyStopping(monitor=monitor),
         ModelCheckpoint(
             save_last="link",
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
@@ -58,6 +54,7 @@ def cli_main(args=None):
             train_time_interval=timedelta(minutes=30),
             auto_insert_metric_name=False,
         ),
+        LearningRateMonitor("step"),
     ]
 
     num_nodes = int(os.environ.get("NRANKS", 1))
@@ -83,12 +80,6 @@ def cli_main(args=None):
             "num_nodes": num_nodes or 1,
             "strategy": "deepspeed",
             "use_distributed_sampler": False,  # Handled by DataModule (Needed as Iterable)
-            "profiler": {
-                "class_path": "pytorch_lightning.profilers.PyTorchProfiler",
-                "init_args": {
-                    "emit_nvtx": True,
-                },
-            },
         },
         save_config_callback=SaveConfigWithCkpts,
         save_config_kwargs={"overwrite": True},

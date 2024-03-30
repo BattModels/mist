@@ -1,4 +1,5 @@
 from pathlib import Path
+from jsonargparse import Namespace
 import json
 
 from pytorch_lightning.cli import LightningArgumentParser
@@ -11,7 +12,7 @@ class SaveConfigWithCkpts(Callback):
     def __init__(
         self,
         parser: LightningArgumentParser,
-        config,
+        config: Namespace,
         overwrite: bool = True,
     ) -> None:
         self.parser = parser
@@ -42,3 +43,6 @@ class SaveConfigWithCkpts(Callback):
             # Save model hyperparameters
             with open(Path(config_path, "model_hparams.json"), "w") as fid:
                 json.dump(trainer.lightning_module.hparams, fid)
+
+            if logger := trainer.logger:
+                logger.log_hyperparams({"cli": self.config.as_dict()})

@@ -5,6 +5,8 @@ from __future__ import annotations
 import jinja2
 import typer
 import os
+import sys
+import fcntl
 import yaml
 import json
 from copy import deepcopy
@@ -46,6 +48,22 @@ def merge_config(a: dict, b: dict):
         else:
             result[k] = deepcopy(v)
     return result
+
+
+def fix_o_nonblock():
+    """Unset O_NONBLOCK on stdin so we can read user input from it.
+
+    MPICHv3.1 sets this during run then doesn't unset it afterwards, preventing
+    reads from stdin. Theres a fix for v3.2.1, but Polaris runs v3.1. Instead,
+    just unset this flag before running, we're trying to get user input, stdin
+    **should** block
+
+    Issue: https://github.com/pmodels/mpich/issues/1782
+    Fix: https://github.com/pmodels/mpich/pull/2755
+    """
+    fd = sys.stdin.fileno()
+    flag = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, flag & ~os.O_NONBLOCK)
 
 
 @cli.command()
@@ -121,6 +139,12 @@ def compose(
 
     if not confirm:
         print(script)
+
+    elif sys.stdin.closed:
+        raise RuntimeError(
+            "STDIN is closed, aborting as unable to ask for confirmation. Use `--no-confirm` to skip confirmation"
+        )
+
     else:
         console.print(
             Panel(
@@ -133,6 +157,7 @@ def compose(
             ),
         )
 
+        fix_o_nonblock()
         if Confirm.ask("Submit?", console=console):
             print(script)
 

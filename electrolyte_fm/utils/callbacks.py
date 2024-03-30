@@ -1,12 +1,12 @@
 """ Custom callbacks for benchmarking, adapted from GenSLM
     https://github.com/ramanathanlab/genslm/blob/71beb030df72010f5a4883a1f1a0b25bbafbe4a8/genslm/utils.py
 """
+
 import time
-from statistics import mean
-from typing import Any, List
+from typing import Any
 
 import pytorch_lightning as pl
-import torch
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import Callback
 
 
@@ -17,9 +17,59 @@ class ThroughputMonitor(Callback):
         """Logs throughput statistics starting at the 2nd epoch."""
         super().__init__()
         self.start_time = 0.0
-        self.batch_times: List[float] = []
-        self.epoch_throughputs: List[float] = []
-        self.epoch_sample_times: List[float] = []
+        self.macro_batch_size = dict()
+
+    def on_train_start(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    ) -> None:
+        self.record_macro_batch_size("train", trainer.datamodule.batch_size, trainer)
+        self.record_macro_batch_size("val", trainer.datamodule.val_batch_size, trainer)
+
+    def record_macro_batch_size(
+        self,
+        stage: str,
+        batch_size: int,
+        trainer: "pl.Trainer",
+    ):
+        self.macro_batch_size[stage] = batch_size * trainer.world_size
+        trainer.logger.log_hyperparams(
+            {f"stats/{stage}_macro_batch_size": self.macro_batch_size[stage]},
+        )
+
+        # Configure summary metrics
+        if isinstance(trainer.logger, WandbLogger) and trainer.is_global_zero:
+            logger = trainer.logger
+            logger.experiment.define_metric(f"stats/{stage}_batch_time", summary="none")
+            logger.experiment.define_metric(
+                f"stats/{stage}_batch_throughput", summary="mean"
+            )
+
+    def start_batch_timer(self):
+        self.start_time = time.perf_counter()
+
+    def record_batch_perf(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", stage: str
+    ):
+        batch_time = time.perf_counter() - self.start_time
+        macro_batch = self.macro_batch_size.get(stage, 1)
+        pl_module.log_dict(
+            {
+                f"stats/{stage}_batch_time": batch_time,
+                f"stats/{stage}_batch_throughput": macro_batch / batch_time,
+            },
+            rank_zero_only=True,
+            on_epoch=True,
+        )
+
+    def on_validation_batch_start(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        batch: Any,
+        batch_idx: int,
+        dataloader_idx: int = 0,
+    ) -> None:
+        self.start_batch_timer()
 
     def on_train_batch_start(
         self,
@@ -28,8 +78,7 @@ class ThroughputMonitor(Callback):
         batch: Any,
         batch_idx: int,
     ) -> None:
-        if pl_module.current_epoch > 0:
-            self.start_time = time.perf_counter()
+        self.start_batch_timer()
 
     def on_train_batch_end(
         self,
@@ -39,67 +88,15 @@ class ThroughputMonitor(Callback):
         batch: Any,
         batch_idx: int,
     ) -> None:
-        if pl_module.current_epoch > 0:
-            batch_time = time.perf_counter() - self.start_time
-            self.batch_times.append(batch_time)
-            pl_module.logger.log_metrics({"stats/batch_time": batch_time})
+        self.record_batch_perf(trainer, pl_module, "train")
 
-    def on_train_epoch_end(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+    def on_validation_batch_end(
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        outputs,
+        batch: Any,
+        batch_idx: int,
+        dataloader_idx: int = 0,
     ) -> None:
-        if pl_module.current_epoch > 0:
-            # compute average epoch throughput
-            avg_batch_time = mean(self.batch_times)
-            macro_batch_size = self.macro_batch_size(trainer)
-            avg_epoch_throughput = macro_batch_size / avg_batch_time
-            avg_secs_per_sample = avg_batch_time / macro_batch_size
-
-            self.epoch_throughputs.append(avg_epoch_throughput)
-            self.epoch_sample_times.append(avg_secs_per_sample)
-            self.batch_times = []  # Reset for next epoch
-            pl_module.logger.log_metrics(
-                {
-                    "stats/avg_epoch_throughput": avg_epoch_throughput,
-                    "stats/avg_secs_per_sample": avg_secs_per_sample,
-                }
-            )
-
-    @property
-    def average_throughput(self):
-        if len(self.epoch_throughputs) > 1:
-            return mean(self.epoch_throughputs)
-        elif self.epoch_throughputs:
-            return self.epoch_throughputs[0]
-        else:
-            return float("nan")
-
-    @property
-    def average_sample_time(self):
-        if len(self.epoch_sample_times) > 1:
-            return mean(self.epoch_sample_times)
-        elif self.epoch_sample_times:
-            return self.epoch_sample_times[0]
-        return float("nan")
-
-    @staticmethod
-    def macro_batch_size(trainer: "pl.Trainer"):
-        return trainer.datamodule.batch_size * trainer.world_size * trainer.num_devices
-
-    def on_train_end(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
-    ) -> None:
-        # Collect metrics on each rank and compute overall statistics on rank 0
-        metrics = self.average_throughput, self.average_sample_time
-        trainer._accelerator_connector.strategy.barrier()
-        metrics = pl_module.all_gather(metrics)
-        throughputs, sample_times = metrics[0], metrics[1]
-        if trainer.is_global_zero:
-            trainer.logger.log_metrics(
-                {
-                    "stats/throughput_avg": throughputs.mean().item(),
-                    "stats/throughput_stdev": throughputs.std().item(),
-                    "stats/sample_time_avg": sample_times.mean().item(),
-                    "stats/sample_time_stdev": sample_times.std().item(),
-                    "stats/macro_batch_size": self.macro_batch_size(trainer),
-                }
-            )
+        self.record_batch_perf(trainer, pl_module, "val")

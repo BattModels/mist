@@ -1,8 +1,6 @@
 [virtualenvs]
 create = true
 in-project = true
+
 [virtualenvs.options]
 system-site-packages = false
-
-[installer]
-modern-installation = false

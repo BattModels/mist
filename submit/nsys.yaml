@@ -4,3 +4,5 @@ nsys:
   sampling-period: 16000000
 train:
   trainer.fast_dev_run: 10
+  trainer.profiler: pytorch_lightning.profilers.PyTorchProfiler
+  trainer.profiler.emit_nvtx: true

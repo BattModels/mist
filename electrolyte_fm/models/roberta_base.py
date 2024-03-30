@@ -1,4 +1,9 @@
+import json
+from pathlib import Path
+from pytorch_lightning.loggers import WandbLogger
 import torch
+import pytorch_lightning as pl
+from pytorch_lightning.cli import OptimizerCallable, LRSchedulerCallable
 from transformers import RobertaConfig, RobertaForMaskedLM
 
 from .model_utils import DeepSpeedMixin, LoggingMixin
@@ -15,13 +20,15 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         num_attention_heads: int = 12,
         num_hidden_layers: int = 6,
         hidden_size: int = 768,
-        learning_rate: float = 1.6e-4,
+        optimizer: OptimizerCallable = torch.optim.AdamW,
+        lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
         
         super().__init__()
-        self.learning_rate = learning_rate
+        self.optimizer = optimizer
+        self.lr_schedule = lr_schedule
         self.vocab_size = vocab_size
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
 
         self.config = RobertaConfig(
             vocab_size=vocab_size,
@@ -44,7 +51,24 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
             **kwargs,
         )
         return out
-    
+
+    def setup(self, stage: str) -> None:
+        if isinstance(self.logger, WandbLogger):
+            for m in ["train/loss", "val/loss"]:
+                for s in ["_step", "_epoch"]:
+                    self.logger.experiment.define_metric(m + s, summary="min")
+
+    def on_train_epoch_start(self) -> None:
+        # Update the dataset's internal epoch counter
+        self.trainer.train_dataloader.dataset.set_epoch(self.trainer.current_epoch)
+        self.log(
+            "train/dataloader_epoch",
+            self.trainer.train_dataloader.dataset._epoch,
+            rank_zero_only=True,
+            sync_dist=True,
+        )
+        return super().on_train_epoch_start()
+
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
         loss = outputs.loss
@@ -85,8 +109,10 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         return loss
     
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            [p for _, p in self.model.named_parameters()],
-            lr=self.learning_rate,
-        )
+        optimizer = self.optimizer(self.parameters())
+        if schedule := self.lr_schedule:
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {"scheduler": schedule(optimizer), "interval": "step"},
+            }
         return optimizer
