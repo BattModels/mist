@@ -1,13 +1,13 @@
+import json
+from pathlib import Path
 import torch
+import pytorch_lightning as pl
 from electrolyte_fm.models import (
     ClassificationHead, # DeepSpeedMixin, LoggingMixin
 )
 from .roberta_base import RoBERTa
-from .model_utils import DeepSpeedMixin
-
-import pytorch_lightning as pl
-
-class LMClassification(pl.LightningModule, DeepSpeedMixin):
+from .model_utils import DeepSpeedMixin, LoggingMixin
+class LMClassification(LoggingMixin, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on classification 
     tasks.
@@ -17,7 +17,7 @@ class LMClassification(pl.LightningModule, DeepSpeedMixin):
         self,
         pretrained_checkpoint: str,
         encoder_class: str = "roberta",
-        freeze_encoder: bool = False,
+        freeze_encoder: bool = True,
         learning_rate: float = 1.6e-4,
         num_classes: int = 2, 
         dropout: float = 0.2
@@ -28,9 +28,10 @@ class LMClassification(pl.LightningModule, DeepSpeedMixin):
         self.dropout = dropout
         self.encoder_class = encoder_class
         self.save_hyperparameters()
+        self.pretrained_model = RoBERTa.load(checkpoint_dir= pretrained_checkpoint)
 
         # Expose encoder
-        self.encoder = RoBERTa.load(checkpoint_dir= pretrained_checkpoint).model.roberta
+        self.encoder = self.pretrained_model.model.roberta
         self.task_network = ClassificationHead(embed_dim=self.encoder.config.hidden_size, 
                                                num_classes=num_classes,
                                                dropout=self.dropout)
@@ -51,7 +52,7 @@ class LMClassification(pl.LightningModule, DeepSpeedMixin):
 
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        loss = self.loss(outputs, batch['targets'])
+        loss = outputs.loss
         self.log(
             "train/loss",
             loss,
@@ -64,7 +65,7 @@ class LMClassification(pl.LightningModule, DeepSpeedMixin):
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        loss = self.loss(outputs, batch['targets'])
+        loss = outputs.loss
         self.log(
             "val/loss", 
             loss, 
@@ -77,7 +78,7 @@ class LMClassification(pl.LightningModule, DeepSpeedMixin):
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        loss = self.loss(outputs, batch['targets'])
+        loss = outputs.loss
         self.log(
             "test/loss",
             loss,

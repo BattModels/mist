@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytorch_lightning as pl
+import torch
 from deepspeed.utils.zero_to_fp32 import \
     get_fp32_state_dict_from_zero_checkpoint
 
