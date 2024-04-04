@@ -1,16 +1,17 @@
 import torch
-from electrolyte_fm.models import (
-    ClassificationHead, # DeepSpeedMixin, LoggingMixin
-)
+from typing import List, Optional
+
+from .classification_head import ClassificationHead
 from .roberta_base import RoBERTa
 from .model_utils import DeepSpeedMixin
+from .molecule_net_tasks import MoleculeNetTasks
 
 import pytorch_lightning as pl
 
-class LMClassification(pl.LightningModule, DeepSpeedMixin):
+class LMMultiTaskClassification(pl.LightningModule, DeepSpeedMixin):
     """
-    PyTorch Lightning module for finetuning LM encoder model on classification 
-    tasks.
+    PyTorch Lightning module for finetuning LM encoder model on multiple
+    classification binary tasks.
     """
 
     def __init__(
@@ -19,21 +20,29 @@ class LMClassification(pl.LightningModule, DeepSpeedMixin):
         encoder_class: str = "roberta",
         freeze_encoder: bool = False,
         learning_rate: float = 1.6e-4,
-        num_classes: int = 2, 
+        measure_names: Optional[List[str, int]] = None, 
+        task_dataset: Optional[str] = None,
         dropout: float = 0.2
-
     ) -> None:
         super().__init__()
         self.learning_rate = learning_rate
         self.dropout = dropout
         self.encoder_class = encoder_class
+        self.measure_names = measure_names
+        if self.measure_names in None:
+            self.measure_names = MoleculeNetTasks[task_dataset]
         self.save_hyperparameters()
 
+        classification_head_hyperparams = {
+            "embed_dim": self.encoder.config.hidden_size,
+            "num_classes": 2,
+            "dropout": self.dropout
+        }
         # Expose encoder
         self.encoder = RoBERTa.load(checkpoint_dir= pretrained_checkpoint).model.roberta
-        self.task_network = ClassificationHead(embed_dim=self.encoder.config.hidden_size, 
-                                               num_classes=num_classes,
-                                               dropout=self.dropout)
+        self.task_networks = torch.nn.ModuleDict(
+            { m: ClassificationHead(**classification_head_hyperparams) for m in self.measure_names}
+        )
         self.loss = torch.nn.CrossEntropyLoss()
         self.freeze_encoder = freeze_encoder
     
