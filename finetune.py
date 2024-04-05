@@ -15,6 +15,7 @@ from jsonargparse import lazy_instance
 
 # classes passed via cli
 from electrolyte_fm.models.lm_classification import LMClassification
+from electrolyte_fm.models.lm_regression import LMRegression
 from electrolyte_fm.models.property_prediction_dataset import PropertyPredictionDataModule
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
@@ -67,7 +68,6 @@ def cli_main(args=None):
     torch.set_num_threads(8)
     torch.set_float32_matmul_precision("high")
     return MyLightningCLI(
-        model_class=LMClassification,
         datamodule_class=PropertyPredictionDataModule,
         trainer_defaults={
             "callbacks": callbacks,

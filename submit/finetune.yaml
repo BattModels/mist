@@ -1,7 +1,10 @@
-train:
+train::
+  data.batch_size: 128
+  data.tokenizer: ibm/MoLFormer-XL-both-10pct
   data.path: /home/anoushkab/molformer_ft
   data.measure_name: Class
   data.dataset_name: bace
+  model: LMClassification
   model.num_classes: 2
   data.num_workers: 1
   model.pretrained_checkpoint: /home/anoushkab/electrolyte_fm/mist/azua0s4s/checkpoints/epoch=0-step=10394.ckpt

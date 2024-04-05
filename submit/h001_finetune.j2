@@ -1,0 +1,8 @@
+#!/bin/bash
+{%- from "./cliopts.j2" import cliopts %}
+
+# MPI and OpenMP settings
+export NRANKS=1
+
+python3 finetune.py fit \
+      {{- cliopts( train ) | indent }}
