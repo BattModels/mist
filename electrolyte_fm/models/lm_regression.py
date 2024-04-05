@@ -1,9 +1,10 @@
+import pytorch_lightning as pl
 import torch
-from .roberta_base import RoBERTa
+
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
+from .roberta_base import RoBERTa
 
-import pytorch_lightning as pl
 
 class LMRegression(pl.LightningModule, DeepSpeedMixin):
     """

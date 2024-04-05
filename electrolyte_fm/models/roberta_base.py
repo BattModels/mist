@@ -1,12 +1,15 @@
 import json
 from pathlib import Path
-from pytorch_lightning.loggers import WandbLogger
-import torch
+
 import pytorch_lightning as pl
-from pytorch_lightning.cli import OptimizerCallable, LRSchedulerCallable
+import torch
+from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
+from pytorch_lightning.loggers import WandbLogger
 from transformers import RobertaConfig, RobertaForMaskedLM
 
 from .model_utils import DeepSpeedMixin, LoggingMixin
+
+
 class RoBERTa(DeepSpeedMixin, LoggingMixin):
     """
     PyTorch Lightning module for RoBERTa model MLM pre-training.

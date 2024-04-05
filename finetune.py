@@ -1,23 +1,22 @@
 import os
-import torch
-
 from datetime import timedelta
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.cli import (
-    LightningCLI,
-    LightningArgumentParser,
-)
+
+import torch
+from jsonargparse import lazy_instance
 from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from electrolyte_fm.utils.callbacks import ThroughputMonitor
-from jsonargparse import lazy_instance
+from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
+from pytorch_lightning.loggers import WandbLogger
 
 # classes passed via cli
 from electrolyte_fm.models.lm_classification import LMClassification
 from electrolyte_fm.models.lm_regression import LMRegression
-from electrolyte_fm.models.property_prediction_dataset import PropertyPredictionDataModule
+from electrolyte_fm.models.property_prediction_dataset import \
+    PropertyPredictionDataModule
+from electrolyte_fm.utils.callbacks import ThroughputMonitor
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
+
 
 class MyLightningCLI(LightningCLI):
     def before_fit(self):

@@ -1,15 +1,13 @@
 from pathlib import Path
 
 import pytorch_lightning as pl
-from smirk import SmirkTokenizerFast
 from datasets import IterableDataset, IterableDatasetDict, load_dataset
 from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
-from transformers import (
-    AutoTokenizer,
-    DataCollatorForLanguageModeling,
-    PreTrainedTokenizerBase,
-)
+from transformers import (AutoTokenizer, DataCollatorForLanguageModeling,
+                          PreTrainedTokenizerBase)
+
+from smirk import SmirkTokenizerFast
 
 
 class RobertaDataSet(pl.LightningDataModule):

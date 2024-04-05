@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class MoleculeNetTasks(Enum):
     tox21 = [
         'NR-AR', 'NR-AR-LBD', 'NR-AhR', 'NR-Aromatase', 'NR-ER', 'NR-ER-LBD',

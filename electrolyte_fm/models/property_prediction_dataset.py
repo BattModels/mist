@@ -1,16 +1,15 @@
 import os
 from pathlib import Path
-
-from datasets import load_dataset
-import torch
 from typing import Optional
-import pytorch_lightning as pl
+
 import pandas as pd
+import pytorch_lightning as pl
+import torch
+from datasets import load_dataset
 from torch.utils.data import DataLoader
-from transformers import (
-    AutoTokenizer,
-    PreTrainedTokenizerBase,
-)
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
+
+
 class PropertyPredictionDataModule(pl.LightningDataModule):
     def __init__(
             self, 
