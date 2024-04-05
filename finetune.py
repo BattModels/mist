@@ -12,7 +12,7 @@ from pytorch_lightning.loggers import WandbLogger
 # classes passed via cli
 from electrolyte_fm.models.lm_classification import LMClassification
 from electrolyte_fm.models.lm_regression import LMRegression
-from electrolyte_fm.models.property_prediction_dataset import \
+from electrolyte_fm.data_modules.property_prediction_dataset import \
     PropertyPredictionDataModule
 from electrolyte_fm.utils.callbacks import ThroughputMonitor
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
