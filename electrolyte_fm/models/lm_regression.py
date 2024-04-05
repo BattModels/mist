@@ -1,11 +1,11 @@
 import torch
 from .roberta_base import RoBERTa
-from .prediction_task_head import PredictionTaskHead
 from .model_utils import DeepSpeedMixin
+from .prediction_task_head import PredictionTaskHead
 
 import pytorch_lightning as pl
 
-class LMClassification(pl.LightningModule, DeepSpeedMixin):
+class LMRegression(pl.LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on classification 
     tasks.
@@ -17,7 +17,7 @@ class LMClassification(pl.LightningModule, DeepSpeedMixin):
         encoder_class: str = "roberta",
         freeze_encoder: bool = False,
         learning_rate: float = 1.6e-4,
-        num_classes: int = 2, 
+        num_targets: int = 1, 
         dropout: float = 0.2
 
     ) -> None:
@@ -29,10 +29,12 @@ class LMClassification(pl.LightningModule, DeepSpeedMixin):
 
         # Expose encoder
         self.encoder = RoBERTa.load(checkpoint_dir= pretrained_checkpoint).model.roberta
-        self.task_network = PredictionTaskHead(embed_dim=self.encoder.config.hidden_size, 
-                                               output_size=num_classes,
-                                               dropout=self.dropout)
-        self.loss = torch.nn.CrossEntropyLoss()
+        self.task_network = PredictionTaskHead(
+            embed_dim=self.encoder.config.hidden_size, 
+            output_size=num_targets,
+            dropout=self.dropout
+        )
+        self.loss = torch.nn.MSELoss()
         self.freeze_encoder = freeze_encoder
     
     def forward(self, batch, **kwargs):  # type: ignore[override]
