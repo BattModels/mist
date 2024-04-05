@@ -1,19 +1,18 @@
 import os
-import torch
-
 from datetime import timedelta
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.cli import LightningCLI, LightningArgumentParser
+
+import torch
+from jsonargparse import lazy_instance
 from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
-from electrolyte_fm.utils.callbacks import ThroughputMonitor
-from jsonargparse import lazy_instance
+from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
+from pytorch_lightning.loggers import WandbLogger
 
 # classes passed via cli
 from electrolyte_fm.models.roberta_base import RoBERTa
-from electrolyte_fm.models.roberta_dataset import RobertaDataSet
+from electrolyte_fm.data_modules.roberta_dataset import RobertaDataSet
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
-
+from electrolyte_fm.utils.callbacks import ThroughputMonitor
 
 class MyLightningCLI(LightningCLI):
     def before_fit(self):
