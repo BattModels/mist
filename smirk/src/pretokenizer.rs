@@ -2,11 +2,11 @@ use crate::{split_selfies, split_smiles};
 use macro_rules_attribute::macro_rules_attribute;
 use regex::Match;
 use serde::{Deserialize, Serialize};
-use tokenizers::impl_serde_type;
 use tokenizers::tokenizer::pattern::Pattern;
 use tokenizers::tokenizer::{
     Offsets, PreTokenizedString, PreTokenizer, Result, SplitDelimiterBehavior,
 };
+use tokenizers::{self, impl_serde_type};
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 struct AtomicComponent {

@@ -1,5 +1,4 @@
 import json
-from copy import deepcopy
 from importlib.resources import files
 
 import pytest
@@ -11,7 +10,7 @@ from smirk.smirk import SmirkTokenizer
 def tokenizer():
     VOCAB_FILE = files("smirk").joinpath("vocab_smiles.json")
     assert VOCAB_FILE.is_file()
-    return SmirkTokenizer(str(VOCAB_FILE), is_smiles=True)
+    return SmirkTokenizer.from_vocab(str(VOCAB_FILE), is_smiles=True)
 
 
 @pytest.fixture
@@ -61,8 +60,7 @@ def test_encode_batch(tokenizer, smile_strings):
 
 
 def test_serialize(tokenizer):
-    tok = deepcopy(tokenizer)
-    config = json.loads(tok.to_str())
+    config = json.loads(tokenizer.to_str())
     print(config)
     assert config["decoder"] == {"type": "Fuse"}
     assert config["model"]["type"] == "WordLevel"
@@ -70,13 +68,3 @@ def test_serialize(tokenizer):
         "type": "SmirkPreTokenizer",
         "atomic_component": {"is_smiles": True},
     }
-
-
-def test_special(tokenizer):
-    assert tokenizer.special_tokens["bos_token"] == "[BOS]"
-    assert tokenizer.special_tokens["eos_token"] == "[EOS]"
-    assert tokenizer.special_tokens["pad_token"] == "[PAD]"
-    assert tokenizer.special_tokens["sep_token"] == "[SEP]"
-    assert tokenizer.special_tokens["cls_token"] == "[CLS]"
-    assert tokenizer.special_tokens["mask_token"] == "[MASK]"
-    assert tokenizer.special_tokens["unk_token"] == "[UNK]"

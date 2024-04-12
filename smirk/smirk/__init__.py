@@ -1,10 +1,11 @@
 # Import Rust Binding
 from importlib.resources import files
 from pathlib import Path
-from typing import Union
+from typing import List, Union
 
 from transformers import BatchEncoding, PreTrainedTokenizerBase
 from transformers.data.data_collator import pad_without_fast_tokenizer_warning
+from transformers.tokenization_utils_base import AddedToken, SpecialTokensMixin
 from transformers.utils.generic import PaddingStrategy
 
 from . import smirk as rs_smirk
@@ -13,22 +14,38 @@ VOCAB_FILE = str(Path(__file__).parent.parent.joinpath("vocab_smiles.json"))
 # Expose chemically_consistent_split
 from .smirk import chemically_consistent_split
 
+SPECIAL_TOKENS = {
+    "bos_token": "[BOS]",
+    "eos_token": "[EOS]",
+    "unk_token": "[UNK]",
+    "sep_token": "[SEP]",
+    "pad_token": "[PAD]",
+    "cls_token": "[CLS]",
+    "mask_token": "[MASK]",
+}
 
-class SmirkTokenizerFast(PreTrainedTokenizerBase):
+
+class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
     def __init__(self, **kwargs):
         # Create SmirkTokenizer
         default_vocab_file = str(files("smirk").joinpath("vocab_smiles.json"))
         if tokenizer_file := kwargs.pop("tokenizer_file", None):
             tokenizer = rs_smirk.SmirkTokenizer.from_file(tokenizer_file)
         elif vocab_file := kwargs.pop("vocab_file", default_vocab_file):
-            # padding = kwargs.pop("padding", False)
-            tokenizer = rs_smirk.SmirkTokenizer(vocab_file)
+            is_smiles = kwargs.pop("is_smiles", True)
+            tokenizer = rs_smirk.SmirkTokenizer.from_vocab(
+                vocab_file, is_smiles=is_smiles
+            )
+        else:
+            tokenizer = rs_smirk.SmirkTokenizer()
+
         self._tokenizer = tokenizer
-
-        # Add special tokens
-        kwargs.update(tokenizer.special_tokens)
-
+        self.verbose = kwargs.pop("verbose", False)
+        SpecialTokensMixin.__init__(self, **kwargs)
         super().__init__(**kwargs)
+
+        if kwargs.pop("add_special_tokens", True):
+            self.add_special_tokens(SPECIAL_TOKENS)
 
     def __len__(self) -> int:
         """Size of the full vocab with added tokens"""
@@ -39,6 +56,23 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase):
 
     def is_fast(self):
         return True
+
+    def _add_tokens(
+        self,
+        new_tokens: Union[List[str], List[AddedToken]],
+        special_tokens: bool = False,
+    ) -> int:
+
+        # Normalize to AddedTokens
+        new_tokens = [
+            (
+                AddedToken(token, special=special_tokens)
+                if isinstance(token, str)
+                else token
+            )
+            for token in new_tokens
+        ]
+        return self._tokenizer.add_tokens(new_tokens)
 
     def batch_decode_plus(self, ids, **kwargs):
         skip_special_tokens = kwargs.pop("skip_special_tokens", True)

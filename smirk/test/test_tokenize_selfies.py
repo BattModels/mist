@@ -11,7 +11,7 @@ from smirk.smirk import SmirkTokenizer
 def tokenizer():
     VOCAB_FILE = files("smirk").joinpath("vocab_selfies.json")
     assert VOCAB_FILE.is_file()
-    return SmirkTokenizer(str(VOCAB_FILE), is_smiles=False)
+    return SmirkTokenizer.from_vocab(str(VOCAB_FILE), is_smiles=False)
 
 
 @pytest.fixture
