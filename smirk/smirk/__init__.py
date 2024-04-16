@@ -1,6 +1,5 @@
 # Import Rust Binding
 from importlib.resources import files
-from pathlib import Path
 from typing import List, Union
 
 from transformers import BatchEncoding, PreTrainedTokenizerBase
@@ -9,10 +8,6 @@ from transformers.tokenization_utils_base import AddedToken, SpecialTokensMixin
 from transformers.utils.generic import PaddingStrategy
 
 from . import smirk as rs_smirk
-
-VOCAB_FILE = str(Path(__file__).parent.parent.joinpath("vocab_smiles.json"))
-# Expose chemically_consistent_split
-from .smirk import chemically_consistent_split
 
 SPECIAL_TOKENS = {
     "bos_token": "[BOS]",
@@ -62,7 +57,6 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         new_tokens: Union[List[str], List[AddedToken]],
         special_tokens: bool = False,
     ) -> int:
-
         # Normalize to AddedTokens
         new_tokens = [
             (

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::pretokenizer::{PreTokenizerWrapper, SmirkPreTokenizer};
+use crate::pre_tokenizers::{PreTokenizerWrapper, SmirkPreTokenizer};
 use dict_derive::{FromPyObject, IntoPyObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyAny, PyDict, PyList, PyString};
@@ -16,7 +16,8 @@ use tokenizers::{
     TokenizerImpl,
 };
 
-type Tokenizer = TokenizerImpl<ModelWrapper, Strip, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>;
+type Tokenizer =
+    TokenizerImpl<ModelWrapper, Strip, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>;
 
 #[pyclass]
 pub struct SmirkTokenizer {

@@ -66,5 +66,5 @@ def test_serialize(tokenizer):
     assert config["model"]["type"] == "WordLevel"
     assert config["pre_tokenizer"] == {
         "type": "SmirkPreTokenizer",
-        "atomic_component": {"is_smiles": True},
+        "is_smiles": True,
     }
