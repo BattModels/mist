@@ -8,9 +8,22 @@ use tokenizers::tokenizer::{
 };
 use tokenizers::{self, impl_serde_type};
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-struct AtomicComponent {
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[macro_rules_attribute(impl_serde_type!)]
+pub struct SmirkPreTokenizer {
     is_smiles: bool,
+}
+
+impl SmirkPreTokenizer {
+    pub fn new(is_smiles: bool) -> Self {
+        Self { is_smiles }
+    }
+}
+
+impl PreTokenizer for SmirkPreTokenizer {
+    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
+        pretokenized.split(|_, s| s.split(self, SplitDelimiterBehavior::Isolated))
+    }
 }
 
 fn append_split(splits: &mut Vec<(Offsets, bool)>, prev: &mut usize, m: Match, offset: usize) {
@@ -22,7 +35,8 @@ fn append_split(splits: &mut Vec<(Offsets, bool)>, prev: &mut usize, m: Match, o
     splits.push(((start, end), true));
     *prev = end;
 }
-impl Pattern for AtomicComponent {
+
+impl Pattern for &SmirkPreTokenizer {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         let mut splits = Vec::with_capacity(inside.len());
         let mut prev = 0;
@@ -54,33 +68,17 @@ impl Pattern for AtomicComponent {
         Ok(splits)
     }
 }
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[macro_rules_attribute(impl_serde_type!)]
-pub struct SmirkPreTokenizer {
-    atomic_component: AtomicComponent,
-}
-
-impl SmirkPreTokenizer {
-    pub fn new(is_smiles: bool) -> Self {
-        let atomic_component = AtomicComponent { is_smiles };
-        Self { atomic_component }
-    }
-}
-
-impl PreTokenizer for SmirkPreTokenizer {
-    fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, s| s.split(self.atomic_component, SplitDelimiterBehavior::Isolated))
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::borrow::Borrow;
+
     use super::*;
     use tokenizers::tokenizer::{OffsetReferential, OffsetType};
 
     fn all_matches(smile: &str) -> bool {
-        let splits = AtomicComponent { is_smiles: true }
+        let tok = SmirkPreTokenizer { is_smiles: true };
+        let splits = tok
+            .borrow()
             .find_matches(smile)
             .unwrap();
         print!("split: {:?}\n", splits);
