@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::pretokenizer::SmirkPreTokenizer;
+use crate::pretokenizer::{PreTokenizerWrapper, SmirkPreTokenizer};
 use dict_derive::{FromPyObject, IntoPyObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyAny, PyDict, PyList, PyString};
@@ -9,14 +9,14 @@ use pyo3::{pyclass, pymethods, PyResult, Python};
 use tokenizers::decoders::fuse::Fuse;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::normalizers::Strip;
-use tokenizers::{self, ModelWrapper};
+use tokenizers::{self, DecoderWrapper, ModelWrapper};
 use tokenizers::{
     AddedToken, EncodeInput, OffsetReferential, OffsetType, PaddingDirection, PaddingParams,
     PaddingStrategy, PostProcessorWrapper, PreTokenizedString, PreTokenizer, TokenizerBuilder,
     TokenizerImpl,
 };
 
-type Tokenizer = TokenizerImpl<ModelWrapper, Strip, SmirkPreTokenizer, PostProcessorWrapper, Fuse>;
+type Tokenizer = TokenizerImpl<ModelWrapper, Strip, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>;
 
 #[pyclass]
 pub struct SmirkTokenizer {
@@ -49,9 +49,9 @@ impl SmirkTokenizer {
         let model = WordLevel::from_file(file, "[UNK]".to_string()).unwrap();
         let tokenizer = TokenizerBuilder::new()
             .with_model(model.into())
-            .with_pre_tokenizer(Some(SmirkPreTokenizer::new(is_smiles)))
+            .with_pre_tokenizer(Some(SmirkPreTokenizer::new(is_smiles).into()))
             .with_normalizer(Some(Strip::new(true, true)))
-            .with_decoder(Some(Fuse::new()))
+            .with_decoder(Some(Fuse::new().into()))
             .build()
             .unwrap();
         SmirkTokenizer::new(tokenizer)
