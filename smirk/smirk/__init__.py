@@ -1,10 +1,12 @@
 # Import Rust Binding
+import os
 from importlib.resources import files
-from typing import List, Union
+from typing import List, Optional, Union
 
 from transformers import BatchEncoding, PreTrainedTokenizerBase
 from transformers.data.data_collator import pad_without_fast_tokenizer_warning
 from transformers.tokenization_utils_base import AddedToken, SpecialTokensMixin
+from transformers.tokenization_utils_fast import TOKENIZER_FILE
 from transformers.utils.generic import PaddingStrategy
 
 from . import smirk as rs_smirk
@@ -24,7 +26,9 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
     def __init__(self, **kwargs):
         # Create SmirkTokenizer
         default_vocab_file = str(files("smirk").joinpath("vocab_smiles.json"))
-        if tokenizer_file := kwargs.pop("tokenizer_file", None):
+        if tokenizer := kwargs.pop("tokenizer", None):
+            tokenizer = tokenizer
+        elif tokenizer_file := kwargs.pop("tokenizer_file", None):
             tokenizer = rs_smirk.SmirkTokenizer.from_file(tokenizer_file)
         elif vocab_file := kwargs.pop("vocab_file", default_vocab_file):
             is_smiles = kwargs.pop("is_smiles", True)
@@ -42,6 +46,15 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         if kwargs.pop("add_special_tokens", True):
             self.add_special_tokens(SPECIAL_TOKENS)
 
+    @classmethod
+    def chem_piece(self, vocab_file: Optional[str] = None, is_smiles=True, **kwargs):
+        vocab_file = vocab_file or files("smirk").joinpath("vocab_smiles.json")
+        tokenizer = rs_smirk.SmirkTokenizer.smirk_piece(str(vocab_file), is_smiles)
+        return SmirkTokenizerFast(tokenizer=tokenizer, **kwargs)
+
+    def train(self, files: list[str]):
+        self._tokenizer.train_from_files(files)
+
     def __len__(self) -> int:
         """Size of the full vocab with added tokens"""
         return self._tokenizer.get_vocab_size(with_added_tokens=True)
@@ -51,6 +64,27 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
 
     def is_fast(self):
         return True
+
+    def to_str(self):
+        return self._tokenizer.to_str()
+
+    @property
+    def added_tokens_decoder(self) -> dict[int, AddedToken]:
+        return {
+            id: AddedToken(content)
+            for id, content in self._tokenizer.get_added_tokens_decoder().items()
+        }
+
+    @property
+    def added_tokens_encoder(self) -> dict[str, int]:
+        return {
+            content: id
+            for id, content in self._tokenizer.get_added_tokens_decoder().items()
+        }
+
+    @property
+    def vocab_size(self):
+        return self._tokenizer.get_vocab_size(False)
 
     def _add_tokens(
         self,
@@ -116,3 +150,22 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         if isinstance(tokens, str):
             return vocab[tokens]
         return [vocab[token] for token in tokens]
+
+    def _save_pretrained(
+        self,
+        save_directory,
+        file_names,
+        legacy_format: Optional[bool] = None,
+        filename_prefix: Optional[str] = None,
+    ):
+        assert legacy_format is None or not legacy_format
+        tokenizer_file = os.path.join(
+            save_directory,
+            (filename_prefix + "-" if filename_prefix else "") + TOKENIZER_FILE,
+        )
+        self._tokenizer.save(tokenizer_file)
+        return file_names + (tokenizer_file,)
+
+    def train(self, files: list[str]) -> "SmirkTokenizerFast":
+        """Train a SmirkPiece Model for files"""
+        return SmirkTokenizerFast(tokenizer=self._tokenizer.train(files))

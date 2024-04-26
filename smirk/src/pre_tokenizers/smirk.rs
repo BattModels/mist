@@ -18,6 +18,13 @@ impl SmirkPreTokenizer {
     pub fn new(is_smiles: bool) -> Self {
         Self { is_smiles }
     }
+    pub fn split(&self, text: &String) -> Vec<String> {
+        self.find_matches(text)
+            .unwrap()
+            .into_iter()
+            .map(|(offset, _)| text.get(offset.0..offset.1).unwrap().to_owned())
+            .collect()
+    }
 }
 
 impl PreTokenizer for SmirkPreTokenizer {
@@ -105,10 +112,10 @@ mod tests {
     #[test]
     fn check_smile_splits() {
         let pretok = SmirkPreTokenizer::new(true);
-        assert_eq!(
-            get_split_tokens(pretok, "OC[C@@H]"),
-            ["O", "C", "[", "C", "@@", "H", "]"]
-        );
+        let smile = "OC[C@@H]".to_string();
+        let split = ["O", "C", "[", "C", "@@", "H", "]"];
+        assert_eq!(get_split_tokens(pretok, smile.as_str()), split);
+        assert_eq!(pretok.split(&smile), split);
     }
 
     #[test]

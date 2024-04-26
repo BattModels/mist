@@ -1,8 +1,31 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from test_tokenize_smiles import smile_strings
 from transformers import BatchEncoding
 from transformers.data import DataCollatorForLanguageModeling
 
 import smirk
+
+
+def check_save(tokenizer):
+    """Check that the tokenzier can be saved"""
+    with TemporaryDirectory() as save_directory:
+        files = tokenizer.save_pretrained(save_directory)
+        assert len(files) == 3
+        for file in files:
+            file = Path(file)
+            assert file.is_file()
+            assert file.suffix == ".json"
+
+        loaded = tokenizer.from_pretrained(save_directory)
+    assert isinstance(loaded, tokenizer.__class__)
+    assert loaded.to_str() == tokenizer.to_str()
+
+
+def test_saving():
+    tokenizer = smirk.SmirkTokenizerFast()
+    check_save(tokenizer)
 
 
 def test_vocab_size():
@@ -14,7 +37,9 @@ def test_vocab_size():
 def test_special_tokens():
     tokenizer = smirk.SmirkTokenizerFast()
     assert tokenizer.pad_token == "[PAD]"
-    assert tokenizer.pad_token_id == tokenizer.get_vocab()["[PAD]"]
+    assert tokenizer.mask_token_id == 144
+    assert tokenizer.pad_token_id == 145
+    assert tokenizer.unk_token_id == 147
 
 
 def test_pad(smile_strings):
@@ -73,3 +98,15 @@ def test_collate(smile_strings):
     )
     assert len(decode_no_special[0]) < len(decode[0])
     assert tokenizer.pad_token not in decode_no_special[0]
+
+
+def test_train_gpe(smile_strings):
+    smiles = Path(__file__).parent.joinpath("smiles.txt")
+    tokenizer = smirk.SmirkTokenizerFast()
+    trained = tokenizer.train([str(smiles)])
+    check_save(trained)
+
+    # Check inversion
+    code = trained(smile_strings)
+    decode = trained.batch_decode(code["input_ids"])
+    assert decode == smile_strings

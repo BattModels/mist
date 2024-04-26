@@ -1,12 +1,15 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::pre_tokenizers::{PreTokenizerWrapper, SmirkPreTokenizer};
+use crate::gpe::GpeTrainer;
+use crate::pre_tokenizers::{PreTokenizerWrapper, SmirkPreTokenizer, SplitStructure};
 use dict_derive::{FromPyObject, IntoPyObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyAny, PyDict, PyList, PyString};
 use pyo3::{pyclass, pymethods, PyResult, Python};
 
+use regex::Regex;
 use tokenizers::decoders::fuse::Fuse;
+use tokenizers::models::bpe::BPE;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::normalizers::Strip;
 use tokenizers::{self, DecoderWrapper, ModelWrapper};
@@ -154,6 +157,14 @@ impl SmirkTokenizer {
         self.tokenizer.get_vocab(with_added_tokens)
     }
 
+    fn get_added_tokens_decoder(&self) -> HashMap<u32, String> {
+        let mut added: HashMap<u32, String> = HashMap::new();
+        for (id, token) in self.tokenizer.get_added_tokens_decoder().iter() {
+            added.insert(*id, token.content.to_owned());
+        }
+        added
+    }
+
     fn no_padding(&mut self) {
         self.tokenizer.with_padding(None);
     }
@@ -204,6 +215,58 @@ impl SmirkTokenizer {
             })
             .collect::<Vec<_>>();
         Ok(self.tokenizer.add_tokens(&tokens))
+    }
+
+    fn train(&self, py: Python, files: Vec<String>) -> PyResult<Self> {
+        // Construct Trainable Tokenizer
+        let norm = self
+            .tokenizer
+            .get_normalizer()
+            .map_or(None, |s| Some(s.to_owned()));
+        let decoder = self
+            .tokenizer
+            .get_decoder()
+            .map_or(None, |d| Some(d.to_owned()));
+
+        let mut tokenizer = match self.tokenizer.get_model() {
+            ModelWrapper::WordLevel(wl) => {
+                let model = BPE::builder()
+                    .unk_token(wl.unk_token.to_owned())
+                    .build()
+                    .unwrap();
+                let pt = PreTokenizerWrapper::SplitStructure(SplitStructure::default());
+                let tokenizer: Tokenizer = TokenizerBuilder::default()
+                    .with_model(ModelWrapper::BPE(model))
+                    .with_pre_tokenizer(Some(pt))
+                    .with_normalizer(norm)
+                    .with_decoder(decoder)
+                    .build()
+                    .unwrap();
+                Ok(tokenizer)
+            }
+            _ => Err(()),
+        }
+        .unwrap();
+
+        // Remove any special tokens (i.e. [PAD]) from the initial vocab
+        let is_special = Regex::new(r"\[[A-Z]+?\]").unwrap();
+        let alphabet: HashSet<String> = self
+            .tokenizer
+            .get_vocab(false)
+            .keys()
+            .filter_map(|g| {
+                if is_special.is_match(g) {
+                    None
+                } else {
+                    Some(g.to_owned())
+                }
+            })
+            .collect();
+
+        // Train tokenizer
+        let mut trainer = GpeTrainer::builder().alphabet(alphabet).build().unwrap();
+        let trained = py.allow_threads(|| tokenizer.train_from_files(&mut trainer, files).unwrap());
+        Ok(SmirkTokenizer::new(trained.to_owned()))
     }
 }
 
