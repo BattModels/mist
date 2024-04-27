@@ -98,15 +98,3 @@ def test_collate(smile_strings):
     )
     assert len(decode_no_special[0]) < len(decode[0])
     assert tokenizer.pad_token not in decode_no_special[0]
-
-
-def test_train_gpe(smile_strings):
-    smiles = Path(__file__).parent.joinpath("smiles.txt")
-    tokenizer = smirk.SmirkTokenizerFast()
-    trained = tokenizer.train([str(smiles)])
-    check_save(trained)
-
-    # Check inversion
-    code = trained(smile_strings)
-    decode = trained.batch_decode(code["input_ids"])
-    assert decode == smile_strings

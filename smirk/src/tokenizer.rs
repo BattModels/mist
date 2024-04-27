@@ -217,7 +217,8 @@ impl SmirkTokenizer {
         Ok(self.tokenizer.add_tokens(&tokens))
     }
 
-    fn train(&self, py: Python, files: Vec<String>) -> PyResult<Self> {
+    #[pyo3(signature = (files, **kwargs))]
+    fn train(&self, py: Python, files: Vec<String>, kwargs: Option<&PyDict>) -> PyResult<Self> {
         // Construct Trainable Tokenizer
         let norm = self
             .tokenizer
@@ -263,8 +264,29 @@ impl SmirkTokenizer {
             })
             .collect();
 
+        // Configure the trainer
+        let mut builder = GpeTrainer::builder();
+        builder.alphabet(alphabet);
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs.iter() {
+                let key: &str = key.extract().unwrap();
+                match key {
+                    "min_frequency" => {
+                        builder.min_frequency(value.extract().unwrap());
+                    }
+                    "vocab_size" => {
+                        builder.vocab_size(value.extract().unwrap());
+                    }
+                    "limit_alphabet" => {
+                        builder.limit_alphabet(value.extract().unwrap());
+                    }
+                    _ => println!("Unknown parameter {:?} ignoring", key),
+                }
+            }
+        }
+
         // Train tokenizer
-        let mut trainer = GpeTrainer::builder().alphabet(alphabet).build().unwrap();
+        let mut trainer = builder.build().unwrap();
         let trained = py.allow_threads(|| tokenizer.train_from_files(&mut trainer, files).unwrap());
         Ok(SmirkTokenizer::new(trained.to_owned()))
     }

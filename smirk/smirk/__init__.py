@@ -52,9 +52,6 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         tokenizer = rs_smirk.SmirkTokenizer.smirk_piece(str(vocab_file), is_smiles)
         return SmirkTokenizerFast(tokenizer=tokenizer, **kwargs)
 
-    def train(self, files: list[str]):
-        self._tokenizer.train_from_files(files)
-
     def __len__(self) -> int:
         """Size of the full vocab with added tokens"""
         return self._tokenizer.get_vocab_size(with_added_tokens=True)
@@ -65,7 +62,7 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
     def is_fast(self):
         return True
 
-    def to_str(self):
+    def to_str(self) -> str:
         return self._tokenizer.to_str()
 
     @property
@@ -83,7 +80,7 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         }
 
     @property
-    def vocab_size(self):
+    def vocab_size(self) -> int:
         return self._tokenizer.get_vocab_size(False)
 
     def _add_tokens(
@@ -136,7 +133,7 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
             token_ids, skip_special_tokens=skip_special_tokens
         )
 
-    def get_vocab(self):
+    def get_vocab(self) -> dict[str, int]:
         return self._tokenizer.get_vocab(with_added_tokens=True)
 
     @property
@@ -157,7 +154,7 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         file_names,
         legacy_format: Optional[bool] = None,
         filename_prefix: Optional[str] = None,
-    ):
+    ) -> tuple[str]:
         assert legacy_format is None or not legacy_format
         tokenizer_file = os.path.join(
             save_directory,
@@ -166,6 +163,11 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         self._tokenizer.save(tokenizer_file)
         return file_names + (tokenizer_file,)
 
-    def train(self, files: list[str]) -> "SmirkTokenizerFast":
-        """Train a SmirkPiece Model for files"""
-        return SmirkTokenizerFast(tokenizer=self._tokenizer.train(files))
+    def train(self, files: list[str], **kwargs) -> "SmirkTokenizerFast":
+        """Train a SmirkPiece Model from files
+
+        files: List of files containing the corpus to train the tokenizer on
+        min_frequency: Minimum count for a pair to be considered for a merge
+        vocab_size: the target size of the final vocabulary
+        """
+        return SmirkTokenizerFast(tokenizer=self._tokenizer.train(files, **kwargs))
