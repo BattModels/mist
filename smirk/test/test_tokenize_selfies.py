@@ -9,7 +9,7 @@ from importlib.resources import files
 def tokenizer():
     VOCAB_FILE = files("smirk").joinpath("vocab_selfies.json")
     assert VOCAB_FILE.is_file()
-    return SmirkTokenizer.from_vocab(str(VOCAB_FILE), is_smiles=False)
+    return SmirkTokenizer(str(VOCAB_FILE), is_smiles=False)
 
 
 @pytest.fixture
@@ -27,22 +27,7 @@ def check_encode(tok, x):
 
 def test_pretokenize(tokenizer):
     splits = tokenizer.pretokenize("[C][N][=C][=O]")
-    assert splits == [
-        "[",
-        "C",
-        "]",
-        "[",
-        "N",
-        "]",
-        "[",
-        "=",
-        "C",
-        "]",
-        "[",
-        "=",
-        "O",
-        "]",
-    ]
+    assert splits == ["[", "C", "]", "[", "N", "]", "[", "=", "C", "]", "[", "=", "O", "]"]
     assert len(splits) == 14
 
 

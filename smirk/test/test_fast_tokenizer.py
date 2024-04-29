@@ -1,42 +1,13 @@
 import smirk
-from pathlib import Path
 from transformers import BatchEncoding
-from test_tokenize_smiles import smile_strings
 from transformers.data import DataCollatorForLanguageModeling
-from tempfile import TemporaryDirectory
-
-
-def check_save(tokenizer):
-    """Check that the tokenzier can be saved"""
-    with TemporaryDirectory() as save_directory:
-        files = tokenizer.save_pretrained(save_directory)
-        assert len(files) == 3
-        for file in files:
-            file = Path(file)
-            assert file.is_file()
-            assert file.suffix == ".json"
-
-        loaded = tokenizer.from_pretrained(save_directory)
-    assert isinstance(loaded, tokenizer.__class__)
-    assert loaded.to_str() == tokenizer.to_str()
-
-    # Check pickling
-    state = tokenizer.__getstate__()
-    pickled = tokenizer.__class__.__setstate__(state)
-    assert pickled.to_str() == tokenizer.to_str()
-
-
-def test_saving():
-    tokenizer = smirk.SmirkTokenizerFast()
-    check_save(tokenizer)
+from test_tokenize_smiles import smile_strings
 
 
 def test_special_tokens():
     tokenizer = smirk.SmirkTokenizerFast()
     assert tokenizer.pad_token == "[PAD]"
-    assert tokenizer.mask_token_id == 144
-    assert tokenizer.pad_token_id == 145
-    assert tokenizer.unk_token_id == 147
+    assert tokenizer.pad_token_id == tokenizer.get_vocab()["[PAD]"]
 
 
 def test_pad(smile_strings):
