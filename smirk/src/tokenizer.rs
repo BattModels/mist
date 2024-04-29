@@ -261,9 +261,21 @@ impl SmirkTokenizer {
             })
             .collect();
 
+        // Ensure unk token is in the vocabulary
+        let unk_token = match tokenizer.get_model() {
+            ModelWrapper::BPE(bpe) => bpe.unk_token.to_owned(),
+            ModelWrapper::WordLevel(wl) => Some(wl.unk_token.to_owned()),
+            _ => None,
+        };
+        let mut special = Vec::new();
+        if let Some(unk_token) = unk_token {
+            special.push(AddedToken { content: unk_token, single_word: false, lstrip: false, rstrip: false, normalized: false,  special: true});
+        }
+
         // Configure the trainer
         let mut builder = GpeTrainer::builder();
         builder.alphabet(alphabet);
+        builder.special_tokens(special);
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs.iter() {
                 let key: &str = key.extract().unwrap();

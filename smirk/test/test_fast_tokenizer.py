@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -64,6 +65,15 @@ def test_encode(smile_strings):
         assert "special_tokens_mask" in code
         assert "attention_mask" in code
         assert tokenizer.decode(code["input_ids"], skip_special_tokens=True) == smile
+
+
+@pytest.mark.xfail(reason="smirk skips unknown tokens")
+def test_unk(smile_strings):
+    tokenizer = smirk.SmirkTokenizerFast()
+    code = tokenizer("🤷")["input_ids"]
+    assert code == [tokenizer.unk_token_id]
+    code = tokenizer(["🤷"])["input_ids"][0]
+    assert code == [tokenizer.unk_token_id]
 
 
 def test_collate(smile_strings):
