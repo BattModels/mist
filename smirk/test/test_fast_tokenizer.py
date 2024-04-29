@@ -22,6 +22,11 @@ def check_save(tokenizer):
     assert isinstance(loaded, tokenizer.__class__)
     assert loaded.to_str() == tokenizer.to_str()
 
+    # Check pickling
+    state = tokenizer.__getstate__()
+    pickled = tokenizer.__class__.__setstate__(state)
+    assert pickled.to_str() == tokenizer.to_str()
+
 
 def test_saving():
     tokenizer = smirk.SmirkTokenizerFast()

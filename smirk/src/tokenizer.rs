@@ -4,7 +4,7 @@ use crate::gpe::GpeTrainer;
 use crate::pre_tokenizers::{PreTokenizerWrapper, SmirkPreTokenizer, SplitStructure};
 use dict_derive::{FromPyObject, IntoPyObject};
 use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyAny, PyDict, PyList, PyString};
+use pyo3::types::{PyDict, PyList, PyString};
 use pyo3::{pyclass, pymethods, PyResult, Python};
 
 use regex::Regex;
@@ -39,15 +39,12 @@ impl SmirkTokenizer {
         Ok(serde_json::to_string(&self.tokenizer).unwrap())
     }
 
-    fn __setstate__(&mut self, state: &PyAny) -> PyResult<()> {
-        match state.extract::<String>() {
-            Ok(s) => {
-                self.tokenizer = serde_json::from_str(s.as_str()).unwrap();
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+    #[staticmethod]
+    fn __setstate__(state: &str) -> Self {
+        let tok = serde_json::from_str(state).unwrap();
+        SmirkTokenizer::new(tok)
     }
+
     #[staticmethod]
     fn from_vocab(file: &str, is_smiles: bool) -> Self {
         let model = WordLevel::from_file(file, "[UNK]".to_string()).unwrap();
