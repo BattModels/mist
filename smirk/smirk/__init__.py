@@ -65,9 +65,8 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
     def to_str(self) -> str:
         return self._tokenizer.to_str()
 
-    @classmethod
-    def __setstate__(cls, state):
-        return cls(tokenizer=rs_smirk.SmirkTokenizer.__setstate__(state))
+    def __setstate__(self, state):
+        self._tokenizer = rs_smirk.SmirkTokenizer.__setstate__(state)
 
     def __getstate__(self):
         return self._tokenizer.__getstate__()

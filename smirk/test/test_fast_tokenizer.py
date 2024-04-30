@@ -27,6 +27,8 @@ def check_save(tokenizer):
     state = tokenizer.__getstate__()
     pickled = tokenizer.__class__.__setstate__(state)
     assert pickled.to_str() == tokenizer.to_str()
+    smile = "[Fe+2].[Li+].[O-]P([O-])([O-])=O"
+    assert pickled(smile) == tokenizer(smile)
 
 
 def test_saving():
