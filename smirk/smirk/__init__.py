@@ -40,7 +40,6 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
 
         self._tokenizer = tokenizer
         self.verbose = kwargs.pop("verbose", False)
-        SpecialTokensMixin.__init__(self, **kwargs)
         super().__init__(**kwargs)
 
         if kwargs.pop("add_special_tokens", True):
@@ -64,12 +63,6 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
 
     def to_str(self) -> str:
         return self._tokenizer.to_str()
-
-    def __setstate__(self, state):
-        self._tokenizer = rs_smirk.SmirkTokenizer.__setstate__(state)
-
-    def __getstate__(self):
-        return self._tokenizer.__getstate__()
 
     @property
     def added_tokens_decoder(self) -> dict[int, AddedToken]:

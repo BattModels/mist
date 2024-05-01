@@ -22,7 +22,8 @@ use tokenizers::{
 type Tokenizer =
     TokenizerImpl<ModelWrapper, Strip, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>;
 
-#[pyclass]
+#[pyclass(dict, module = "smirk.smirk", name = "SmirkTokenizer")]
+#[derive(Clone)]
 pub struct SmirkTokenizer {
     tokenizer: Tokenizer,
 }
@@ -35,14 +36,24 @@ impl SmirkTokenizer {
 
 #[pymethods]
 impl SmirkTokenizer {
+    #[new]
+    fn __new__() -> Self {
+        let tokenizer: Tokenizer = TokenizerBuilder::new()
+            .with_model(WordLevel::default().into())
+            .with_pre_tokenizer(Some(SmirkPreTokenizer::new(true).into()))
+            .with_normalizer(Some(Strip::new(true, true)))
+            .with_decoder(Some(Fuse::default().into()))
+            .build()
+            .unwrap();
+        Self { tokenizer }
+    }
+
     fn __getstate__(&self) -> PyResult<String> {
         Ok(serde_json::to_string(&self.tokenizer).unwrap())
     }
 
-    #[staticmethod]
-    fn __setstate__(state: &str) -> Self {
-        let tok = serde_json::from_str(state).unwrap();
-        SmirkTokenizer::new(tok)
+    fn __setstate__(&mut self, state: &str) {
+        self.tokenizer = serde_json::from_str(state).unwrap();
     }
 
     #[staticmethod]

@@ -1,4 +1,5 @@
 import pytest
+import pickle
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -24,8 +25,9 @@ def check_save(tokenizer):
     assert loaded.to_str() == tokenizer.to_str()
 
     # Check pickling
-    state = tokenizer.__getstate__()
-    pickled = tokenizer.__class__.__setstate__(state)
+    state = pickle.dumps(tokenizer)
+    assert state is not None
+    pickled = pickle.loads(state)
     assert pickled.to_str() == tokenizer.to_str()
     smile = "[Fe+2].[Li+].[O-]P([O-])([O-])=O"
     assert pickled(smile) == tokenizer(smile)
