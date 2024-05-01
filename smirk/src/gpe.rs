@@ -5,7 +5,7 @@ use std::{
     mem,
     slice::Windows,
 };
-use tokenizers::models::bpe::BPE;
+use tokenizers::{models::wordpiece::WordPiece, models::bpe::BPE};
 use tokenizers::parallelism::*;
 use tokenizers::{AddedToken, ModelWrapper, Result, Trainer};
 
@@ -414,6 +414,16 @@ impl GpeTrainer {
                     .unwrap();
                 Ok(ModelWrapper::BPE(new_model))
             }
+            ModelWrapper::WordPiece(wp) => {
+                let new_model = WordPiece::builder()
+                    .unk_token(wp.unk_token.to_owned())
+                    .continuing_subword_prefix(wp.continuing_subword_prefix.to_owned())
+                    .max_input_chars_per_word(wp.max_input_chars_per_word)
+                    .vocab(word_to_id)
+                    .build()
+                    .unwrap();
+                Ok(ModelWrapper::from(new_model))
+            },
             ModelWrapper::WordLevel(_) => {
                 let new_model = BPE::builder()
                     .vocab_and_merges(word_to_id, merges)

@@ -5,11 +5,11 @@ use crate::pre_tokenizers::{PreTokenizerWrapper, SmirkPreTokenizer, SplitStructu
 use dict_derive::{FromPyObject, IntoPyObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyDict, PyList, PyString};
-use pyo3::{pyclass, pymethods, PyResult, Python};
+use pyo3::{pyclass, pymethods, PyResult, Python };
 
 use regex::Regex;
 use tokenizers::decoders::fuse::Fuse;
-use tokenizers::models::bpe::BPE;
+use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::normalizers::Strip;
 use tokenizers::{self, DecoderWrapper, ModelWrapper};
@@ -239,13 +239,13 @@ impl SmirkTokenizer {
 
         let mut tokenizer = match self.tokenizer.get_model() {
             ModelWrapper::WordLevel(wl) => {
-                let model = BPE::builder()
+                let model = WordPiece::builder()
                     .unk_token(wl.unk_token.to_owned())
                     .build()
                     .unwrap();
                 let pt = PreTokenizerWrapper::SplitStructure(SplitStructure::default());
                 let tokenizer: Tokenizer = TokenizerBuilder::default()
-                    .with_model(ModelWrapper::BPE(model))
+                    .with_model(ModelWrapper::from(model))
                     .with_pre_tokenizer(Some(pt))
                     .with_normalizer(norm)
                     .with_decoder(decoder)
@@ -276,6 +276,7 @@ impl SmirkTokenizer {
         let unk_token = match tokenizer.get_model() {
             ModelWrapper::BPE(bpe) => bpe.unk_token.to_owned(),
             ModelWrapper::WordLevel(wl) => Some(wl.unk_token.to_owned()),
+            ModelWrapper::WordPiece(wp) => Some(wp.unk_token.to_owned()),
             _ => None,
         };
         let mut special = Vec::new();

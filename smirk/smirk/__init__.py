@@ -45,12 +45,6 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         if kwargs.pop("add_special_tokens", True):
             self.add_special_tokens(SPECIAL_TOKENS)
 
-    @classmethod
-    def chem_piece(self, vocab_file: Optional[str] = None, is_smiles=True, **kwargs):
-        vocab_file = vocab_file or files("smirk").joinpath("vocab_smiles.json")
-        tokenizer = rs_smirk.SmirkTokenizer.smirk_piece(str(vocab_file), is_smiles)
-        return SmirkTokenizerFast(tokenizer=tokenizer, **kwargs)
-
     def __len__(self) -> int:
         """Size of the full vocab with added tokens"""
         return self._tokenizer.get_vocab_size(with_added_tokens=True)
