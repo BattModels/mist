@@ -1,4 +1,3 @@
-use crate::pre_tokenizers::SplitStructure;
 use derive_builder::Builder;
 use macro_rules_attribute::derive;
 use std::{
@@ -7,14 +6,10 @@ use std::{
     slice::Windows,
 };
 use tokenizers::models::bpe::BPE;
-use tokenizers::normalizers::Strip;
 use tokenizers::parallelism::*;
-use tokenizers::{
-    AddedToken, DecoderWrapper, ModelWrapper, PostProcessorWrapper, Result, TokenizerBuilder,
-    TokenizerImpl, Trainer,
-};
+use tokenizers::{AddedToken, ModelWrapper, Result, Trainer};
 
-use crate::pre_tokenizers::{PreTokenizerWrapper, SmirkPreTokenizer};
+use crate::pre_tokenizers::SmirkPreTokenizer;
 
 type Pair = (u32, u32);
 
@@ -93,17 +88,6 @@ impl Ord for Merge {
         // Resolve ties in favor of smaller pairs
         other.pair.cmp(&self.pair)
     }
-}
-
-#[allow(dead_code)]
-fn tokenizer(
-) -> TokenizerImpl<ModelWrapper, Strip, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper> {
-    let pt = PreTokenizerWrapper::SplitStructure(SplitStructure::default());
-    TokenizerBuilder::default()
-        .with_model(BPE::default().into())
-        .with_pre_tokenizer(Some(pt))
-        .build()
-        .unwrap()
 }
 
 // Glyph Pair Encoding - BPE but supports multi-character "glyphs"
@@ -494,8 +478,12 @@ impl Trainer for GpeTrainer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pre_tokenizers::{PreTokenizerWrapper, SplitStructure};
     use std::path::PathBuf;
-    use tokenizers::Model;
+    use tokenizers::{
+        normalizers::Strip, DecoderWrapper, Model, PostProcessorWrapper, TokenizerBuilder,
+        TokenizerImpl,
+    };
 
     #[test]
     fn test_init() {
@@ -565,7 +553,6 @@ mod tests {
         let mut model = ModelWrapper::BPE(BPE::default());
         let _ = trainer.do_train(&word_counts, &mut model);
 
-        // {"CSCCSCCS": 9, "S": 1, "C": 0, "CCSC": 8, "CCCCC": 5, "CC": 2, "CS": 3, "CCS": 6, "CSCCS": 7, "CCC": 4}
         let expected_vocab: HashMap<String, u32> = [
             ("C".into(), 0),
             ("S".into(), 1),
@@ -579,7 +566,18 @@ mod tests {
 
     #[test]
     fn test_tokenizer() {
-        let mut tokenizer = tokenizer();
+        let pt = PreTokenizerWrapper::SplitStructure(SplitStructure::default());
+        let mut tokenizer: TokenizerImpl<
+            ModelWrapper,
+            Strip,
+            PreTokenizerWrapper,
+            PostProcessorWrapper,
+            DecoderWrapper,
+        > = TokenizerBuilder::default()
+            .with_model(BPE::default().into())
+            .with_pre_tokenizer(Some(pt))
+            .build()
+            .unwrap();
         let mut trainer = GpeTrainer::default();
         let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test/smiles.txt");
         let files: Vec<String> = vec![test_file.to_string_lossy().into()];
