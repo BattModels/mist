@@ -18,4 +18,4 @@ spark-submit \
     --driver-memory $MEM_PER_TASK \
     --executor-memory $MEM_PER_TASK \
     --executor-cores $SLURM_CPUS_PER_TASK \
-    electrolye_fm/tokenize/tokenizer_stats.py --output "$1/stats-$SLURM_JOBID.json" $1 $2
+    electrolyte_fm/tokenize/tokenizer_stats.py --output "stats/$1/$SLURM_JOBID.json" $1 $2
