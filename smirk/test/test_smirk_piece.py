@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 
-from test_fast_tokenizer import check_save, check_tokenize
+from test_fast_tokenizer import check_save, check_tokenize, check_unknown
 from test_tokenize_smiles import smile_strings
 
 import smirk
@@ -40,13 +40,8 @@ def test_multi_file():
     assert trained.vocab_size == 200
 
 
-def test_unk(trained, smile_strings):
-    vocab = trained._tokenizer.get_vocab(with_added_tokens=False)
-    assert trained.unk_token in vocab.keys()
-    code = trained("🤷")["input_ids"]
-    assert code == [trained.unk_token_id]
-    code = trained(["🤷"])["input_ids"][0]
-    assert code == [trained.unk_token_id]
+def test_unk(trained):
+    check_unknown(trained)
 
 
 def test_tokenize(trained):

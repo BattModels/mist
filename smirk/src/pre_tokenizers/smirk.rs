@@ -61,16 +61,26 @@ impl Pattern for &SmirkPreTokenizer {
 
                 // Record contents between brackets
                 for i in match_inner.find_iter(m.as_str()) {
-                    append_split(&mut splits, &mut prev, i, m.start())
+                    append_split(&mut splits, &mut prev, i, m.start());
+                }
+
+                // Check for trailing unmatched characters within the brackets
+                if prev != (m.end() - 1) {
+                    splits.push(((prev, m.end() - 1), false));
+                    prev = m.end() - 1;
                 }
 
                 // Record closing [
                 assert!(m.as_str().ends_with("]"));
                 splits.push(((prev, m.end()), true));
-                prev += 1;
+                prev = m.end();
             } else {
                 append_split(&mut splits, &mut prev, m, 0);
             }
+        }
+        // Check for trailing unmatched characters
+        if prev != inside.len() {
+            splits.push(((prev, inside.len()), false));
         }
         Ok(splits)
     }
@@ -91,6 +101,10 @@ mod tests {
     #[test]
     fn check_matches() {
         let tok = SmirkPreTokenizer { is_smiles: true };
+        assert_eq!(
+            get_split_tokens(tok, "OC[C@@H]"),
+            ["O", "C", "[", "C", "@@", "H", "]"]
+        );
         assert!(all_matches(tok, "OC[C@@H]"));
         assert!(all_matches(tok, "OC[C@@H][OH]"));
         assert!(all_matches(tok, "OC[C@@H][(O)(H)]"));
@@ -116,6 +130,23 @@ mod tests {
         let split = ["O", "C", "[", "C", "@@", "H", "]"];
         assert_eq!(get_split_tokens(pretok, smile.as_str()), split);
         assert_eq!(pretok.split(&smile), split);
+    }
+
+    #[test]
+    fn check_unknown() {
+        let pretok = SmirkPreTokenizer::new(true);
+        assert_eq!(get_split_tokens(pretok, "C🤷"), ["C", "🤷",]);
+        assert_eq!(get_split_tokens(pretok, "🤷"), ["🤷",]);
+        assert_eq!(get_split_tokens(pretok, "🤷C"), ["🤷", "C"]);
+        assert_eq!(
+            get_split_tokens(pretok, "C[H🤷]"),
+            ["C", "[", "H", "🤷", "]"]
+        );
+        assert_eq!(get_split_tokens(pretok, "[🤷]"), ["[", "🤷", "]"]);
+        assert_eq!(
+            get_split_tokens(pretok, "[🤷H]C"),
+            ["[", "🤷", "H", "]", "C"]
+        );
     }
 
     #[test]
