@@ -1,6 +1,7 @@
 mod gpe;
 mod pre_tokenizers;
 mod tokenizer;
+mod wrapper;
 
 use pyo3::prelude::*;
 use tokenizer::SmirkTokenizer;

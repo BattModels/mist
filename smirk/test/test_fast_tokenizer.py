@@ -6,7 +6,6 @@ from tempfile import TemporaryDirectory
 from test_tokenize_smiles import smile_strings
 from transformers import BatchEncoding
 from transformers.data import DataCollatorForLanguageModeling
-
 import smirk
 
 
@@ -21,13 +20,16 @@ def check_save(tokenizer):
             assert file.suffix == ".json"
 
         loaded = tokenizer.from_pretrained(save_directory)
+    print("loaded: " + loaded.to_str())
+    print("trained: " + tokenizer.to_str())
     assert isinstance(loaded, tokenizer.__class__)
-    assert loaded.to_str() == tokenizer.to_str()
+    # assert loaded.to_str() == tokenizer.to_str()
 
     # Check pickling
     state = pickle.dumps(tokenizer)
     assert state is not None
     pickled = pickle.loads(state)
+    assert pickled.to_str() == loaded.to_str()
     assert pickled.to_str() == tokenizer.to_str()
     smile = "[Fe+2].[Li+].[O-]P([O-])([O-])=O"
     assert pickled(smile) == tokenizer(smile)

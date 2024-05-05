@@ -1,31 +1,34 @@
 use derive_builder::Builder;
 use macro_rules_attribute::derive;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BinaryHeap, HashMap, HashSet},
-    mem,
     slice::Windows,
 };
-use tokenizers::{models::wordpiece::WordPiece, models::bpe::BPE};
-use tokenizers::parallelism::*;
-use tokenizers::{AddedToken, ModelWrapper, Result, Trainer};
+use tokenizers::parallelism::{MaybeParallelBridge, MaybeParallelRefIterator};
+use tokenizers::{AddedToken, Result, Trainer};
 
-use crate::pre_tokenizers::SmirkPreTokenizer;
+use super::model::GPE;
 
 type Pair = (u32, u32);
 
 #[derive(PartialEq, Debug)]
-struct Word {
+pub struct Word {
     glyphs: Vec<u32>,
 }
 
 impl Word {
-    fn windows(&self, size: usize) -> Windows<'_, u32> {
+    pub fn windows(&self, size: usize) -> Windows<'_, u32> {
         self.glyphs.windows(size)
+    }
+
+    pub fn len(&self) -> usize {
+        self.glyphs.len()
     }
 
     // Replace a Pair of tokens with a new token (id)
     // Return a HashMap of pair => ±n for the impact of this merge on pair_counts
-    fn merge(&mut self, pair: Pair, id: u32) -> HashMap<Pair, i64> {
+    pub fn merge(&mut self, pair: Pair, id: u32) -> HashMap<Pair, i64> {
         let mut changes: HashMap<Pair, i64> = HashMap::new();
         let mut ldx = 0;
         let word = &mut self.glyphs;
@@ -85,13 +88,14 @@ impl Ord for Merge {
         if self.count != other.count {
             return self.count.cmp(&other.count);
         }
+
         // Resolve ties in favor of smaller pairs
         other.pair.cmp(&self.pair)
     }
 }
 
 // Glyph Pair Encoding - BPE but supports multi-character "glyphs"
-#[derive(Builder)]
+#[derive(Builder, Debug, Deserialize, Serialize, Clone)]
 #[builder(default)]
 pub struct GpeTrainer {
     // the min frequency of a pair to produce a merge operation
@@ -104,8 +108,6 @@ pub struct GpeTrainer {
     pub limit_alphabet: Option<usize>,
     // Special tokens to include in the vocab
     pub special_tokens: Vec<AddedToken>,
-    // How to split words into glyphs
-    pub pattern: SmirkPreTokenizer,
     // Internal Map for tracking word counts
     word_counts: HashMap<String, u64>,
 }
@@ -117,7 +119,6 @@ impl Default for GpeTrainer {
             vocab_size: 1024,
             alphabet: HashSet::new(),
             limit_alphabet: None,
-            pattern: SmirkPreTokenizer::new(true),
             special_tokens: Vec::new(),
             word_counts: HashMap::new(),
         }
@@ -142,16 +143,16 @@ impl GpeTrainer {
     /// Compute the initial alphabet and limit it if relevant
     fn compute_alphabet(
         &self,
+        model: &GPE,
         wc: &HashMap<String, u64>,
         w2id: &mut HashMap<String, u32>,
         id2w: &mut Vec<String>,
     ) {
         let mut alphabet: HashMap<String, usize> = HashMap::new();
-        let pattern = &self.pattern;
         for (word, count) in wc {
-            for token in pattern.split(word) {
+            for glyph in model.tokenize.split(word) {
                 alphabet
-                    .entry(token)
+                    .entry(glyph)
                     .and_modify(|c| *c += *count as usize)
                     .or_insert(*count as usize);
             }
@@ -188,7 +189,16 @@ impl GpeTrainer {
     }
     ///
     /// Add the provided special tokens to the initial vocabulary
-    fn add_special_tokens(&self, w2id: &mut HashMap<String, u32>, id2w: &mut Vec<String>) {
+    fn add_special_tokens(
+        &self,
+        model: &GPE,
+        w2id: &mut HashMap<String, u32>,
+        id2w: &mut Vec<String>,
+    ) {
+        if !w2id.contains_key(&model.unk_token) {
+            id2w.push(model.unk_token.to_owned());
+            w2id.insert(model.unk_token.to_owned(), (id2w.len() - 1) as u32);
+        }
         for token in &self.special_tokens {
             if !w2id.contains_key(&token.content) {
                 id2w.push(token.content.to_owned());
@@ -199,6 +209,7 @@ impl GpeTrainer {
 
     fn tokenize_words(
         &self,
+        model: &GPE,
         wc: &HashMap<String, u64>,
         w2id: &mut HashMap<String, u32>,
         id2w: &mut Vec<String>,
@@ -207,17 +218,22 @@ impl GpeTrainer {
         let mut counts: Vec<i64> = Vec::with_capacity(wc.len());
         for (word, count) in wc {
             counts.push(*count as i64);
-            let symbol_ids = self.pattern.split(word).into_iter().map(|symbol| {
-                w2id.get(&symbol)
-                    .map(|v| v.to_owned())
-                    .or_else(|| {
-                        let id = id2w.len() as u32;
-                        id2w.push(symbol.to_string());
-                        w2id.insert(symbol, id);
-                        Some(id)
-                    })
-                    .unwrap()
-            });
+            let symbol_ids = model
+                .tokenize
+                .split(word)
+                .into_iter()
+                .filter(|s| !(s == "[" || s == "]")) // Exclude Brackets from potential merges
+                .map(|symbol| {
+                    w2id.get(&symbol)
+                        .map(|v| v.to_owned())
+                        .or_else(|| {
+                            let id = id2w.len() as u32;
+                            id2w.push(symbol.to_string());
+                            w2id.insert(symbol, id);
+                            Some(id)
+                        })
+                        .unwrap()
+                });
             words.push(symbol_ids.collect());
         }
         (words, counts)
@@ -231,6 +247,7 @@ impl GpeTrainer {
         words
             .maybe_par_iter()
             .enumerate()
+            .filter(|(_, word)| word.len() >= 2) // Words shorter than 2 have no pair
             .map(|(i, word)| {
                 let mut pair_count = HashMap::new();
                 let mut where_to_update: HashMap<Pair, HashSet<usize>> = HashMap::new();
@@ -281,16 +298,20 @@ impl GpeTrainer {
     pub fn do_train(
         &self,
         word_counts: &HashMap<String, u64>,
-        model: &mut ModelWrapper,
+        model: &mut GPE,
     ) -> Result<Vec<AddedToken>> {
         // Setup initial alphabet
         let mut word_to_id: HashMap<String, u32> = HashMap::with_capacity(self.vocab_size);
         let mut id_to_word: Vec<String> = Vec::with_capacity(self.vocab_size);
-        self.compute_alphabet(&word_counts, &mut word_to_id, &mut id_to_word);
-        self.add_special_tokens(&mut word_to_id, &mut id_to_word);
+        self.add_special_tokens(&model, &mut word_to_id, &mut id_to_word);
+        self.compute_alphabet(&model, &word_counts, &mut word_to_id, &mut id_to_word);
+
+        // Save vocab without merges
+        let vocab = word_to_id.to_owned();
 
         // Tokenize words, returning word_counts => (Vec, Vec)
-        let (words, counts) = self.tokenize_words(&word_counts, &mut word_to_id, &mut id_to_word);
+        let (words, counts) =
+            self.tokenize_words(&model, &word_counts, &mut word_to_id, &mut id_to_word);
         let (mut pair_counts, mut where_to_update) = self.count_pairs(&words, &counts);
 
         // Build a priority queue of merges
@@ -380,71 +401,17 @@ impl GpeTrainer {
             });
         }
 
-        // Tabulate merges
-        let merges: Vec<(String, String)> = merges
-            .into_iter()
-            .map(|pair| {
-                let left_token = &id_to_word[pair.0 as usize];
-                let right_token = &id_to_word[pair.1 as usize];
-                (left_token.to_owned(), right_token.to_owned())
-            })
-            .collect();
-
-        // Construct New Model
-        let new_model = match model {
-            ModelWrapper::BPE(bpe) => {
-                let mut builder = BPE::builder();
-                if let Some(suffix) = bpe.end_of_word_suffix.as_ref() {
-                    builder = builder.end_of_word_suffix(suffix.to_owned());
-                }
-                if let Some(prefix) = bpe.continuing_subword_prefix.as_ref() {
-                    builder = builder.continuing_subword_prefix(prefix.to_owned());
-                }
-                if let Some(unk_token) = bpe.unk_token.as_ref() {
-                    builder = builder.unk_token(unk_token.to_owned());
-                }
-                if let Some(dropout) = bpe.dropout {
-                    builder = builder.dropout(dropout);
-                }
-                let new_model = builder
-                    .fuse_unk(bpe.fuse_unk)
-                    .byte_fallback(bpe.byte_fallback)
-                    .vocab_and_merges(word_to_id, merges)
-                    .build()
-                    .unwrap();
-                Ok(ModelWrapper::BPE(new_model))
-            }
-            ModelWrapper::WordPiece(wp) => {
-                let new_model = WordPiece::builder()
-                    .unk_token(wp.unk_token.to_owned())
-                    .continuing_subword_prefix(wp.continuing_subword_prefix.to_owned())
-                    .max_input_chars_per_word(wp.max_input_chars_per_word)
-                    .vocab(word_to_id)
-                    .build()
-                    .unwrap();
-                Ok(ModelWrapper::from(new_model))
-            },
-            ModelWrapper::WordLevel(_) => {
-                let new_model = BPE::builder()
-                    .vocab_and_merges(word_to_id, merges)
-                    .build()
-                    .unwrap();
-                Ok(ModelWrapper::BPE(new_model))
-            }
-            _ => Err(()),
-        }
-        .unwrap();
-        let _ = mem::replace(model, new_model);
-
+        // Update Model
+        model.with_vocab_and_merges(vocab, merges);
         Ok(self.special_tokens.clone())
     }
 }
 
 impl Trainer for GpeTrainer {
-    type Model = ModelWrapper;
+    type Model = GPE;
 
     // Don't use this, use `GPETrainer.train_from_files` directly
-    fn train(&self, model: &mut ModelWrapper) -> Result<Vec<AddedToken>> {
+    fn train(&self, model: &mut GPE) -> Result<Vec<AddedToken>> {
         self.do_train(&self.word_counts, model)
     }
 
@@ -488,20 +455,68 @@ impl Trainer for GpeTrainer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pre_tokenizers::{PreTokenizerWrapper, SplitStructure};
+    use crate::wrapper::PreTokenizerWrapper;
+    use crate::{gpe::GPE, pre_tokenizers::split_structure};
     use std::path::PathBuf;
+    use tokenizers::Model;
     use tokenizers::{
-        normalizers::Strip, DecoderWrapper, Model, PostProcessorWrapper, TokenizerBuilder,
-        TokenizerImpl,
+        normalizers::Strip, DecoderWrapper, PostProcessorWrapper, TokenizerBuilder, TokenizerImpl,
     };
 
     #[test]
-    fn test_init() {
-        let trainer = GpeTrainer::builder()
-            .alphabet(["C".to_string(), "Cl".to_string(), "B".to_string()].into())
-            .build()
-            .unwrap();
-        assert!(trainer.alphabet.contains("C"));
+    fn test_trainer() {
+        let word_counts: HashMap<String, u64> = [
+            ("C", 4),
+            ("CSCCSCCS", 2),
+            ("CCSC", 1),
+            ("[C@H]", 2),
+            ("(", 3),
+            (")", 4),
+            ("CS", 3),
+        ]
+        .into_iter()
+        .map(|(s, c)| (s.into(), c))
+        .collect();
+        let trainer = GpeTrainer::default();
+        let mut model = GPE::default();
+        assert_eq!(model.unk_token, "[UNK]");
+        let _ = trainer.do_train(&word_counts, &mut model);
+
+        let expected_vocab: HashMap<String, u32> = [
+            ("[UNK]", 0),
+            ("(", 1),
+            (")", 2),
+            ("@", 3),
+            ("C", 4),
+            ("H", 5),
+            ("S", 6),
+            ("[", 7),
+            ("]", 8),
+        ]
+        .into_iter()
+        .map(|(s, c)| (s.into(), c))
+        .collect();
+        let expected_merges: Vec<Pair> = [
+            (4, 6),
+            (4, 9),
+            (3, 5),
+            (4, 11),
+            (9, 10),
+            (13, 10),
+            (10, 4),
+        ]
+        .into();
+        assert_eq!(model.vocab, expected_vocab);
+        assert_eq!(model.merges, expected_merges);
+        assert_eq!(model.get_vocab_size(), 16);
+        assert_eq!(model.id_to_token(9).unwrap(), "CS");
+        assert_eq!(model.id_to_token(10).unwrap(), "CCS");
+        assert_eq!(model.id_to_token(11).unwrap(), "@H");
+        assert_eq!(model.id_to_token(12).unwrap(), "C@H");
+        assert_eq!(model.id_to_token(13).unwrap(), "CSCCS");
+        assert_eq!(model.id_to_token(14).unwrap(), "CSCCSCCS");
+        assert_eq!(model.id_to_token(15).unwrap(), "CCSC");
+
     }
 
     #[test]
@@ -550,47 +565,24 @@ mod tests {
     }
 
     #[test]
-    fn test_train() {
-        let word_counts: HashMap<String, u64> = [
-            ("CSCCSCCS".into(), 1),
-            ("CCCCC".into(), 4),
-            ("CCSC".into(), 1),
-            ("CC".into(), 1),
-            ("CS".into(), 3),
-        ]
-        .into();
-        let trainer = GpeTrainer::builder().vocab_size(5).build().unwrap();
-        let mut model = ModelWrapper::BPE(BPE::default());
-        let _ = trainer.do_train(&word_counts, &mut model);
-
-        let expected_vocab: HashMap<String, u32> = [
-            ("C".into(), 0),
-            ("S".into(), 1),
-            ("CC".into(), 2),
-            ("CS".into(), 3),
-            ("CCC".into(), 4),
-        ]
-        .into();
-        assert_eq!(model.get_vocab(), expected_vocab);
-    }
-
-    #[test]
     fn test_tokenizer() {
-        let pt = PreTokenizerWrapper::SplitStructure(SplitStructure::default());
         let mut tokenizer: TokenizerImpl<
-            ModelWrapper,
+            GPE,
             Strip,
             PreTokenizerWrapper,
             PostProcessorWrapper,
             DecoderWrapper,
         > = TokenizerBuilder::default()
-            .with_model(BPE::default().into())
-            .with_pre_tokenizer(Some(pt))
+            .with_model(GPE::default())
+            .with_pre_tokenizer(Some(split_structure().into()))
             .build()
             .unwrap();
         let mut trainer = GpeTrainer::default();
         let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test/smiles.txt");
         let files: Vec<String> = vec![test_file.to_string_lossy().into()];
-        let _ = tokenizer.train_from_files(&mut trainer, files);
+        let _ = tokenizer.train_from_files(&mut trainer, files).unwrap();
+        assert!(tokenizer
+            .get_vocab(true)
+            .contains_key(&tokenizer.get_model().unk_token))
     }
 }

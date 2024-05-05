@@ -27,9 +27,15 @@ impl SmirkPreTokenizer {
     }
 }
 
+impl Default for SmirkPreTokenizer {
+    fn default() -> Self {
+        SmirkPreTokenizer::new(true)
+    }
+}
+
 impl PreTokenizer for SmirkPreTokenizer {
     fn pre_tokenize(&self, pretokenized: &mut PreTokenizedString) -> Result<()> {
-        pretokenized.split(|_, s| s.split(self, SplitDelimiterBehavior::Isolated))
+        pretokenized.split(|_, s| s.split(*self, SplitDelimiterBehavior::Isolated))
     }
 }
 
@@ -43,7 +49,7 @@ fn append_split(splits: &mut Vec<(Offsets, bool)>, prev: &mut usize, m: Match, o
     *prev = end;
 }
 
-impl Pattern for &SmirkPreTokenizer {
+impl Pattern for SmirkPreTokenizer {
     fn find_matches(&self, inside: &str) -> Result<Vec<(Offsets, bool)>> {
         let mut splits = Vec::with_capacity(inside.len());
         let mut prev = 0;

@@ -64,6 +64,7 @@ def tokenizer_stats(
     results["exact_count"] = data.count()
 
     # Save results
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
     if output == "-":
         print(json.dumps(results))
     else:

@@ -1,18 +1,18 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::gpe::GpeTrainer;
-use crate::pre_tokenizers::{PreTokenizerWrapper, SmirkPreTokenizer, SplitStructure};
+use crate::gpe::{GpeTrainer, GPE};
+use crate::pre_tokenizers::{split_structure, SmirkPreTokenizer};
+use crate::wrapper::{ModelWrapper, PreTokenizerWrapper, TrainerWrapper};
 use dict_derive::{FromPyObject, IntoPyObject};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyDict, PyList, PyString};
-use pyo3::{pyclass, pymethods, PyResult, Python };
+use pyo3::{pyclass, pymethods, PyResult, Python};
 
 use regex::Regex;
 use tokenizers::decoders::fuse::Fuse;
-use tokenizers::models::wordpiece::WordPiece;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::normalizers::Strip;
-use tokenizers::{self, DecoderWrapper, ModelWrapper};
+use tokenizers::{self, DecoderWrapper};
 use tokenizers::{
     AddedToken, EncodeInput, OffsetReferential, OffsetType, PaddingDirection, PaddingParams,
     PaddingStrategy, PostProcessorWrapper, PreTokenizedString, PreTokenizer, TokenizerBuilder,
@@ -173,6 +173,15 @@ impl SmirkTokenizer {
         added
     }
 
+    #[pyo3(signature = (input, with_added_tokens=true))]
+    fn tokenize(&self, input: String, with_added_tokens: bool) -> Vec<String> {
+        self.tokenizer
+            .encode(input, with_added_tokens)
+            .unwrap()
+            .get_tokens()
+            .to_vec()
+    }
+
     fn no_padding(&mut self) {
         self.tokenizer.with_padding(None);
     }
@@ -228,34 +237,30 @@ impl SmirkTokenizer {
     #[pyo3(signature = (files, **kwargs))]
     fn train(&self, py: Python, files: Vec<String>, kwargs: Option<&PyDict>) -> PyResult<Self> {
         // Construct Trainable Tokenizer
-        let norm = self
-            .tokenizer
-            .get_normalizer()
-            .map_or(None, |s| Some(s.to_owned()));
-        let decoder = self
-            .tokenizer
-            .get_decoder()
-            .map_or(None, |d| Some(d.to_owned()));
-
-        let mut tokenizer = match self.tokenizer.get_model() {
-            ModelWrapper::WordLevel(wl) => {
-                let model = WordPiece::builder()
-                    .unk_token(wl.unk_token.to_owned())
-                    .build()
-                    .unwrap();
-                let pt = PreTokenizerWrapper::SplitStructure(SplitStructure::default());
-                let tokenizer: Tokenizer = TokenizerBuilder::default()
-                    .with_model(ModelWrapper::from(model))
-                    .with_pre_tokenizer(Some(pt))
-                    .with_normalizer(norm)
-                    .with_decoder(decoder)
-                    .build()
-                    .unwrap();
-                Ok(tokenizer)
-            }
-            _ => Err(()),
+        let model: ModelWrapper = match self.tokenizer.get_model() {
+            ModelWrapper::ModelWrapper(mw) => match mw {
+                tokenizers::ModelWrapper::WordLevel(wl) => Ok(GPE::from(wl.to_owned())),
+                _ => Err(()),
+            },
+            ModelWrapper::GPE(gpe) => Ok(gpe.to_owned()),
         }
-        .unwrap();
+        .unwrap()
+        .into();
+
+        // Build the new tokenizer
+        let mut tokenizer: TokenizerImpl<
+            ModelWrapper,
+            Strip,
+            PreTokenizerWrapper,
+            PostProcessorWrapper,
+            DecoderWrapper,
+        > = TokenizerBuilder::default()
+            .with_normalizer(self.tokenizer.get_normalizer().cloned())
+            .with_pre_tokenizer(Some(split_structure().into()))
+            .with_model(model)
+            .with_decoder(self.tokenizer.get_decoder().cloned())
+            .build()
+            .unwrap();
 
         // Remove any special tokens (i.e. [PAD]) from the initial vocab
         let is_special = Regex::new(r"\[[A-Z]+?\]").unwrap();
@@ -267,27 +272,14 @@ impl SmirkTokenizer {
                 if is_special.is_match(g) {
                     None
                 } else {
-                    Some(g.to_owned())
+                    Some(g.into())
                 }
             })
             .collect();
 
-        // Ensure unk token is in the vocabulary
-        let unk_token = match tokenizer.get_model() {
-            ModelWrapper::BPE(bpe) => bpe.unk_token.to_owned(),
-            ModelWrapper::WordLevel(wl) => Some(wl.unk_token.to_owned()),
-            ModelWrapper::WordPiece(wp) => Some(wp.unk_token.to_owned()),
-            _ => None,
-        };
-        let mut special = Vec::new();
-        if let Some(unk_token) = unk_token {
-            special.push(AddedToken { content: unk_token, single_word: false, lstrip: false, rstrip: false, normalized: false,  special: true});
-        }
-
         // Configure the trainer
         let mut builder = GpeTrainer::builder();
         builder.alphabet(alphabet);
-        builder.special_tokens(special);
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs.iter() {
                 let key: &str = key.extract().unwrap();
@@ -307,9 +299,9 @@ impl SmirkTokenizer {
         }
 
         // Train tokenizer
-        let mut trainer = builder.build().unwrap();
-        let trained = py.allow_threads(|| tokenizer.train_from_files(&mut trainer, files).unwrap());
-        Ok(SmirkTokenizer::new(trained.to_owned()))
+        let mut trainer: TrainerWrapper = builder.build().unwrap().into();
+        let _ = py.allow_threads(|| tokenizer.train_from_files(&mut trainer, files).unwrap());
+        Ok(SmirkTokenizer::new(tokenizer))
     }
 }
 

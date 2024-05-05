@@ -15,10 +15,11 @@ def trained():
     return tokenizer.train([str(SMILE_TEST_FILE)])
 
 
-def test_train(trained, smile_strings):
+def test_save(trained):
     check_save(trained)
 
-    # Check inversion
+
+def test_train_smirk_piece(trained, smile_strings):
     code = trained(smile_strings)
     decode = trained.batch_decode(code["input_ids"])
     assert decode == smile_strings
@@ -40,7 +41,7 @@ def test_multi_file():
     assert trained.vocab_size == 200
 
 
-def test_unk(trained):
+def test_tokenizing_unknown(trained):
     check_unknown(trained)
 
 
