@@ -4,11 +4,8 @@ from smirk import SmirkTokenizerFast
 from pathlib import Path
 import typer
 import numpy as np
-import pandas as pd
-from pyspark import SparkContext
-import pyspark.pandas as ps
-from pyspark.sql import DataFrame, SparkSession
-from collections import defaultdict
+from pyspark.sql import SparkSession
+from transformers import PreTrainedTokenizerBase, AutoTokenizer
 
 cli = typer.Typer()
 
@@ -26,24 +23,45 @@ def get_data(spark: SparkSession, directory: Path, avg_size=10e6):
     return data
 
 
+def is_oov(input: str, tokenizer: PreTrainedTokenizerBase):
+    code = tokenizer.encode_plus(input)["input_ids"]
+    if tokenizer.unk_token_id in code:
+        print("found unk")
+        return True
+    # Check if the tokenizer *really* encoded the full string
+    if tokenizer.decode(code) != input:
+        print("decode failed")
+        return True
+    return False
+
+
+def load_tokenizer(name: str) -> PreTrainedTokenizerBase:
+    if name.startswith("smirk"):
+        if name == "smirk":
+            return SmirkTokenizerFast()
+        else:
+            return SmirkTokenizerFast.from_pretrained(name)
+    return AutoTokenizer.from_pretrained(
+        name, cache_dir=".cache", trust_remote_code=True
+    )
+
+
 @cli.command()
 def tokenizer_stats(
     tokenizer_path: str, path: Path, n_partitions=128, output: str = "-"
 ):
-    tokenizer = SmirkTokenizerFast.from_pretrained(tokenizer_path)
-    # tokenizer = SmirkTokenizerFast()
-    sc = SparkContext()
-    sc.setCheckpointDir(Path("/tmp").resolve().as_posix())
-    spark = SparkSession(sc)
+    spark = SparkSession.builder.getOrCreate()
+    tokenizer = load_tokenizer(tokenizer_path)
 
     # Get dataset of smiles
-    data = get_data(spark, Path(path))
+    path = Path(path).resolve()
+    data = get_data(spark, path)
 
     # Init results
     results = dict()
 
     # Generate histogram of molecule lengths after being tokenized
-    n_tokens = data.rdd.map(lambda s: len(tokenizer.encode_plus(s[0])["input_ids"]))
+    n_tokens = data.rdd.map(lambda s: len(tokenizer(s[0])["input_ids"]))
     parity, count = n_tokens.histogram(
         list(range(0, 2 + n_tokens.max()))
     )  # +2 to ensure that the last bucket contains the max value
@@ -55,10 +73,7 @@ def tokenizer_stats(
     ).countByValue()
 
     # Count the rate of OOV errors, returning examples iff found
-    unk_token_id = tokenizer.unk_token_id
-    oov = data.rdd.filter(
-        lambda s: unk_token_id in tokenizer.encode_plus(s[0])["input_ids"]
-    )
+    oov = data.rdd.filter(lambda s: is_oov(s[0], tokenizer))
     results["oov_count"] = oov.count()
     results["oov_sample"] = [row[0] for row in oov.takeSample(False, 50)]
     results["exact_count"] = data.count()
@@ -70,6 +85,9 @@ def tokenizer_stats(
     else:
         with open(output, "w") as fid:
             json.dump(results, fid)
+
+    # Save Tokenizer
+    tokenizer.save_pretrained(Path(output).parent)
 
 
 if __name__ == "__main__":

@@ -8,11 +8,14 @@
 my_job_header
 
 # Activate the environment
-spack env activate .
+module load python/3.11.5
 source ./activate
 
 MEM_PER_TASK="$(($SLURM_MEM_PER_CPU * $SLURM_CPUS_PER_TASK))M"
 export PYARROW_IGNORE_TIMEZONE=1
+
+# Include Modules from HuggingFace's Hub
+export PYTHONPATH=~/.cache/huggingface/modules/
 spark-submit \
     --num-executors $SLURM_NTASKS \
     --driver-memory $MEM_PER_TASK \
