@@ -139,6 +139,12 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
             token_ids, skip_special_tokens=skip_special_tokens
         )
 
+    def tokenize(self, text: str, **kwargs) -> list[str]:
+        """Converts a string into a sequence of tokens"""
+        token_ids = self(text, **kwargs)["input_ids"]
+        ids2tokens = {id: token for token, id in self.get_vocab().items()}
+        return [ids2tokens[id] for id in token_ids]
+
     def get_vocab(self) -> dict[str, int]:
         return self._tokenizer.get_vocab(with_added_tokens=True)
 

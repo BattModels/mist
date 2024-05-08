@@ -42,6 +42,16 @@ def test_vocab_size():
     assert len(tokenizer.get_vocab()) == tokenizer.vocab_size
 
 
+def check_tokenize(tokenizer):
+    assert tokenizer.tokenize("Br") == ["Br"]
+    assert tokenizer.tokenize("Sn[Sn]") == ["S", "n", "[", "Sn", "]"]
+
+
+def test_tokenize():
+    tokenizer = smirk.SmirkTokenizerFast()
+    check_tokenize(tokenizer)
+
+
 def test_special_tokens():
     tokenizer = smirk.SmirkTokenizerFast()
     assert tokenizer.pad_token == "[PAD]"

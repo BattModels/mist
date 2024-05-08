@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 
-from test_fast_tokenizer import check_save
+from test_fast_tokenizer import check_save, check_tokenize
 from test_tokenize_smiles import smile_strings
 
 import smirk
@@ -47,3 +47,7 @@ def test_unk(trained, smile_strings):
     assert code == [trained.unk_token_id]
     code = trained(["🤷"])["input_ids"][0]
     assert code == [trained.unk_token_id]
+
+
+def test_tokenize(trained):
+    check_tokenize(trained)
