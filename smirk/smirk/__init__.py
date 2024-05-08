@@ -167,4 +167,5 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         min_frequency: Minimum count for a pair to be considered for a merge
         vocab_size: the target size of the final vocabulary
         """
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return SmirkTokenizerFast(tokenizer=self._tokenizer.train(files, **kwargs))
