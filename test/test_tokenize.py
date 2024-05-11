@@ -29,6 +29,13 @@ def smile_tokenizer(request):
     return load_tokenizer(request.param)
 
 
+def test_vocab_size(smile_tokenizer):
+    # vocab size (Size of model vocab without added tokens)
+    # should be smaller (or equal if the model knows of all added tokens)
+    # than the length of of the tokenizer
+    assert smile_tokenizer.vocab_size <= len(smile_tokenizer)
+
+
 def test_pretrained_smirk():
     tok = smirk.SmirkTokenizerFast()
 

@@ -34,6 +34,7 @@ def test_vocab_size():
     trained = tokenizer.train([str(SMILE_TEST_FILE)], vocab_size=200)
     assert trained.vocab_size == 200
     assert trained._tokenizer.get_vocab_size(False) == trained.vocab_size
+    assert len(trained) == trained.vocab_size + len(smirk.SPECIAL_TOKENS) - 1
     assert (
         trained._tokenizer.get_vocab_size(True)
         - trained._tokenizer.get_vocab_size(False)
