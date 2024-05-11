@@ -72,10 +72,6 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
             for id, content in self._tokenizer.get_added_tokens_decoder().items()
         }
 
-    @property
-    def vocab_size(self) -> int:
-        return self._tokenizer.get_vocab_size(False)
-
     def _add_tokens(
         self,
         new_tokens: Union[List[str], List[AddedToken]],
@@ -135,7 +131,8 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
 
     @property
     def vocab_size(self):
-        return self._tokenizer.get_vocab_size(with_added_tokens=True)
+        """The size of the vocabulary without the added tokens"""
+        return self._tokenizer.get_vocab_size(with_added_tokens=False)
 
     def convert_tokens_to_ids(
         self, tokens: Union[str, list[str]]

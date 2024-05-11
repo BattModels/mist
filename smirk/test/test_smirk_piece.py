@@ -33,6 +33,13 @@ def test_vocab_size():
     tokenizer = smirk.SmirkTokenizerFast()
     trained = tokenizer.train([str(SMILE_TEST_FILE)], vocab_size=200)
     assert trained.vocab_size == 200
+    assert trained._tokenizer.get_vocab_size(False) == trained.vocab_size
+    assert (
+        trained._tokenizer.get_vocab_size(True)
+        - trained._tokenizer.get_vocab_size(False)
+    ) == len(
+        smirk.SPECIAL_TOKENS
+    ) - 1  # unk should already be in the vocab
 
 
 def test_multi_file():
