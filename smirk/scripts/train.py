@@ -1,7 +1,8 @@
-import json
-from smirk import SmirkTokenizerFast
-from pathlib import Path
 import argparse
+import json
+from pathlib import Path
+
+from smirk import SmirkTokenizerFast
 
 
 def train(path, save_dir, limit=None, vocab_size=None):

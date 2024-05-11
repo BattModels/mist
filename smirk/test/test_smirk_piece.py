@@ -1,6 +1,6 @@
-import pytest
 from pathlib import Path
 
+import pytest
 from test_fast_tokenizer import check_save, check_tokenize, check_unknown
 from test_tokenize_smiles import smile_strings
 

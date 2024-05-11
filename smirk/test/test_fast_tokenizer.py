@@ -1,11 +1,12 @@
-import pytest
 import pickle
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
 from test_tokenize_smiles import smile_strings
 from transformers import BatchEncoding
 from transformers.data import DataCollatorForLanguageModeling
+
 import smirk
 
 

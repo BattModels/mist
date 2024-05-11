@@ -4,9 +4,9 @@ use super::GpeTrainer;
 use derive_builder::Builder;
 use serde::{
     de::{MapAccess, Visitor},
-    Deserialize, Deserializer, Serialize, Serializer
+    Deserialize, Deserializer, Serialize, Serializer,
 };
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::{Model, PreTokenizedString, PreTokenizer, Result, Token};

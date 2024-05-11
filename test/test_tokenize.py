@@ -1,5 +1,6 @@
-import pytest
 from tempfile import TemporaryDirectory
+
+import pytest
 from transformers import (
     BatchEncoding,
     DataCollatorForLanguageModeling,

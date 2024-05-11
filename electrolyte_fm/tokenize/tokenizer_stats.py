@@ -1,11 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env python
 import json
-from smirk import SmirkTokenizerFast
 from pathlib import Path
-import typer
+
 import numpy as np
+import typer
 from pyspark.sql import SparkSession
-from transformers import PreTrainedTokenizerBase, AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
+
+from smirk import SmirkTokenizerFast
 
 cli = typer.Typer()
 

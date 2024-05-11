@@ -496,16 +496,8 @@ mod tests {
         .into_iter()
         .map(|(s, c)| (s.into(), c))
         .collect();
-        let expected_merges: Vec<Pair> = [
-            (4, 6),
-            (4, 9),
-            (3, 5),
-            (4, 11),
-            (9, 10),
-            (13, 10),
-            (10, 4),
-        ]
-        .into();
+        let expected_merges: Vec<Pair> =
+            [(4, 6), (4, 9), (3, 5), (4, 11), (9, 10), (13, 10), (10, 4)].into();
         assert_eq!(model.vocab, expected_vocab);
         assert_eq!(model.merges, expected_merges);
         assert_eq!(model.get_vocab_size(), 16);
@@ -516,7 +508,6 @@ mod tests {
         assert_eq!(model.id_to_token(13).unwrap(), "CSCCS");
         assert_eq!(model.id_to_token(14).unwrap(), "CSCCSCCS");
         assert_eq!(model.id_to_token(15).unwrap(), "CCSC");
-
     }
 
     #[test]

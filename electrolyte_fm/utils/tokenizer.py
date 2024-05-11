@@ -22,6 +22,7 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
     else:
         # Fall back to a HuggingFace Tokenizer
         from transformers import AutoTokenizer
+
         from smirk import SmirkTokenizerFast
 
         AutoTokenizer.register(
