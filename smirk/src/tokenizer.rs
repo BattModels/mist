@@ -195,6 +195,8 @@ impl SmirkTokenizer {
     fn no_padding(&mut self) {
         self.tokenizer.with_padding(None);
     }
+
+    #[pyo3(signature = (**kwargs))]
     fn with_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
         let mut params = PaddingParams::default();
         if let Some(kwargs) = kwargs {
