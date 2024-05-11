@@ -1,8 +1,11 @@
 #!/usr/bin/env -S julia --project
 using PythonCall
-using OnlineStats: Counter, CountMap, Series, Moments, Extrema, P2Quantile, fit!, value, nobs
+using OnlineStats
 using MPI: MPI
 using JSON: JSON
+
+# Maximum number of oov samples to track
+const MAX_OOV_SAMPLES = 100
 
 # Load Python Dependencies
 @time begin
@@ -12,49 +15,71 @@ using JSON: JSON
 end
 
 function tracked_stats()
-    return Series(;
+    return (;
         fertility=CountMap(Int),
         nunique=CountMap(Int),
         token_usage=CountMap(Int),
         out_of_vocab=Counter(Int),
+        oov_samples=Set{String}(),
+        distict_samples=HyperLogLog(String)
     )
 end
 
-usage_stats(example) = usage_stats!(tracked_stats(), example)
+usage_stats(example, unk_token_id::Int) = usage_stats!(tracked_stats(), example, unk_token_id)
 function usage_stats!(stats, example, unk_token_id::Int)
     code = pyconvert(Vector{Int64}, example["input_ids"])
 
     # Track usage stats
-    fit!(stats[:fertility], length(code))
-    fit!(stats[:nunique], length(unique(code)))
-    fit!(stats[:token_usage], code)
+    fit!(stats.fertility, length(code))
+    fit!(stats.nunique, length(unique(code)))
+    fit!(stats.token_usage, code)
+    fit!(stats.distict_samples, pyconvert(String, example["text"].strip()))
 
     # Check for unknown tokens
-    unk_token_id in code && fit!(stats[:out_of_vocab], 1)
+    if unk_token_id in example["input_ids"] || pyconvert(Bool, example["text"].strip() != example["decode"].strip())
+        fit!(stats.out_of_vocab, 1)
+        if length(stats.oov_samples) < MAX_OOV_SAMPLES
+            push!(stats.oov_samples, pyconvert(String, example["text"]))
+        end
+    end
 
     return stats
 end
 
-tokenize(batch; tokenizer) = tokenizer(batch["text"])
+function tokenize(batch; tokenizer)
+    out = tokenizer(batch["text"])
+    out["decode"] = tokenizer.batch_decode(out["input_ids"], skip_special_tokens=true)
+    out["text"] = batch["text"]
+    return out
+end
 
 shannon_entropy(p::Real) = -p * log.(p)
 
-function shannon_entropy!(stats, example; token_entropy::Dict{Int,<:Real})
+function shannon_entropy!(stats, example; token_entropy::Dict{Int, V}) where {V <: Real}
     code = pyconvert(Vector{Int64}, example["input_ids"])
-    H = sum(Base.Fix1(getindex, token_entropy), code; init=zero(valtype(token_entropy)))
+    H = sum(Base.Fix1(getindex, token_entropy), code; init=zero(V))
     fit!(stats, H)
     return stats
 end
 
-""" Merge stats from all ranks on rank 0 """
-function reduce_stats(stat)
+function leader_reduce(f, x)
     comm = MPI.COMM_WORLD
-    g = MPI.gather(stat, comm; root=0)
+    g = MPI.gather(x, comm; root=0)
     if MPI.Comm_rank(comm) == 0
-        return reduce(merge!, g)
-    else
-        return nothing
+        return reduce(f, g)
     end
+    return nothing
+end
+
+function setup_dataset_mpi(ds_path, tokenizer; rank=0, size=1)
+    ds_path = realpath(expanduser(ds_path))
+    ds = load_dataset(ds_path, split="train", streaming=true, keep_in_memory=false)
+    ds = ds.map(tokenize,
+        batched=true,
+        batch_size=1000,
+        fn_kwargs=Dict("tokenizer" => tokenizer)
+    )
+    return split_dataset_by_node(ds, rank, size)
 end
 
 function tabulate_dataset(ds_path, tok_name, out_file)
@@ -69,26 +94,19 @@ function tabulate_dataset(ds_path, tok_name, out_file)
     tokenizer = load_tokenizer(tok_name)
     tokenizer_info = (;
         name=tok_name,
-        vocab_size=length(tokenizer.vocab),
+        vocab_size=pyconvert(Int, tokenizer.vocab_size),
         unk_token_id=pyconvert(Int, tokenizer.unk_token_id),
+        config=JSON.parse(pyconvert(String, tokenizer.to_str()))
     )
-    vocab_size=length(tokenizer.vocab)
-    ds_path = realpath(expanduser(ds_path))
-    ds = load_dataset(ds_path, split="train", streaming=true, keep_in_memory=false)
-    ds = ds.map(tokenize,
-        batched=true,
-        batch_size=1000,
-        fn_kwargs=Dict("tokenizer" => tokenizer)
-    )
-
-    # Compute Usage Statistics
-    ds = split_dataset_by_node(ds, rank, size)
     local_stats = tracked_stats()
+    ds = setup_dataset_mpi(ds_path, tokenizer; rank, size)
     for example in ds
         usage_stats!(local_stats, example, tokenizer_info.unk_token_id)
     end
     @info "Rank $rank has finished tokenizer stats"
-    tokenizer_stats = reduce_stats(local_stats)
+    local_tok_stats = Series(; Base.structdiff(local_stats, NamedTuple{(:oov_samples,)})...)
+    tokenizer_stats = leader_reduce(merge!, local_tok_stats)
+    oov_samples = leader_reduce(union, local_stats.oov_samples)
 
     # Broadcast token usage to all ranks
     token_usage = rank == 0 ? value(tokenizer_stats[:token_usage]) : nothing
@@ -100,11 +118,11 @@ function tabulate_dataset(ds_path, tok_name, out_file)
 
     # Compute entropy statistics for the dataset
     @info "Rank $rank: Computing tokenizer entropy"
-    entropy = Series(; moments=Moments(), extrema=Extrema())
+    entropy = Series(; moments=Moments(), extrema=Extrema(), hist=KHist(100))
     for example in ds
         shannon_entropy!(entropy, example; token_entropy)
     end
-    entropy = reduce_stats(entropy)
+    entropy = leader_reduce(merge!, entropy)
     @info "Rank $rank: Finished tokenizer entropy"
 
     if rank == 0
@@ -112,6 +130,7 @@ function tabulate_dataset(ds_path, tok_name, out_file)
         stats = (;
             tokenizer=tokenizer_info,
             samples=nobs(tokenizer_stats[:fertility]),
+            oov_samples,
             entropy=map(value, entropy.stats),
             map(value, tokenizer_stats.stats)...
         )
@@ -124,6 +143,8 @@ function tabulate_dataset(ds_path, tok_name, out_file)
     MPI.Finalize()
     return 0
 end
+
+
 
 function main(args::Vector{String})
     @assert length(args) >= 2
