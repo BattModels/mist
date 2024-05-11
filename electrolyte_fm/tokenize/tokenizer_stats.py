@@ -10,8 +10,11 @@ from transformers import PreTrainedTokenizerBase, AutoTokenizer
 cli = typer.Typer()
 
 
-def get_data(spark: SparkSession, directory: Path, avg_size=10e6):
+def get_data(spark: SparkSession, directory: Path, avg_size=10e6, limit=None):
     files = list(directory.glob("*.txt"))
+    if limit is not None:
+        files = files[:limit]
+
     data = spark.read.text([str(x) for x in files])
 
     # Repartition to a target average size
@@ -20,7 +23,7 @@ def get_data(spark: SparkSession, directory: Path, avg_size=10e6):
     if data.rdd.getNumPartitions() < min_partition:
         data = data.repartition(min_partition)
     print(f"Using {data.rdd.getNumPartitions()} Partitions")
-    return data
+    return data, files
 
 
 def is_oov(input: str, tokenizer: PreTrainedTokenizerBase):
@@ -48,17 +51,20 @@ def load_tokenizer(name: str) -> PreTrainedTokenizerBase:
 
 @cli.command()
 def tokenizer_stats(
-    tokenizer_path: str, path: Path, n_partitions=128, output: str = "-"
+    tokenizer_path: str,
+    path: Path,
+    n_partitions=128,
+    limit: int = None,
+    output: str = "-",
 ):
     spark = SparkSession.builder.getOrCreate()
     tokenizer = load_tokenizer(tokenizer_path)
 
     # Get dataset of smiles
     path = Path(path).resolve()
-    data = get_data(spark, path)
-
-    # Init results
     results = dict()
+    data, files = get_data(spark, path, limit=limit)
+    results["files"] = files
 
     # Generate histogram of molecule lengths after being tokenized
     n_tokens = data.rdd.map(lambda s: len(tokenizer(s[0])["input_ids"]))
