@@ -13,7 +13,6 @@ module purge
 module use /soft/modulefiles/
 module --ignore_cache load conda/2024-04-29
 module conda/2024-04-25
-conda activate base
 ```
 
 3. Install poetry + pipx
@@ -25,6 +24,8 @@ python -m pipx install --python $(which python) poetry
 ```
 
 4. Install environment: `poetry install`
+
+5. (optional) Activate `conda` environment: `conda activate base`
 
 ## Artemis
 
