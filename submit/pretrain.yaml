@@ -26,4 +26,5 @@ train:
   # Trainer Configuration
   trainer.max_steps: 10_000
   trainer.val_check_interval: 100
+  trainer.limit_val_batches: 12
   trainer.precision: bf16-true
