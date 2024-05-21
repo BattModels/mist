@@ -22,10 +22,9 @@ import torch
 import torch.utils.checkpoint
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
-from mup import MuReadout, normal_
 
-from transformers.activations import ACT2FN, gelu
-from transformers.modeling_outputs import (
+from ...activations import ACT2FN, gelu
+from ...modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     BaseModelOutputWithPoolingAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
@@ -35,9 +34,9 @@ from transformers.modeling_outputs import (
     SequenceClassifierOutput,
     TokenClassifierOutput,
 )
-from transformers.modeling_utils import PreTrainedModel
-from transformers.pytorch_utils import apply_chunking_to_forward, find_pruneable_heads_and_indices, prune_linear_layer
-from transformers.utils import (
+from ...modeling_utils import PreTrainedModel
+from ...pytorch_utils import apply_chunking_to_forward, find_pruneable_heads_and_indices, prune_linear_layer
+from ...utils import (
     add_code_sample_docstrings,
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
@@ -53,7 +52,7 @@ _CHECKPOINT_FOR_DOC = "FacebookAI/roberta-base"
 _CONFIG_FOR_DOC = "RobertaConfig"
 
 
-from transformers.models.deprecated._archive_maps import ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST  # noqa: F401, E402
+from ..deprecated._archive_maps import ROBERTA_PRETRAINED_MODEL_ARCHIVE_LIST  # noqa: F401, E402
 
 
 class RobertaEmbeddings(nn.Module):
@@ -585,23 +584,12 @@ class RobertaPreTrainedModel(PreTrainedModel):
     _no_split_modules = ["RobertaEmbeddings", "RobertaSelfAttention"]
 
     # Copied from transformers.models.bert.modeling_bert.BertPreTrainedModel._init_weights
-    def _init_weights(self, module, readout_zero_init=False, query_zero_init=False):
+    def _init_weights(self, module):
         """Initialize the weights"""
         if isinstance(module, nn.Linear):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
-            ### muP: swap constant std normal init with normal_ from `mup.init`.
-            ### Because `_init_weights` is called in `__init__`, before `infshape` is set,
-            ### we need to manually call `self.apply(self._init_weights)` after calling
-            ### `set_base_shape(model, base)`
-            if isinstance(module, MuReadout) and readout_zero_init:
-                module.weight.data.zero_()
-            else:
-                if hasattr(module.weight, 'infshape'):
-                    normal_(module.weight, mean=0.0, std=self.config.initializer_range)
-                else:
-                    module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            ### End muP
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
@@ -611,11 +599,6 @@ class RobertaPreTrainedModel(PreTrainedModel):
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
-        ### muP
-        if isinstance(module, RobertaSelfAttention):
-            if query_zero_init:
-                module.query.weight.data[:] = 0
-        ### End muP
 
 
 ROBERTA_START_DOCSTRING = r"""
@@ -1134,9 +1117,7 @@ class RobertaLMHead(nn.Module):
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-        #self.decoder = nn.Linear(config.hidden_size, config.vocab_size)
-        ### muP: swap nn.Linear with MuReadout
-        self.decoder = MuReadout(config.hidden_size, config.vocab_size, bias=False)
+        self.decoder = nn.Linear(config.hidden_size, config.vocab_size)
         self.bias = nn.Parameter(torch.zeros(config.vocab_size))
         self.decoder.bias = self.bias
 
@@ -1367,9 +1348,7 @@ class RobertaForTokenClassification(RobertaPreTrainedModel):
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
         self.dropout = nn.Dropout(classifier_dropout)
-        #self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-        ### muP: replace nn.Linear with MuReadout
-        self.classifier = MuReadout(config.hidden_size, config.num_labels)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1447,9 +1426,7 @@ class RobertaClassificationHead(nn.Module):
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
         self.dropout = nn.Dropout(classifier_dropout)
-#        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
-        ### muP: swap nn.Linear with MuReadout
-        self.out_proj = MuReadout(config.hidden_size, config.num_labels)
+        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
 
     def forward(self, features, **kwargs):
         x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
@@ -1474,9 +1451,7 @@ class RobertaForQuestionAnswering(RobertaPreTrainedModel):
         self.num_labels = config.num_labels
 
         self.roberta = RobertaModel(config, add_pooling_layer=False)
-        #self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
-        ### muP: replace nn.Linear with MuReadout
-        self.qa_outputs = MuReadout(config.hidden_size, config.num_labels)
+        self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         # Initialize weights and apply final processing
         self.post_init()
