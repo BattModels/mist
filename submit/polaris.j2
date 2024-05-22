@@ -42,6 +42,22 @@ source ${PBS_O_WORKDIR}/activate
 echo "$(df -h /local/scratch)"
 export TMPDIR=/local/scratch
 
+{%- if deepspeed is defined %}
+# Write out deepspeed config
+cat > $TMPDIR/deepspeed.json<<EOF
+{{ deepspeed | tojson(indent=4) }}
+EOF
+{%- endif %}
+
+# Record configuration
+echo "########################################"
+export JOB_CONFIG="$TMPDIR/config_${JOBID}.json"
+cat > $JOB_CONFIG<<EOF
+{{ __config__ | tojson(indent=4) }}
+EOF
+cat $JOB_CONFIG
+echo "########################################"
+
 # For applications that internally handle binding MPI/OpenMP processes to GPUs
 mpiexec \
     {{- cliopts( mpiexe ) | indent }} \

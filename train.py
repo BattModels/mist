@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import timedelta
 
 import torch
@@ -21,8 +22,14 @@ class MyLightningCLI(LightningCLI):
 
     def before_fit(self):
         if logger := self.trainer.logger:
+            job_config = {}
+            if config_path := os.environ.get("JOB_CONFIG"):
+                with open(config_path, "r") as fid:
+                    job_config = json.load(fid)
+
             logger.log_hyperparams(
                 {
+                    "job_config": job_config,
                     "n_gpus_per_node": self.trainer.num_devices,
                     "n_nodes": self.trainer.num_nodes,
                     "world_size": self.trainer.world_size,
