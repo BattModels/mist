@@ -23,6 +23,9 @@ mist/
 # Dataset
 .cache/
 
+# Julia
+Manifest.toml
+
 # Spack
 .spack-env/
 spack.lock

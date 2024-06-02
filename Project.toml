@@ -1,0 +1,18 @@
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
+
+[compat]
+CSV = "0.10"
+CairoMakie = "0.12"
+DataFrames = "1.6"
+GLM = "1.9"
+JSON = "0.21"
+SQLite = "1.6"
+StatsModels = "0.7"
+julia = "1.10"
