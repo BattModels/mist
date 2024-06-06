@@ -85,6 +85,41 @@ class HyperSpace:
         return HyperSpace(data)
 
 
+class PairedHyperSpace(HyperSpace):
+    def __init__(self, data: dict) -> None:
+        super().__init__(data)
+        self.base_axis = self._get_key(self._data)
+
+    def _get_key(self, data: dict) -> str:
+        return list(data.keys())[0]
+
+    def _get_value(self, data: dict) -> str:
+        return list(data.values())[0]
+
+    @property
+    def n(self):
+        # only implemented for two levels
+        return 2
+
+    @property
+    def base_axis_values(self) -> list[str]:
+        return list(self._data[self.base_axis].keys())
+
+    @property
+    def spaces(self) -> list[HyperSpace]:
+        hp_list = []
+        for value in self.base_axis_values:
+            space = {
+                self.base_axis: [
+                    value,
+                ]
+            }
+            _nested = self._data[self.base_axis][value]
+            space[self._get_key(_nested)] = self._get_value(_nested)
+            hp_list.append(HyperSpace(space))
+        return hp_list
+
+
 def interpolate_design(config: dict, design: dict):
     """Recursively replace values in config with entries in design"""
     out = dict()
@@ -101,24 +136,45 @@ def interpolate_design(config: dict, design: dict):
 
 def design_experiment(f, file: typer.FileText):
     data = yaml.safe_load(file)
-    hs = HyperSpace(data["space"])
+    if "paired_space" in data.keys():
+        if "space" in data.keys():
+            raise NotImplementedError
+        phs = PairedHyperSpace(data["paired_space"])
+        hs_list = phs.spaces
+    else:
+        hs_list = [
+            HyperSpace(data["space"]),
+        ]
     target_config = deepcopy(data["config"])
-    for expr in hs.get_design(f(hs.levels)):
-        config = interpolate_design(target_config, expr)
-        config_json = json.dumps(config)
-        cmd = data["command"].replace("$json", "--json '" + config_json + "'")
-        print(cmd)
+    for hs in hs_list:
+        for expr in hs.get_design(f(hs.levels)):
+            config = interpolate_design(target_config, expr)
+            config_json = json.dumps(config)
+            cmd = data["command"].replace("$json", "--json '" + config_json + "'")
+            print(cmd)
 
 
 def display_experiment(f, file: typer.FileText):
     data = yaml.safe_load(file)
-    hs = HyperSpace(data["space"])
+    if "paired_space" in data.keys():
+        if "space" in data.keys():
+            raise NotImplementedError
+        phs = PairedHyperSpace(data["paired_space"])
+        hs_list = phs.spaces
+    else:
+        hs_list = [
+            HyperSpace(data["space"]),
+        ]
     table = Table()
-    for factor in hs.factors:
-        table.add_column(str(factor))
+    columns = set()
+    for hs in hs_list:
+        for factor in hs.factors:
+            if factor not in columns:
+                table.add_column(str(factor))
+                columns.add(str(factor))
 
-    for expr in hs.get_design(f(hs.levels)):
-        table.add_row(*[str(x) for x in expr.values()])
+        for expr in hs.get_design(f(hs.levels)):
+            table.add_row(*[str(x) for x in expr.values()])
 
     console = Console(stderr=True)
     console.print(table)
