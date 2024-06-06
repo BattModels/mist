@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import timedelta
+from typing import Dict, List, Union
 
 import torch
 from jsonargparse import lazy_instance
@@ -37,12 +38,21 @@ class MyLightningCLI(LightningCLI):
             help="Tags for WandB logger",
             default=[],
         )
+
+        parser.add_argument(
+            "--task_specs",
+            type=Union[List[Dict], Dict, str],
+            default=[],
+        )
+
         parser.link_arguments("tags", "trainer.logger.init_args.tags")
 
         # Set model vocab_size from the dataset's vocab size
         parser.link_arguments(
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
         )
+
+        parser.link_arguments("task_specs", "data.init_args.task_specs")
         # Set model task_specs from the dataset's task_specs
         parser.link_arguments(
             "data.task_specs", "model.init_args.task_specs", apply_on="instantiate"

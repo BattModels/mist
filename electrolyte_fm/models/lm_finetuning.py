@@ -20,7 +20,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     def __init__(
         self,
         encoder_ckpt: str,
-        task_specs: TaskSpecs,
+        task_specs: Union[str, TaskSpecs],
         freeze_encoder: bool = False,
         learning_rate: float = 1.6e-4,
         dropout: float = 0.2,
@@ -32,6 +32,14 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.learning_rate = learning_rate
         self.dropout = dropout
         self.encoder_ckpt = encoder_ckpt
+        if isinstance(task_specs, str):
+            task_specs = [
+                task_specs,
+            ]
+        if isinstance(task_specs, dict):
+            task_specs = [
+                task_specs,
+            ]
         self.task_specs = task_specs
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
