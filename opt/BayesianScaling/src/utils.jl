@@ -1,0 +1,20 @@
+function logrange(lb, ub; base=10, kwargs...)
+    iter = range(log(base, lb), log(base, ub); kwargs...)
+    if base == 10
+        f = exp10
+    elseif base == 2
+        f = exp2
+    else
+        f = x -> base^x
+    end
+    return Iterators.map(f, iter)
+end
+
+function sample_posterior(f, chains, args::Union{Real,Vector}...)
+    x = get(chains, chains.name_map[:parameters])
+    x = NamedTuple{keys(x)}(map(vec, values(x)))
+    args = map(transpose, args)
+    return f(args...; x...) |> Array
+end
+
+logsqdev(x, y) = (log(x) - log(y))^2
