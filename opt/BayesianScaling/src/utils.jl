@@ -17,4 +17,13 @@ function sample_posterior(f, chains, args::Union{Real,Vector}...)
     return f(args...; x...) |> Array
 end
 
+"""
+Condition a model on a sampled chain
+"""
+function Turing.condition(model, sample)
+    x = get(sample, sample.name_map[:parameters])
+    x = NamedTuple{keys(x)}(map(only, values(x)))
+    return Turing.condition(model, x)
+end
+
 logsqdev(x, y) = (log(x) - log(y))^2

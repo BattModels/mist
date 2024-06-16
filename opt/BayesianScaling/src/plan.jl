@@ -47,48 +47,27 @@ function (aq::ShannonInformation)(model, chains, x...)
     N = round(Int, ns * N / (N * M))
     M = fld(ns, N)
 
-    # Draw samples for θ and y from the chains
-    in_i = sample(1:ns, N, replace=false)
-    y_mu = sample_posterior(model.f, chains, x...)
-    y = rand(MvLogNormal(y_mu, diagm(vec(Array(chains[:σ²])))))
 
+    info_gain = 0
+    for i in sample(1:ns, N, replace=false)
+        # Sample y_i, and evaluate -I(y| θ, x)
+        chain = chains[i, :, 1]
+        y_i = first(rand(Turing.condition(model_gen, chain)))
+        θ = vec(Array(chain))
+        expr_info = logdensity(ℓ, vcat(θ, y_i))
 
-    θ = Array(chains)
-    info_gain = Normal(0, 0)
-    for i in in_i
-        expr_info = logdensity(ℓ, vcat(θ[i, :], y[i]))
-        in_j = sample(1:ns, M, replace=false)
-        data_info = map(in_j) do j
-            exp(logdensity(ℓ, vcat(θ[j, :], y[j])))
+        # Sample M values of θ, and estimate I(y|x)
+        data_info = map(sample(1:ns, M, replace=false)) do j
+            θ = vec(Array(chains[j, :, 1]))
+            exp(logdensity(ℓ, vcat(θ, y_i)))
         end
         mu = mean(data_info)
-        data_info = Normal(log(mu), abs(std(data_info) / mu))
-        info_gain = convolve(info_gain, expr_info + (-data_info))
+        if mu > 0
+            info_gain += expr_info - log(mu)
+        else
+            N -= 1
+        end
     end
 
     return info_gain / N
-
-
-
 end
-
-#     for i in 1:N
-#         θ_i = @view θ[i, :]
-#         y_i = sample(
-#         y_i = predict(model_gen, θ[i, :])["loss"]
-#         expr_info = logdensity(ℓ, selectdim(θ, 1, i))
-#         data_info = 0.0
-#         for j in 1:M
-#             s_work[1:np] .= θ[i, :] # Use sampled value of θ
-#             s_work[end] = θ[i, end] # Use sampled value of y_i
-#             data_info += exp(logdensity(ℓ, s_work))
-#         end
-#         data_info /= M
-#         if data_info > 0
-#             info_gain += (expr_info - log(data_info))
-#         else
-#             N -= 1
-#         end
-#     end
-#     return info_gain / N
-# end

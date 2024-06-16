@@ -10,7 +10,7 @@ using MLUtils: splitobs
 using JSON: JSON
 using LinearAlgebra: I, diagm
 using Statistics: mean, std, median
-using StatsBase: quantile, sample, mean_and_std
+using StatsBase: quantile, sample, mean_and_std, autocor
 using Random: shuffle!
 
 include("utils.jl")
@@ -48,10 +48,10 @@ include("utils.jl")
 end
 
 @model function hoffman_scaling(loss, N, D)
-    A ~ LogNormal(log(500), 5)
-    B ~ LogNormal(log(500), 5)
-    α ~ Uniform(0, 2)
-    β ~ Uniform(0, 2)
+    A ~ LogNormal(log(500), 2)
+    B ~ LogNormal(log(500), 2)
+    α ~ truncated(Normal(0.1, 0.5), 0, 2)
+    β ~ truncated(Normal(0.1, 0.5), 0, 2)
     E ~ LogNormal(-2, 5)
     σ² ~ LogNormal(-1, 2)
 
@@ -65,7 +65,6 @@ end
 end
 
 hoffman_scaling(N, D; A, α, B, β, E, kwargs...) = @. (A / (N^α)) + (B / (D^β)) + E
-
 
 function compute_optimal_model(flops; A, α, B, β, kwargs...)
     G = @. ((α * A) / (β * B))^(1 / (α + β))

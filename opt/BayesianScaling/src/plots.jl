@@ -5,8 +5,8 @@ Plots a prediction band with median line overlayed
 """
 @recipe(PredictionBand, x, center, lower, upper) do scene
     Theme(
-        color=:black,
-        band_color=(:blue, 0.4),
+        color=Makie.inherit(scene, (:Lines, :linecolor), :black),
+        band_color=(:blue, 0.1),
     )
 end
 function Makie.plot!(plt::PredictionBand)
@@ -97,13 +97,6 @@ function plot_scaling(chains, df;
         band_color=(:slategray, 0.4),
         label="Compute Optimal Frontier",
     )
-    # hlines!(ax, 29491200; label="MolFormer", color=:red)
-    # vlines!(ax, 60 * 60 * 44e15; label="Polaris-hour", color=:purple)
-    # vlines!(ax, 60 * 60 * 2.5e12; label="Artemis-hour", color=:blue)
-
-    # f[2, 1] = Legend(f, ax; tellheight=true, tellwidth=false, orientation=:horizontal, nbanks=2)
-
-
     return f
 end
 
@@ -124,7 +117,6 @@ function plot_parity(model, chains; p=0.025)
         limits=((ll, uu), (ll, uu)),
     )
     rangebars!(ax, model.args.loss, loss_low, loss_high; color=:blue, linewidth=1)
-    # scatter!(ax, model.args.loss, loss_median; color=:black, marker=:x, markersize=5)
 
     # Plot Parity line
     n = 100
@@ -174,10 +166,9 @@ function plot_scaling_parameters(chains, l=0, u=1)
     return f
 end
 
-
-function plot_acquisition(chains, aq;
-    N=logrange(1e5, 1e12; length=50),
-    D=logrange(1e6, 10e15; length=50)
+function plot_acquisition(chains, aq, df;
+    N=logrange(1e5, 1e12; length=20),
+    D=logrange(1e6, 10e15; length=20)
 )
     acqustion = Matrix{Float32}(undef, length(D), length(N))
     N = collect(N)
@@ -196,6 +187,61 @@ function plot_acquisition(chains, aq;
         ylabel="Model Size (Non-Embedding)",
     )
     h = contourf!(ax, D, N, acqustion)
+    scatter!(ax, df.data_size, df.model_size; color=df.min_val_loss, colorscale=log10)
     Colorbar(f[1, 2], h; label="Acquisition Function")
+    return f
+end
+
+dist_tf(::Any) = identity
+dist_tf(::LogNormal) = log10
+
+function plot_chains(model, chains)
+    f = Figure()
+    ns, _, nc = size(chains)
+    priors = Turing.DynamicPPL.extract_priors(model)
+    names = chains.name_map.parameters
+    np = length(names)
+
+    # Plot Chains
+    gl = GridLayout(f[1, 1])
+    colors = []
+    for (i, p) in enumerate(names)
+        yscale = dist_tf(priors[Turing.@varname($p)])
+        ax = Axis(gl[i, 1]; xlabel="step", ylabel=string(p), yscale)
+        ax_hist = Axis(gl[i, 2]; limits=((0, nothing), nothing))
+        hidedecorations!(ax_hist)
+        if i != np
+            hidexdecorations!(ax)
+        end
+        # linkyaxes!(ax, ax_hist)
+        for j in 1:nc
+            samples = Array(chains[:, i, j]) |> vec
+            h = lines!(ax, samples)
+            hist!(ax_hist, yscale.(samples);
+                normalization=:pdf,
+                direction=:x,
+                color=h.color,
+            )
+        end
+    end
+    colsize!(gl, 2, Relative(0.2))
+    colgap!(gl, 5)
+    rowgap!(gl, 5)
+
+    ax = Axis(f[2, 1]; xlabel="step", ylabel="Auto-Correlation")
+    lags = 1:fld(ns, 2)
+    for pdx in 1:np
+        ac = zeros(eltype(chains.value), length(lags), nc)
+        for j in 1:nc
+            ac[:, j] .= autocor(Array(chains[:, pdx, j]), lags)
+        end
+        mu = mean(ac; dims=2) |> vec
+        s = std(ac; dims=2) |> vec
+        predictionband!(ax, lags, mu, mu .- s, mu .+ s;
+            label=names[pdx],
+            band_color=(:slategray, 0.1),
+        )
+    end
+    rowsize!(f.layout, 2, Relative(0.3))
     return f
 end

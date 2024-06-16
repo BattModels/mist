@@ -1,7 +1,9 @@
 using BayesianScaling
 using JSON: JSON
 using DataFrames
-using Turing: NUTS, MCMCThreads, sample
+using Turing: Turing, NUTS, MCMCThreads, sample, Chains
+using MCMCChainsStorage
+using HDF5: h5open
 using ADTypes: AutoForwardDiff
 
 function instantiate_model(dir)
@@ -33,7 +35,7 @@ end
 
 function fit_model(model)
     sampler = NUTS(1000, 0.65; init_ϵ=5.0e-3, adtype=AutoForwardDiff())
-    chains = sample(model, sampler, MCMCThreads(), 1000, 1; drop_warmup=true, progres=true)
+    chains = sample(model, sampler, MCMCThreads(), 1000, 5; drop_warmup=true, progres=true)
     return chains
 end
 
