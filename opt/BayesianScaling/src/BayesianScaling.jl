@@ -2,7 +2,7 @@ module BayesianScaling
 
 using Makie
 using DataFrames
-using Turing: Turing, sample, @model, MLE, NUTS, generated_quantities, Prior
+using Turing: Turing, sample, @model, MLE, NUTS, generated_quantities, Prior, Chains
 using ADTypes: AutoZygote
 using Distributions: fit, Normal, Uniform, LogNormal, MvLogNormal, Exponential, truncated, logpdf, loglikelihood, convolve
 using LogDensityProblems: logdensity
@@ -12,8 +12,12 @@ using LinearAlgebra: I, diagm
 using Statistics: mean, std, median
 using StatsBase: quantile, sample, mean_and_std, autocor, ecdf
 using Random: shuffle!
-using HDF5: h5open
 using MCMCChainsStorage: MCMCChainsStorage
+
+export Chains
+
+""" Petaflop-Day """
+const pf_day = 24 * 60 * 60 * 1e15
 
 include("utils.jl")
 
@@ -22,22 +26,22 @@ include("utils.jl")
     # Training Compute-Optimal Large Language Models. arXiv.
     A ~ LogNormal(log(500), 2)
     B ~ LogNormal(log(500), 2)
-    α ~ Uniform(0, 2)
-    β ~ Uniform(0, 2)
-    E ~ LogNormal(-2, 5)
+    α ~ truncated(Normal(0.1, 0.5), 0, 2)
+    β ~ truncated(Normal(0.1, 0.5), 0, 2)
+    E ~ Exponential(1e-3)
     σ² ~ LogNormal(-1, 2)
 
     # LR Scaling Model
     lr_0 ~ LogNormal(log(5e-5), 2)  # Optimal LR at N = 1
     lr_n ~ LogNormal(log(1e-2), 4)  # Scaling of lr with log N
-    lr_p ~ LogNormal(0, log(5))     # Penalty term for deviation from lr_eff
+    lr_p ~ Exponential(0.1)    # Penalty term for deviation from lr_eff
     log_lr_eff = @. lr_0 - lr_n * log(model_size)
 
     # Shape Factors
     ff_ratio_0 ~ LogNormal(log(1), 2)   # Ideal ff_ratio
-    ff_ratio_p ~ LogNormal(0, 2)        # Penalty term for deviation
+    ff_ratio_p ~ Exponential(0.1)        # Penalty term for deviation
     aspect_ratio_0 ~ LogNormal(log(64), 2)
-    aspect_ratio_p ~ LogNormal(0, 2)
+    aspect_ratio_p ~ Exponential(0.1)
 
     # Estimate Loss
     mu = @. (A / (model_size^α)) + (B / (data_size^β)) + E +

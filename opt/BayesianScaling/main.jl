@@ -35,7 +35,7 @@ end
 
 function fit_model(model)
     sampler = NUTS(1000, 0.65; init_ϵ=5.0e-3, adtype=AutoForwardDiff())
-    chains = sample(model, sampler, MCMCThreads(), 1000, 5; drop_warmup=true, progres=true)
+    chains = sample(model, sampler, MCMCThreads(), 100, 2; drop_warmup=true, progres=true)
     return chains
 end
 

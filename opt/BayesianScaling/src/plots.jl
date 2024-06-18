@@ -57,7 +57,7 @@ function plot_best_lr(chains, df=missing;
     predictionband!(ax, N, [l[1] for l in q], [l[2] for l in q], [l[3] for l in q];
         color=:black,
         band_color=(:slategray, 0.4),
-        label="95% Prediction Interval for η"
+        label="95% Credible Interval for η"
     )
 
     # Add measured points
@@ -80,8 +80,8 @@ function plot_best_lr(chains, df=missing;
 end
 
 function plot_scaling(chains, df;
-    N=logrange(1e4, 1e12; length=200),
-    C=logrange(1e8, 1e26; length=200)
+    N=logrange(1e1, 1e9; length=200),
+    C=logrange(1e4, 1e26; length=200)
 )
     f = Figure()
     N = collect(N)
@@ -89,44 +89,57 @@ function plot_scaling(chains, df;
     ax = Axis(f[1, 1];
         yscale=log10,
         xscale=log10,
-        limits=(extrema(C), extrema(N)),
-        xlabel="Compute Budget (FLOPs)",
+        limits=(extrema(C) ./ pf_day, extrema(N)),
+        xlabel="Compute Budget (PF-Days)",
         ylabel="Model size",
     )
 
     loss = Matrix{Float32}(undef, length(C), length(N))
-    llm_scaling(n, d; A, α, B, β, E, kwargs...) = @. (A / n^α) + (B / d^β) + E
-    for (idx, n) in enumerate(N)
-        d = @. C / (6n)
-        loss[:, idx] = median(sample_posterior(llm_scaling, chains, n, d); dims=1)
+    loss_std = similar(loss)
+    A = vec(chains[:, :A, :])
+    α = vec(chains[:, :α, :])
+    B = vec(chains[:, :B, :])
+    β = vec(chains[:, :β, :])
+    E = vec(chains[:, :E, :])
+    for (i, n) in enumerate(N)
+        for (j, c) in enumerate(C)
+            d = c / (6n)
+            l = @.((A / n^α) + (B / d^β) + E)
+            loss[j, i] = median(l)
+            loss_std[j, i] = exp.(std(log.(l)))
+        end
     end
-    loss_low = min(minimum(df.loss), minimum(loss))
-    loss_high = maximum(df.loss)
+    loss_low = min(minimum(df.min_val_loss), minimum(loss))
+    loss_high = maximum(df.min_val_loss)
     levels = collect(logrange(loss_low, loss_high; length=20))
-    h = contourf!(ax, C, N, loss;
-        levels,
-        colorscale=log10,
+    h = contourf!(ax, C ./ pf_day, N, loss; levels, colorscale=log10)
+    contour!(ax, C ./ pf_day, N, loss_std;
+        levels=collect(logrange(extrema(loss_std)...; length=10)),
+        # levels=20,
+        labels=true,
+        color=:red,
     )
-    contour!(ax, C, N, loss; levels=[0.06], color=:red)
-    # Colorbar(f[1, 2], h; label="Validation Loss")
+    cb = Colorbar(f[1, 2], h; label="Validation Loss")
 
     # Add Empirical Loss
-    df.flops = @. 6 * df.N * df.D
-    h = scatter!(ax, df.flops, df.N;
-        color=df.loss,
-        colormap=h.colormap,
-        colorrange=@lift(extrema($(h.levels))),
-        colorscale=h.colorscale,
+    model_flops = @. 6 * df.model_size * df.data_size / pf_day
+    h = scatter!(ax, model_flops, df.model_size;
+        color=df[:, :min_val_loss],
+        colormap=cb.colormap,
+        colorrange=cb.limits,
+        colorscale=cb.scale,
         strokewidth=0.5,
         strokecolor=:black,
         label="Emperical Data"
     )
-    Colorbar(f[1, 2], h; label="Finetuning Loss, Shear Modulus")
+    Colorbar(f[1, 2], h; label="Validation Loss")
 
     # Add Compute Optimal Frontier
-    s = sample_posterior(compute_optimal_model, chains, C)
-    q = map(c -> quantile(c, (0.5, 0.025, 0.975)), eachcol(s))
-    predictionband!(ax, C, [x[1] for x in q], [x[2] for x in q], [x[3] for x in q];
+    n_opt = Matrix{Float32}(undef, 3, length(C))
+    for (i, c) in enumerate(C)
+        n_opt[:, i] .= quantile(compute_optimal_model(c; A, α, B, β, E), (0.025, 0.5, 0.975))
+    end
+    predictionband!(ax, C ./ pf_day, n_opt[2, :], n_opt[1, :], n_opt[3, :];
         color=:black,
         band_color=(:slategray, 0.4),
         label="Compute Optimal Frontier",
@@ -135,12 +148,17 @@ function plot_scaling(chains, df;
 end
 
 function plot_parity(model, chains; p=0.025)
-    loss_samples = hcat(generated_quantities(model, chains)...)
-    loss_median = vec(median(loss_samples; dims=2))
-    loss_low = vec(map(Base.Fix2(quantile, p), eachrow(loss_samples)))
-    loss_high = vec(map(Base.Fix2(quantile, 1 - p), eachrow(loss_samples)))
-    ll = min(minimum(model.args.loss), minimum(loss_low)) * 0.9
-    uu = max(maximum(model.args.loss), maximum(loss_high)) * 1.1
+    y = stack(generated_quantities(model, chains))
+    σ² = chains[:, :σ², :]
+    for idx in CartesianIndices(size(y)[2:end])
+        for i in 1:size(y, 1)
+            y[i, idx] = rand(LogNormal(log(y[i, idx]), σ²[idx]))
+        end
+    end
+    y = reshape(y, size(y, 1), :)
+    yq = map(c -> quantile(c, (0.025, 0.975)), eachrow(y))
+    y_lower = first.(yq)
+    y_upper = last.(yq)
 
     f = Figure()
     ax = Axis(f[1, 1];
@@ -148,13 +166,16 @@ function plot_parity(model, chains; p=0.025)
         xscale=log10,
         ylabel="Predicted Loss",
         xlabel="Measured Loss",
-        limits=((ll, uu), (ll, uu)),
     )
-    rangebars!(ax, model.args.loss, loss_low, loss_high; color=:blue, linewidth=1)
+    # scatter!(ax, y, model.args.loss)
+    rangebars!(ax, model.args.loss, y_lower, y_upper; color=:blue, linewidth=1, label="95% Credible Interval")
 
     # Plot Parity line
     n = 100
+    ll = minimum(model.args.loss)
+    uu = maximum(model.args.loss)
     lines!(ax, range(ll, uu; length=n), range(ll, uu; length=n), color=:red)
+    axislegend(ax, position=:rb)
     return f
 end
 
@@ -315,51 +336,70 @@ function plot_chains(model, chains)
     return f
 end
 
-function plot_compute_optimal(chains;
+function plot_compute_optimal(chains, df=missing;
     N=logrange(1e3, 1e12; length=200),
-    C=logrange(1e8, 1e26; length=50)
+    C=logrange(1e8, 1e26; length=20)
 )
-    f = Figure()
-    ax = Axis(f[1, 1];
-        ylabel="Model Size (Non-Embedding)",
-        xlabel="Compute Budget (FLOPs)",
-        limits=(extrema(C), extrema(N)),
-        xscale=log10,
-        yscale=log10,
-    )
 
     n_opt = Matrix{Float32}(undef, length(N), length(C))
+    loss_quantiles = Matrix{Float32}(undef, 3, length(C))
+    σ² = chains[:, :σ², :]
     for (i, c) in enumerate(C)
-        s = compute_optimal_model(c;
+        n = compute_optimal_model(c;
             A=chains[:, :A, :],
             α=chains[:, :α, :],
             B=chains[:, :B, :],
             β=chains[:, :β, :],
         )
-        d = ecdf(vec(s))
+
+        # Estimate Loss of Compute-Optimal Model
+        d = @. c / (6n)
+        loss = hoffman_scaling(n, d;
+            A=chains[:, :A, :],
+            α=chains[:, :α, :],
+            B=chains[:, :B, :],
+            β=chains[:, :β, :],
+            E=chains[:, :E, :],
+        )
+        for idx in eachindex(loss)
+            loss[idx] = rand(LogNormal(log(loss[idx]), σ²[idx]))
+        end
+        loss_quantiles[:, i] .= quantile(vec(loss), (0.025, 0.5, 0.975))
+
+        # Compute CDF of the compute-optimal model
+        n_cdf = ecdf(vec(n))
         for (j, n) in enumerate(N)
-            n_opt[j, i] = d(n)
+            n_opt[j, i] = n_cdf(n)
         end
     end
-    C = collect(C)
-    N = collect(N)
-    h = contourf!(ax, C, N, n_opt', levels=20)
-    Colorbar(f[1, 2], h; label="Estimated CDF")
 
-    ax = Axis(f[1, 3];
+    # Setup Plots
+    f = Figure()
+    C = collect(C) ./ pf_day
+    N = collect(N)
+    ax = Axis(f[1, 1];
+        ylabel="Estimated Compute-Optimal Loss",
+        xlabel="Compute Budget (PF-Day)",
+        limits=(extrema(C), (1e-2, 1)),
+        xscale=log10,
+        yscale=log10,
+        ytickformat="{:.3f}",
+    )
+    ax_cdf = Axis(f[1, 2];
         xlabel="Model Size (Non-Embedding)",
         ylabel="Emperical Cumulative Distribution Function",
         xscale=log10,
         limits=(extrema(N), (0, 1)),
     )
-    cb = Colorbar(f[1, 4];
-        label="Compute Budget (FLOPs)",
+    cb = Colorbar(f[1, 3];
+        label="Compute Budget (PF-Day)",
         colormap=:viridis,
         colorrange=extrema(C),
         scale=log10,
     )
+    predictionband!(ax, C, loss_quantiles[2, :], loss_quantiles[1, :], loss_quantiles[3, :])
     for (i, c) in enumerate(C)
-        lines!(ax, N, n_opt[:, i];
+        lines!(ax_cdf, N, n_opt[:, i];
             color=c,
             colorscale=cb.scale,
             colormap=cb.colormap,
@@ -367,5 +407,92 @@ function plot_compute_optimal(chains;
         )
     end
 
+    if !ismissing(df)
+        scatter!(ax, @.(6 * df.data_size * df.model_size / pf_day), df.min_val_loss;
+            marker=:x, markersize=3, color=:blue, label="Emperical",
+        )
+    end
+
     return f
+end
+
+function plot_penalty(model, chains, deviance=logrange(1e-2, 1e2; length=100))
+
+    f = Figure()
+    ax_lr = Axis(f[1, 1]; xlabel="η/η_eff", ylabel="Penalty", xscale=log10, aspect=1)
+    ax_ff = Axis(f[1, 2]; xlabel="Feed Forward Ratio", xscale=log2, aspect=1)
+    ax_aspect = Axis(f[1, 3]; xlabel="Aspect Ratio", xscale=log2, aspect=1)
+    hideydecorations!(ax_ff; grid=false)
+    hideydecorations!(ax_aspect; grid=false)
+    linkyaxes!(ax_lr, ax_ff, ax_aspect)
+
+    # Setup
+    deviance = collect(deviance)
+    y = model.args.loss
+    y_hat = stack(generated_quantities(model, chains))
+    y_hat = reshape(y_hat, size(y_hat, 1), :)
+
+    scatter_args = (;
+        markersize=5,
+        marker=:x,
+        color=:blue,
+    )
+
+    # Plot LR Penalty and Measured Penalty
+    lr_0 = vec(chains[:, :lr_0, :])
+    lr_n = vec(chains[:, :lr_n, :])
+    lr_p = vec(chains[:, :lr_p, :])
+    p_lr = median(lr_p) .* log.(deviance) .^ 2
+    lr_eff = @. lr_0' - lr_n' * log(model.args.model_size)
+    lr_eff, lr_dev = _emperical_penalty(y, model.args.lr, y_hat, lr_p, exp.(lr_eff))
+    scatter!(ax_lr, lr_dev, lr_eff; scatter_args...)
+    penaltyband!(ax_lr, lr_p, ones(length(lr_p)), deviance; color=:red)
+
+    # FF Ratio
+    ff_ratio_0 = vec(chains[:, :ff_ratio_0, :])
+    ff_ratio_p = vec(chains[:, :ff_ratio_p, :])
+    ff_eff, _ = _emperical_penalty(y, model.args.ff_ratio, y_hat, ff_ratio_p, ff_ratio_0)
+    scatter!(ax_ff, model.args.ff_ratio, ff_eff; scatter_args...)
+    x = collect(logrange(extrema(model.args.ff_ratio)...; length=length(deviance)))
+    penaltyband!(ax_ff, ff_ratio_p, ff_ratio_0, x; color=:red)
+
+    # Aspect Ratio
+    aspect_ratio_0 = vec(chains[:, :aspect_ratio_0, :])
+    aspect_ratio_p = vec(chains[:, :aspect_ratio_p, :])
+    aspect_eff, _ = _emperical_penalty(y, model.args.aspect_ratio, y_hat, aspect_ratio_p, aspect_ratio_0)
+    scatter!(ax_aspect, model.args.aspect_ratio, aspect_eff; scatter_args...)
+    x = collect(logrange(extrema(model.args.aspect_ratio)...; length=length(deviance)))
+    penaltyband!(ax_aspect, aspect_ratio_p, aspect_ratio_0, x; color=:red)
+
+    return f
+end
+
+function _emperical_penalty(y::Vector, x::Vector, y_hat::Matrix, p, x0::AbstractVecOrMat)
+    # Check shapes
+    @assert length(y) == length(x) == size(y_hat, 1)
+    @assert size(y_hat, 2) == length(p)
+    if x0 isa AbstractVector
+        @assert length(x0) == length(p)
+        x0 = x0'
+    else
+        @assert size(x0) == size(y_hat)
+    end
+
+    d_mag = @. log(x) - log(x0)
+    d = d_mag .^ 2
+    penalty = vec(p)' .* d
+    y_eff = y .- vec(median(y_hat .- penalty; dims=2))
+    d_mag = vec(median(d_mag; dims=2))
+    @assert y_eff isa Vector && d_mag isa Vector
+    @assert length(y_eff) == length(y) == length(d_mag)
+    return y_eff, exp.(d_mag)
+end
+
+function penaltyband!(ax, p, x0, x; kwargs...)
+    p = @. p' * logsqdev(x, x0')
+    q = Matrix{Float32}(undef, 3, length(x))
+    for i in 1:length(x)
+        q[:, i] .= quantile(p[i, :], (0.025, 0.5, 0.97))
+    end
+    predictionband!(ax, x, q[2, :], q[1, :], q[3, :]; kwargs...)
 end
