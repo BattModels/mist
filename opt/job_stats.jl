@@ -7,10 +7,10 @@ table_names(db) = map(Base.Fix2(getfield, :name), SQLite.tables(db))
 
 function generate_sqlite(report)
     path, _ = splitext(report)
-    sqlite_path =  path * ".sqlite"
+    sqlite_path = path * ".sqlite"
     try
         db = SQLite.DB(sqlite_path)
-        @assert "NVTX_EVENTS" in table_names(db)
+        @assert "NVTX_EVENTS" in table_names(db) lazy"Missing table NVTX_EVENTS for $sqlite_path"
         return sqlite_path
     catch
         run(Cmd(["nsys", "export", "--force-overwrite=true", "--quiet=true", "--type", "sqlite", "--output", sqlite_path, report]))
@@ -27,14 +27,16 @@ end
 
 function rank_statistics(sqlite_path)
     db = SQLite.DB(sqlite_path)
+    @assert "NVTX_EVENTS" in table_names(db) lazy"Missing table NVTX_EVENTS for $sqlite_path"
 
     # NVTX Stats
     query = """
     SELECT
-	avg(end - start)/1000000000 as duration,
-	min(end - start)/1000000000 as min_duration,
-	max(end - start)/1000000000 as max_duration,
-	count(*) as instances,
+    avg(end - start)/1000000000 as duration,
+    min(end - start)/1000000000 as min_duration,
+    max(end - start)/1000000000 as max_duration,
+    min(start)/1000000000 as first_start,
+    count(*) as instances,
     normalize_nvtx_event_name(text) as range
     FROM NVTX_EVENTS
     GROUP BY range
@@ -87,10 +89,11 @@ end
 
 function merge_stats(profile_stats)
     stats = combine(groupby(vcat(profile_stats...), "range"),
-                      "min_duration" => minimum,
-                      "max_duration" => maximum,
-                    ["duration", "instances"] => merge_duration => ["duration", "instances"],
-                    nrow => "ranks";
+        "min_duration" => minimum,
+        "max_duration" => maximum,
+        "first_start" => minimum,
+        ["duration", "instances"] => merge_duration => ["duration", "instances"],
+        nrow => "ranks";
         renamecols=false,
     )
     sort!(stats, "duration"; rev=true)
@@ -98,15 +101,32 @@ function merge_stats(profile_stats)
 end
 
 
-function job_statistics(output_dir)
+function job_statistics(output_dir; limit=nothing)
     files = readdir(output_dir; join=true)
     nsys_reports = filter(endswith(".nsys-rep"), files)
+    if isempty(nsys_reports)
+        return Dict()
+    end
+    if !isnothing(limit)
+        nsys_reports = nsys_reports[1:limit]
+    end
     profile_stats = Vector(undef, length(nsys_reports))
     memory_trace = similar(profile_stats)
     ranks = Vector{Int}(undef, length(nsys_reports))
     Threads.@threads :dynamic for (idx, file) in collect(enumerate(nsys_reports))
-        sqlite_path = generate_sqlite(file)
-        profile_stats[idx], memory_trace[idx] = rank_statistics(sqlite_path)
+        try
+            @info "Processing $file"
+            sqlite_path = generate_sqlite(file)
+            profile_stats[idx], memory_trace[idx] = rank_statistics(sqlite_path)
+        catch e
+            if e isa AssertionError
+                @warn "Failed to process $file due to AssertionError" e catch_backtrace()
+                rm(sqlite_path, force=true)
+                profile_stats[idx], memory_trace[idx] = missing, missing
+            else
+                rethrow()
+            end
+        end
         ranks[idx] = parse(Int, split(splitext(basename(file))[1], "_")[4])
     end
 
@@ -114,11 +134,45 @@ function job_statistics(output_dir)
     config = job_config(output_dir)
 
     # Return as a dict
-    return return Dict(
+    return Dict(
         "config" => config,
-        "nvtx" => NamedTuple.(eachrow(merge_stats(profile_stats))),
+        "nvtx" => Dict((rank => v for (rank, v) in zip(ranks, profile_stats))),
         "memory" => Dict((rank => v for (rank, v) in zip(ranks, memory_trace))),
     )
 end
 
-!isinteractive() && JSON.print(job_statistics(first(ARGS)))
+function process_sweep(run_directory; kwargs...)
+    Threads.@threads :dynamic for dir in readdir(run_directory; join=true)
+        process_dir(dir)
+    end
+end
+
+function process_dir(dir)
+    @info "Processing $dir"
+    stats = job_statistics(dir)
+    isnothing(stats) && return
+    open(joinpath(dir, "stats.json"), "w") do fid
+        JSON.print(fid, stats)
+    end
+end
+
+"""
+Script for processing nsys output files
+
+    julia --project opt/job_stats.jl [dir]          # Process a single directory
+    julia --project opt/job_stats.jl sweep [dir]    # Process a directory of results
+
+Code is threaded, so setting `--threads \${SLURM_CPUS_PER_TASK:-auto}` is recommended.
+"""
+function main(args)
+    if length(args) == 1
+        process_dir(args[1])
+    elseif length(args) == 2 && args[1] == "sweep"
+        process_sweep(args[2])
+    else
+        display(@doc(main))
+    end
+    exit()
+end
+
+!isinteractive() && main(ARGS)
