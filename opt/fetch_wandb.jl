@@ -61,7 +61,7 @@ function run_summary(run)
 
     # Account for GAS
     gas = pyconvert(Optional{Int}, get_entry(config, "cli", "trainer", "accumulate_grad_batches"))
-    row["eff_batch_size"] = row["macro_batch_size"] * ( ismissing(gas) ? 1 : gas )
+    row["eff_batch_size"] = row["macro_batch_size"] * (ismissing(gas) ? 1 : gas)
 
     # Get Loss Trace
     loss_trace = run.scan_history(keys=@py(["trainer/global_step", "val/loss_epoch"]))
@@ -77,14 +77,14 @@ end
 function query_runs(; kwargs...)
     API = Wandb.wandb.Api()
     filters = @py {
-        "State": {"\$in": ["Crashed", "Finished"]},
+        "State":{"\$in":["Crashed", "Finished"]},
         "tags":{"\$in":["pretraining"]},
-        "summary_metrics.trainer/global_step": {"\$exists": true},
+        "summary_metrics.trainer/global_step":{"\$exists":true},
         # "summary_metrics.trainer/global_step": {"\$gt": 2000},
-        "config.intermediate_size": {"\$exists": true},
-        "config.hidden_size": {"\$exists": true},
-        "config.num_hidden_layers": {"\$exists": true},
-        "summary_metrics.val/loss_epoch.min": {"\$gte": 1e-3},
+        "config.intermediate_size":{"\$exists":true},
+        "config.hidden_size":{"\$exists":true},
+        "config.num_hidden_layers":{"\$exists":true},
+        "summary_metrics.val/loss_epoch.min":{"\$gte":1e-3},
     }
     return collect(API.runs(path="incite-mist/mist"; filters, kwargs...))
 end

@@ -35,19 +35,38 @@ end
 
 function fit_model(model)
     sampler = NUTS(1000, 0.65; init_ϵ=5.0e-3, adtype=AutoForwardDiff())
-    chains = sample(model, sampler, MCMCThreads(), 100, 2; drop_warmup=true, progres=true)
+    chains = sample(model, sampler, MCMCThreads(), 10_000, 128; drop_warmup=true, progres=true)
     return chains
 end
 
-function main(dir)
+savefig(name::String, f) = save(joinpath(@__DIR__, "figs", name), f)
+savefig(dir::String, name::String, f) = save(joinpath(dir, name), f)
+
+function main(args)
+    dir = args[1]
+    outdir = mkpath(joinpath(@__DIR__, "out", string(uuid4())) * "/")
+
+    @info "Instantiating model"
     model, df = instantiate_model(dir)
+    open(joinpath(outdir, "dataset.json"), "w") do fid
+        JSON.print(fid, eachrow(df))
+    end
+
+    @info "Fitting model"
     chains = fit_model(model)
+    h5open(joinpath(outdir, "chains.h5"), "w") do h5
+        write(h5, chains)
+    end
 
     # Generate plots
-    BayesianScaling.plot_parity(model, chains)
-    BayesianScaling.plot_best_lr(chains, dfm)
-    BayesianScaling.plot_scaling(chains, dfm)
-    BayesianScaling.plot_scaling_parameters(chains)
+    @info "Generating plots"
+    savefig(outdir, "parity.pdf", BayesianScaling.plot_parity(model, chains))
+    savefig(outdir, "scaling.pdf", BayesianScaling.plot_scaling(chains, df))
+    savefig(outdir, "lr_scaling.pdf", BayesianScaling.plot_best_lr(chains, df))
+    savefig(outdir, "chains.pdf", BayesianScaling.plot_chains(model, chains))
+    savefig(outdir, "chain_cov.pdf", BayesianScaling.plot_chain_covariance(chains, model))
 
-    return nothing
+    return 0
 end
+
+!isinteractive() && exit(main(ARGS))

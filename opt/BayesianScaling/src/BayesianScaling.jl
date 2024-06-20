@@ -32,16 +32,16 @@ include("utils.jl")
     σ² ~ LogNormal(-1, 2)
 
     # LR Scaling Model
-    lr_0 ~ LogNormal(log(5e-5), 2)  # Optimal LR at N = 1
-    lr_n ~ LogNormal(log(1e-2), 4)  # Scaling of lr with log N
-    lr_p ~ Exponential(0.1)    # Penalty term for deviation from lr_eff
+    lr_0 ~ LogNormal(log(1e-3), 2)  # Optimal LR at N = 1
+    lr_n ~ Exponential(0.1)         # Scaling of lr with log N 
+    lr_p ~ Exponential(0.1)         # Penalty term for deviation from lr_eff
     log_lr_eff = @. lr_0 - lr_n * log(model_size)
 
     # Shape Factors
-    ff_ratio_0 ~ LogNormal(log(1), 2)   # Ideal ff_ratio
-    ff_ratio_p ~ Exponential(0.1)        # Penalty term for deviation
+    ff_ratio_0 ~ LogNormal(log(1), 2)
+    ff_ratio_p ~ Exponential(1e-2)
     aspect_ratio_0 ~ LogNormal(log(64), 2)
-    aspect_ratio_p ~ Exponential(0.1)
+    aspect_ratio_p ~ Exponential(1e-2)
 
     # Estimate Loss
     mu = @. (A / (model_size^α)) + (B / (data_size^β)) + E +
