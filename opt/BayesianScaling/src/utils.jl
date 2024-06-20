@@ -7,7 +7,7 @@ function logrange(lb, ub; base=10, kwargs...)
     else
         f = x -> base^x
     end
-    return Iterators.map(f, iter)
+    return map(f, iter)
 end
 
 """
@@ -59,4 +59,25 @@ function non_embedding_size(d_model, d_ff, n_layers; d_attn=d_model)
     project = n_layers * d_model * d_attn
     ff = n_layers = 2 * d_model * d_ff
     return attention_qkv + project + ff
+end
+
+function sample_response(model, chains)
+    y = stack(generated_quantities(model, chains))
+    σ² = chains[:, :σ², :]
+    for idx in CartesianIndices(size(y)[2:end])
+        for i in 1:size(y, 1)
+            y[i, idx] = rand(LogNormal(log(y[i, idx]), σ²[idx]))
+        end
+    end
+    y = reshape(y, size(y, 1), :)
+    return y
+end
+
+""" Compute quantiles for each column of `x` at `p` """
+function col_quantile(x::AbstractMatrix, p)
+    q = Matrix{Float32}(undef, length(p), size(x, 2))
+    for (i, col) in enumerate(eachcol(x))
+        q[:, i] .= quantile(col, p)
+    end
+    return q
 end

@@ -16,11 +16,10 @@ function Makie.plot!(plt::PredictionBand)
 end
 
 function plot_best_lr(chains, df=missing;
-    N=range(1e5, 1e9; length=102),
-    lr=logrange(1e-5, 1e-3; length=100)
+    N=logrange(1e2, 1e10; length=200),
+    lr=logrange(1e-5, 3e-3; length=100)
 )
     f = Figure()
-    lr = collect(lr)
 
     # Prediction Plot
     # gl = GridLayout(f[1:2, 1])
@@ -35,6 +34,28 @@ function plot_best_lr(chains, df=missing;
     lr_0 = vec(chains[:, :lr_0, :])
     lr_n = vec(chains[:, :lr_n, :])
     lr_p = vec(chains[:, :lr_p, :])
+
+    # Plot LR from Kaplan, J. et al. 2020. Scaling Laws for Neural Language Models. arXiv.
+    # LR(N) ≈ 0.003239 + −0.0001395 log(N )
+    N_kaplan = logrange(768, 1.5e9; length=200)
+    lr_kaplan = @. 0.003239 − 0.0001395 * log(N_kaplan)
+    replace!(x -> x <= 0 ? NaN : x, lr_kaplan)
+    lines!(ax, N_kaplan, lr_kaplan; color=:blue, label="Kaplan et al. 2020")
+
+    # Add measured points
+    if !ismissing(df)
+        h = scatter!(ax, df.model_size, df.lr;
+            color=df.min_val_loss,
+            colorscale=log10,
+            colorrange=extrema(df.min_val_loss),
+            label="Emperical Data",
+        )
+        Colorbar(f[1, 2], h; label="Validation Loss", tickformat="{:.3f}")
+
+    end
+    scatter!(ax, non_embedding_size(768, 768, 12), 1.6e-4;
+        marker=:star5, color=:red, markersize=15, label="MolFormer"
+    )
 
     # Median Penalty
     lr_eff = @. exp(lr_0 - lr_n * log(N'))
@@ -60,20 +81,6 @@ function plot_best_lr(chains, df=missing;
         label="95% Credible Interval for η"
     )
 
-    # Add measured points
-    if !ismissing(df)
-        h = scatter!(ax, df.model_size, df.lr;
-            color=df.min_val_loss,
-            colorscale=log10,
-            colorrange=extrema(df.min_val_loss),
-            label="Emperical Data",
-        )
-        Colorbar(f[1, 2], h; label="Validation Loss", tickformat="{:.3f}")
-
-    end
-    scatter!(ax, non_embedding_size(768, 768, 12), 1.6e-4;
-        marker=:star5, color=:red, markersize=15, label="MolFormer"
-    )
     Legend(f[2, 1], ax; tellwidth=false, tellheight=true, nbanks=2)
 
     return f
@@ -148,15 +155,8 @@ function plot_scaling(chains, df;
 end
 
 function plot_parity(model, chains; p=0.025)
-    y = stack(generated_quantities(model, chains))
-    σ² = chains[:, :σ², :]
-    for idx in CartesianIndices(size(y)[2:end])
-        for i in 1:size(y, 1)
-            y[i, idx] = rand(LogNormal(log(y[i, idx]), σ²[idx]))
-        end
-    end
-    y = reshape(y, size(y, 1), :)
-    yq = map(c -> quantile(c, (0.025, 0.975)), eachrow(y))
+    y = sample_response(model, chains)
+    yq = map(c -> quantile(c, (p, 1 - p)), eachrow(y))
     y_lower = first.(yq)
     y_upper = last.(yq)
 
@@ -490,9 +490,78 @@ end
 
 function penaltyband!(ax, p, x0, x; kwargs...)
     p = @. p' * logsqdev(x, x0')
-    q = Matrix{Float32}(undef, 3, length(x))
-    for i in 1:length(x)
-        q[:, i] .= quantile(p[i, :], (0.025, 0.5, 0.97))
-    end
+    q = col_quantile(p', (0.025, 0.5, 0.975))
     predictionband!(ax, x, q[2, :], q[1, :], q[3, :]; kwargs...)
+end
+
+""" Return indices for a nearly square grid of `n` plots """
+function layout_indices(n::Int)
+    nc = max(floor(Int, sqrt(n)), 1)
+    nr = cld(n, nc)
+    @assert nc * nr >= n
+    return CartesianIndices((nr, nc))
+end
+
+function plot_residual_correlations(model, chains, df; p=0.25)
+    y = first(model.args)
+    y_hat = sample_response(model, chains)
+    error = @. log(y) - log(y_hat)
+    rescor = residual_correlations(error, df)
+
+    # Sort by correlations
+    cols = collect(keys(rescor))
+    sort!(cols; by=x -> first(rescor[x]))
+
+    f = Figure()
+    error_q = col_quantile(error', (p, 1 - p))
+    indices = layout_indices(length(cols))
+    for (c, idx) in zip(cols, indices)
+        x = df[!, c]
+        x = x .* (1 .+ 0.01 * randn(length(x)))
+        # if c == "min_val_loss" || (0 < minimum(x) && 2 <= -(-(extrema(log10.(x))...)))
+        xscale = log10
+        # else
+        #     xscale = identity
+        # end
+
+        ax = Axis(f[idx.I...];
+            xlabel=c,
+            ylabel="Log-Residuals",
+            xscale,
+        )
+        idx.I[2] != 1 && hideydecorations!(ax)
+        rangebars!(ax, x, error_q[1, :], error_q[2, :])
+    end
+    linkyaxes!(f.content...)
+    colgap!(f.layout, 20)
+
+    return f
+end
+
+function plot_chain_covariance(chains, model)
+    f = Figure()
+    names = chains.name_map[:parameters]
+    priors = Turing.DynamicPPL.extract_priors(model)
+    nsamples = size(chains, 1) * size(chains, 3)
+    bins = ceil(Int, sqrt(nsamples))
+    for (i, px) in enumerate(names)
+        xscale = dist_tf(priors[Turing.@varname($px)])
+        for (j, py) in enumerate(names)
+            yscale = dist_tf(priors[Turing.@varname($py)])
+            ax = Axis(f[j, i];
+                ylabel=string(py),
+                xlabel=string(px),
+            )
+            if i == j
+                hist!(ax, vec(chains[px]); bins)
+            else
+                hexbin!(ax, vec(chains[px]), vec(chains[py]); bins)
+            end
+            i != 1 && hideydecorations!(ax)
+            j != length(names) && hidexdecorations!(ax)
+        end
+    end
+    rowgap!(f.layout, 5)
+    colgap!(f.layout, 5)
+    return f
 end

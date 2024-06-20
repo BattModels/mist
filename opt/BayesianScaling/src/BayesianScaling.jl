@@ -10,7 +10,7 @@ using MLUtils: splitobs
 using JSON: JSON
 using LinearAlgebra: I, diagm
 using Statistics: mean, std, median
-using StatsBase: quantile, sample, mean_and_std, autocor, ecdf
+using StatsBase: StatsBase, quantile, sample, mean_and_std, autocor, ecdf
 using Random: shuffle!
 using MCMCChainsStorage: MCMCChainsStorage
 
@@ -78,6 +78,8 @@ function compute_optimal_model(flops; A, α, B, β, kwargs...)
     return @. G * (flops / 6)^a
 end
 
+include("acquire.jl")
+include("checks.jl")
 include("plan.jl")
 include("plots.jl")
 
