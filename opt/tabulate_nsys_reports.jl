@@ -16,7 +16,6 @@ function generate_sqlite(report)
         "export",
         "--force-overwrite=true",
         "--type=sqlite",
-        "--tables=NVTX_EVENTS,CUDA_GPU_MEMORY_USAGE_EVENTS",
         "--quiet=true",
         "--output", sqlite_path,
         report,
@@ -253,7 +252,7 @@ However, when running in a batch job, setting the `JULIA_NUM_THREADS` directly i
 #!/bin/bash
 #SBATCH -c 16
 
-module load cuda/12.3   # CUDA >= 12.3 is required
+module load cuda/12.3   # CUDA >= 12.2 is required
 export JULIA_NUM_THREADS=\${SLURM_CPUS_PER_TASK:-auto}
 ./opt/$(basename(@__FILE__)) RESULT_DIR # Or similar
 ```
