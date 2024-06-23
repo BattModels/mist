@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from statistics import mean
 from typing import Dict, List, Optional, Union
-
+import yaml
 import pytorch_lightning as pl
 import torch
 from datasets import Dataset, load_dataset
@@ -11,16 +11,13 @@ from torch.utils.data import DataLoader
 
 from ..utils.tokenizer import load_tokenizer
 
-TaskSpecs = List[Dict[str, Union[str, int]]]
-
-
 class PropertyPredictionDataModule(pl.LightningDataModule):
     def __init__(
         self,
         path: str,
         tokenizer: str,
-        dataset_name: str = "brace",
-        task_specs: TaskSpecs = [{"measure_name": "Class", "n_classes": 2}],
+        task_config: str = "",
+        dataset_name: str = "bace",
         batch_size: int = 64,
         num_workers: int = 1,
         prefetch_factor: int = 4,
@@ -40,12 +37,16 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.dataset_name = dataset_name
-        self.task_specs = task_specs
+        self.task_config: Path = Path(task_config) 
+        assert self.task_config.is_file()
+        self.setup_task_config()
         self.train_dataset_length = train_dataset_length
         self.val_dataset_length = val_dataset_length
         self.test_dataset_length = test_dataset_length
-        self.task_specs = task_specs
-        self.save_hyperparameters()
+        self.save_hyperparameters(logger=False)
+
+    def setup_task_config(self) -> None:
+        self.task_specs = yaml.safe_load(self.task_config.open())
 
     def setup(self, stage: str) -> None:
         ds = load_dataset(os.path.join(self.path, self.dataset_name))
@@ -86,6 +87,13 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
                 )
 
     def data_collator(self, batch):
+        
+        def _impute(val):
+            if val is None:
+                return spec["fill_value"]
+            else:
+                return val
+            
         tokens = self.tokenizer._batch_encode_plus(
             [sample["smiles"] for sample in batch],
             add_special_tokens=True,
@@ -94,9 +102,8 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         )
         for spec in self.task_specs:
             tokens[spec["measure_name"]] = torch.tensor(
-                [sample[spec["measure_name"]] or spec["fill_value"] for sample in batch]
+                [_impute(sample[spec["measure_name"]]) for sample in batch]
             )
-
         return tokens
 
     def train_dataloader(self):

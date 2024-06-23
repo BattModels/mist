@@ -5,12 +5,10 @@ import torch
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
 from torchmetrics.classification import Accuracy
 from torchmetrics.regression import MeanAbsoluteError
-
+from pathlib import Path
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
-
-TaskSpecs = List[Dict[str, Union[str, int]]]
-
+import yaml 
 
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     """
@@ -20,7 +18,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     def __init__(
         self,
         encoder_ckpt: str,
-        task_specs: Union[str, TaskSpecs],
+        task_config: Union[str, Path] = "",
         freeze_encoder: bool = False,
         learning_rate: float = 1.6e-4,
         dropout: float = 0.2,
@@ -32,20 +30,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.learning_rate = learning_rate
         self.dropout = dropout
         self.encoder_ckpt = encoder_ckpt
-        if isinstance(task_specs, str):
-            task_specs = [
-                task_specs,
-            ]
-        if isinstance(task_specs, dict):
-            task_specs = [
-                task_specs,
-            ]
-        self.task_specs = task_specs
+        self.task_config: Path = task_config 
+        assert self.task_config.is_file()
+        self.setup_task_config()
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
-
-        self.save_hyperparameters()
+        self.save_hyperparameters(logger=False)
 
         head_hyperparams = {
             "embed_dim": self.encoder.config.hidden_size,
@@ -65,6 +56,9 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.setup_loss_functions()
         self.setup_metrics()
         self.freeze_encoder = freeze_encoder
+
+    def setup_task_config(self) -> None:
+        self.task_specs = yaml.safe_load(self.task_config.open())
 
     def setup_loss_functions(self):
         for spec in self.task_specs:
@@ -130,6 +124,8 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         )
 
         for spec in self.task_specs:
+            print(spec["measure_name"])
+            print("loss", loss)
             target = spec["measure_name"]
             labels = batch[target]
             if spec.get("n_classes", 1) <= 1:
@@ -154,19 +150,24 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         )
 
         for spec in self.task_specs:
+            print(spec["measure_name"])
+            print("loss", loss)
             target = spec["measure_name"]
             labels = batch[target]
             if spec.get("n_classes", 1) <= 1:
                 labels = labels.reshape(labels.size()[0], 1)
 
-            self.log(
-                f"val/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-            )
+            if isinstance(loss, int):
+                print(batch)
+            else:
+                self.log(
+                    f"val/{target}_{spec['metric'].__class__.__name__}",
+                    spec["metric"].to(loss.device)(outputs[target], labels),
+                    on_step=False,
+                    on_epoch=True,
+                    prog_bar=True,
+                    sync_dist=True,
+                )
         return loss
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
@@ -188,7 +189,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             if spec.get("n_classes", 1) <= 1:
                 labels = labels.reshape(labels.size()[0], 1)
             self.log(
-                f"val/{target}_{spec['metric'].__class__.__name__}",
+                f"test/{target}_{spec['metric'].__class__.__name__}",
                 spec["metric"].to(loss.device)(outputs[target], labels),
                 on_step=False,
                 on_epoch=True,
