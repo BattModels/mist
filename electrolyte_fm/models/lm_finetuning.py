@@ -124,8 +124,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         )
 
         for spec in self.task_specs:
-            print(spec["measure_name"])
-            print("loss", loss)
             target = spec["measure_name"]
             labels = batch[target]
             if spec.get("n_classes", 1) <= 1:
@@ -150,24 +148,19 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         )
 
         for spec in self.task_specs:
-            print(spec["measure_name"])
-            print("loss", loss)
             target = spec["measure_name"]
             labels = batch[target]
             if spec.get("n_classes", 1) <= 1:
                 labels = labels.reshape(labels.size()[0], 1)
 
-            if isinstance(loss, int):
-                print(batch)
-            else:
-                self.log(
-                    f"val/{target}_{spec['metric'].__class__.__name__}",
-                    spec["metric"].to(loss.device)(outputs[target], labels),
-                    on_step=False,
-                    on_epoch=True,
-                    prog_bar=True,
-                    sync_dist=True,
-                )
+            self.log(
+                f"val/{target}_{spec['metric'].__class__.__name__}",
+                spec["metric"].to(loss.device)(outputs[target], labels),
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                sync_dist=True,
+            )
         return loss
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
