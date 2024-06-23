@@ -39,12 +39,6 @@ class MyLightningCLI(LightningCLI):
             default=[],
         )
 
-        parser.add_argument(
-            "--task_specs",
-            type=Union[List[Dict], Dict, str],
-            default=[],
-        )
-
         parser.link_arguments("tags", "trainer.logger.init_args.tags")
 
         # Set model vocab_size from the dataset's vocab size
@@ -52,10 +46,11 @@ class MyLightningCLI(LightningCLI):
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
         )
 
-        parser.link_arguments("task_specs", "data.init_args.task_specs")
         # Set model task_specs from the dataset's task_specs
         parser.link_arguments(
-            "data.task_specs", "model.init_args.task_specs", apply_on="instantiate"
+            "data.task_config", 
+            "model.init_args.task_config", 
+            apply_on="instantiate"
         )
 
         # Configure tokenizer from checkpoint
