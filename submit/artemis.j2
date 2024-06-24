@@ -2,16 +2,16 @@
 {%- from "./utils.j2" import cliopts, export_env, export_job_config %}
 #SBATCH -p {{ queue or "venkvis-debug" }}
 #SBATCH --nodes {{ nodes or 1 }}
-#SBATCH --ntasks-per-node {{ gpus_per_node or 2 }}
 #SBATCH --gpus-per-node {{ gpus_per_node or 2 }}
+#SBATCH --ntasks-per-node {{ gpus_per_node or 2 }}
 #SBATCH --time {{ walltime or "0:30:00" }}
 #SBATCH --cpus-per-task 16
 #SBATCH --mem-per-cpu 2G
 #SBATCH --gpu_cmode=shared
 {%- if resubmit %}
 #SBATCH --signal=SIGUSR1@90
+#SBATCH --requeue
 {%- endif %}
-
 # Training script for h001
 my_job_header
 set -ex
@@ -21,7 +21,7 @@ cd $(git rev-parse --show-toplevel)
 
 # Activate Environment
 module purge
-module --ignore_cache load spack/0.21 python/3.11.5 cuda/12.2 openmpi/4.1.6
+module --ignore_cache load spack/0.21 python/3.11.5 cuda/12.1.1 openmpi/4.1.6
 source ./activate
 
 # Set env variables
