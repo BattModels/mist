@@ -67,7 +67,7 @@ function plot_best_lr(chains, df=missing;
         end
     end
     h = contour!(ax, N, lr, p';
-        levels=10,
+        levels=[0.1, 0.25, 0.5],
         labels=true,
         color=:red,
         label="95th-Percentile η Penalty",
@@ -113,23 +113,24 @@ function plot_scaling(chains, df;
             d = c / (6n)
             l = @.((A / n^α) + (B / d^β) + E)
             loss[j, i] = median(l)
-            loss_std[j, i] = exp.(std(log.(l)))
+            loss_std[j, i] = std(log10.(l))
         end
     end
     loss_low = min(minimum(df.min_val_loss), minimum(loss))
     loss_high = maximum(df.min_val_loss)
-    levels = collect(logrange(loss_low, loss_high; length=20))
+    levels = logrange(loss_low, loss_high; length=20)
     h = contourf!(ax, C ./ pf_day, N, loss; levels, colorscale=log10)
     contour!(ax, C ./ pf_day, N, loss_std;
-        levels=collect(logrange(extrema(loss_std)...; length=10)),
-        # levels=20,
+        levels=10,
+        # levels=logrange(1e-3, 10; length=10),
+        # levels=logrange(extrema(loss_std)...; length=10),
         labels=true,
         color=:red,
     )
     cb = Colorbar(f[1, 2], h; label="Validation Loss")
 
     # Add Empirical Loss
-    model_flops = @. 6 * df.model_size * df.data_size / pf_day
+    model_flops = @. 6 * float(df.model_size) * float(df.data_size) / pf_day
     h = scatter!(ax, model_flops, df.model_size;
         color=df[:, :min_val_loss],
         colormap=cb.colormap,
@@ -156,9 +157,7 @@ end
 
 function plot_parity(model, chains; p=0.025)
     y = sample_response(model, chains)
-    yq = map(c -> quantile(c, (p, 1 - p)), eachrow(y))
-    y_lower = first.(yq)
-    y_upper = last.(yq)
+    yq = slice_quantile(y, (p, 0.5, 1-p); dims=1)
 
     f = Figure()
     ax = Axis(f[1, 1];
@@ -168,12 +167,13 @@ function plot_parity(model, chains; p=0.025)
         xlabel="Measured Loss",
     )
     # scatter!(ax, y, model.args.loss)
-    rangebars!(ax, model.args.loss, y_lower, y_upper; color=:blue, linewidth=1, label="95% Credible Interval")
+    y_loss = map(minimum, model.args.loss)
+    rangebars!(ax, y_loss, yq[1, :], yq[3, :]; color=:blue, linewidth=1, label="95% Credible Interval")
 
     # Plot Parity line
     n = 100
-    ll = minimum(model.args.loss)
-    uu = maximum(model.args.loss)
+    ll = minimum(yq)
+    uu = maximum(yq)
     lines!(ax, range(ll, uu; length=n), range(ll, uu; length=n), color=:red)
     axislegend(ax, position=:rb)
     return f
@@ -361,6 +361,7 @@ function plot_compute_optimal(chains, df=missing;
             β=chains[:, :β, :],
             E=chains[:, :E, :],
         )
+        @assert all(>(0), loss)
         for idx in eachindex(loss)
             loss[idx] = rand(LogNormal(log(loss[idx]), σ²[idx]))
         end
@@ -408,7 +409,7 @@ function plot_compute_optimal(chains, df=missing;
     end
 
     if !ismissing(df)
-        scatter!(ax, @.(6 * df.data_size * df.model_size / pf_day), df.min_val_loss;
+        scatter!(ax, @.(6 * float(df.data_size) * float(df.model_size) / pf_day), df.min_val_loss;
             marker=:x, markersize=3, color=:blue, label="Emperical",
         )
     end
@@ -527,7 +528,7 @@ function plot_residual_correlations(model, chains, df; p=0.25)
         ax = Axis(f[idx.I...];
             xlabel=c,
             ylabel="Log-Residuals",
-            xscale,
+            xscale, e
         )
         idx.I[2] != 1 && hideydecorations!(ax)
         rangebars!(ax, x, error_q[1, :], error_q[2, :])
@@ -538,9 +539,15 @@ function plot_residual_correlations(model, chains, df; p=0.25)
     return f
 end
 
-function plot_chain_covariance(chains, model)
+function plot_chain_covariance(model, chains; skip_vector_parameters=true)
     f = Figure()
-    names = chains.name_map[:parameters]
+    names = deepcopy(chains.name_map[:parameters])
+    if skip_vector_parameters
+        # Skip parameters that end with [xx] (i.e. `loss_trace_a[10]`)
+        filter!(names) do name
+            match(r"\[\d*?\]$", string(name)) == nothing
+        end
+    end
     priors = Turing.DynamicPPL.extract_priors(model)
     nsamples = size(chains, 1) * size(chains, 3)
     bins = ceil(Int, sqrt(nsamples))
@@ -563,5 +570,46 @@ function plot_chain_covariance(chains, model)
     end
     rowgap!(f.layout, 5)
     colgap!(f.layout, 5)
+    return f
+end
+
+function plot_training_progress(model, chains::Chains)
+    f = Figure()
+    del = 1e-4
+    ax = Axis(f[1, 1];
+              xlabel="Relative Training Progress",
+              ylabel="Validation Loss",
+              limits=((0, 1), (1e-3, 1.0)),
+              xscale=identity,
+              yscale=log10,
+        )
+
+    out = reduce((s...) -> cat(s...; dims=3), generated_quantities(model, chains))
+    @assert size(out, 2) == 2
+    mu = view(out, :, 1, :)
+    mu_hoffman = view(out, :, 2, :)
+    sl = Slider(f[1, 2], range=1:size(mu, 1), horizontal=false, tellwidth=true,)
+    loss_trace = lift(sl.value) do idx
+        loss = model.args.loss[idx]
+        step = model.args.step[idx]
+        Point2.(step, loss)
+    end
+    expected_loss = lift(sl.value) do idx
+        step = range(0, 1; length=100)
+        a = vec(chains[:, Symbol("loss_trace_a[$idx]"), :])
+        b = vec(chains[:, Symbol("loss_trace_b[$idx]"), :])
+        mu_step = median(step_log_loss.(step', mu[idx, :], a, b); dims=1) |> vec .|> exp
+        Point2.(step, mu_step)
+    end
+    best_loss = lift(sl.value) do idx
+        step = range(0, 1; length=100)
+        a = vec(chains[:, Symbol("loss_trace_a[$idx]"), :])
+        b = vec(chains[:, Symbol("loss_trace_b[$idx]"), :])
+        mu_step = median(step_log_loss.(step', mu_hoffman[idx, :], a, b); dims=1) |> vec .|> exp
+        Point2.(step, mu_step)
+    end
+    lines!(ax, loss_trace; color=:red)
+    lines!(ax, expected_loss; color=:blue)
+    lines!(ax, best_loss; color=:green)
     return f
 end

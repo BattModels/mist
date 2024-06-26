@@ -61,23 +61,24 @@ function non_embedding_size(d_model, d_ff, n_layers; d_attn=d_model)
     return attention_qkv + project + ff
 end
 
-function sample_response(model, chains)
-    y = stack(generated_quantities(model, chains))
+function sample_response(model, chains; obsdim=1, dist=(μ, σ) -> LogNormal(log(μ), σ))
+    y = selectdim(stack(generated_quantities(model, chains)), 2, 1)
+    y_out = similar(y)
     σ² = chains[:, :σ², :]
-    for idx in CartesianIndices(size(y)[2:end])
-        for i in 1:size(y, 1)
-            y[i, idx] = rand(LogNormal(log(y[i, idx]), σ²[idx]))
-        end
+    for odx in axes(y, 1)
+        y_obs = selectdim(y, 1, odx)
+        y_obs_out = selectdim(y_out, 1, odx)
+        @. y_obs_out = rand(dist(y_obs, σ²))
     end
-    y = reshape(y, size(y, 1), :)
-    return y
+    return y_out
 end
 
 """ Compute quantiles for each column of `x` at `p` """
-function col_quantile(x::AbstractMatrix, p)
-    q = Matrix{Float32}(undef, length(p), size(x, 2))
-    for (i, col) in enumerate(eachcol(x))
-        q[:, i] .= quantile(col, p)
+function slice_quantile(x, p=(0.5,); dims=1)
+    slices = eachslice(x; dims)
+    q = similar(x, length(p), size(slices)...)
+    for idx = eachindex(slices)
+        q[:, idx] .= quantile(slices[idx], p)
     end
     return q
 end
