@@ -3,12 +3,21 @@ from typing import Dict, List, Union
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from torchmetrics.classification import Accuracy
-from torchmetrics.regression import MeanAbsoluteError
+from torchmetrics.classification import Accuracy, BinaryAccuracy
+from torchmetrics.regression import MeanAbsoluteError, RelativeSquaredError
 from pathlib import Path
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
 import yaml 
+from .model_utils import DeepSpeedMixin
+from pytorch_lightning.loggers import WandbLogger
+
+# def relative_l1_loss(preds, targets, p=1):
+#     errors = torch.sum(torch.abs(preds - targets) ** p)
+#     normalization_factor = torch.sum(torch.abs(targets) ** p)
+    
+#     return regression_loss(x, y) / torch.mean(torch.abs(y))
+    
 
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     """
@@ -30,13 +39,16 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.learning_rate = learning_rate
         self.dropout = dropout
         self.encoder_ckpt = encoder_ckpt
+        self.pretrained_loss = float(encoder_ckpt.split("=")[-1].split(".")[0])
         self.task_config: Path = task_config 
         assert self.task_config.is_file()
         self.setup_task_config()
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
-        self.save_hyperparameters(logger=False)
+        for k, v in self.encoder.config.to_dict().items():
+            self.hparams[k] = v
+        self.save_hyperparameters(logger=True)
 
         head_hyperparams = {
             "embed_dim": self.encoder.config.hidden_size,
@@ -52,7 +64,8 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             }
         )
         self.classification_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)
-        self.regression_loss = torch.nn.MSELoss()
+        # self.regression_loss = RelativeSquaredError()
+        self.regression_loss = torch.nn.L1Loss()
         self.setup_loss_functions()
         self.setup_metrics()
         self.freeze_encoder = freeze_encoder
@@ -66,6 +79,12 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
                 spec["loss"] = self.classification_loss
             else:
                 spec["loss"] = self.regression_loss
+
+    def setup(self, stage: str) -> None:
+        if isinstance(self.logger, WandbLogger):
+            for m in ["train/loss", "val/loss"]:
+                for s in ["_step", "_epoch"]:
+                    self.logger.experiment.define_metric(m + s, summary="min")
 
     def setup_metrics(self):
         for spec in self.task_specs:
@@ -128,7 +147,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             labels = batch[target]
             if spec.get("n_classes", 1) <= 1:
                 labels = labels.reshape(labels.size()[0], 1)
-
             self.log(
                 f"train/{target}_{spec['metric'].__class__.__name__}",
                 spec["metric"].to(loss.device)(outputs[target], labels),

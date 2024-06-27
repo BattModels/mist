@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node {{ gpus_per_node or 2 }}
 #SBATCH --time {{ walltime or "0:30:00" }}
 #SBATCH --cpus-per-task 16
-#SBATCH --mem-per-cpu 2G
+#SBATCH --mem=450GB
 #SBATCH --gpu_cmode=shared
 {%- if resubmit %}
 #SBATCH --signal=SIGUSR1@90

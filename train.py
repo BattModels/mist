@@ -106,6 +106,14 @@ def cli_main(args=None):
             auto_insert_metric_name=False,
         ),
         LearningRateMonitor("step"),
+        EarlyStopping(
+            monitor="val/loss", 
+            min_delta=0.000, 
+            patience=500, 
+            verbose=True, 
+            mode="min"
+        ),
+        FinetuningMetrics()
     ]
 
     rank = int(os.environ.get("MIST_PID_RANK", 0))

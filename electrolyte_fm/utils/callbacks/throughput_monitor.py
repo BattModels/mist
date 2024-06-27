@@ -111,3 +111,27 @@ class ThroughputMonitor(Callback):
     ) -> None:
         if trainer.is_global_zero:
             self.record_batch_perf(trainer, pl_module, "val")
+
+
+class FinetuningMetrics(Callback):
+    """Custom callback in order to log finetuning metrics to weights and biases."""
+
+    def __init__(self) -> None:
+        super().__init__()
+    
+    def on_fit_start(self,
+                trainer: "pl.Trainer",
+                pl_module: "pl.LightningModule"
+        ) -> None:
+        if isinstance(trainer.logger, WandbLogger) and trainer.is_global_zero:
+            logger = trainer.logger
+            for spec in pl_module.task_specs:
+                target = spec["measure_name"]
+                logger.experiment.define_metric(
+                    f"val/{target}_{spec['metric'].__class__.__name__}", 
+                    summary="max"
+                    )
+                logger.experiment.define_metric(
+                    f"val/{target}_{spec['metric'].__class__.__name__}", 
+                    summary="min"
+                    )

@@ -1,0 +1,19 @@
+queue: venkvis-h100
+
+train:
+  data: PropertyPredictionDataModule
+  data.batch_size: 128
+  data.path: /molformer_ft_full/
+  data.dataset_name: bace
+  data.num_workers: 1
+  data.task_config: /task_config.yaml
+  model: LMFinetuning
+  model.encoder_ckpt: /.ckpt
+  model.optimizer: torch.optim.Adam
+  model.optimizer.lr: 1.6e-4
+  model.optimizer.weight_decay: 0.01
+  model.lr_schedule: electrolyte_fm.utils.lr_schedule.RelativeCosineWarmup
+  model.lr_schedule.num_training_steps: 250000
+  model.lr_schedule.num_warmup_steps: beta2
+  model.lr_schedule.rel_decay: 0.1
+  tags: [finetuning]

@@ -93,7 +93,6 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
 
     def _batch_encode_plus(self, batch_text_or_text_pairs, **kwargs):
         add_special_tokens = kwargs.pop("add_special_tokens", True)
-        add_special_tokens = kwargs.pop("truncation", True)
         encoding = self._tokenizer.encode_batch(
             batch_text_or_text_pairs, add_special_tokens=add_special_tokens
         )

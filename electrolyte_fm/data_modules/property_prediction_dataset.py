@@ -96,6 +96,7 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
             
         tokens = self.tokenizer._batch_encode_plus(
             [sample["smiles"] for sample in batch],
+            max_length=self.tokenizer.model_max_length,
             add_special_tokens=True,
             return_tensors="pt",
             padding_strategy="longest",
