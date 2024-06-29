@@ -259,6 +259,18 @@ export JULIA_NUM_THREADS=\${SLURM_CPUS_PER_TASK:-auto}
 
 ## Installation
 Before running you will need to install julia and instantiate the environment
+
+```bash
+# Install Julia with Juliaup
+curl -fsSL https://install.julialang.org | sh
+
+# Install the environment (Run from the project root)
+julia --project -e 'using Pkg; Pkg.instantiate()'
+
+# Run the script
+./opt/$(basename(@__FILE__)) RESULT_DIR # Or similar
+```
+
 """
 function main(args)
     if length(args) == 1
