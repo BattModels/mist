@@ -157,7 +157,7 @@ end
 
 function plot_parity(model, chains; p=0.025)
     y = sample_response(model, chains)
-    yq = slice_quantile(y, (p, 0.5, 1-p); dims=1)
+    yq = slice_quantile(y, (p, 0.5, 1 - p); dims=1)
 
     f = Figure()
     ax = Axis(f[1, 1];
@@ -267,7 +267,7 @@ end
 function plot_chains(model, chains)
     f = Figure()
     ns, _, nc = size(chains)
-    priors = Turing.DynamicPPL.extract_priors(model)
+    # priors = Turing.DynamicPPL.extract_priors(model)
     names = chains.name_map.parameters
     np = length(names)
 
@@ -285,7 +285,7 @@ function plot_chains(model, chains)
     # Plot Chains
     gl = GridLayout(f[1, 1])
     for (i, p) in enumerate(names)
-        yscale = dist_tf(priors[Turing.@varname($p)])
+        # yscale = dist_tf(priors[Turing.@varname($p)])
         samples = replace_domain_error.(yscale, Float32.(chains[p]))
         ylims = extrema(samples)
         fchain = GridLayout(gl[indices[i].I...])
@@ -552,9 +552,7 @@ function plot_chain_covariance(model, chains; skip_vector_parameters=true)
     nsamples = size(chains, 1) * size(chains, 3)
     bins = ceil(Int, sqrt(nsamples))
     for (i, px) in enumerate(names)
-        xscale = dist_tf(priors[Turing.@varname($px)])
         for (j, py) in enumerate(names)
-            yscale = dist_tf(priors[Turing.@varname($py)])
             ax = Axis(f[j, i];
                 ylabel=string(py),
                 xlabel=string(px),
@@ -573,16 +571,16 @@ function plot_chain_covariance(model, chains; skip_vector_parameters=true)
     return f
 end
 
-function plot_training_progress(model, chains::Chains)
+function plot_training_progress(model, chains)
     f = Figure()
     del = 1e-4
     ax = Axis(f[1, 1];
-              xlabel="Relative Training Progress",
-              ylabel="Validation Loss",
-              limits=((0, 1), (1e-3, 1.0)),
-              xscale=identity,
-              yscale=log10,
-        )
+        xlabel="Relative Training Progress",
+        ylabel="Validation Loss",
+        limits=((0, 1), (1e-3, 1.0)),
+        xscale=identity,
+        yscale=log10,
+    )
 
     out = reduce((s...) -> cat(s...; dims=3), generated_quantities(model, chains))
     @assert size(out, 2) == 2

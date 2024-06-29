@@ -1,4 +1,4 @@
-function estimate_datasize(N::Real, chains::Chains)
+function estimate_datasize(N::Real, chains)
     # Estimate Datasize
     A = chains[:A]
     α = chains[:α]
@@ -10,7 +10,7 @@ function estimate_datasize(N::Real, chains::Chains)
     return D_opt
 end
 
-function estimate_lr(N::Real, chains::Chains)
+function estimate_lr(N::Real, chains)
     lr_0 = chains[:lr_0]
     lr_n = chains[:lr_n]
     return @. exp(lr_0 - lr_n * log(N))
