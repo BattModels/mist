@@ -73,3 +73,15 @@ function slice_quantile(x, p=(0.5,); dims=1)
     end
     return q
 end
+
+function load_chains(dir; name=r"chain-(\d+).jld2", field="posterior")
+    chains = Vector{Array{Float64,2}}()
+    for file in readdir(dir; join=true)
+        m = match(name, file)
+        isnothing(m) && continue
+        jldopen(file) do h5
+            push!(chains, permutedims(h5[field])) # Want (Draws, Params)
+        end
+    end
+    return stack(chains; dims=2) # Wand (Draws, Chains, Params)
+end

@@ -9,6 +9,7 @@ using Statistics: mean, std, median
 using StatsBase: StatsBase, quantile, sample, mean_and_std, autocor, ecdf
 using Random: Random, shuffle!, AbstractRNG
 
+using JLD2: jldopen
 using DynamicHMC: DynamicHMC
 using ComponentArrays: ComponentArrays, ComponentArray, ComponentVector
 using LogDensityProblemsAD: ADgradient, ADGradientWrapper
