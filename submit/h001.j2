@@ -1,5 +1,5 @@
 #!/bin/bash
-{%- from "./utils.j2" import cliopts %}
+{%- from "./utils.j2" import cliopts, export_job_config %}
 
 # Training script for h001
 set -e
@@ -14,6 +14,8 @@ export NRANKS=1
 # Activate Environment
 spack env activate .
 source activate
+
+{{- export_job_config( __config__ ) }}
 
 {%- if nsys is defined %}
 nsys profile \

@@ -9,3 +9,13 @@
 export {{ k + "=" + v|string() }}
 {%- endfor %}
 {%- endmacro %}
+
+{%- macro export_job_config(config) -%}
+# Record configuration
+echo "########################################"
+export JOB_CONFIG='
+{{ config | tojson(indent=4) }}
+'
+echo "$JOB_CONFIG"
+echo "########################################"
+{%- endmacro %}

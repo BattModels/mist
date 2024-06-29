@@ -1,5 +1,5 @@
 #!/bin/bash
-{%- from "./utils.j2" import cliopts, export_env %}
+{%- from "./utils.j2" import cliopts, export_env, export_job_config %}
 #SBATCH -p {{ queue or "venkvis-debug" }}
 #SBATCH --nodes {{ nodes or 1 }}
 #SBATCH --ntasks-per-node {{ gpus_per_node or 2 }}
@@ -41,13 +41,7 @@ export PL_DEEPSPEED_CONFIG_PATH="$TMPDIR/deepspeed.json"
 export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
 {%- endif %}
 
-# Record configuration
-echo "########################################"
-JOB_CONFIG='
-{{ __config__ | tojson(indent=4) }}
-'
-echo "$JOB_CONFIG"
-echo "########################################"
+{{- export_job_config( __config__ ) }}
 
 srun --mpi=pmix \
 ${PWD}/submit/set_node_rank \
