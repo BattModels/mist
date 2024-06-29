@@ -16,7 +16,6 @@ def resubmit(
         file_okay=True, dir_okay=False, help="Jinja2 Template to render"
     ),
     ckpt=typer.Argument(file_okay=False, dir_okay=True, help="Checkpoint to Resume"),
-    walltime: str = typer.Option(help="Walltime for resumed run"),
     data: List[str] = typer.Option(
         [],
         file_okay=True,
@@ -26,36 +25,19 @@ def resubmit(
 ):
     ckpt = Path(ckpt)
     assert ckpt.is_dir(), f"Checkpoint path {ckpt} is not a directory"
-    config = Path(ckpt).parent.parent.joinpath("config.json")
-    assert config.is_file(), f"Config file not found at {config}"
+    config = Path(ckpt).parent.parent.joinpath("job_config.json")
+    assert config.is_file(), f"Job Config file was not found at {config}"
     with open(config, "r") as fid:
-        job_config_old = json.load(fid)
+        job_config = json.load(fid)
 
-    job_env_file = Path(ckpt).parent.parent.joinpath("env.json")
-    assert job_env_file.is_file(), f"Job environment file not found at {job_env_file}"
-    with open(job_env_file, "r") as fid:
-        env = json.load(fid)
-
-    # Extract job config
-    nodes = int(env["PMI_UNIVERSE_SIZE"])
-    queue = env["PBS_O_QUEUE"]
-    job_config = {
-        "nodes": nodes,
-        "queue": queue,
-        "train:": {  # Trailing `:` to override default
-            "ckpt_path": str(ckpt.resolve()),
-            "config": str(config.resolve()),
-        },
-    }
-    if walltime:
-        job_config["walltime"] = walltime
+    job_config["train"]["ckpt_path"] = str(ckpt.resolve())
 
     compose(
         template,
         data=data,
         json_config=json.dumps(job_config),
-        default=True,
-        script_config=True,
+        default=False,
+        script_config=False,
     )
 
 

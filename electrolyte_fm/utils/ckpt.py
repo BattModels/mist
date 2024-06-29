@@ -20,7 +20,12 @@ class SaveConfigWithCkpts(Callback):
         - Added version field to model_hparams.json
         - Added "class_path" field
         - Moved model hparams to "init_args" field
+
+    ## 0.2.1
+        - Save `JOB_CONFIG` to `job_config.json`
     """
+
+    VERSION = "0.2.1"
 
     def __init__(
         self,
@@ -57,11 +62,16 @@ class SaveConfigWithCkpts(Callback):
             with open(Path(config_path, "config.json"), "w") as config_file:
                 config_file.write(config_json)
 
+            # Save full job config
+            job_config = json.loads(os.environ.get("JOB_CONFIG", "{}"))
+            with open(Path(config_path, "job_config.json"), "w") as fid:
+                json.dump(job_config, fid)
+
             # Save model hyperparameters
             with open(Path(config_path, "model_hparams.json"), "w") as fid:
                 model_cls = trainer.lightning_module.__class__
                 model_config = {
-                    "version": "0.2.0",
+                    "version": self.VERSION,
                     "class_path": f"{model_cls.__module__}.{model_cls.__name__}",
                     "init_args": trainer.lightning_module.hparams,
                 }
