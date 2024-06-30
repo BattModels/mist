@@ -35,7 +35,6 @@ class RobertaDataSet(pl.LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
-        self.save_hyperparameters()
 
     def prepare_data(self):
         self.__load_dataset()
@@ -114,7 +113,7 @@ class RobertaDataSet(pl.LightningDataModule):
             shuffle=False,
         )
 
-    def test_dataset(self):
+    def test_dataloader(self):
         return DataLoader(
             self.test_dataset,
             collate_fn=self.data_collator,
@@ -122,3 +121,25 @@ class RobertaDataSet(pl.LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
         )
+
+    def state_dict(self):
+        state = {
+            "path": str(self.path),
+            "vocab_size": self.vocab_size,
+        }
+        if self.trainer is not None:
+            state["rank"] = self.trainer.global_rank
+            state["world_size"] = self.trainer.world_size
+
+        for dl in ["train_dataset", "val_dataset", "test_dataset"]:
+            if hasattr(self, dl):
+                state[dl] = getattr(self, dl).state_dict()
+
+        return state
+
+    def load_state_dict(self, state: dict):
+        assert self.path == Path(state["path"])
+        assert self.vocab_size == state["vocab_size"]
+        for dl in ["train_dataset", "val_dataset", "test_dataset"]:
+            if dl in state and hasattr(self, dl):
+                getattr(self, dl).load_state_dict(state[dl])
