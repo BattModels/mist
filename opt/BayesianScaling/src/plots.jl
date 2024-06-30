@@ -15,7 +15,7 @@ function Makie.plot!(plt::PredictionBand)
     return plt
 end
 
-function plot_best_lr(chains::AbstractArray{<:Real, 3}, df=missing;
+function plot_best_lr(chains::AbstractArray{<:Real,3}, df=missing;
     N=logrange(1e2, 1e10; length=200),
     lr=logrange(1e-5, 3e-3; length=100)
 )
@@ -86,9 +86,9 @@ function plot_best_lr(chains::AbstractArray{<:Real, 3}, df=missing;
     return f
 end
 
-function plot_scaling(chains::AbstractArray{<:Real, 3}, df;
-    N=logrange(1e1, 1e9; length=200),
-    C=logrange(1e4, 1e26; length=200)
+function plot_scaling(chains::AbstractArray{<:Real,3}, df;
+    N=logrange(1e5, 1e9; length=50),
+    C=logrange(1e10, 1e26; length=50)
 )
     f = Figure()
     N = collect(N)
@@ -111,9 +111,9 @@ function plot_scaling(chains::AbstractArray{<:Real, 3}, df;
     for (i, n) in enumerate(N)
         for (j, c) in enumerate(C)
             d = c / (6n)
-            l = @.((A / n^α) + (B / d^β) + E)
+            l = hoffman_scaling(n, d; A, α, B, β, E)
             loss[j, i] = median(l)
-            loss_std[j, i] = std(log10.(l))
+            loss_std[j, i] = std(log.(l))
         end
     end
     loss_low = min(minimum(df.min_val_loss), minimum(loss))
@@ -122,10 +122,9 @@ function plot_scaling(chains::AbstractArray{<:Real, 3}, df;
     h = contourf!(ax, C ./ pf_day, N, loss; levels, colorscale=log10)
     contour!(ax, C ./ pf_day, N, loss_std;
         levels=10,
-        # levels=logrange(1e-3, 10; length=10),
-        # levels=logrange(extrema(loss_std)...; length=10),
         labels=true,
         color=:red,
+        label="std of ln(Estimated Loss)"
     )
     cb = Colorbar(f[1, 2], h; label="Validation Loss")
 
@@ -145,20 +144,18 @@ function plot_scaling(chains::AbstractArray{<:Real, 3}, df;
     # Add Compute Optimal Frontier
     n_opt = Matrix{Float32}(undef, 3, length(C))
     for (i, c) in enumerate(C)
-        n_opt[:, i] .= quantile(compute_optimal_model(c; A, α, B, β, E), (0.025, 0.5, 0.975))
+        n_opt[:, i] .= quantile(compute_optimal_model_size(c; A, α, B, β), (0.025, 0.5, 0.975))
     end
     predictionband!(ax, C ./ pf_day, n_opt[2, :], n_opt[1, :], n_opt[3, :];
         color=:black,
         band_color=(:slategray, 0.4),
         label="Compute Optimal Frontier",
     )
+    Legend(f[2, 1], ax; tellwidth=false, tellheight=true, nbanks=2)
     return f
 end
 
-function plot_parity(model, chains; p=0.025)
-    y = sample_response(model, chains)
-    yq = slice_quantile(y, (p, 0.5, 1 - p); dims=1)
-
+function plot_parity(df, chains::AbstractArray{<:Real,3}; p=0.025)
     f = Figure()
     ax = Axis(f[1, 1];
         yscale=log10,
@@ -222,83 +219,12 @@ function replace_domain_error(f, x)
     return x
 end
 
-function plot_chains(model, chains)
-    f = Figure()
-    ns, _, nc = size(chains)
-    # priors = Turing.DynamicPPL.extract_priors(model)
-    names = chains.name_map.parameters
-    np = length(names)
 
-    # Setup grid
-    if np <= 5
-        n_row = np
-        n_col = 1
-    else
-        n_col = div(np, 6)
-        n_row = ceil(Int, np / n_col)
-    end
-    gl = GridLayout(f[1, 1], n_row, n_col)
-    indices = CartesianIndices((n_row, n_col))
 
-    # Plot Chains
-    gl = GridLayout(f[1, 1])
-    for (i, p) in enumerate(names)
-        # yscale = dist_tf(priors[Turing.@varname($p)])
-        samples = replace_domain_error.(yscale, Float32.(chains[p]))
-        ylims = extrema(samples)
-        fchain = GridLayout(gl[indices[i].I...])
-        ax = Axis(fchain[1, 1];
-            xlabel="step",
-            ylabel=string(p),
-            yscale,
-            limits=((1, ns), nothing)
-        )
-        ax_hist = Axis(fchain[1, 2];
-            limits=((0, nothing), nothing)
-        )
-        hidedecorations!(ax_hist)
-        if indices[i].I[1] != n_row
-            hidexdecorations!(ax)
-        end
-        colgap!(fchain, 5)
-        colsize!(fchain, 2, Relative(0.2))
-        #
-        # linkyaxes!(ax, ax_hist)
-        for j in 1:nc
-            h = lines!(ax, samples[:, j]; linewidth=1)
-            hist!(ax_hist, vec(yscale.(samples));
-                normalization=:pdf,
-                direction=:x,
-                color=h.color,
-            )
-        end
-    end
-    colgap!(gl, 5)
-    rowgap!(gl, 5)
-
-    ax = Axis(f[2, 1]; xlabel="step", ylabel="Auto-Correlation")
-    lags = 1:fld(ns, 2)
-    for pdx in 1:np
-        ac = zeros(eltype(chains.value), length(lags), nc)
-        for j in 1:nc
-            ac[:, j] .= autocor(Array(chains[:, pdx, j]), lags)
-        end
-        mu = mean(ac; dims=2) |> vec
-        s = std(ac; dims=2) |> vec
-        predictionband!(ax, lags, mu, mu .- s, mu .+ s;
-            label=names[pdx],
-            band_color=(:slategray, 0.1),
-        )
-    end
-    rowsize!(f.layout, 2, Relative(0.3))
-    return f
-end
-
-function plot_compute_optimal(chains::AbstractArray{<:Real, 3}, df=missing;
+function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
     N=logrange(1e3, 1e12; length=200),
     C=logrange(1e8, 1e26; length=20)
 )
-
     loss_quantiles = Matrix{Float32}(undef, 3, length(C))
     for (i, c) in enumerate(C)
         loss = compute_optimal_loss(c;
@@ -308,7 +234,7 @@ function plot_compute_optimal(chains::AbstractArray{<:Real, 3}, df=missing;
             β=chains[:, :, :β],
             E=chains[:, :, :E],
         )
-        loss_quantiles[:, i] = quantile(loss, (0.025, 0.5, 0.975))
+        loss_quantiles[:, i] .= quantile(loss, (0.025, 0.5, 0.975))
     end
 
     # Setup Plots
@@ -317,22 +243,22 @@ function plot_compute_optimal(chains::AbstractArray{<:Real, 3}, df=missing;
     ax = Axis(f[1, 1];
         ylabel="Estimated Compute-Optimal Loss",
         xlabel="Compute Budget (PF-Day)",
-        limits=(extrema(C), (1e-2, 1)),
+        limits=(extrema(C), (1e-5, 1)),
         xscale=log10,
         yscale=log10,
-        ytickformat="{:.3f}",
     )
-    predictionband!(ax, C, loss_quantiles[2, :], loss_quantiles[1, :], loss_quantiles[3, :])
+    predictionband!(ax, C, loss_quantiles[2, :], loss_quantiles[1, :], loss_quantiles[3, :], label="95% Credible Interval")
     if !ismissing(df)
         scatter!(ax, @.(6 * float(df.data_size) * float(df.model_size) / pf_day), df.min_val_loss;
-            marker=:x, markersize=3, color=:blue, label="Emperical",
+            marker=:x, color=:blue, label="Emperical",
         )
     end
+    axislegend(ax, position=:lb)
 
     return f
 end
 
-function plot_penalty(model, chains::AbstractArray{<:Real, 3}, deviance=logrange(1e-2, 1e2; length=100))
+function plot_penalty(model, chains::AbstractArray{<:Real,3}, deviance=logrange(1e-2, 1e2; length=100))
 
     f = Figure()
     ax_lr = Axis(f[1, 1]; xlabel="η/η_eff", ylabel="Penalty", xscale=log10, aspect=1)
@@ -454,21 +380,39 @@ function plot_residual_correlations(model, chains, df; p=0.25)
     return f
 end
 
-function plot_chain_covariance(chains::ComponentArray{<:Real, 3})
+"""
+    get_nbins(method::Symbol, x)
+    get_nbins(nbins::Int, ::Any)
+
+Estimate the number of bins for a histogram of `x` using the method `method`.
+"""
+get_nbins(method::Symbol, x) = get_nbins(Val(method), x)
+get_nbins(::Val{:rice}, x) = max(ceil(Int, cbrt(2 * length(x))), 2)
+get_nbins(nbins::Int, ::Any) = nbins
+function get_nbins(::Val{:scott}, x)
+    bw = 3.5 * std(x) / cbrt(length(x))
+    l, u = extrema(x)
+    nbins = ceil(Int, (u - l) / bw)
+    return max(nbins, 2)
+end
+
+function plot_chain_covariance(chains::ComponentArray{<:Real,3}; nbins=:scott)
     f = Figure()
-    params = ComponentArrays.labels(chains[1,1,:])
+    params = ComponentArrays.labels(chains[1, 1, :])
     nparams = size(chains, 3)
     nsamples = prod(size(chains)[1:2])
-    bins = ceil(Int, sqrt(nsamples))
+    bins = ceil(Int, sqrt(nsamples) / 15)
     for (i, px) in enumerate(params)
-            vx = vec(selectdim(chains, 3, i))
+        vx = vec(selectdim(chains, 3, i))
+        nbins_x = get_nbins(nbins, vx)
         for (j, py) in enumerate(params)
             ax = Axis(f[j, i]; ylabel=py, xlabel=px)
             vy = vec(selectdim(chains, 3, j))
+            nbins_y = get_nbins(nbins, vy)
             if i == j
-                hist!(ax, vx; bins)
+                hist!(ax, vx; bins=nbins_x)
             else
-                hexbin!(ax, vx, vy; bins)
+                hexbin!(ax, vx, vy; bins=(nbins_x, nbins_y))
             end
             i != 1 && hideydecorations!(ax)
             j != nparams && hidexdecorations!(ax)
@@ -476,6 +420,62 @@ function plot_chain_covariance(chains::ComponentArray{<:Real, 3})
     end
     rowgap!(f.layout, 5)
     colgap!(f.layout, 5)
+    return f
+end
+
+function plot_chains(chains::AbstractArray{<:Real,3}; nbins=:scott)
+    f = Figure()
+    params = ComponentArrays.labels(chains[1, 1, :])
+    nparams = size(chains, 3)
+    nsamples = size(chains, 1)
+
+    # Setup grid
+    if nparams <= 5
+        n_row = np
+        n_col = 1
+    else
+        n_col = div(nparams, 6)
+        n_row = ceil(Int, nparams / n_col)
+    end
+    gl = GridLayout(f[1, 1], n_row, n_col)
+    indices = CartesianIndices((n_row, n_col))
+
+    # Plot Chains
+    gl = GridLayout(f[1, 1])
+    chain_axes = []
+    for (i, p) in enumerate(params)
+        samples = selectdim(chains, 3, i)
+        fchain = GridLayout(gl[indices[i].I...])
+        ax = Axis(fchain[1, 1];
+            xlabel="step",
+            ylabel=p,
+            limits=((0, nsamples), nothing),
+        )
+        push!(chain_axes, ax)
+        ax_hist = Axis(fchain[1, 2];
+            limits=((0, nothing), nothing)
+        )
+        hidedecorations!(ax_hist)
+        if indices[i].I[1] != n_row
+            hidexdecorations!(ax)
+        end
+        colgap!(fchain, 5)
+        colsize!(fchain, 2, Relative(0.2))
+
+        linkyaxes!(ax, ax_hist)
+        for chain in eachslice(samples; dims=2)
+            h = lines!(ax, chain; linewidth=1)
+            hist!(ax_hist, vec(chain),
+                bins=get_nbins(nbins, chain),
+                normalization=:pdf,
+                direction=:x,
+                color=h.color,
+            )
+        end
+    end
+    linkxaxes!(chain_axes...)
+    colgap!(gl, 5)
+    rowgap!(gl, 5)
     return f
 end
 
