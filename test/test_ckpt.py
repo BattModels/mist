@@ -38,7 +38,6 @@ class MockedData(LightningDataModule):
 
 @pytest.fixture()
 def cli(tmp_path):
-
     with mock.patch(
         "sys.argv",
         [
@@ -94,5 +93,9 @@ def test_ckpt(cli):
     with open(cb.config_path.joinpath("model_hparams.json"), "r") as fid:
         model_config = json.load(fid)
     assert model_config["class_path"] == __name__ + ".MockedModel"
-    assert model_config["init_args"] == {"linked": 10, "vocab_size": 256}
+    assert model_config["init_args"] == {
+        "linked": 10,
+        "vocab_size": 256,
+        "_instantiator": "pytorch_lightning.cli.instantiate_module",
+    }
     assert "version" in model_config.keys()
