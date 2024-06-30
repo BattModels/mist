@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 import json
 from pathlib import Path
-from typing import List
-
 import typer
 
-from submit import compose
+from submit import render
 
 cli = typer.Typer(rich_markup_mode="markdown")
 
@@ -16,12 +14,6 @@ def resubmit(
         file_okay=True, dir_okay=False, help="Jinja2 Template to render"
     ),
     ckpt=typer.Argument(file_okay=False, dir_okay=True, help="Checkpoint to Resume"),
-    data: List[str] = typer.Option(
-        [],
-        file_okay=True,
-        dir_okay=False,
-        help="YAML or JSON file specifying the template's variables. Multiple files can be provided and will be resolved sequentially",
-    ),
 ):
     ckpt = Path(ckpt)
     assert ckpt.is_dir(), f"Checkpoint path {ckpt} is not a directory"
@@ -31,14 +23,8 @@ def resubmit(
         job_config = json.load(fid)
 
     job_config["train"]["ckpt_path"] = str(ckpt.resolve())
-
-    compose(
-        template,
-        data=data,
-        json_config=json.dumps(job_config),
-        default=False,
-        script_config=False,
-    )
+    script = render(template, job_config)
+    print(script)
 
 
 if __name__ == "__main__":
