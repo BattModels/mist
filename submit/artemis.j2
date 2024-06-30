@@ -32,7 +32,7 @@ export TMPDIR=$(mktemp --directory --tmpdir --suffix=".${USER}.${SLURM_JOB_ID}")
 srun mkdir -p "$TMPDIR"
 trap 'srun rm -rf -- "$TMPDIR"' EXIT
 
-{%- if deepspeed is defined %}
+{% if deepspeed is defined %}
 # Write out deepspeed config
 cat > $TMPDIR/deepspeed.json<<EOF
 {{ deepspeed | tojson(indent=4) }}

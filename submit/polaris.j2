@@ -44,7 +44,7 @@ source ${PBS_O_WORKDIR}/activate
 echo "$(df -h /local/scratch)"
 export TMPDIR=/local/scratch
 
-{%- if deepspeed is defined %}
+{% if deepspeed is defined %}
 # Write out deepspeed config
 cat > $TMPDIR/deepspeed.json<<EOF
 {{ deepspeed | tojson(indent=4) }}
@@ -53,7 +53,7 @@ export PL_DEEPSPEED_CONFIG_PATH="$TMPDIR/deepspeed.json"
 export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
 {%- endif %}
 
-{{- export_job_config( __config__ ) }}
+{{ export_job_config( __config__ ) }}
 
 mpiexec \
     {{- cliopts( mpiexe ) | indent }} \
