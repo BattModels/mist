@@ -45,6 +45,7 @@ function clean_dataset(df::DataFrame)
         [:d_ff, :d_model] => ByRow(/) => :ff_ratio,
         [:d_model, :n_heads] => ByRow(/) => :kv_size,
         [:num_training_steps, :eff_batch_size] => ByRow(*) => :data_size,
+        Symbol("val/loss_epoch") => ByRow(x -> minimum(x["loss"])) => :loss
     )
     subset!(df,
         :min_val_loss => ByRow(x -> 1e-4 < x < 1.0),

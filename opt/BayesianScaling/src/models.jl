@@ -1,8 +1,15 @@
-hoffman_scaling(N, D; A, B, α, β, E) = (A / N^α) + (B / D^β) + E
+hoffman_scaling(N, D; A, B, α, β, E) = @. (A / N^α) + (B / D^β) + E
 function compute_optimal_model_size(flops; A, α, B, β)
     G = ((α * A) / (β * B))^(1 / (α + β))
     a = β / (α + β)
     return G * (flops / 6)^a
+end
+function compute_optimal_loss(C; A, α, B, β, E)
+    G = @. ((α * A) / (β * B))^(1 / (α + β))
+    a = @. β / (α + β)
+    b = @.α / (α + β)
+    d = @. C/6
+    return @. E + A * (G * d^a)^(-α) + B * (inv(G) * d^b)^(-β)
 end
 
 struct HoffmanScaling{P,X}

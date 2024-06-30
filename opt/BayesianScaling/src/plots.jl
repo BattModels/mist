@@ -15,7 +15,7 @@ function Makie.plot!(plt::PredictionBand)
     return plt
 end
 
-function plot_best_lr(chains, df=missing;
+function plot_best_lr(chains::AbstractArray{<:Real, 3}, df=missing;
     N=logrange(1e2, 1e10; length=200),
     lr=logrange(1e-5, 3e-3; length=100)
 )
@@ -31,9 +31,9 @@ function plot_best_lr(chains, df=missing;
         xlabel="Model Size (Non-Embedding)",
         ytickformat="{:.2e}",
     )
-    lr_0 = vec(chains[:, :lr_0, :])
-    lr_n = vec(chains[:, :lr_n, :])
-    lr_p = vec(chains[:, :lr_p, :])
+    lr_0 = vec(chains[:, :, :lr_0])
+    lr_n = vec(chains[:, :, :lr_n])
+    lr_p = vec(chains[:, :, :lr_p])
 
     # Plot LR from Kaplan, J. et al. 2020. Scaling Laws for Neural Language Models. arXiv.
     # LR(N) ≈ 0.003239 + −0.0001395 log(N )
@@ -86,7 +86,7 @@ function plot_best_lr(chains, df=missing;
     return f
 end
 
-function plot_scaling(chains, df;
+function plot_scaling(chains::AbstractArray{<:Real, 3}, df;
     N=logrange(1e1, 1e9; length=200),
     C=logrange(1e4, 1e26; length=200)
 )
@@ -103,11 +103,11 @@ function plot_scaling(chains, df;
 
     loss = Matrix{Float32}(undef, length(C), length(N))
     loss_std = similar(loss)
-    A = vec(chains[:, :A, :])
-    α = vec(chains[:, :α, :])
-    B = vec(chains[:, :B, :])
-    β = vec(chains[:, :β, :])
-    E = vec(chains[:, :E, :])
+    A = vec(chains[:, :, :A])
+    α = vec(chains[:, :, :α])
+    B = vec(chains[:, :, :B])
+    β = vec(chains[:, :, :β])
+    E = vec(chains[:, :, :E])
     for (i, n) in enumerate(N)
         for (j, c) in enumerate(C)
             d = c / (6n)
@@ -176,48 +176,6 @@ function plot_parity(model, chains; p=0.025)
     uu = maximum(yq)
     lines!(ax, range(ll, uu; length=n), range(ll, uu; length=n), color=:red)
     axislegend(ax, position=:rb)
-    return f
-end
-
-function plot_scaling_parameters(chains, l=0, u=1)
-    β = vec(chains[:β])
-    α = vec(chains[:α])
-    a = @.(β / (α + β)) |> vec
-    b = @.(α / (α + β)) |> vec
-    bins = floor(Int, sqrt(length(α)))
-    normalization = :pdf
-    f = Figure(size=(600, 600))
-    ax_a = Axis(f[1, 1]; limits=((l, u), (0, nothing)))
-    hidedecorations!(ax_a)
-    hist!(ax_a, a; bins, normalization)
-    ax_b = Axis(f[2, 2]; limits=((0, nothing), (l, u)))
-    hidedecorations!(ax_b)
-    hist!(ax_b, b; bins, normalization, direction=:x)
-
-    ax = Axis(f[2, 1]; xlabel="a", ylabel="b",
-        limits=((l, u), (l, u)),
-        aspect=1,
-    )
-    h = hexbin!(ax, a, b; bins=bins)
-    Colorbar(f[3, 1:2], h;
-        vertical=false, tellheight=false, flipaxis=false,
-        label="Count of Samples",
-    )
-
-    scatter!(ax, 0.46, 0.54; marker=:x, color=:red, label="Hoffmann et. al.")
-    scatter!(ax, 0.73, 0.27; marker=:+, color=:blue, label="Kaplan et. al.")
-    # Legend(f[1, 2], ax; tellwidth=false, tellheight=true)
-    axislegend(ax, position=:lb)
-
-    rowgap!(f.layout, 5)
-    colgap!(f.layout, 5)
-    colsize!(f.layout, 1, 300)
-    colsize!(f.layout, 2, 50)
-    rowsize!(f.layout, 1, 50)
-    rowsize!(f.layout, 2, 300)
-    rowsize!(f.layout, 3, 20)
-    resize_to_layout!(f)
-
     return f
 end
 
@@ -336,48 +294,26 @@ function plot_chains(model, chains)
     return f
 end
 
-function plot_compute_optimal(chains, df=missing;
+function plot_compute_optimal(chains::AbstractArray{<:Real, 3}, df=missing;
     N=logrange(1e3, 1e12; length=200),
     C=logrange(1e8, 1e26; length=20)
 )
 
-    n_opt = Matrix{Float32}(undef, length(N), length(C))
     loss_quantiles = Matrix{Float32}(undef, 3, length(C))
-    σ² = chains[:, :σ², :]
     for (i, c) in enumerate(C)
-        n = compute_optimal_model(c;
-            A=chains[:, :A, :],
-            α=chains[:, :α, :],
-            B=chains[:, :B, :],
-            β=chains[:, :β, :],
+        loss = compute_optimal_loss(c;
+            A=chains[:, :, :A],
+            α=chains[:, :, :α],
+            B=chains[:, :, :B],
+            β=chains[:, :, :β],
+            E=chains[:, :, :E],
         )
-
-        # Estimate Loss of Compute-Optimal Model
-        d = @. c / (6n)
-        loss = hoffman_scaling(n, d;
-            A=chains[:, :A, :],
-            α=chains[:, :α, :],
-            B=chains[:, :B, :],
-            β=chains[:, :β, :],
-            E=chains[:, :E, :],
-        )
-        @assert all(>(0), loss)
-        for idx in eachindex(loss)
-            loss[idx] = rand(LogNormal(log(loss[idx]), σ²[idx]))
-        end
-        loss_quantiles[:, i] .= quantile(vec(loss), (0.025, 0.5, 0.975))
-
-        # Compute CDF of the compute-optimal model
-        n_cdf = ecdf(vec(n))
-        for (j, n) in enumerate(N)
-            n_opt[j, i] = n_cdf(n)
-        end
+        loss_quantiles[:, i] = quantile(loss, (0.025, 0.5, 0.975))
     end
 
     # Setup Plots
     f = Figure()
     C = collect(C) ./ pf_day
-    N = collect(N)
     ax = Axis(f[1, 1];
         ylabel="Estimated Compute-Optimal Loss",
         xlabel="Compute Budget (PF-Day)",
@@ -386,28 +322,7 @@ function plot_compute_optimal(chains, df=missing;
         yscale=log10,
         ytickformat="{:.3f}",
     )
-    ax_cdf = Axis(f[1, 2];
-        xlabel="Model Size (Non-Embedding)",
-        ylabel="Emperical Cumulative Distribution Function",
-        xscale=log10,
-        limits=(extrema(N), (0, 1)),
-    )
-    cb = Colorbar(f[1, 3];
-        label="Compute Budget (PF-Day)",
-        colormap=:viridis,
-        colorrange=extrema(C),
-        scale=log10,
-    )
     predictionband!(ax, C, loss_quantiles[2, :], loss_quantiles[1, :], loss_quantiles[3, :])
-    for (i, c) in enumerate(C)
-        lines!(ax_cdf, N, n_opt[:, i];
-            color=c,
-            colorscale=cb.scale,
-            colormap=cb.colormap,
-            colorrange=cb.colorrange
-        )
-    end
-
     if !ismissing(df)
         scatter!(ax, @.(6 * float(df.data_size) * float(df.model_size) / pf_day), df.min_val_loss;
             marker=:x, markersize=3, color=:blue, label="Emperical",
@@ -417,7 +332,7 @@ function plot_compute_optimal(chains, df=missing;
     return f
 end
 
-function plot_penalty(model, chains, deviance=logrange(1e-2, 1e2; length=100))
+function plot_penalty(model, chains::AbstractArray{<:Real, 3}, deviance=logrange(1e-2, 1e2; length=100))
 
     f = Figure()
     ax_lr = Axis(f[1, 1]; xlabel="η/η_eff", ylabel="Penalty", xscale=log10, aspect=1)
@@ -440,9 +355,9 @@ function plot_penalty(model, chains, deviance=logrange(1e-2, 1e2; length=100))
     )
 
     # Plot LR Penalty and Measured Penalty
-    lr_0 = vec(chains[:, :lr_0, :])
-    lr_n = vec(chains[:, :lr_n, :])
-    lr_p = vec(chains[:, :lr_p, :])
+    lr_0 = vec(chains[:, :, :lr_0])
+    lr_n = vec(chains[:, :, :lr_n])
+    lr_p = vec(chains[:, :, :lr_p])
     p_lr = median(lr_p) .* log.(deviance) .^ 2
     lr_eff = @. lr_0' - lr_n' * log(model.args.model_size)
     lr_eff, lr_dev = _emperical_penalty(y, model.args.lr, y_hat, lr_p, exp.(lr_eff))
@@ -450,16 +365,16 @@ function plot_penalty(model, chains, deviance=logrange(1e-2, 1e2; length=100))
     penaltyband!(ax_lr, lr_p, ones(length(lr_p)), deviance; color=:red)
 
     # FF Ratio
-    ff_ratio_0 = vec(chains[:, :ff_ratio_0, :])
-    ff_ratio_p = vec(chains[:, :ff_ratio_p, :])
+    ff_ratio_0 = vec(chains[:, :, :ff_ratio_0])
+    ff_ratio_p = vec(chains[:, :, :ff_ratio_p])
     ff_eff, _ = _emperical_penalty(y, model.args.ff_ratio, y_hat, ff_ratio_p, ff_ratio_0)
     scatter!(ax_ff, model.args.ff_ratio, ff_eff; scatter_args...)
     x = collect(logrange(extrema(model.args.ff_ratio)...; length=length(deviance)))
     penaltyband!(ax_ff, ff_ratio_p, ff_ratio_0, x; color=:red)
 
     # Aspect Ratio
-    aspect_ratio_0 = vec(chains[:, :aspect_ratio_0, :])
-    aspect_ratio_p = vec(chains[:, :aspect_ratio_p, :])
+    aspect_ratio_0 = vec(chains[:, :, :aspect_ratio_0])
+    aspect_ratio_p = vec(chains[:, :, :aspect_ratio_p])
     aspect_eff, _ = _emperical_penalty(y, model.args.aspect_ratio, y_hat, aspect_ratio_p, aspect_ratio_0)
     scatter!(ax_aspect, model.args.aspect_ratio, aspect_eff; scatter_args...)
     x = collect(logrange(extrema(model.args.aspect_ratio)...; length=length(deviance)))
@@ -491,7 +406,7 @@ end
 
 function penaltyband!(ax, p, x0, x; kwargs...)
     p = @. p' * logsqdev(x, x0')
-    q = col_quantile(p', (0.025, 0.5, 0.975))
+    q = slice_quantile(p', (0.025, 0.5, 0.975); dims=2)
     predictionband!(ax, x, q[2, :], q[1, :], q[3, :]; kwargs...)
 end
 
@@ -539,31 +454,24 @@ function plot_residual_correlations(model, chains, df; p=0.25)
     return f
 end
 
-function plot_chain_covariance(model, chains; skip_vector_parameters=true)
+function plot_chain_covariance(chains::ComponentArray{<:Real, 3})
     f = Figure()
-    names = deepcopy(chains.name_map[:parameters])
-    if skip_vector_parameters
-        # Skip parameters that end with [xx] (i.e. `loss_trace_a[10]`)
-        filter!(names) do name
-            match(r"\[\d*?\]$", string(name)) == nothing
-        end
-    end
-    priors = Turing.DynamicPPL.extract_priors(model)
-    nsamples = size(chains, 1) * size(chains, 3)
+    params = ComponentArrays.labels(chains[1,1,:])
+    nparams = size(chains, 3)
+    nsamples = prod(size(chains)[1:2])
     bins = ceil(Int, sqrt(nsamples))
-    for (i, px) in enumerate(names)
-        for (j, py) in enumerate(names)
-            ax = Axis(f[j, i];
-                ylabel=string(py),
-                xlabel=string(px),
-            )
+    for (i, px) in enumerate(params)
+            vx = vec(selectdim(chains, 3, i))
+        for (j, py) in enumerate(params)
+            ax = Axis(f[j, i]; ylabel=py, xlabel=px)
+            vy = vec(selectdim(chains, 3, j))
             if i == j
-                hist!(ax, vec(chains[px]); bins)
+                hist!(ax, vx; bins)
             else
-                hexbin!(ax, vec(chains[px]), vec(chains[py]); bins)
+                hexbin!(ax, vx, vy; bins)
             end
             i != 1 && hideydecorations!(ax)
-            j != length(names) && hidexdecorations!(ax)
+            j != nparams && hidexdecorations!(ax)
         end
     end
     rowgap!(f.layout, 5)

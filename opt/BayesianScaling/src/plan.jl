@@ -1,9 +1,9 @@
-function estimate_datasize(N::Real, chains)
+function estimate_datasize(N::Real, chains::ComponentArray{<:Real, 3})
     # Estimate Datasize
-    A = chains[:A]
-    α = chains[:α]
-    B = chains[:B]
-    β = chains[:β]
+    A = chains[:, :, :A]
+    α = chains[:, :, :α]
+    B = chains[:, :, :B]
+    β = chains[:, :, :β]
     inv_a = @. (α + β) / β
     inv_G = @. (β * B) / (α * A)
     D_opt = @. inv_G^inv(β) * N^(inv_a - 1)

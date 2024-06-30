@@ -11,7 +11,7 @@ using Random: Random, shuffle!, AbstractRNG
 
 using JLD2: jldopen
 using DynamicHMC: DynamicHMC
-using ComponentArrays: ComponentArrays, ComponentArray, ComponentVector
+using ComponentArrays: ComponentArrays, ComponentArray, ComponentVector, FlatAxis
 using LogDensityProblemsAD: ADgradient, ADGradientWrapper
 using LogDensityProblems: LogDensityProblems, dimension
 using Distributions: UnivariateDistribution, support

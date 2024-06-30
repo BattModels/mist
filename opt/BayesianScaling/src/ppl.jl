@@ -82,8 +82,7 @@ function transform_samples(t::TransformVariables.AbstractTransform, x::AbstractM
         ys = selectdim(y, 2, idx)
         transform!(ys, t, xs)
     end
-    ax = ComponentArrays.Axis(t)
-    return ComponentArrays.ComponentArray(y, ax, ComponentArrays.FlatAxis())
+    return y
 end
 
 function transform!(y::AbstractVector, tt::TransformVariables.TransformTuple, x::AbstractVector)
@@ -152,7 +151,12 @@ function sample_chains(model, nchains=15, draws=1_000)
     y = transform_samples(model.ℓ.transformation, rs)
 
     # Permute to (draws, nchains, d)
-    y= permutedims(reshape(y, d, draws, nchains), (2, 3, 1))
-    raw_samples = permutedims(raw_samples, (2, 3, 1))
-    return y, raw_samples
+    y = permutedims(reshape(y, d, draws, nchains), (2, 3, 1))
+    yr = permutedims(raw_samples, (2, 3, 1))
+
+    # Add ComponentVectors to the chains
+    ax = ComponentArrays.Axis(model.ℓ.transformation)
+    y = ComponentArray(y, FlatAxis(), FlatAxis(), ax)
+    yr = ComponentArray(yr, FlatAxis(), FlatAxis(), ax)
+    return y, yr
 end
