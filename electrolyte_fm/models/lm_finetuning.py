@@ -3,7 +3,7 @@ from typing import Dict, List, Union
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from torchmetrics.classification import Accuracy, BinaryAccuracy
+from torchmetrics.classification import Accuracy, BinaryAccuracy, AUROC
 from torchmetrics.regression import MeanAbsoluteError, RelativeSquaredError
 from pathlib import Path
 from .model_utils import DeepSpeedMixin
@@ -11,13 +11,7 @@ from .prediction_task_head import PredictionTaskHead
 import yaml 
 from .model_utils import DeepSpeedMixin
 from pytorch_lightning.loggers import WandbLogger
-
-# def relative_l1_loss(preds, targets, p=1):
-#     errors = torch.sum(torch.abs(preds - targets) ** p)
-#     normalization_factor = torch.sum(torch.abs(targets) ** p)
-    
-#     return regression_loss(x, y) / torch.mean(torch.abs(y))
-    
+from pathlib import Path
 
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     """
@@ -39,7 +33,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.learning_rate = learning_rate
         self.dropout = dropout
         self.encoder_ckpt = encoder_ckpt
-        self.pretrained_loss = float(encoder_ckpt.split("=")[-1].split(".")[0])
         self.task_config: Path = task_config 
         assert self.task_config.is_file()
         self.setup_task_config()
@@ -48,6 +41,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
         for k, v in self.encoder.config.to_dict().items():
             self.hparams[k] = v
+        self.hparams["pretrained_loss"] = float(Path(encoder_ckpt).stem.split("=")[-1])
         self.save_hyperparameters(logger=True)
 
         head_hyperparams = {
@@ -65,7 +59,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         )
         self.classification_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)
         # self.regression_loss = RelativeSquaredError()
-        self.regression_loss = torch.nn.L1Loss()
+        self.regression_loss = torch.nn.L1Loss() # MSELoss
         self.setup_loss_functions()
         self.setup_metrics()
         self.freeze_encoder = freeze_encoder
@@ -92,19 +86,20 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             if targets == 1:  # regression problem
                 spec["metric"] = MeanAbsoluteError().cuda()
             else:  # multi-class classification
-                spec["metric"] = Accuracy(
+                spec["metric"] = AUROC(
                     task="multiclass", num_classes=targets, ignore_index=-1
                 )
 
     def forward(self, batch, **kwargs):  # type: ignore[override]
-        embedding = self.encoder(
+        encoder_output = self.encoder(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],
             **kwargs,
-            return_dict=False,
+            # return_dict=False,
         )
 
-        sequence_output = embedding[0]
+        sequence_output = encoder_output.last_hidden_state
+        print("sequence_output", sequence_output.shape)
         out = {
             spec["measure_name"]: self.task_networks[spec["measure_name"]](
                 sequence_output
@@ -119,6 +114,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             target = spec["measure_name"]
             w = spec.get("loss_weight", 1 / len(self.task_specs))
             if spec.get("n_classes", 1) > 1:
+                # batch[target] = batch[target].to(torch.int64)
                 spec_loss = w * spec["loss"](
                     outputs[target], batch[target].to(torch.int64)
                 )
