@@ -113,8 +113,10 @@ def cli_main(args=None):
         #     verbose=True, 
         #     mode="min"
         # ),
-        FinetuningMetrics()
     ]
+
+    if os.environ.get("WANDB_API_KEY"):
+        callbacks.append(FinetuningMetrics())
 
     rank = int(os.environ.get("MIST_PID_RANK", 0))
     if rank is not None and int(rank) != 0:
