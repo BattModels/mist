@@ -71,6 +71,33 @@ def fix_o_nonblock():
     fcntl.fcntl(fd, fcntl.F_SETFL, flag & ~os.O_NONBLOCK)
 
 
+def render(file: str, data: dict) -> str:
+    env = RelEnvironment(
+        loader=jinja2.FileSystemLoader(os.getcwd()),
+        lstrip_blocks=False,
+    )
+    data["__config__"] = deepcopy(data)
+    template = env.get_template(str(file))
+    return template.render(data)
+
+
+def template_defaults(file: str, default: bool = True, script_config: bool = True):
+    # Load data
+    if default:
+        default_path = Path(file).parent.joinpath("default.yaml")
+        config = parse_data(default_path)
+    else:
+        config = dict()
+
+    # Load host specific config
+    if script_config:
+        script_config_file = Path(file).with_suffix(".yaml")
+        if script_config_file.is_file():
+            config = merge_config(config, parse_data(script_config_file))
+
+    return config
+
+
 @cli.command()
 def compose(
     file: str = typer.Argument(
@@ -113,35 +140,16 @@ def compose(
     - Stack multiple configs: `./submit/submit.py --data path/to/first.yaml --data path/to/other.yaml`
 
     """
-    env = RelEnvironment(
-        loader=jinja2.FileSystemLoader(os.getcwd()),
-        lstrip_blocks=False,
-    )
-    template = env.get_template(file)
-
-    # Load data
-    if default:
-        default_path = Path(file).parent.joinpath("default.yaml")
-        config = parse_data(default_path)
-    else:
-        config = dict()
-
-    # Load host specific config
-    if script_config:
-        script_config_file = Path(file).with_suffix(".yaml")
-        if script_config_file.is_file():
-            config = merge_config(config, parse_data(script_config_file))
-
     # Overlay data files
-    for file in data:
-        config = merge_config(config, parse_data(Path(file)))
+    config = template_defaults(file, default, script_config)
+    for data_file in data:
+        config = merge_config(config, parse_data(Path(data_file)))
 
     # Overlay cli json
     config = merge_config(config, json.loads(json_config))
-    config["__config__"] = deepcopy(config)
 
     # Generate Script
-    script = template.render(config)
+    script = render(file, config)
 
     if not confirm:
         print(script)
