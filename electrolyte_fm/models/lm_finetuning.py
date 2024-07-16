@@ -3,9 +3,16 @@ from typing import Dict, List, Union
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from torchmetrics.classification import Accuracy, BinaryAccuracy, AUROC
+from torchmetrics import Metric
+from torchmetrics.classification import MulticlassAUROC
 from torchmetrics.regression import MeanAbsoluteError, RelativeSquaredError
+from sklearn.metrics import accuracy_score, roc_curve, auc
+import torch.nn.functional as F
+import numpy as np
+
 from pathlib import Path
+from transformers import AutoModel
+
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
 import yaml 
@@ -13,6 +20,42 @@ from .model_utils import DeepSpeedMixin
 from pytorch_lightning.loggers import WandbLogger
 from pathlib import Path
 
+def roc_auc_score(outputs, labels):
+    actuals_cpu = labels.detach().cpu().numpy()
+    #preds_cpu = preds.detach().cpu().numpy() #preds_cpu is logits
+    preds_cpu = F.softmax(outputs, dim=1).cpu().numpy()
+    #classif
+    preds_cpu = preds_cpu[:, 1]
+    fpr, tpr, threshold = roc_curve(actuals_cpu, preds_cpu)
+    roc_auc = auc(fpr, tpr)
+    return roc_auc
+
+class AUROC(Metric):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_state("preds", default=[], dist_reduce_fx="cat")
+        self.add_state("target", default=[], dist_reduce_fx="cat")
+
+    def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+        self.preds.extend(preds.cpu().tolist())
+        self.target.extend(target.cpu().tolist())
+
+    def compute(self) -> torch.Tensor:
+        # if len(self.preds) == 0:
+        #     return torch.tensor(0.0)
+        # print(self.target)
+        actuals_cpu = np.array(self.target)
+        mask = actuals_cpu!= -1
+        actuals_cpu = actuals_cpu[mask]
+        #preds_cpu = preds.detach().cpu().numpy() #preds_cpu is logits
+        preds_cpu = F.softmax(torch.tensor(self.preds), dim=1).cpu().numpy()
+        #classif
+        preds_cpu = preds_cpu[:, 1]
+        preds_cpu = preds_cpu[mask]
+        fpr, tpr, threshold = roc_curve(actuals_cpu, preds_cpu)
+        roc_auc = auc(fpr, tpr)
+        return roc_auc
+    
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on multiple tasks.
@@ -38,10 +81,21 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.setup_task_config()
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
-        self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
+        if self.encoder_ckpt=="molformer":
+            self.encoder = AutoModel.from_pretrained(
+                "ibm/MoLFormer-XL-both-10pct", 
+                device_map = 'auto',
+                # deterministic_eval=True, 
+                trust_remote_code=True
+                )
+            # print(self.encoder)
+
+        else:
+            self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
+            self.hparams["pretrained_loss"] = float(Path(encoder_ckpt).stem.split("=")[-1])
         for k, v in self.encoder.config.to_dict().items():
             self.hparams[k] = v
-        self.hparams["pretrained_loss"] = float(Path(encoder_ckpt).stem.split("=")[-1])
+        
         self.save_hyperparameters(logger=True)
 
         head_hyperparams = {
@@ -86,30 +140,47 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             if targets == 1:  # regression problem
                 spec["metric"] = MeanAbsoluteError().cuda()
             else:  # multi-class classification
-                spec["metric"] = AUROC(
-                    task="multiclass", num_classes=targets, ignore_index=-1
-                )
+                spec["metric"] = AUROC()
+                # roc_auc_score
+                # MulticlassAUROC(
+                #     num_classes=targets,
+                #     ignore_index=-1,
+                #     thresholds=10
+                # )
 
     def forward(self, batch, **kwargs):  # type: ignore[override]
-        encoder_output = self.encoder(
-            batch["input_ids"],
-            attention_mask=batch["attention_mask"],
-            **kwargs,
-            # return_dict=False,
-        )
+        # print(batch["input_ids"].shape)
+        
+        if self.encoder_ckpt=="molformer":
+            inputs = {
+                "input_ids": batch["input_ids"],
+                "attention_mask": batch["attention_mask"],
+            }
+            encoder_output = self.encoder(**inputs)
+        else:
+            encoder_output = self.encoder(
+                batch["input_ids"],
+                attention_mask=batch["attention_mask"],
+                **kwargs,
+                # return_dict=False,
+            )
 
-        sequence_output = encoder_output.last_hidden_state
-        print("sequence_output", sequence_output.shape)
+        sequence_output = encoder_output.pooler_output
+        # print("sequence_output", sequence_output)
+        # exit()
+
+        # print("sequence_output", sequence_output.shape)
         out = {
             spec["measure_name"]: self.task_networks[spec["measure_name"]](
                 sequence_output
             )
             for spec in self.task_specs
         }
+        
         return out
 
     def batch_loss(self, outputs, batch):
-        loss = 0
+        loss = 0 
         for spec in self.task_specs:
             target = spec["measure_name"]
             w = spec.get("loss_weight", 1 / len(self.task_specs))
@@ -121,6 +192,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             else:
                 labels = batch[target].reshape(batch[target].size()[0], 1)
                 spec_loss = w * spec["loss"](outputs[target], labels)
+                
             if not torch.isnan(spec_loss):
                 loss += spec_loss
         return loss
@@ -141,11 +213,12 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         for spec in self.task_specs:
             target = spec["measure_name"]
             labels = batch[target]
+            # metric(preds, target)
             if spec.get("n_classes", 1) <= 1:
                 labels = labels.reshape(labels.size()[0], 1)
             self.log(
                 f"train/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
+                spec["metric"](outputs[target], labels),
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,
@@ -158,7 +231,12 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         loss = self.batch_loss(outputs, batch)
 
         self.log(
-            "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
+            "val/loss", 
+            loss, 
+            on_step=True, 
+            on_epoch=True, 
+            prog_bar=True, 
+            sync_dist=True
         )
 
         for spec in self.task_specs:
@@ -169,12 +247,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
             self.log(
                 f"val/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
+                spec["metric"](outputs[target], labels),
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,
                 sync_dist=True,
             )
+        
         return loss
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
@@ -197,7 +276,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
                 labels = labels.reshape(labels.size()[0], 1)
             self.log(
                 f"test/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
+                spec["metric"](outputs[target], labels),
                 on_step=False,
                 on_epoch=True,
                 prog_bar=True,

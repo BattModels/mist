@@ -18,7 +18,7 @@ class PredictionTaskHead(nn.Module):
         self.final = nn.Linear(embed_dim, output_size)
 
     def forward(self, emb):
-        emb = emb[:, 0, :]
+        # emb = emb[:, 0, :]
         x_out = self.fc1(emb)
         x_out = self.dropout1(x_out)
         x_out = self.relu1(x_out)

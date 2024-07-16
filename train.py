@@ -106,17 +106,7 @@ def cli_main(args=None):
             auto_insert_metric_name=False,
         ),
         LearningRateMonitor("step"),
-        # EarlyStopping(
-        #     monitor="val/loss", 
-        #     min_delta=0.000, 
-        #     patience=500, 
-        #     verbose=True, 
-        #     mode="min"
-        # ),
     ]
-
-    if os.environ.get("WANDB_API_KEY"):
-        callbacks.append(FinetuningMetrics())
 
     rank = int(os.environ.get("MIST_PID_RANK", 0))
     if rank is not None and int(rank) != 0:
@@ -134,8 +124,8 @@ def cli_main(args=None):
     return MyLightningCLI(
         trainer_defaults={
             "callbacks": callbacks,
+            "precision": "32",
             "logger": logger,
-            "precision": "16-mixed",
             "strategy": "deepspeed",
             "use_distributed_sampler": False,  # Handled by DataModule (Needed as Iterable)
         },

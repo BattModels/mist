@@ -93,12 +93,13 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
                 return spec["fill_value"]
             else:
                 return val
-            
+        # print(self.tokenizer)
         tokens = self.tokenizer._batch_encode_plus(
             [sample["smiles"] for sample in batch],
-            max_length=self.tokenizer.model_max_length,
-            add_special_tokens=True,
+            # max_length=self.tokenizer.model_max_length,
+            # add_special_tokens=True,
             return_tensors="pt",
+            # padding=True
             padding_strategy="longest",
         )
         for spec in self.task_specs:
