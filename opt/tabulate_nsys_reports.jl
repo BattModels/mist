@@ -243,7 +243,7 @@ Script for processing nsys output files
     $(basename(@__FILE__)) sweep [dir]                      # Process a directory of results
     $(basename(@__FILE__)) collate [dir] > summary.csv      # Collate
 
-## Multi-threaded   
+## Multi-threaded
 Script is multi-threaded and defaults to automatically picking the number of threads.
 However, when running in a batch job, setting the `JULIA_NUM_THREADS` directly is recommended.
 
