@@ -57,92 +57,87 @@ function HoffmanScaling(df::DataFrame)
     HoffmanScaling(BayesModel(priors, x))
 end
 
-struct TrainingProgress{M,C,S,X}
+""" Estimate the increase in loss due to the learning rate """
+function lr_penalty(lr, N, θ)
+    (; lr_0, lr_n, lr_p) = θ
+    lr_opt = log(lr_0) - lr_n * log(N)
+    return lr_p * (log(lr) - lr_opt)^2
+end
+
+struct TrainingProgress{M,N,P,X}
     scaling::M
-    training_coeffs::C
-    training_sigma::S
+    penalty::N
+    progress::P
     loss::X
     step::X
 end
 
-function model_priors(::Type{TrainingProgress}, n=1)
-    training_coeffs = (;
-        a=truncated(Normal(0, 1), 0, Inf),
-        b=truncated(Normal(0, 1), 0, Inf),
+sample_priors(m::TrainingProgress) = ComponentVector(sample_priors(model_priors(TrainingProgress)))
+transform_support(m::TrainingProgress) = transform_support(model_priors(TrainingProgress))
+function model_priors(::Type{TrainingProgress})
+    scaling = model_priors(HoffmanScaling)
+    progress = (;
+        batch_critical=LogNormal(log(500), 3),
+        Sm=LogNormal(log(1), 2),
+        γ=LogNormal(0, 1),
     )
-    scaling = Base.structdiff(model_priors(HoffmanScaling), (; sigma=nothing))
-    return (;
-        scaling,
-        training_sigma=Exponential(1),
-        training_coeffs,
+    penalty = (;
+        lr = (;
+            lr_0=LogNormal(log(1e-3), 3),
+            lr_n=LogNormal(log(1e-4), 3),
+            lr_p=Exponential(1),
+        )
     )
+    return (; scaling, progress, penalty)
 end
 
 function (m::TrainingProgress)(θ)
     # Priors for scaling model
-    (; model_size, data_size) = m.scaling.covariates
-    (; A, B, α, β, E) = θ.scaling
+    (; model_size, data_size, eff_batch_size, lr) = m.scaling.covariates
+    (; A, B, α, β, E, sigma) = θ.scaling
+    (; batch_critical, Sm, γ) = θ.progress
+
+    # Compute Priors
     ℓ = logpdf_prior(m.scaling.priors, θ.scaling)
+    ℓ += logpdf_prior(m.progress, θ.progress)
+    ℓ += logpdf_prior(m.penalty.lr, θ.penalty.lr)
 
     # Training Progress Model
     for idx in axes(m.loss, 2)
-        # Priors for loss curve fits
-        coeffs = @view θ.training_coeffs[:, idx]
-        ℓ += logpdf_prior_vec(m.training_coeffs, coeffs)
+        # Estimate the minimum loss
+        N = model_size[idx]
+        D = data_size[idx]
+        batch_size = eff_batch_size[idx]
+        min_loss = hoffman_scaling(N, D; A, B, α, β, E)
 
-        # Estimate min loss for the model
-        log_min_loss = hoffman_scaling(model_size[idx], data_size[idx]; A, B, α, β, E) |> log
+        # LR penalty
+        min_loss += lr_penalty(lr[idx], N, θ.penalty.lr)
 
         # Likelihood for loss curve fits
-        a, b = coeffs
-        σ = θ.training_sigma[idx]
-        for tdx in axes(m.step, 1)
-            s = m.step[tdx, idx]
-            l = m.loss[tdx, idx]
-            expected_loss = log_min_loss + a / (s + b) - a / (1 + b)
-            ℓ += loglikelihood(LogNormal(expected_loss, σ), l)
+        steps = m.step[idx]
+        loss = m.loss[idx]
+        for (s, l) in zip(steps, loss)
+            s_eff = s / (1 + batch_critical/batch_size)
+            expected_loss = min_loss + Sm / s_eff^γ - Sm
+            ℓ += loglikelihood(LogNormal(log(expected_loss), sigma), l)
         end
     end
     return ℓ
-end
-function sample_priors(m::TrainingProgress)
-    nobs = size(m.loss, 2)
-    scaling = sample_priors(m.scaling)
-    return ComponentArray(;
-        scaling,
-        training_coeffs=stack(map(_ -> [sample_priors(m.training_coeffs)...], 1:nobs)),
-        training_sigma=rand(m.training_sigma, nobs),
-    )
-end
-
-function model_priors(m::TrainingProgress)
-    return model_priors(TrainingProgress, size(m.loss, 2))
-end
-
-function transform_support(m::TrainingProgress)
-    np = length(m.training_coeffs)
-    nobs = size(m.loss, 2)
-    return (;
-        scaling=as(transform_support(m.scaling.priors)),
-        training_coeffs=as(Matrix, transform_support(first(m.training_coeffs)), np, nobs),
-        training_sigma=as(Vector, transform_support(m.training_sigma), nobs),)
 end
 
 function TrainingProgress(df::DataFrame)
     scaling_covar = ComponentArray(
         model_size=float(df.model_size),
         data_size=float(df.data_size),
-        lr=float(df.lr),
-        ff_ratio=float(df.ff_ratio),
-        aspect_ratio=float(df.aspect_ratio),
         eff_batch_size=float(df.eff_batch_size),
+        lr=float(df.lr),
     )
-    (; scaling, training_sigma, training_coeffs) = model_priors(TrainingProgress, nrow(df))
+    (; scaling, progress, penalty) = model_priors(TrainingProgress)
     return TrainingProgress(
         BayesModel(scaling, scaling_covar),
-        training_coeffs,
-        training_sigma,
-        stack(df.val_loss_trace),
-        stack(df.rel_step_trace),
+        penalty,
+        progress,
+        df.val_loss_trace,
+        df.rel_step_trace,
     )
 end

@@ -5,12 +5,9 @@ using DynamicHMC: mcmc_with_warmup, ProgressMeterReport, NoProgressReport
 using HDF5: h5open
 using StatsBase: mean_and_std, mean
 using UUIDs: uuid4
-using Interpolations: linear_interpolation
 using Random
 using Enzyme
 using JLD2
-
-#@static isinteractive() ? using GLMakie : using CairoMakie
 
 function load_dataset(dir)
     row = map(filter(f -> endswith(f, ".json"), readdir(dir; join=true))) do file
@@ -48,15 +45,15 @@ function clean_dataset(df::DataFrame)
         Symbol("val/loss_epoch") => ByRow(x -> minimum(x["loss"])) => :loss
     )
     subset!(df,
-        :min_val_loss => ByRow(x -> 1e-4 < x < 1.0),
-        :steps => ByRow(x -> 2000 <= x),
+        :min_val_loss => ByRow(x -> 1e-4 < x < 1.0),    # Exclude runs that didn't converge
+        :steps => ByRow(x -> 2000 <= x),                # Limit to runs that completed warming up
     )
 end
 
 function init_hoffman(df::DataFrame)
     df = clean_dataset(df)
     df = DataFrames.subset!(df,
-        [:steps, :num_training_steps] => ByRow((x, y) -> x == y - 1),
+        [:steps, :num_training_steps] => ByRow((x, y) -> x == y - 1), # Limit to runs that ran to completion
         :tokenizer => ByRow(x -> x ∈ ["smirk",]);
     )
     dropmissing!(df)
@@ -73,7 +70,6 @@ function init_training_progress(df::DataFrame)
     dropmissing!(df)
     subset!(df,
         :min_val_loss => ByRow(x -> 1e-4 < x < 1.0),
-        :steps => ByRow(x -> 2000 <= x),
         :tokenizer => ByRow(x -> x ∈ ["smirk",]);
     )
 
@@ -84,13 +80,11 @@ end
 
 
 function rel_loss_trace(x::Dict, num_training_steps, warmup_steps=2000)
-    rel_step = relative_steps.(x["step"], num_training_steps, warmup_steps)
-    n_warm = findfirst(>(0), rel_step)
+    rel_step = x["step"] ./ num_training_steps
+    n_warm = findfirst(>(warmup_steps), x["step"])
     isnothing(n_warm) && return missing, missing
     loss = float.(x["loss"])
-    itp = linear_interpolation(rel_step[n_warm:end], loss[n_warm:end])
-    step = range(rel_step[n_warm], rel_step[end], length=100)
-    return step, itp.(step)
+    return rel_step[n_warm:end], loss[n_warm:end]
 end
 
 function relative_steps(step, num_training_steps, warmup_steps=2000)

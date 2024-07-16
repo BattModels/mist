@@ -61,10 +61,11 @@ function transform_support(d::UnivariateDistribution)
     end
     return as(Real, lb, ub)
 end
-transform_support(p::NamedTuple) = map(transform_support, p)
+transform_support(p::NamedTuple) = as(map(transform_support, p))
+TransformVariables.as(t::NamedTuple) = as(map(TransformVariables.as, t))
 
 function init_logdensity_model(m, adtype=:Enzyme)
-    t = as(transform_support(m))
+    t = transform_support(m)
     p = TransformedLogDensity(t, m)
     ∇P = ADgradient(adtype, p)
     return ∇P
@@ -138,7 +139,7 @@ function ComponentArrays.Axis(t::TransformVariables.ArrayTransformation)
     end
 end
 
-function sample_chains(model, nchains=15, draws=1_000)
+function sample_chains(model; nchains=15, draws=1_000)
     d = dimension(model)
     nchains *= ceil(Int, sqrt(d))
     raw_samples = Array{Float64}(undef, d, draws, nchains)

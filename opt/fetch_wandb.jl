@@ -122,7 +122,7 @@ function run_summary(run)
     row["min_val_loss"] = ismissing(row["val/loss_epoch"]) ? missing : minimum(row["val/loss_epoch"]["loss"])
 
     # Learning Rate Trace
-    lr_channel = filter(x -> startswith(x, "lr"), pyconvert(Vector{String}, runs[51].summary.keys()))
+    lr_channel = filter(x -> startswith(x, "lr"), pyconvert(Vector{String}, run.summary.keys()))
     if length(lr_channel) >= 1
         if length(lr_channel) > 1
             @warn "Multiple lr channels found, using first" lr_channel
@@ -144,9 +144,6 @@ function query_runs(; kwargs...)
         "tags":{"\$in":["pretraining"]},
         "summary_metrics.trainer/global_step":{"\$exists":true},
         "summary_metrics.val/loss_epoch":{"\$exists":true},
-        "config.intermediate_size":{"\$exists":true},
-        "config.hidden_size":{"\$exists":true},
-        "config.num_hidden_layers":{"\$exists":true},
     }
     return collect(API.runs(path="incite-mist/mist"; filters, kwargs...))
 end
@@ -177,3 +174,12 @@ function tabulate_runs(runs; cache=joinpath(@__DIR__, "..", ".cache", "run-expor
     end
     return DataFrame(rows)
 end
+
+function main()
+    runs = query_runs()
+    df = tabulate_runs(runs)
+    print(df)
+    return 0
+end
+
+!isinteractive() && exit(main())

@@ -28,15 +28,17 @@ mist
 Manifest.toml
 LocalPreferences.toml
 .CondaPkg/
+*.jdl2
 
 # Spack
 .spack-env/
 spack.lock
 
-# figures
-*.pdf
-
-# outputs
+# Output files
 *.json
 *.jsonl
 *.bson
+*.png
+*.pdf
+*.h5
+*.csv
