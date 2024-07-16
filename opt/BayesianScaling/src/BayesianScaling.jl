@@ -2,13 +2,15 @@ module BayesianScaling
 
 using Makie
 using DataFrames
-using Distributions: Distribution, Normal, Uniform, LogNormal, MvLogNormal, MvNormal, Exponential, truncated, logpdf, loglikelihood, convolve
+using Distributions: Distributions, Distribution, Normal, Uniform, LogNormal, MvLogNormal, MvNormal, Exponential, truncated, logpdf, loglikelihood, convolve
 using MLUtils: splitobs
 using JSON: JSON
 using Statistics: mean, std, median
 using StatsBase: StatsBase, quantile, sample, mean_and_std, autocor, ecdf
 using Random: Random, shuffle!, AbstractRNG
-
+using Optimization: OptimizationProblem, OptimizationFunction, solve
+using OptimizationOptimJL: LBFGS
+using ADTypes: AutoForwardDiff
 using JLD2: jldopen
 using DynamicHMC: DynamicHMC
 using ComponentArrays: ComponentArrays, ComponentArray, ComponentVector, FlatAxis

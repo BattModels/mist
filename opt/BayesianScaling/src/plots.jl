@@ -155,7 +155,7 @@ function plot_scaling(chains::AbstractArray{<:Real,3}, df;
     return f
 end
 
-function plot_parity(df, chains::AbstractArray{<:Real,3}; p=0.025)
+function plot_parity(df, chains::AbstractArray{<:Real,3}; p=0.025, huber=nothing)
     f = Figure()
     ax = Axis(f[1, 1];
         yscale=log10,
@@ -222,8 +222,9 @@ end
 
 
 function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
+    huber=nothing,
     N=logrange(1e3, 1e12; length=200),
-    C=logrange(1e8, 1e26; length=20)
+    C=logrange(1e8, 1e26; length=50)
 )
     loss_quantiles = Matrix{Float32}(undef, 3, length(C))
     for (i, c) in enumerate(C)
@@ -239,20 +240,29 @@ function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
 
     # Setup Plots
     f = Figure()
-    C = collect(C) ./ pf_day
     ax = Axis(f[1, 1];
         ylabel="Estimated Compute-Optimal Loss",
         xlabel="Compute Budget (PF-Day)",
-        limits=(extrema(C), (1e-5, 1)),
+        limits=(extrema(C ./ pf_day), (1e-5, 1)),
         xscale=log10,
         yscale=log10,
     )
-    predictionband!(ax, C, loss_quantiles[2, :], loss_quantiles[1, :], loss_quantiles[3, :], label="95% Credible Interval")
+    predictionband!(ax, C ./ pf_day, loss_quantiles[2, :], loss_quantiles[1, :], loss_quantiles[3, :], label="95% Credible Interval")
+
+    # Add Huber Fitted Model
+    if !isnothing(huber)
+        loss = map(x -> compute_optimal_loss(x; huber...), C)
+        @info "huber" C loss
+        lines!(ax, C ./ pf_day, loss; color=:red, label="Huber Fitted Model")
+    end
+
+    #  Add Training Data
     if !ismissing(df)
         scatter!(ax, @.(6 * float(df.data_size) * float(df.model_size) / pf_day), df.min_val_loss;
-            marker=:x, color=:blue, label="Emperical",
+            marker=:x, color=:blue, label="Empirical",
         )
     end
+
     axislegend(ax, position=:lb)
 
     return f

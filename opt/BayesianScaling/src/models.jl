@@ -34,6 +34,52 @@ function (m::HoffmanScaling)(θ)
     return ℓ
 end
 
+""" Compute the log∘sum∘exp of `x...`"""
+lse(x...) = log(sum(exp.(x)))
+
+"""
+Loss function for fitting the Hoffman Scaling Model using a Huber loss
+"""
+function hoffman_huber_loss(θ, p)
+    α, β, a, b, e = θ
+    (; model_size, data_size, loss) = p
+    ℓ = 0.0
+    for i in eachindex(loss)
+        loss_lse = lse(a - α*log(model_size[i]), b - β*log(data_size[i]), e)
+        ℓ += huber_loss(loss_lse - log(loss[i]); δ=1e-3)
+    end
+    return ℓ
+end
+
+huber_loss(x::Real; δ::Real=1e-3) = abs(x) < δ ? 0.5 * x^2 : δ * (abs(x) - 0.5 * δ)
+
+Distributions.quantile(d::UnivariateDistribution, p) = map(x -> quantile(d, x), p)
+
+function fit_model_huber(m::HoffmanScaling; l=0.01)
+    priors = m.model.priors
+    grid = Iterators.product(
+        range(quantile(priors.α, (l, 1-l))...; length=5),
+        range(quantile(priors.β, (l, 1-l))...; length=5),
+        range(log.(quantile(priors.A, (l, 1-l)))...; length=10),
+        range(log.(quantile(priors.B, (l, 1-l)))...; length=10),
+        range(log.(quantile(priors.E, (l, 1-l)))...; length=10),
+    )
+
+    # Initial grid search
+    x0 = argmin(Base.Fix2(hoffman_huber_loss, m.model.covariates), grid) |> splat(vcat)
+
+    # Minimize huber loss
+    f = OptimizationFunction(hoffman_huber_loss, AutoForwardDiff())
+    x0[3:4] .= 5
+    prob = OptimizationProblem(f, x0, m.model.covariates)
+    sol = solve(prob, LBFGS(); maxiters=200)
+    if sol.retcode != :Success
+        @error "Model fitting failed" sol.retcode sol.original sol x0
+    end
+    θ = ComponentVector(; α=sol.u[1], β=sol.u[2], A=exp(sol.u[3]), B=exp(sol.u[4]), E=exp(sol.u[5]))
+    return θ, sol
+end
+
 function model_priors(::Type{HoffmanScaling})
     return (;
         A=LogNormal(log(500), 2),
