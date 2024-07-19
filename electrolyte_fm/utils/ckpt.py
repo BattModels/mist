@@ -73,7 +73,8 @@ class SaveConfigWithCkpts(Callback):
                 model_config = {
                     "version": self.VERSION,
                     "class_path": f"{model_cls.__module__}.{model_cls.__name__}",
-                    "init_args": trainer.lightning_module.hparams,
+                    "lightning_module": trainer.lightning_module.hparams,
+                    "datamodule": trainer.datamodule.hparams,
                 }
                 json.dump(model_config, fid, default=lambda x: str(type(x)))
 
@@ -102,7 +103,7 @@ class SaveConfigWithCkpts(Callback):
         # Get model class name and config
         if "version" in config:
             cls_name = config["class_path"]
-            model_config = config["init_args"]
+            model_config = config["init_args"]["init_args"]
         else:
             cls_name = "electrolyte_fm.models.roberta_base.RoBERTa"
             model_config = config

@@ -2,12 +2,20 @@
     https://github.com/ramanathanlab/genslm/blob/71beb030df72010f5a4883a1f1a0b25bbafbe4a8/genslm/utils.py
 """
 
+import json
+import os
 import time
-from typing import Any
+from typing import Any, Mapping, Union
 
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import Callback
+import torch
+from lightning.fabric.utilities.spike import SpikeDetection as FabricSpikeDetection
+from pytorch_lightning.callbacks import Callback, Checkpoint
 from pytorch_lightning.loggers import WandbLogger
+from typing_extensions import override
+
+from ..models.model_utils import DeepSpeedMixin
+from .ckpt import SaveConfigWithCkpts
 
 
 class ThroughputMonitor(Callback):
@@ -110,3 +118,75 @@ class ThroughputMonitor(Callback):
     ) -> None:
         if trainer.is_global_zero:
             self.record_batch_perf(trainer, pl_module, "val")
+
+
+class SpikeDetection(FabricSpikeDetection, Callback):
+
+    @torch.no_grad()
+    def on_train_batch_end(  # type: ignore
+        self,
+        trainer: "pl.Trainer",
+        pl_module: "pl.LightningModule",
+        outputs: Union[torch.Tensor, Mapping[str, torch.Tensor]],
+        batch: Any,
+        batch_idx: int,
+    ) -> None:
+        if isinstance(outputs, torch.Tensor):
+            loss = outputs.detach()
+        elif isinstance(outputs, Mapping):
+            loss = outputs["loss"].detach()
+        else:
+            raise TypeError(
+                f"outputs have to be of type torch.Tensor or Mapping, got {type(outputs).__qualname__}"
+            )
+
+        if self.exclude_batches_path is None:
+            self.exclude_batches_path = os.path.join(
+                trainer.default_root_dir, "skip_batches.json"
+            )
+
+        if batch_idx == 0:
+            self.running_mean.to(trainer.strategy.root_device)
+
+        if self.exclude_batches_path is None:
+            self.exclude_batches_path = os.getcwd()
+
+        if not str(self.exclude_batches_path).endswith(".json"):
+            self.exclude_batches_path = os.path.join(
+                self.exclude_batches_path, "skip_batches.json"
+            )
+
+        is_spike = bool(batch_idx >= self.warmup and self._is_spike(loss))
+        trainer.strategy.barrier()
+
+        # While spike-detection happens on a per-rank level
+        # We need to fail all ranks if any rank detected a spike
+        is_spike_global = trainer.strategy.reduce_boolean_decision(is_spike, all=False)
+
+        if is_spike_global:
+            self._handle_spike(trainer, batch_idx)
+        else:
+            is_finite_all = (
+                self.finite_only
+                or trainer.strategy.reduce_boolean_decision(
+                    bool(torch.isfinite(loss).all()), all=True
+                )
+            )
+            if is_finite_all:
+                self._update_stats(loss)
+
+    def __resolve_ckpt_dir(self, trainer: "pl.Trainer"):
+
+        ckpt_path = trainer.strategy.broadcast(trainer.loggers[0].log_dir, src=0)
+        return ckpt_path
+
+    def _handle_spike(self, trainer: "pl.Trainer", batch_idx: int) -> None:
+
+        trainer.model.exclude_batches.extend([batch_idx - 1, batch_idx])
+
+        checkpoint_path = self.__resolve_ckpt_dir(trainer)
+        last_checkpoint_path = os.path.join(checkpoint_path, "last.ckpt")
+        print(f"Resuming from checkpoint : {last_checkpoint_path}")
+        print(f"Excluded batches : {trainer.model.exclude_batches}")
+        trainer.model.load_state(last_checkpoint_path)
+        trainer.model.to(trainer.strategy.root_device)

@@ -77,7 +77,7 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         )
         return super().on_train_epoch_start()
 
-    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:            
+    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
         loss = outputs.loss
         self.log(
@@ -89,7 +89,7 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
             sync_dist=True,
         )
         if batch_idx in self.exclude_batches:
-            return loss*0
+            return loss * 0
         return loss
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:

@@ -16,7 +16,7 @@ wandb = "^0.16"
 typer = "^0.9"
 h5py = "^3.11"
 protobuf = "<=3.20"
-datasets = "^2.20"
+datasets = "^2.19"
 pyspark = "^3.5.0"
 smirk = {path = "smirk", develop=true}
 rich = "^13"
