@@ -4,7 +4,7 @@ from pathlib import Path
 import pytorch_lightning as pl
 
 from ..utils.ckpt import SaveConfigWithCkpts
-
+from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
 
 class DeepSpeedMixin:
     @staticmethod
@@ -20,6 +20,11 @@ class DeepSpeedMixin:
         #
         # cls.load(checkpoint_dir, config_path)
         #
+    
+    def load_state(self, checkpoint_dir):
+        print("load_state", checkpoint_dir)
+        state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
+        self.load_state_dict(state, strict=False, assign=True)
 
     def get_encoder(self):
         raise NotImplementedError

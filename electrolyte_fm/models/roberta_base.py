@@ -19,6 +19,7 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         num_attention_heads: int = 12,
         num_hidden_layers: int = 6,
         hidden_size: int = 768,
+        initializer_range: float = 0.02,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
@@ -35,10 +36,12 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
             max_position_embeddings=max_position_embeddings,
             num_attention_heads=num_attention_heads,
             num_hidden_layers=num_hidden_layers,
+            initializer_range=initializer_range,
             hidden_dropout_prob=0.1,
             attention_probs_dropout_prob=0.1,
             type_vocab_size=1,
         )
+        self.exclude_batches = []
 
     def configure_model(self):
         self.model = RobertaForMaskedLM(config=self.config)
@@ -74,7 +77,7 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         )
         return super().on_train_epoch_start()
 
-    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
+    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:            
         outputs = self(batch)
         loss = outputs.loss
         self.log(
@@ -85,6 +88,8 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
             prog_bar=True,
             sync_dist=True,
         )
+        if batch_idx in self.exclude_batches:
+            return loss*0
         return loss
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
