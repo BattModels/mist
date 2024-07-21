@@ -103,7 +103,11 @@ class SaveConfigWithCkpts(Callback):
         # Get model class name and config
         if "version" in config:
             cls_name = config["class_path"]
-            model_config = config["init_args"]["init_args"]
+            model_config = config["lightning_module"]["init_args"]
+            try:
+                model_config["vocab_size"] = config["datamodule"]["vocab_size"]
+            except KeyError as e:
+                print(e)
         else:
             cls_name = "electrolyte_fm.models.roberta_base.RoBERTa"
             model_config = config
@@ -122,7 +126,7 @@ class SaveConfigWithCkpts(Callback):
         )
 
         state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
-        model.load_state_dict(state, strict=True, assign=True)
+        model.load_state_dict(state, strict=False, assign=True)
         return model
 
     @staticmethod

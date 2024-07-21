@@ -4,6 +4,7 @@
 
 import json
 import os
+from tabnanny import check
 import time
 from typing import Any, Mapping, Union
 
@@ -16,7 +17,7 @@ from typing_extensions import override
 
 from ..models.model_utils import DeepSpeedMixin
 from .ckpt import SaveConfigWithCkpts
-
+import warnings
 
 class ThroughputMonitor(Callback):
     """Custom callback in order to monitor the throughput and log to weights and biases."""
@@ -132,8 +133,10 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         batch_idx: int,
     ) -> None:
         if isinstance(outputs, torch.Tensor):
+            print(f"device: {outputs.device}")
             loss = outputs.detach()
         elif isinstance(outputs, Mapping):
+            print(f"device: {outputs['loss'].device}")
             loss = outputs["loss"].detach()
         else:
             raise TypeError(
@@ -148,6 +151,12 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         if batch_idx == 0:
             self.running_mean.to(trainer.strategy.root_device)
 
+        
+        print(f"global_step : {trainer.global_step}")
+        print(f"batch_idx : {batch_idx}")
+        print(f"running_val : {self.running_mean.compute()}")
+        print(f"loss : {loss}")
+
         if self.exclude_batches_path is None:
             self.exclude_batches_path = os.getcwd()
 
@@ -158,10 +167,7 @@ class SpikeDetection(FabricSpikeDetection, Callback):
 
         is_spike = bool(batch_idx >= self.warmup and self._is_spike(loss))
         trainer.strategy.barrier()
-
-        # While spike-detection happens on a per-rank level
-        # We need to fail all ranks if any rank detected a spike
-        is_spike_global = trainer.strategy.reduce_boolean_decision(is_spike, all=False)
+        is_spike_global = trainer.strategy.reduce_boolean_decision(is_spike, all=True)
 
         if is_spike_global:
             self._handle_spike(trainer, batch_idx)
@@ -169,15 +175,28 @@ class SpikeDetection(FabricSpikeDetection, Callback):
             is_finite_all = (
                 self.finite_only
                 or trainer.strategy.reduce_boolean_decision(
-                    bool(torch.isfinite(loss).all()), all=True
+                    bool(torch.isfinite(loss).all()), all=False
                 )
             )
             if is_finite_all:
                 self._update_stats(loss)
 
     def __resolve_ckpt_dir(self, trainer: "pl.Trainer"):
+                
+        if len(trainer.loggers) > 0:
+            if trainer.loggers[0].save_dir is not None:
+                save_dir = trainer.loggers[0].save_dir
+            else:
+                save_dir = trainer.default_root_dir
+            name = trainer.loggers[0].name
+            version = trainer.loggers[0].version
+            version = version if isinstance(version, str) else f"version_{version}"
+            checkpoint_path = os.path.join(save_dir, str(name), version, "checkpoints")
+        else:
+            # if no loggers, use default_root_dir
+            checkpoint_path = os.path.join(trainer.default_root_dir, "checkpoints")
 
-        ckpt_path = trainer.strategy.broadcast(trainer.loggers[0].log_dir, src=0)
+        ckpt_path = trainer.strategy.broadcast(checkpoint_path, src=0)
         return ckpt_path
 
     def _handle_spike(self, trainer: "pl.Trainer", batch_idx: int) -> None:
@@ -188,5 +207,34 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         last_checkpoint_path = os.path.join(checkpoint_path, "last.ckpt")
         print(f"Resuming from checkpoint : {last_checkpoint_path}")
         print(f"Excluded batches : {trainer.model.exclude_batches}")
-        trainer.model.load_state(last_checkpoint_path)
-        trainer.model.to(trainer.strategy.root_device)
+        checkpoint =  trainer.strategy.load_checkpoint(last_checkpoint_path)
+        trainer.strategy.load_model_state_dict(
+            checkpoint = checkpoint,
+            )
+    
+    def _is_spike(self, loss: torch.Tensor) -> bool:
+        # we might call compute more often than update which is fine as long as the
+        # metric has at least one internal value.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            running_val = self.running_mean.compute()
+        curr_diff = loss - self.last_val
+        
+
+        if self.finite_only and not torch.isfinite(loss):
+            return True
+
+        if self._is_better(curr_diff):
+            return False
+
+        check_atol = bool(abs(running_val - loss) >= abs(self.atol))
+        # check_rtol = bool(abs(running_val - loss) >= abs(self.rtol * loss)
+        return check_atol # and check_rtol
+    
+        # print(f"load_path : {load_path}")
+        # print(f"client_state : {client_state}")
+        # trainer.model = loaded_checkpoint
+        # trainer.model.load_state_dict(loaded_checkpoint)
+        # trainer.strategy.barrier()
+        # trainer.model.load_state(last_checkpoint_path)
+        # trainer.model.to(trainer.strategy.root_device)

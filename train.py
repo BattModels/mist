@@ -63,20 +63,27 @@ def cli_main(args=None):
     monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
-        SpikeDetection(atol=0.5, finite_only=False),
+        SpikeDetection(
+            atol=0.3,
+            warmup=200, 
+            finite_only=False
+            ),
         ModelCheckpoint(
-            save_last="link",
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
+            save_last="link",
             save_top_k=2,
             verbose=True,
+            enable_version_counter=True,
             auto_insert_metric_name=False,
         ),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}",
             monitor="step",
             verbose=True,
+            save_last=False,
             mode="max",
+            save_top_k=5,
             train_time_interval=timedelta(minutes=15),
             auto_insert_metric_name=False,
         ),
