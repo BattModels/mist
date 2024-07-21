@@ -1,8 +1,9 @@
-import json
-from copy import deepcopy
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
+import selfies
+from elements import all_bracketed_tokens, all_elements
 
 from smirk.smirk import SmirkTokenizer
 
@@ -60,3 +61,39 @@ def test_encode(tokenizer):
     emb = tokenizer.encode(selfie)
     out = tokenizer.decode(emb["input_ids"])
     assert out == selfie
+
+
+def test_elements(tokenizer):
+    def check_encode(b, n):
+        b = selfies.encoder(b, strict=True)
+        code = tokenizer.pretokenize(b)
+        assert len(code) == n
+
+    for element in all_elements():
+        check_encode(f"[{element}]", 3)
+        check_encode(f"[{element}@]", 4)
+        check_encode(f"[{element}@@]", 4)
+        check_encode(f"[{element}+2]", 5)
+
+
+def test_bracketed_tokens(tokenizer):
+    unk_token_id = tokenizer.get_vocab()["[UNK]"]
+    for b in all_bracketed_tokens(include_aromatic=False):
+        emb = tokenizer.encode(b)
+        assert (
+            unk_token_id not in emb["input_ids"]
+        ), f"failed to tokenize: {b} => {tokenizer.pretokenize(b)} ({emb})"
+
+
+def test_opensmile_spec(tokenizer):
+    with open(Path(__file__).parent.join("opensmiles.smi"), "r") as examples:
+        unk_token_id = tokenizer.token_to_id("[UNK]")
+        for smile in examples:
+            # Skip comments
+            if smile.startswith("#"):
+                continue
+
+            emb = tokenizer.encode(smile)
+            assert (
+                unk_token_id not in emb["input_ids"]
+            ), f"failed to tokenize: {smile} => {tokenizer.pretokenize(smile)} ({emb})"

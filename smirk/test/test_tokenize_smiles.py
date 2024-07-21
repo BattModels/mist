@@ -2,6 +2,7 @@ import json
 from importlib.resources import files
 
 import pytest
+from elements import all_bracketed_tokens, all_elements
 
 from smirk.smirk import SmirkTokenizer
 
@@ -30,6 +31,27 @@ def test_pretokenize(tokenizer):
     splits = tokenizer.pretokenize("OC[C@@H][OH]")
     assert splits == ["O", "C", "[", "C", "@@", "H", "]", "[", "O", "H", "]"]
     assert len(splits) == 11
+
+
+def test_elements(tokenizer):
+    def check_encode(b, n):
+        code = tokenizer.pretokenize(b)
+        assert len(code) == n
+
+    for element in all_elements():
+        check_encode(f"[{element}]", 3)
+        check_encode(f"[{element}@]", 4)
+        check_encode(f"[{element}@@]", 4)
+        check_encode(f"[{element}+2]", 5)
+
+
+def test_bracketed_tokens(tokenizer):
+    unk_token_id = tokenizer.get_vocab()["[UNK]"]
+    for b in all_bracketed_tokens():
+        emb = tokenizer.encode(b)
+        assert (
+            unk_token_id not in emb["input_ids"]
+        ), f"failed to tokenize: {b} => {tokenizer.pretokenize(b)} ({emb})"
 
 
 def test_image(tokenizer, smile_strings):

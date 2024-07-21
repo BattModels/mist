@@ -24,7 +24,6 @@ def check_save(tokenizer):
     print("loaded: " + loaded.to_str())
     print("trained: " + tokenizer.to_str())
     assert isinstance(loaded, tokenizer.__class__)
-    # assert loaded.to_str() == tokenizer.to_str()
 
     # Check pickling
     state = pickle.dumps(tokenizer)
@@ -73,10 +72,11 @@ def test_unknown():
 
 def test_special_tokens():
     tokenizer = smirk.SmirkTokenizerFast()
-    assert tokenizer.pad_token == "[PAD]"
-    assert tokenizer.mask_token_id == 144
-    assert tokenizer.pad_token_id == 145
-    assert tokenizer.unk_token_id == 147
+    assert tokenizer.unk_token_id == tokenizer.token_to_id("[UNK]")
+    assert tokenizer.mask_token_id == tokenizer.token_to_id("[MASK]")
+    assert tokenizer.pad_token_id == tokenizer.token_to_id("[PAD]")
+    assert tokenizer.bos_token_id == tokenizer.token_to_id("[BOS]")
+    assert tokenizer.eos_token_id == tokenizer.token_to_id("[EOS]")
 
 
 def test_pad(smile_strings):

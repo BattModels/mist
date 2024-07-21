@@ -18,6 +18,7 @@ dependencies = [
 test = [
     "pytest",
     "torch",
+    "mendeleev==0.16.2",
 ]
 
 [tool.maturin]
