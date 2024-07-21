@@ -22,7 +22,7 @@ regex = "1.10.3"
 serde = "1.0.197"
 serde_json = "1.0.114"
 serde_with = "3.8.0"
-tokenizers = { version = "0.15.2", features = ["http"] }
+tokenizers = { version = "^0.19"}
 
 [dev-dependencies]
 tempfile = "3.10.1"
