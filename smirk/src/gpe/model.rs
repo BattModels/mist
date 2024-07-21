@@ -68,9 +68,14 @@ impl GPEBuilder {
         let merges = self.merges.to_owned().unwrap_or_default();
         let merge_offset = 1 + *vocab.values().max().unwrap_or(&0);
         let vocab_r = GPE::build_vocab_r(&vocab, &merges, merge_offset)?;
+        let tokenize = match &self.tokenize {
+            Some(x) => x.to_owned(),
+            None => SmirkPreTokenizer::default(),
+        };
+
         Ok(GPE {
             unk_token: self.unk_token.to_owned().expect("Missing unk_token"),
-            tokenize: self.tokenize.unwrap_or_default(),
+            tokenize,
             vocab,
             vocab_r,
             merges,
@@ -87,7 +92,7 @@ impl From<WordLevel> for GPE {
             vocab_r: HashMap::new(),
             merges: Vec::new(),
             merge_offset: 0,
-            tokenize: SmirkPreTokenizer::new(true),
+            tokenize: SmirkPreTokenizer::default(),
         };
         let mut vocab = value.get_vocab().to_owned();
         let new_id = vocab.len() as u32;

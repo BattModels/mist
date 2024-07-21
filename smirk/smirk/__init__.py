@@ -31,10 +31,7 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         elif tokenizer_file := kwargs.pop("tokenizer_file", None):
             tokenizer = rs_smirk.SmirkTokenizer.from_file(tokenizer_file)
         elif vocab_file := kwargs.pop("vocab_file", default_vocab_file):
-            is_smiles = kwargs.pop("is_smiles", True)
-            tokenizer = rs_smirk.SmirkTokenizer.from_vocab(
-                vocab_file, is_smiles=is_smiles
-            )
+            tokenizer = rs_smirk.SmirkTokenizer.from_vocab(vocab_file)
         else:
             tokenizer = rs_smirk.SmirkTokenizer()
 
@@ -166,3 +163,37 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         """
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         return SmirkTokenizerFast(tokenizer=self._tokenizer.train(files, **kwargs))
+
+
+def SmirkSelfiesFast(vocab=None, unk_token="[UNK]"):
+    import json
+    from importlib.resources import files
+
+    from tokenizers import Regex, Tokenizer
+    from tokenizers.models import WordLevel
+    from tokenizers.normalizers import Strip
+    from tokenizers.pre_tokenizers import Sequence, Split
+    from transformers import PreTrainedTokenizerFast
+
+    if vocab is None:
+        with open(files("smirk").joinpath("vocab_selfies.json"), "r") as fid:
+            vocab = json.load(fid)
+
+    tok = Tokenizer(WordLevel(vocab, unk_token))
+    regex = (
+        r"Branch|Ring|A[c|g|l|m|r|s|t|u]|B[a|e|h|i|k|r]?|"
+        r"C[a|d|e|f|l|m|n|o|r|s|u]?|D[b|s|y]|E[r|s|u]|F[e|l|m|r]?|"
+        r"G[a|d|e]|H[e|f|g|o|s]?|I[n|r]?|Kr?|L[a|i|r|u|v]|"
+        r"M[c|d|g|n|o|t]|N[a|b|d|e|h|i|o|p]?|O[g|s]?|P[a|b|d|m|o|r|t|u]?|"
+        r"R[a|b|e|f|g|h|n|u]|S[b|c|e|g|i|m|n|r]?|T[a|b|c|e|h|i|l|m|s]|"
+        r"U|V|W|Xe|Yb?|Z[n|r]|[\.\-=\#\$:/\\\+\-]|\d|@|@@"
+    )
+
+    tok.pre_tokenizer = Sequence(
+        [
+            Split(Regex(r"\[|]"), behavior="removed"),  # Strip Brackets
+            Split(Regex(regex), behavior="isolated"),  # Tokenize
+        ]
+    )
+    tok.normalizer = Strip()
+    return PreTrainedTokenizerFast(tokenizer_object=tok)

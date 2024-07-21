@@ -45,8 +45,10 @@ def test_vocab_size():
 
 def test_multi_file():
     tokenizer = smirk.SmirkTokenizerFast()
-    trained = tokenizer.train([str(SMILE_TEST_FILE)], vocab_size=200)
-    assert trained.vocab_size == 200
+    trained = tokenizer.train([str(SMILE_TEST_FILE)], vocab_size=300)
+    print(trained.get_vocab())
+    print(trained.to_str())
+    assert len(trained) == 300
 
 
 def test_tokenizing_unknown(trained):

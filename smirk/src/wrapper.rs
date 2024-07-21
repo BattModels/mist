@@ -169,24 +169,11 @@ impl From<tokenizers::models::wordlevel::WordLevel> for ModelWrapper {
 
 #[cfg(test)]
 mod test {
-    use serde::{Deserialize, Serialize};
+    use crate::pre_tokenizers::split_structure;
+    use crate::test_utils::check_serde;
     use tokenizers::models::wordlevel::WordLevel;
 
-    use crate::gpe::GPE;
-    use crate::pre_tokenizers::split_structure;
-
     use super::*;
-
-    fn check_serde<T>(x: &T)
-    where
-        T: Serialize + for<'a> Deserialize<'a> + PartialEq + std::fmt::Debug,
-    {
-        println!("serializing: {:?}", &x);
-        let data = serde_json::to_string::<T>(&x).unwrap();
-        println!("Into: {:?}", &data);
-        let loaded = serde_json::from_str(&data).unwrap();
-        assert_eq!(*x, loaded);
-    }
 
     #[test]
     fn serialize_models() {

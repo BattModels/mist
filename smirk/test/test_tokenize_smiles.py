@@ -1,5 +1,6 @@
 import json
 from importlib.resources import files
+from tempfile import NamedTemporaryFile
 
 import pytest
 from elements import all_bracketed_tokens, all_elements
@@ -11,7 +12,7 @@ from smirk.smirk import SmirkTokenizer
 def tokenizer():
     VOCAB_FILE = files("smirk").joinpath("vocab_smiles.json")
     assert VOCAB_FILE.is_file()
-    return SmirkTokenizer.from_vocab(str(VOCAB_FILE), is_smiles=True)
+    return SmirkTokenizer.from_vocab(str(VOCAB_FILE))
 
 
 @pytest.fixture
@@ -83,10 +84,10 @@ def test_encode_batch(tokenizer, smile_strings):
 
 def test_serialize(tokenizer):
     config = json.loads(tokenizer.to_str())
-    print(config)
     assert config["decoder"] == {"type": "Fuse"}
     assert config["model"]["type"] == "WordLevel"
-    assert config["pre_tokenizer"] == {
-        "type": "SmirkPreTokenizer",
-        "is_smiles": True,
-    }
+    assert "pre_tokenizer" in config
+    with NamedTemporaryFile("w") as file:
+        tokenizer.save(file.name)
+        tok = SmirkTokenizer.from_file(file.name)
+        assert tok.to_str() == tokenizer.to_str()

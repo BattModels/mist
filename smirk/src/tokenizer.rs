@@ -40,7 +40,7 @@ impl SmirkTokenizer {
     fn __new__() -> Self {
         let tokenizer: Tokenizer = TokenizerBuilder::new()
             .with_model(WordLevel::default().into())
-            .with_pre_tokenizer(Some(SmirkPreTokenizer::new(true).into()))
+            .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
             .with_normalizer(Some(Strip::new(true, true)))
             .with_decoder(Some(Fuse::default().into()))
             .build()
@@ -57,11 +57,11 @@ impl SmirkTokenizer {
     }
 
     #[staticmethod]
-    fn from_vocab(file: &str, is_smiles: bool) -> Self {
+    fn from_vocab(file: &str) -> Self {
         let model = WordLevel::from_file(file, "[UNK]".to_string()).unwrap();
         let tokenizer = TokenizerBuilder::new()
             .with_model(model.into())
-            .with_pre_tokenizer(Some(SmirkPreTokenizer::new(is_smiles).into()))
+            .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
             .with_normalizer(Some(Strip::new(true, true)))
             .with_decoder(Some(Fuse::new().into()))
             .build()

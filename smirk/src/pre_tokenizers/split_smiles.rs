@@ -1,14 +1,6 @@
-use const_format::concatcp;
-use once_cell::sync::Lazy;
-use regex::Regex;
+use const_format::formatcp;
 
-// Capture the organic subset
-const ORGANIC_SUBSET: &'static str = r"Cl?|Br?|N|P|S|O|I|F";
-
-const AROMATIC_ORGANIC: &'static str = r"b|c|n|o|p|s";
-
-// Capture elements (Generated with opt/element_regex.py)
-pub const ATOMIC_SYMBOLS: &'static str = concatcp!(
+const BRACKETED_SYMBOL: &'static str = concat!(
     r"A[c|g|l|m|r|s|t|u]|",
     r"B[a|e|h|i|k|r]?|",
     r"C[a|d|e|f|l|m|n|o|r|s|u]?|",
@@ -18,7 +10,7 @@ pub const ATOMIC_SYMBOLS: &'static str = concatcp!(
     r"G[a|d|e]|",
     r"H[e|f|g|o|s]?|",
     r"I[n|r]?|",
-    r"K[r]?|",
+    r"Kr?|",
     r"L[a|i|r|u|v]|",
     r"M[c|d|g|n|o|t]|",
     r"N[a|b|d|e|h|i|o|p]?|",
@@ -30,51 +22,36 @@ pub const ATOMIC_SYMBOLS: &'static str = concatcp!(
     r"U|",
     r"V|",
     r"W|",
-    r"X[e]|",
-    r"Y[b]?",
+    r"Xe|",
+    r"Yb?|",
+    r"Z[n|r]|",
+    r"as|",
+    r"b|",
+    r"c|",
+    r"n|",
+    r"o|",
+    r"p|",
+    r"se?|",
+    r"\*",
 );
 
-// Capture bond symbols
-pub const BONDS: &'static str = r"[\.\-=#\$:/\\]";
+const CHIRAL: &'static str = r"@(?:@|AL|OH|SP|T[B|H])?";
 
-// Capture Rings, Branching, and Stereochemistry
-pub const STRUCTURE: &'static str = r"%|[\(\)]|[/\\]|@{1,2}";
+pub const MATCH_OUTER: &'static str = concat!(
+    r"Br?|Cl?|F|I|N|O|P|S|",
+    r"b|c|n|o|p|s|",
+    r"\*|",
+    r"[\.\-=\#\$:/\\]|",
+    r"\d|%|",
+    r"\(|\)|",
+    r"\[.*?]",
+);
 
-// Capture brackets
-pub const BRACKETED: &'static str = r"\[.*?\]";
-
-pub const CHARGE_OR_COUNT: &'static str = r"\d|\+|\-";
-
-// Capture tokens outside of brackets
-pub static MATCH_OUTER: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(concatcp!(
-        ORGANIC_SUBSET,
-        "|",
-        AROMATIC_ORGANIC,
-        "|",
-        BONDS,
-        "|",
-        STRUCTURE,
-        "|",
-        BRACKETED,
-        "|",
-        CHARGE_OR_COUNT
-    ))
-    .unwrap()
-});
-
-// Capture tokens within brackets
-pub static MATCH_INNER: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(concatcp!(
-        ATOMIC_SYMBOLS,
-        "|",
-        AROMATIC_ORGANIC,
-        "|",
-        BONDS,
-        "|",
-        STRUCTURE,
-        "|",
-        CHARGE_OR_COUNT,
-    ))
-    .unwrap()
-});
+pub const MATCH_INNER: &'static str = formatcp!(concat!(
+    r"(\d+)?",                        // Isotope
+    r"({BRACKETED_SYMBOL})",          // Element Symbols
+    r"(?:({CHIRAL})(\d{{1,2}})?)?",   // Chirality
+    r"(?:(H)(\d)?)?",                 // Hydrogen Count
+    r"(?:([+-]{{1,2}})(\d{{0,2}}))?", // Charge
+    r"(?:(:)(\d+))?",                 // Class
+));

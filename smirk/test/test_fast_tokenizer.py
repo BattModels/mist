@@ -43,7 +43,7 @@ def test_saving():
 def test_vocab_size():
     tokenizer = smirk.SmirkTokenizerFast()
     assert len(tokenizer.get_vocab()) > 0
-    assert len(tokenizer.get_vocab()) == tokenizer.vocab_size
+    assert len(tokenizer.get_vocab()) == len(tokenizer)
 
 
 def check_tokenize(tokenizer):
@@ -72,11 +72,12 @@ def test_unknown():
 
 def test_special_tokens():
     tokenizer = smirk.SmirkTokenizerFast()
-    assert tokenizer.unk_token_id == tokenizer.token_to_id("[UNK]")
-    assert tokenizer.mask_token_id == tokenizer.token_to_id("[MASK]")
-    assert tokenizer.pad_token_id == tokenizer.token_to_id("[PAD]")
-    assert tokenizer.bos_token_id == tokenizer.token_to_id("[BOS]")
-    assert tokenizer.eos_token_id == tokenizer.token_to_id("[EOS]")
+    vocab = tokenizer.get_vocab()
+    assert tokenizer.unk_token_id == vocab["[UNK]"]
+    assert tokenizer.mask_token_id == vocab["[MASK]"]
+    assert tokenizer.pad_token_id == vocab["[PAD]"]
+    assert tokenizer.bos_token_id == vocab["[BOS]"]
+    assert tokenizer.eos_token_id == vocab["[EOS]"]
 
 
 def test_pad(smile_strings):
