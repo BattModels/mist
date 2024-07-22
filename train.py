@@ -14,7 +14,7 @@ from electrolyte_fm.models.lm_finetuning import LMFinetuning
 
 # classes passed via cli
 from electrolyte_fm.models.roberta_base import RoBERTa
-from electrolyte_fm.utils.callbacks import SpikeDetection, ThroughputMonitor
+from electrolyte_fm.utils.callbacks import SpikeDetection, ThroughputMonitor, GradientNormMonitor
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 
@@ -63,6 +63,7 @@ def cli_main(args=None):
     monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
+        GradientNormMonitor(),
         SpikeDetection(
             atol=0.3,
             warmup=200, 

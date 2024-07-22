@@ -9,7 +9,11 @@ import time
 from typing import Any, Mapping, Union
 
 import pytorch_lightning as pl
+from pytorch_lightning.utilities import grad_norm
+
 import torch
+from torch.optim import Optimizer
+
 from lightning.fabric.utilities.spike import SpikeDetection as FabricSpikeDetection
 from pytorch_lightning.callbacks import Callback, Checkpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -120,6 +124,18 @@ class ThroughputMonitor(Callback):
         if trainer.is_global_zero:
             self.record_batch_perf(trainer, pl_module, "val")
 
+class GradientNormMonitor(Callback):
+    """Custom callback in order to monitor the gradient norm and log to weights and biases."""
+    def __init__(self) -> None:
+        """Logs throughput statistics starting at the 2nd epoch."""
+        super().__init__()
+    
+    def on_before_optimizer_step(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", optimizer: Optimizer
+    ) -> None:
+        # Compute the 2-norm for each layer
+        # If using mixed precision, the gradients are already unscaled here
+        norms = grad_norm(pl_module.model, norm_type=2)
+        pl_module.log_dict(norms)
 
 class SpikeDetection(FabricSpikeDetection, Callback):
 
@@ -133,10 +149,8 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         batch_idx: int,
     ) -> None:
         if isinstance(outputs, torch.Tensor):
-            print(f"device: {outputs.device}")
             loss = outputs.detach()
         elif isinstance(outputs, Mapping):
-            print(f"device: {outputs['loss'].device}")
             loss = outputs["loss"].detach()
         else:
             raise TypeError(
@@ -150,12 +164,6 @@ class SpikeDetection(FabricSpikeDetection, Callback):
 
         if batch_idx == 0:
             self.running_mean.to(trainer.strategy.root_device)
-
-        
-        print(f"global_step : {trainer.global_step}")
-        print(f"batch_idx : {batch_idx}")
-        print(f"running_val : {self.running_mean.compute()}")
-        print(f"loss : {loss}")
 
         if self.exclude_batches_path is None:
             self.exclude_batches_path = os.getcwd()
@@ -213,10 +221,13 @@ class SpikeDetection(FabricSpikeDetection, Callback):
             )
     
     def _is_spike(self, loss: torch.Tensor) -> bool:
-        # we might call compute more often than update which is fine as long as the
-        # metric has at least one internal value.
+        
+        
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+            warnings.simplefilter("ignore") 
+            # we might call compute more often than update 
+            # which is fine as long as the metric has
+            # at least one internal value.
             running_val = self.running_mean.compute()
         curr_diff = loss - self.last_val
         
@@ -230,11 +241,3 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         check_atol = bool(abs(running_val - loss) >= abs(self.atol))
         # check_rtol = bool(abs(running_val - loss) >= abs(self.rtol * loss)
         return check_atol # and check_rtol
-    
-        # print(f"load_path : {load_path}")
-        # print(f"client_state : {client_state}")
-        # trainer.model = loaded_checkpoint
-        # trainer.model.load_state_dict(loaded_checkpoint)
-        # trainer.strategy.barrier()
-        # trainer.model.load_state(last_checkpoint_path)
-        # trainer.model.to(trainer.strategy.root_device)

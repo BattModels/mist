@@ -23,9 +23,12 @@ class SaveConfigWithCkpts(Callback):
 
     ## 0.2.1
         - Save `JOB_CONFIG` to `job_config.json`
+    
+    ## 0.3.0
+        - Save hyperparameters under `lighting_module` and `datamodule`.
     """
 
-    VERSION = "0.2.1"
+    VERSION = "0.3.0"
 
     def __init__(
         self,
@@ -103,11 +106,13 @@ class SaveConfigWithCkpts(Callback):
         # Get model class name and config
         if "version" in config:
             cls_name = config["class_path"]
-            model_config = config["lightning_module"]["init_args"]
-            try:
+
+            if config["version"].startswith("0.3"):
+                model_config = config["lightning_module"]["init_args"]
                 model_config["vocab_size"] = config["datamodule"]["vocab_size"]
-            except KeyError as e:
-                print(e)
+            else:
+                cls_name = config["class_path"]
+                model_config = config["init_args"]
         else:
             cls_name = "electrolyte_fm.models.roberta_base.RoBERTa"
             model_config = config
@@ -131,7 +136,7 @@ class SaveConfigWithCkpts(Callback):
 
     @staticmethod
     def get_ckpt_tokenizer(path: str | Path):
-        print(f"loading tokenizer from {path}")
+        print(f"Loading tokenizer from {path}")
         path = Path(path)
         config_path = path.parent.parent.joinpath("config.json")
         assert config_path.is_file()
