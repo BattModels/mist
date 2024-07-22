@@ -27,6 +27,17 @@ def test_wikipedia():
         assert tok.unk_token_id not in code["input_ids"]
 
 
+def test_special_tokens():
+    tok = SmirkSelfiesFast(add_special_tokens=True)
+    assert tok.bos_token is not None, "missing bos token"
+    assert tok.eos_token is not None, "missing eos token"
+    assert tok.unk_token is not None, "missing unk token"
+    assert tok.sep_token is not None, "missing sep token"
+    assert tok.pad_token is not None, "missing pad token"
+    assert tok.cls_token is not None, "missing cls token"
+    assert tok.mask_token is not None, "missing mask token"
+
+
 def test_selfies():
     tok = SmirkSelfiesFast()
     assert tok.tokenize("[N][#N]") == ["N", "#", "N"]

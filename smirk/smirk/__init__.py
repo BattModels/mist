@@ -165,7 +165,12 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         return SmirkTokenizerFast(tokenizer=self._tokenizer.train(files, **kwargs))
 
 
-def SmirkSelfiesFast(vocab=None, unk_token="[UNK]"):
+def SmirkSelfiesFast(vocab=None, unk_token="[UNK]", add_special_tokens=True, **kwargs):
+    """Instantiate a Chemically-Consistent tokenizer for SELFIES
+
+    Defaults to a vocab of all possible SELFIES tokens plus the `[UNK]` for
+    the unknown token. Additional kwargs are passed to `PreTrainedTokenizerFast`
+    """
     import json
     from importlib.resources import files
 
@@ -180,6 +185,7 @@ def SmirkSelfiesFast(vocab=None, unk_token="[UNK]"):
             vocab = json.load(fid)
 
     tok = Tokenizer(WordLevel(vocab, unk_token))
+    # Regex generated using `opt/build_vocab.py -f smiles -t regex`
     regex = (
         r"Branch|Ring|A[c|g|l|m|r|s|t|u]|B[a|e|h|i|k|r]?|"
         r"C[a|d|e|f|l|m|n|o|r|s|u]?|D[b|s|y]|E[r|s|u]|F[e|l|m|r]?|"
@@ -196,4 +202,9 @@ def SmirkSelfiesFast(vocab=None, unk_token="[UNK]"):
         ]
     )
     tok.normalizer = Strip()
-    return PreTrainedTokenizerFast(tokenizer_object=tok)
+    tok_tf = PreTrainedTokenizerFast(tokenizer_object=tok, **kwargs)
+
+    if kwargs.pop("add_special_tokens", True):
+        tok_tf.add_special_tokens(SPECIAL_TOKENS)
+
+    return tok_tf
