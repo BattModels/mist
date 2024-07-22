@@ -13,9 +13,14 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 SMILE_TOKENIZER = [
     "smirk",
-    "SmilesPE/SPE_ChEMBL",
     "ibm/MoLFormer-XL-both-10pct",
 ]
+
+
+@pytest.fixture(scope="module", params=SMILE_TOKENIZER)
+def smile_tokenizer(request):
+    return load_tokenizer(request.param)
+
 
 STANDARD_SMILES = [
     "CC[N+](C)(C)Cc1ccccc1Br",
@@ -24,10 +29,50 @@ STANDARD_SMILES = [
     "CCN(CC)C(=O)[C@H]1CN([C@@H]2Cc3c[nH]c4c3c(ccc4)C2=C1)C",
 ]
 
+# Tokenizers not actively used for training
+OTHER_SMILES_TOKENIZERS = [
+    "SmilesPE/SPE_ChEMBL",
+    "devalab/molgpt-moses",
+    "devalab/molgpt-guacamol",
+    "MolecularAI/Chemformer",
+    "MolecularAI/Chemformer-downstream",
+    "seyonec/ChemBERTa-zinc-base-v1",
+    "sagawa/ReactionT5-product-prediction",
+    "sagawa/ReactionT5-yield-prediction",
+    "rxn4chemistry/rxn_yields",
+    "rxn4chemistry/rxnfp",
+    "ChangwenXu98/TransPolymer",
+]
 
-@pytest.fixture(scope="module", params=SMILE_TOKENIZER)
-def smile_tokenizer(request):
+
+@pytest.fixture(scope="module", params=OTHER_SMILES_TOKENIZERS)
+def other_smiles_tokenizer(request):
     return load_tokenizer(request.param)
+
+
+SELFIES_TOKENIZERS = [
+    "smirk-selfies",
+    "HUBioDataLab/SELFormer",
+]
+
+
+@pytest.fixture(scope="module", params=SELFIES_TOKENIZERS)
+def selfies_tokenizers(request):
+    return load_tokenizer(request.param)
+
+
+def test_well_behaved_tokenizer(other_smiles_tokenizer):
+    code = other_smiles_tokenizer("CCO")
+    assert other_smiles_tokenizer.unk_token_id is not None
+    assert other_smiles_tokenizer.unk_token_id not in code["input_ids"]
+    check_encoding(other_smiles_tokenizer, ["CCO", "C-C-O", "CC(C)C(=O)C(C)C"])
+
+
+def test_well_behaved_selfies(selfies_tokenizers):
+    assert selfies_tokenizers.unk_token_id is not None
+    for selfie in ["[C][C][O]", "[O][=C][C][=C][C][=C][C][=C][Ring1][=Branch1]"]:
+        code = selfies_tokenizers(selfie)
+        assert selfies_tokenizers.unk_token_id not in code["input_ids"]
 
 
 def test_vocab_size(smile_tokenizer):
