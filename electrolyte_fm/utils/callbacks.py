@@ -135,7 +135,13 @@ class GradientNormMonitor(Callback):
         # Compute the 2-norm for each layer
         # If using mixed precision, the gradients are already unscaled here
         norms = grad_norm(pl_module.model, norm_type=2)
-        pl_module.log_dict(norms)
+        print("norms", norms)
+        pl_module.log_dict(
+            norms,
+            on_step=True,
+            logger=True,
+            sync_dist=True
+            )
 
 class SpikeDetection(FabricSpikeDetection, Callback):
 
@@ -222,7 +228,6 @@ class SpikeDetection(FabricSpikeDetection, Callback):
     
     def _is_spike(self, loss: torch.Tensor) -> bool:
         
-        
         with warnings.catch_warnings():
             warnings.simplefilter("ignore") 
             # we might call compute more often than update 
@@ -230,7 +235,6 @@ class SpikeDetection(FabricSpikeDetection, Callback):
             # at least one internal value.
             running_val = self.running_mean.compute()
         curr_diff = loss - self.last_val
-        
 
         if self.finite_only and not torch.isfinite(loss):
             return True
@@ -239,5 +243,4 @@ class SpikeDetection(FabricSpikeDetection, Callback):
             return False
 
         check_atol = bool(abs(running_val - loss) >= abs(self.atol))
-        # check_rtol = bool(abs(running_val - loss) >= abs(self.rtol * loss)
-        return check_atol # and check_rtol
+        return check_atol
