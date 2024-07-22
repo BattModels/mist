@@ -28,6 +28,7 @@ impl SmirkPreTokenizer {
             .unwrap()
             .into_iter()
             .map(|(offset, _)| text.get(offset.0..offset.1).unwrap().to_owned())
+            .filter(|tok| !tok.is_empty())
             .collect()
     }
 }

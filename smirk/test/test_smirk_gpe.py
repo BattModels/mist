@@ -24,7 +24,6 @@ def test_train_smirk_piece(trained, smile_strings):
     decode = trained.batch_decode(code["input_ids"])
     assert decode == smile_strings
     assert trained.vocab_size > smirk.SmirkTokenizerFast().vocab_size
-    print(trained.get_vocab())
     assert "[PAD]" not in trained._tokenizer.get_vocab(with_added_tokens=False)
     assert "[PAD]" in trained.get_vocab()
 
@@ -45,10 +44,14 @@ def test_vocab_size():
 
 def test_multi_file():
     tokenizer = smirk.SmirkTokenizerFast()
-    trained = tokenizer.train([str(SMILE_TEST_FILE)], vocab_size=300)
-    print(trained.get_vocab())
-    print(trained.to_str())
-    assert len(trained) == 300
+    trained = tokenizer.train(
+        [
+            str(SMILE_TEST_FILE),
+            str(Path(__file__).parent.joinpath("opensmiles.smi")),
+        ],
+        vocab_size=215,
+    )
+    assert trained.vocab_size == 215
 
 
 def test_tokenizing_unknown(trained):

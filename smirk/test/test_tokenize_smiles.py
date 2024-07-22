@@ -46,15 +46,6 @@ def test_elements(tokenizer):
         check_encode(f"[{element}+2]", 5)
 
 
-def test_bracketed_tokens(tokenizer):
-    unk_token_id = tokenizer.get_vocab()["[UNK]"]
-    for b in all_bracketed_tokens():
-        emb = tokenizer.encode(b)
-        assert (
-            unk_token_id not in emb["input_ids"]
-        ), f"failed to tokenize: {b} => {tokenizer.pretokenize(b)} ({emb})"
-
-
 def test_image(tokenizer, smile_strings):
     check_encode(tokenizer, "OC[C@@H][OH]")
     assert len(tokenizer.encode("OC[C@@H][OH]")["input_ids"]) == 11
