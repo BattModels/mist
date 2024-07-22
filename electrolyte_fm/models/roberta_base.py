@@ -20,6 +20,7 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         num_hidden_layers: int = 6,
         hidden_size: int = 768,
         initializer_range: float = 0.02,
+        layer_norm_eps: float = 1e-12,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
@@ -37,6 +38,7 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
             num_attention_heads=num_attention_heads,
             num_hidden_layers=num_hidden_layers,
             initializer_range=initializer_range,
+            layer_norm_eps=layer_norm_eps,
             hidden_dropout_prob=0.1,
             attention_probs_dropout_prob=0.1,
             type_vocab_size=1,
