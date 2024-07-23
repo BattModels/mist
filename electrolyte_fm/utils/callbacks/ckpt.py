@@ -23,7 +23,7 @@ class SaveConfigWithCkpts(Callback):
 
     ## 0.2.1
         - Save `JOB_CONFIG` to `job_config.json`
-    
+
     ## 0.3.0
         - Save hyperparameters under `lighting_module` and `datamodule`.
     """

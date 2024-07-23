@@ -14,7 +14,12 @@ from electrolyte_fm.models.lm_finetuning import LMFinetuning
 
 # classes passed via cli
 from electrolyte_fm.models.roberta_base import RoBERTa
-from electrolyte_fm.utils.callbacks import SpikeDetection, ThroughputMonitor, GradientNormMonitor
+from electrolyte_fm.models.roberta_prelayernorm import RoBERTaPreLayerNorm
+from electrolyte_fm.utils.callbacks import (
+    GradientNormMonitor,
+    SpikeDetection,
+    ThroughputMonitor,
+)
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 
@@ -64,17 +69,13 @@ def cli_main(args=None):
     callbacks = [
         ThroughputMonitor(),
         GradientNormMonitor(),
-        SpikeDetection(
-            atol=0.3,
-            warmup=200, 
-            finite_only=False
-            ),
+        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
-            save_last="link",
             save_top_k=2,
             verbose=True,
+            save_last="link",
             enable_version_counter=True,
             auto_insert_metric_name=False,
         ),
@@ -82,10 +83,10 @@ def cli_main(args=None):
             filename="epoch={epoch}-step={step}",
             monitor="step",
             verbose=True,
-            save_last=False,
             mode="max",
             save_top_k=5,
-            train_time_interval=timedelta(minutes=15),
+            save_last=False,
+            train_time_interval=timedelta(minutes=5),
             auto_insert_metric_name=False,
         ),
         LearningRateMonitor("step"),
@@ -108,7 +109,7 @@ def cli_main(args=None):
         trainer_defaults={
             "callbacks": callbacks,
             "logger": logger,
-            "precision": "16-mixed",
+            "precision": "bf16-mixed",
             "strategy": "deepspeed",
             "use_distributed_sampler": False,  # Handled by DataModule (Needed as Iterable)
         },
