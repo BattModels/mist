@@ -5,7 +5,11 @@
 source .venv/bin/activate
 
 # Add NVIDIA libraries
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:$(realpath .venv/lib64):$(realpath .venv/lib)"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:$(realpath -s .venv/lib64):$(realpath -s .venv/lib)"
 
 # DISABLE Compat Check
 export DS_SKIP_CUDA_CHECK=1
+
+# Julia
+export JULIA_CONDAPKG_BACKEND=Null
+export JULIA_PYTHONCALL_EXE="$(realpath -s .venv/bin/python)"

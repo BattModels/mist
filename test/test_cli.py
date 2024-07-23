@@ -28,6 +28,7 @@ def test_default():
             ]
         )
     assert cli.datamodule.vocab_size == cli.model.vocab_size
+    assert cli.datamodule.vocab_size == len(cli.datamodule.tokenizer)
     assert cli.trainer.logger.__class__ == WandbLogger
     assert isinstance(cli.trainer.logger, WandbLogger)
     assert cli.trainer.logger._wandb_init["tags"] == [

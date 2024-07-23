@@ -32,7 +32,7 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         super().__init__()
 
         self.tokenizer = load_tokenizer(tokenizer)
-        self.vocab_size = self.tokenizer.vocab_size
+        self.vocab_size = len(self.tokenizer)
         self.path: Path = Path(path)
         assert self.path.is_dir() or self.path.is_file()
         self.batch_size = batch_size

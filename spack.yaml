@@ -8,6 +8,7 @@ spack:
   - mpich@3.1
   - python@3.11
   - py-poetry
+  - spark@3.5+hadoop
   view: true
   concretizer:
     unify: true

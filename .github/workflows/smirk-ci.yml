@@ -7,13 +7,14 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    shell: bash
+    working-directory: ./smirk
+
 jobs:
   rust:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-        working-directory: ./smirk
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -28,5 +29,5 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: 3.11.8
-    - run: python -m pip install ./smirk[test]
-    - run: python -m pytest ./smirk
+    - run: python -m pip install -e .[test]
+    - run: python -m pytest .

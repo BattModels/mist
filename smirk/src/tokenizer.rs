@@ -1,151 +1,72 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::pretokenizer::SmirkPreTokenizer;
+use crate::gpe::{GpeTrainer, GPE};
+use crate::pre_tokenizers::{split_structure, SmirkPreTokenizer};
+use crate::wrapper::{ModelWrapper, PreTokenizerWrapper, TrainerWrapper};
 use dict_derive::{FromPyObject, IntoPyObject};
-use pyo3::types::{PyAny, PyString};
+use pyo3::exceptions::PyValueError;
+use pyo3::types::{PyDict, PyList, PyString};
 use pyo3::{pyclass, pymethods, PyResult, Python};
 
-use tokenizers;
+use regex::Regex;
 use tokenizers::decoders::fuse::Fuse;
 use tokenizers::models::wordlevel::WordLevel;
 use tokenizers::normalizers::Strip;
+use tokenizers::{self, DecoderWrapper, Model};
 use tokenizers::{
     AddedToken, EncodeInput, OffsetReferential, OffsetType, PaddingDirection, PaddingParams,
     PaddingStrategy, PostProcessorWrapper, PreTokenizedString, PreTokenizer, TokenizerBuilder,
     TokenizerImpl,
 };
 
-#[derive(Clone, Debug, FromPyObject, IntoPyObject)]
-struct SpecialTokenConfig {
-    bos_token: String,
-    eos_token: String,
-    unk_token: String,
-    sep_token: String,
-    pad_token: String,
-    cls_token: String,
-    mask_token: String,
-}
+type Tokenizer =
+    TokenizerImpl<ModelWrapper, Strip, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>;
 
-impl Default for SpecialTokenConfig {
-    fn default() -> Self {
-        Self {
-            bos_token: "[BOS]".to_string(),
-            eos_token: "[EOS]".to_string(),
-            unk_token: "[UNK]".to_string(),
-            sep_token: "[SEP]".to_string(),
-            pad_token: "[PAD]".to_string(),
-            cls_token: "[CLS]".to_string(),
-            mask_token: "[MASK]".to_string(),
-        }
-    }
-}
-
-fn as_added_token(token: &str) -> AddedToken {
-    AddedToken {
-        content: token.to_string(),
-        lstrip: true,
-        rstrip: true,
-        normalized: true,
-        special: true,
-        single_word: true,
-    }
-}
-
-impl Into<Vec<AddedToken>> for SpecialTokenConfig {
-    fn into(self) -> Vec<AddedToken> {
-        [
-            as_added_token(&self.bos_token),
-            as_added_token(&self.eos_token),
-            as_added_token(&self.unk_token),
-            as_added_token(&self.sep_token),
-            as_added_token(&self.pad_token),
-            as_added_token(&self.cls_token),
-            as_added_token(&self.mask_token),
-        ]
-        .to_vec()
-    }
-}
-
-#[pyclass]
+#[pyclass(dict, module = "smirk.smirk", name = "SmirkTokenizer")]
+#[derive(Clone)]
 pub struct SmirkTokenizer {
-    tokenizer: TokenizerImpl<WordLevel, Strip, SmirkPreTokenizer, PostProcessorWrapper, Fuse>,
-    special_tokens: SpecialTokenConfig,
+    tokenizer: Tokenizer,
 }
 
 impl SmirkTokenizer {
-    fn from_model(
-        model: WordLevel,
-        special_tokens: Option<SpecialTokenConfig>,
-        is_smiles: bool,
-    ) -> Self {
-        let mut tokenizer = TokenizerBuilder::new()
-            .with_model(model)
-            .with_pre_tokenizer(Some(SmirkPreTokenizer::new(is_smiles)))
-            .with_normalizer(Some(Strip::new(true, true)))
-            .with_decoder(Some(Fuse::new()))
-            .with_post_processor(None::<PostProcessorWrapper>)
-            .build()
-            .unwrap();
-
-        // Add Special Tokens
-        let special_tokens = special_tokens.unwrap_or_default().to_owned();
-        let added_tokens: Vec<AddedToken> = special_tokens.clone().into();
-        tokenizer.add_special_tokens(&added_tokens);
-        Self {
-            tokenizer,
-            special_tokens,
-        }
+    fn new(tokenizer: Tokenizer) -> Self {
+        Self { tokenizer }
     }
 }
 
 #[pymethods]
 impl SmirkTokenizer {
     #[new]
-    #[pyo3(signature=(file=None, is_smiles=true))]
-    fn __new__(file: Option<&str>, is_smiles: bool) -> Self {
-        let special_tokens = SpecialTokenConfig::default();
-        let model = match file {
-            Some(f) => WordLevel::from_file(f, special_tokens.unk_token.to_owned()).unwrap(),
-            None => WordLevel::default(),
-        };
-        SmirkTokenizer::from_model(model, Some(special_tokens), is_smiles)
+    fn __new__() -> Self {
+        let tokenizer: Tokenizer = TokenizerBuilder::new()
+            .with_model(WordLevel::default().into())
+            .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
+            .with_normalizer(Some(Strip::new(true, true)))
+            .with_decoder(Some(Fuse::default().into()))
+            .build()
+            .unwrap();
+        Self { tokenizer }
+    }
+
+    fn __getstate__(&self) -> PyResult<String> {
+        Ok(serde_json::to_string(&self.tokenizer).unwrap())
+    }
+
+    fn __setstate__(&mut self, state: &str) {
+        self.tokenizer = serde_json::from_str(state).unwrap();
     }
 
     #[staticmethod]
-    fn from_vocab(file: &str, is_smiles: bool) -> Self {
-        let special_tokens = SpecialTokenConfig::default();
-        let model = WordLevel::from_file(file, special_tokens.unk_token.to_owned()).unwrap();
-        SmirkTokenizer::from_model(model, Some(special_tokens), is_smiles)
-    }
-
-    fn set_padding(&mut self) {
-        let pad_token = &self.special_tokens.pad_token;
-        self.tokenizer.add_special_tokens(&[AddedToken {
-            content: pad_token.to_owned(),
-            single_word: true,
-            lstrip: true,
-            rstrip: true,
-            normalized: true,
-            special: true,
-        }]);
-        let default_pad = PaddingParams::default();
-        let padding = match self.tokenizer.get_padding() {
-            Some(pad) => pad,
-            None => &default_pad,
-        };
-        self.tokenizer.with_padding(Some(PaddingParams {
-            strategy: PaddingStrategy::BatchLongest,
-            direction: PaddingDirection::Right,
-            pad_token: pad_token.to_owned(),
-            pad_id: self.tokenizer.get_vocab(true)[pad_token],
-            pad_type_id: padding.pad_type_id,
-            pad_to_multiple_of: padding.pad_to_multiple_of,
-        }));
-    }
-
-    #[getter]
-    fn special_tokens(&self) -> SpecialTokenConfig {
-        self.special_tokens.to_owned()
+    fn from_vocab(file: &str) -> Self {
+        let model = WordLevel::from_file(file, "[UNK]".to_string()).unwrap();
+        let tokenizer = TokenizerBuilder::new()
+            .with_model(model.into())
+            .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
+            .with_normalizer(Some(Strip::new(true, true)))
+            .with_decoder(Some(Fuse::new().into()))
+            .build()
+            .unwrap();
+        SmirkTokenizer::new(tokenizer)
     }
 
     fn pretokenize(&self, smile: &PyString) -> PyResult<Vec<String>> {
@@ -228,28 +149,171 @@ impl SmirkTokenizer {
         Ok(())
     }
 
-    fn __getstate__(&self) -> PyResult<String> {
-        Ok(serde_json::to_string(&self.tokenizer).unwrap())
-    }
-
-    fn __setstate__(&mut self, state: &PyAny) -> PyResult<()> {
-        match state.extract::<String>() {
-            Ok(s) => {
-                self.tokenizer = serde_json::from_str(s.as_str()).unwrap();
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+    #[staticmethod]
+    #[pyo3(text_signature = "(path)")]
+    fn from_file(path: &str) -> PyResult<Self> {
+        Ok(Self::new(Tokenizer::from_file(path).unwrap()))
     }
 
     #[pyo3(signature = (with_added_tokens=true))]
     fn get_vocab_size(&self, with_added_tokens: bool) -> usize {
-        self.tokenizer.get_vocab_size(with_added_tokens)
+        let model = self.tokenizer.get_model();
+        let mut vocab_size = model.get_vocab_size();
+        if with_added_tokens {
+            // Count the number of added tokens not already included in the model's vocab
+            for (id, _) in self.tokenizer.get_added_tokens_decoder().iter() {
+                if model.id_to_token(*id).is_none() {
+                    vocab_size += 1;
+                }
+            }
+        }
+        vocab_size
     }
 
     #[pyo3(signature = (with_added_tokens=true))]
     fn get_vocab(&self, with_added_tokens: bool) -> HashMap<String, u32> {
         self.tokenizer.get_vocab(with_added_tokens)
+    }
+
+    fn get_added_tokens_decoder(&self) -> HashMap<u32, String> {
+        let mut added: HashMap<u32, String> = HashMap::new();
+        for (id, token) in self.tokenizer.get_added_tokens_decoder().iter() {
+            added.insert(*id, token.content.to_owned());
+        }
+        added
+    }
+
+    #[pyo3(signature = (input, with_added_tokens=true))]
+    fn tokenize(&self, input: String, with_added_tokens: bool) -> Vec<String> {
+        self.tokenizer
+            .encode(input, with_added_tokens)
+            .unwrap()
+            .get_tokens()
+            .to_vec()
+    }
+
+    fn no_padding(&mut self) {
+        self.tokenizer.with_padding(None);
+    }
+
+    #[pyo3(signature = (**kwargs))]
+    fn with_padding(&mut self, kwargs: Option<&PyDict>) -> PyResult<()> {
+        let mut params = PaddingParams::default();
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key: &str = key.extract().unwrap();
+                match key {
+                    "direction" => {
+                        let value: &str = value.extract().unwrap();
+                        params.direction = match value {
+                            "left" => Ok(PaddingDirection::Left),
+                            "right" => Ok(PaddingDirection::Right),
+                            other => Err(PyValueError::new_err(format!(
+                                "Unknown direction {}",
+                                other
+                            ))),
+                        }?
+                    }
+                    "pad_id" => params.pad_id = value.extract().unwrap(),
+                    "pad_type_id" => params.pad_type_id = value.extract().unwrap(),
+                    "pad_token" => params.pad_token = value.extract().unwrap(),
+                    "length" => {
+                        params.strategy = match value.extract().unwrap() {
+                            Some(l) => PaddingStrategy::Fixed(l),
+                            _ => PaddingStrategy::BatchLongest,
+                        }
+                    }
+                    _ => println!("Unknown kwargs {}, ignoring", key),
+                }
+            }
+        }
+        self.tokenizer.with_padding(Some(params));
+        Ok(())
+    }
+
+    fn add_tokens(&mut self, tokens: &PyList) -> PyResult<usize> {
+        let tokens = tokens
+            .into_iter()
+            .map(|token| AddedToken {
+                content: token.getattr("content").unwrap().to_string(),
+                lstrip: token.getattr("lstrip").unwrap().extract().unwrap(),
+                rstrip: token.getattr("rstrip").unwrap().extract().unwrap(),
+                normalized: token.getattr("normalized").unwrap().extract().unwrap(),
+                single_word: token.getattr("single_word").unwrap().extract().unwrap(),
+                special: token.getattr("special").unwrap().extract().unwrap(),
+            })
+            .collect::<Vec<_>>();
+        Ok(self.tokenizer.add_tokens(&tokens))
+    }
+
+    #[pyo3(signature = (files, **kwargs))]
+    fn train(&self, py: Python, files: Vec<String>, kwargs: Option<&PyDict>) -> PyResult<Self> {
+        // Construct Trainable Tokenizer
+        let model: ModelWrapper = match self.tokenizer.get_model() {
+            ModelWrapper::ModelWrapper(mw) => match mw {
+                tokenizers::ModelWrapper::WordLevel(wl) => Ok(GPE::from(wl.to_owned())),
+                _ => Err(()),
+            },
+            ModelWrapper::GPE(gpe) => Ok(gpe.to_owned()),
+        }
+        .unwrap()
+        .into();
+
+        // Build the new tokenizer
+        let mut tokenizer: TokenizerImpl<
+            ModelWrapper,
+            Strip,
+            PreTokenizerWrapper,
+            PostProcessorWrapper,
+            DecoderWrapper,
+        > = TokenizerBuilder::default()
+            .with_normalizer(self.tokenizer.get_normalizer().cloned())
+            .with_pre_tokenizer(Some(split_structure().into()))
+            .with_model(model)
+            .with_decoder(self.tokenizer.get_decoder().cloned())
+            .build()
+            .unwrap();
+
+        // Remove any special tokens (i.e. [PAD]) from the initial vocab
+        let is_special = Regex::new(r"\[[A-Z]+?\]").unwrap();
+        let alphabet: HashSet<String> = self
+            .tokenizer
+            .get_vocab(false)
+            .keys()
+            .filter_map(|g| {
+                if is_special.is_match(g) {
+                    None
+                } else {
+                    Some(g.into())
+                }
+            })
+            .collect();
+
+        // Configure the trainer
+        let mut builder = GpeTrainer::builder();
+        builder.alphabet(alphabet);
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs.iter() {
+                let key: &str = key.extract().unwrap();
+                match key {
+                    "min_frequency" => {
+                        builder.min_frequency(value.extract().unwrap());
+                    }
+                    "vocab_size" => {
+                        builder.vocab_size(value.extract().unwrap());
+                    }
+                    "limit_alphabet" => {
+                        builder.limit_alphabet(value.extract().unwrap());
+                    }
+                    _ => println!("Unknown parameter {:?} ignoring", key),
+                }
+            }
+        }
+
+        // Train tokenizer
+        let mut trainer: TrainerWrapper = builder.build().unwrap().into();
+        let _ = py.allow_threads(|| tokenizer.train_from_files(&mut trainer, files).unwrap());
+        Ok(SmirkTokenizer::new(tokenizer))
     }
 }
 

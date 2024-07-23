@@ -5,6 +5,7 @@ wandb/
 electrolyte-fm/
 lightning_logs/
 .venv/
+Manifest.toml
 
 # Log files
 *.o*
@@ -29,3 +30,9 @@ Manifest.toml
 # Spack
 .spack-env/
 spack.lock
+
+# figures
+*.pdf
+
+# outputs
+*.json

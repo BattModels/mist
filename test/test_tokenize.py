@@ -1,3 +1,5 @@
+from tempfile import TemporaryDirectory
+
 import pytest
 from transformers import (
     BatchEncoding,
@@ -5,6 +7,7 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 
+import smirk
 from electrolyte_fm.tokenize.spe import PreTrainedSPETokenizer, pretrained_spe_tokenizer
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
@@ -25,6 +28,23 @@ STANDARD_SMILES = [
 @pytest.fixture(scope="module", params=SMILE_TOKENIZER)
 def smile_tokenizer(request):
     return load_tokenizer(request.param)
+
+
+def test_vocab_size(smile_tokenizer):
+    # vocab size (Size of model vocab without added tokens)
+    # should be smaller (or equal if the model knows of all added tokens)
+    # than the length of of the tokenizer
+    assert smile_tokenizer.vocab_size <= len(smile_tokenizer)
+
+
+def test_pretrained_smirk():
+    tok = smirk.SmirkTokenizerFast()
+
+    with TemporaryDirectory() as dir:
+        tok.save_pretrained(dir)
+        loaded = load_tokenizer(str(dir))
+        assert isinstance(loaded, smirk.SmirkTokenizerFast)
+        assert tok.to_str() == loaded.to_str()
 
 
 def check_encoding(tokenizer: PreTrainedTokenizerBase, batch: list[str]):
