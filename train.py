@@ -68,7 +68,7 @@ def cli_main(args=None):
     monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
-        # SpikeDetection(atol=0.3, warmup=200, finite_only=False),
+        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
@@ -83,9 +83,9 @@ def cli_main(args=None):
             monitor="step",
             verbose=True,
             mode="max",
-            save_top_k=30,
+            save_top_k=2,
             save_last=False,
-            train_time_interval=timedelta(minutes=10),
+            train_time_interval=timedelta(minutes=30),
             auto_insert_metric_name=False,
         ),
         LearningRateMonitor("step"),
@@ -97,7 +97,6 @@ def cli_main(args=None):
     else:
         logger = lazy_instance(
             WandbLogger,
-            id=os.environ.get("SLURM_JOB_ID", "test"),
             project="mist",
             save_code=True,
         )
@@ -108,7 +107,7 @@ def cli_main(args=None):
         trainer_defaults={
             "callbacks": callbacks,
             "logger": logger,
-            "precision": "bf16-mixed",
+            "precision": "16-mixed",
             "strategy": "deepspeed",
             "use_distributed_sampler": False,  # Handled by DataModule (Needed as Iterable)
         },

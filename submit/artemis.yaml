@@ -1,5 +1,5 @@
-nodes: 1
-gpus_per_node: 4
+nodes: 2
+gpus_per_node: 2
 train:
   data.path: /nfs/turbo/coe-venkvis/mist/realspace_v3_dev/
   trainer.devices: $SLURM_GPUS_PER_NODE
