@@ -2,11 +2,10 @@
 const MAX_OOV_SAMPLES = 100
 
 # Load Python Dependencies
-@time begin
-    const load_tokenizer = pyimport("electrolyte_fm.utils.tokenizer").load_tokenizer
-    const load_dataset = pyimport("datasets").load_dataset
-    const split_dataset_by_node = pyimport("datasets.distributed").split_dataset_by_node
-end
+const load_tokenizer = pyimport("electrolyte_fm.utils.tokenizer").load_tokenizer
+const load_dataset = pyimport("datasets").load_dataset
+const split_dataset_by_node = pyimport("datasets.distributed").split_dataset_by_node
+const rdkit_canonical = pyimport("electrolyte_fm.utils.tokenizer").rdkit_canonical
 
 function tracked_stats()
     return (;
@@ -68,6 +67,10 @@ end
 function setup_dataset_mpi(ds_path, tokenizer; rank=0, size=1)
     ds_path = realpath(expanduser(ds_path))
     ds = load_dataset(ds_path, split="train", streaming=true, keep_in_memory=false)
+    if canonicalize
+        ds = ds.map(x -> pydict(; text=rdkit_canonical(x["text"])), batched=false)
+        ds = ds.filter(x -> pybool(x["text"]))
+    end
     ds = ds.map(tokenize,
         batched=true,
         batch_size=1000,

@@ -9,13 +9,16 @@ using MPI: MPI
 using JSON: JSON
 
 function find(dir, pattern)
-    files = String[]
-    for file in readdir(dir; join=true)
-        if match(pattern, file) !== nothing
-            push!(files, file)
+    found = String[]
+    for (root, dirs, files) in walkdir(dir)
+        for file in files
+            path = joinpath(root, file)
+            if match(pattern, path) !== nothing
+                push!(found, path)
+            end
         end
     end
-    return files
+    return found
 end
 
 include("collect.jl")

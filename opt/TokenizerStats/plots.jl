@@ -1,31 +1,8 @@
-using CairoMakie
+using TokenizerStats: tokenizer_label, moments!, hist_nbins, find, tokenusage!
+using GLMakie
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights
-using JSON3
-
-function collate_token_usage(ids, counts)
-    usage =  Vector{Int}(undef, length(ids))
-    for (idx, token_id) in enumerate(ids)
-        usage[idx] = get(counts, token_id, 0)
-    end
-    return usage
-end
-
-hist_nbins(x::AbstractVector, w::AbstractWeights) = hist_nbins(:scott, x)
-hist_nbins(method::Symbol, x::AbstractVector) = hist_nbins(method, x, StatsBase.UnitWeights{Int}(length(x)))
-
-hist_nbins(method, x, w) = hist_nbins(Val(Symbol(method)), x, w)
-hist_nbins(method::Symbol, x::AbstractVector, w::AbstractWeights) = hist_nbins(Val(method), x, w)
-function hist_nbins(::Val{:scott}, x, w)
-    σ = std(x, w)
-    h = 3.5 * σ / cbrt(length(x))
-    n = (maximum(x) - minimum(x)) / h
-    return ceil(Int, n)
-end
-hist_nbins(::Val{:sqrt}, x, w) = ceil(Int, sqrt(length(x)))
-hist_nbins(::Val{M}, args...) where {M} = MethodError(hist_nbins, M, args...)
-hist_nbins(::Val{:sturges}, x, w) = ceil(Int, log2(length(x)) + 1)
-hist_nbins(::Val{:sturges}, x, w::StatsBase.FrequencyWeights) = ceil(Int, log2(sum(w)) + 1)
+using JSON
 
 function fit_hist(counts; kwargs...)
     x = map(Base.Fix1(parse, Int)∘string, collect(keys(counts)))
@@ -37,33 +14,17 @@ function fit_hist(counts; kwargs...)
     return centers, h.weights
 end
 
-function find(dir, pattern)
-    files = String[]
-    for file in readdir(dir; join=true)
-        if match(pattern, file) !== nothing
-            push!(files, file)
-        end
+function collect_results()
+    tokenizers = Dict{String, String}()
+    for result in find(joinpath(@__DIR__, "stats"), r"stats-.*\.json")
+        name = joinpath(splitpath(relpath(result, @__DIR__))[2:end-1])
+        tokenizers[name] = result
     end
-    return files
+    return tokenizers
 end
 
-function plot_token_usage!(plt, stats)
-    vocab_size = Int(stats.tokenizer.vocab_size)
-    ids = 0:vocab_size-1
-    usage = collate_token_usage(ids, stats.token_usage)
-    usage = usage ./ sum(usage)
-
-    # Sort tokens by usage
-    p = sortperm(usage; rev=true)
-    usage = usage[p]
-    ids = ids[p]
-
-    x = range(0, 100; length=length(usage))
-    stairs!(plt, x, usage; label=tokenier_label(stats.tokenizer))
-end
-
-function figure_token_usage()
-    f = Figure()
+function figure_token_usage(results::Dict)
+    f = Figure(; size=(950, 500))
     l = 1e-5
     ax = Axis(f[1,1];
         limits=((0, 100), (1e-10, 1)),
@@ -73,57 +34,31 @@ function figure_token_usage()
         xtickformat="{:d}%",
     )
 
-    for file in find(joinpath(@__DIR__, "..", "data"), r"stats-.*\.json")
-        stats = JSON3.read(file)
-        plot_token_usage!(ax, stats)
+    for (name, file) in pairs(results)
+        stats = JSON.parsefile(file)
+        tokenusage!(ax, stats; label=name)
     end
 
-    Legend(f[2,1], ax; tellwidth=false, tellheight=true)
+    Legend(f[2,1], ax; tellwidth=true, tellheight=true, nbanks=3)
     return f
 end
 
-@recipe(Moments, x, moments, extrema) do scene
-    Attributes(
-        sigma_level=1,
-    )
-end
-
-function Makie.plot!(plt::Moments)
-    mu = plt.moments[][1]
-    var = plt.moments[][2]
-    lower, upper = plt.extrema[]
-    sigma_level = plt.sigma_level
-    σ = @lift $sigma_level * sqrt(var)
-    lines!(plt, float.([plt.x[], plt.x[]]), [lower, upper])
-    crossbar!(plt, plt.x, mu, @lift($mu + $σ), @lift($mu - $σ))
-    return plt
-end
-
-function tokenier_label(tok; vocab_size=false)
-    name = tok.name
-    if match(r"smirk-gpe", name) !== nothing
-        name = "smirk-gpe"
-    end
-    if vocab_size
-        name *= "\n$(tok.vocab_size) tokens"
-    end
-    return name
-end
-
-function figure_vocab_entropy()
+function figure_vocab_entropy_moments(results::Dict)
     f = Figure()
     ax = Axis(f[2,1];
         ylabel="Entropy Moments [bits]",
+        limits=(nothing, (1e-1, nothing)),
         yscale=log10,
+        xticklabelrotation = 0.4,
     )
     names = String[]
     xpos = Int[]
     heights = Float64[]
     dodge = Int[]
-    for (idx, file) in enumerate(find(joinpath(@__DIR__, "..", "data"), r"stats-.*\.json"))
-        stats = JSON3.read(file)
-        push!(names, tokenier_label(stats.tokenizer; vocab_size=false))
-        for (i, m) in enumerate(stats.entropy.moments)
+    for (idx, (name, file)) in enumerate(pairs(results))
+        stats = JSON.parsefile(file)
+        push!(names, name)
+        for (i, m) in enumerate(stats["entropy"]["moments"])
             push!(xpos, idx)
             push!(heights, m)
             push!(dodge, i)
@@ -133,6 +68,7 @@ function figure_vocab_entropy()
     barplot!(ax, xpos, heights;
              dodge,
              color=colors[dodge],
+             fillto=1e-4,
              )
     ax.xticks[] = (1:length(names), names)
 
@@ -148,29 +84,60 @@ function figure_vocab_entropy()
     return f
 end
 
-function figure_fertility()
-    f = Figure()
+function figure_vocab_entropy(results::Dict)
+    f = Figure(size=(600, 300))
     ax = Axis(f[1,1];
-        xlabel="Fertility",
-        ylabel="Faction of Corpus [%]",
+        ylabel="Entropy [bits]",
+        limits=(nothing, (-2.5, 25)),
+        xticklabelrotation = 0.4,
+    )
+    names = String[]
+    categories = Int[]
+    values = Float64[]
+    weights = Float64[]
+    for (idx, (name, file)) in enumerate(pairs(results))
+        stats = JSON.parsefile(file)
+        push!(names, name)
+        hist = stats["entropy"]["hist"]
+        append!(categories, repeat([idx], length(hist["centers"])))
+        append!(values, float.(hist["centers"]))
+        append!(weights, hist["counts"] ./ sum(hist["counts"]))
+    end
+    colors = Makie.wong_colors()
+    violin!(ax, categories, values; weights = weights, show_median=true)
+    ax.xticks[] = (1:length(names), names)
+
+    return f
+end
+
+function figure_fertility(results::Dict)
+    f = Figure(size=(900, 500))
+    ax = Axis(f[1,1];
+        ylabel="Fertility",
         limits=(nothing, (0, nothing)),
     )
     ax_unique = Axis(f[1,2];
-        xlabel="Number of Unique Tokens",
-        ylabel="Faction of Corpus [%]",
+        ylabel="Number of Unique Tokens",
         limits=(nothing, (0, nothing)),
     )
-    for file in find(joinpath(@__DIR__, "..", "data"), r"stats-.*\.json")
-        stats = JSON3.read(file)
-        name = tokenier_label(stats.tokenizer)
-        x, y = fit_hist(stats.fertility)
-        stairs!(ax, x, y; label=name)
-
-        x, y = fit_hist(stats.nunique)
-        stairs!(ax_unique, x, y; label=name)
+    hidexdecorations!(ax)
+    hidexdecorations!(ax_unique)
+    kwargs = (; show_notch=true, show_outliers=false)
+    for (idx, (name, file)) in enumerate(pairs(results))
+        stats = JSON.parsefile(file)
+        values, weights = fit_hist(stats["fertility"])
+        boxplot!(ax, repeat([idx], length(values)), values; weights, label=name, kwargs...)
+        values, weights = fit_hist(stats["nunique"])
+        boxplot!(ax_unique, repeat([idx], length(values)), values; weights, label=name, kwargs...)
     end
-    Legend(f[2,:], ax; tellwidth=false, tellheight=true)
+    Legend(f[2,:], ax; tellwidth=true, tellheight=true, nbanks=3)
 
 
     return f
+end
+
+function figure_oov_rate(results::Dict)
+    f = Figure()
+    ax = Axis(f[1,1])
+
 end

@@ -231,7 +231,7 @@ def rdkit_canonical(smi: str) -> str:
     from rdkit import Chem
 
     try:
-        mol = Chem.MolFromSmiles(smi)
+        return Chem.CanonSmiles(smi)
         return Chem.rdmolfiles.MolToSmiles(mol).strip()
     except Exception:
         return None
