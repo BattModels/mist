@@ -2,7 +2,7 @@ module TokenizerStats
 
 using Makie
 using PythonCall
-using OnlineStats
+using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, fit!, merge!
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights
 using MPI: MPI

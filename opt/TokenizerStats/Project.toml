@@ -1,0 +1,17 @@
+name = "TokenizerStats"
+uuid = "ca7eb560-02c0-4cfb-b1b2-ae9b1b03b10c"
+version = "0.1.0"
+
+[deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+OnlineStats = "a15396b6-48d5-5d58-9928-6d29437db91e"
+PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+
+[compat]
+ArgParse = "1.2.0"

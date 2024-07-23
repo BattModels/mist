@@ -64,10 +64,10 @@ function leader_reduce(f, x)
     return nothing
 end
 
-function setup_dataset_mpi(ds_path, tokenizer; rank=0, size=1)
+function setup_dataset_mpi(ds_path, tokenizer; rank=0, size=1, canonical=false)
     ds_path = realpath(expanduser(ds_path))
     ds = load_dataset(ds_path, split="train", streaming=true, keep_in_memory=false)
-    if canonicalize
+    if canonical
         ds = ds.map(x -> pydict(; text=rdkit_canonical(x["text"])), batched=false)
         ds = ds.filter(x -> pybool(x["text"]))
     end
@@ -79,7 +79,7 @@ function setup_dataset_mpi(ds_path, tokenizer; rank=0, size=1)
     return split_dataset_by_node(ds, rank, size)
 end
 
-function tabulate_dataset(ds_path, tok_name, out_file)
+function tabulate_dataset(ds_path, tok_name, out_file; canonical=false)
     # Setup mpi
     MPI.Init()
     comm = MPI.COMM_WORLD
@@ -95,7 +95,7 @@ function tabulate_dataset(ds_path, tok_name, out_file)
         unk_token_id=pyconvert(Int, tokenizer.unk_token_id),
     )
     local_stats = tracked_stats()
-    ds = setup_dataset_mpi(ds_path, tokenizer; rank, size)
+    ds = setup_dataset_mpi(ds_path, tokenizer; rank, size, canonical)
     for example in ds
         usage_stats!(local_stats, example, tokenizer_info.unk_token_id)
     end
@@ -114,7 +114,7 @@ function tabulate_dataset(ds_path, tok_name, out_file)
 
     # Compute entropy statistics for the dataset
     @info "Rank $rank: Computing tokenizer entropy"
-    entropy = Series(; moments=Moments(), extrema=Extrema(), hist=KHist(100))
+    entropy = Series(; moments=OnlineStats.Moments(), extrema=Extrema(), hist=KHist(100))
     for example in ds
         shannon_entropy!(entropy, example; token_entropy)
     end
