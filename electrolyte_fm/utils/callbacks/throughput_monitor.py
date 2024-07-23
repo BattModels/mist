@@ -18,7 +18,7 @@ from typing_extensions import override
 
 from electrolyte_fm.models.model_utils import DeepSpeedMixin
 
-from .ckpt import SaveConfigWithCkpts
+from ..ckpt import SaveConfigWithCkpts
 
 
 class ThroughputMonitor(Callback):

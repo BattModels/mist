@@ -11,7 +11,7 @@ from pytorch_lightning.loggers import WandbLogger
 from typing_extensions import override
 
 from ...models.model_utils import DeepSpeedMixin
-from .ckpt import SaveConfigWithCkpts
+from ..ckpt import SaveConfigWithCkpts
 
 
 class GradientNormMonitor(Callback):
