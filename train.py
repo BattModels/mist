@@ -17,10 +17,10 @@ from electrolyte_fm.models.roberta_base import RoBERTa
 from electrolyte_fm.models.roberta_prelayernorm import RoBERTaPreLayerNorm
 from electrolyte_fm.utils.callbacks import (
     GradientNormMonitor,
-    SaveConfigWithCkpts,
     SpikeDetection,
     ThroughputMonitor,
 )
+from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 
 class MyLightningCLI(LightningCLI):

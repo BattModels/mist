@@ -7,7 +7,7 @@ from pytorch_lightning import LightningDataModule, LightningModule
 from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 from torch.utils.data import DataLoader
 
-from electrolyte_fm.utils.callbacks import SaveConfigWithCkpts
+from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 
 class MockedModel(LightningModule):
