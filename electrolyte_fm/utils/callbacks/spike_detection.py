@@ -3,6 +3,7 @@
 """
 
 import os
+import warnings
 from typing import Any, Mapping, Union
 
 import pytorch_lightning as pl
@@ -31,21 +32,8 @@ class SpikeDetection(FabricSpikeDetection, Callback):
                 f"outputs have to be of type torch.Tensor or Mapping, got {type(outputs).__qualname__}"
             )
 
-        if self.exclude_batches_path is None:
-            self.exclude_batches_path = os.path.join(
-                trainer.default_root_dir, "skip_batches.json"
-            )
-
         if batch_idx == 0:
             self.running_mean.to(trainer.strategy.root_device)
-
-        if self.exclude_batches_path is None:
-            self.exclude_batches_path = os.getcwd()
-
-        if not str(self.exclude_batches_path).endswith(".json"):
-            self.exclude_batches_path = os.path.join(
-                self.exclude_batches_path, "skip_batches.json"
-            )
 
         is_spike = bool(batch_idx >= self.warmup and self._is_spike(loss))
         trainer.strategy.barrier()
