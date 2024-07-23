@@ -18,9 +18,12 @@ def trainer():
     return _trainer
 
 
-def test__resolve_ckpt_dir(trainer):
+def test_resolve_ckpt_dir(trainer):
     callback = SpikeDetection()
-    assert callback.__resolve_ckpt_dir(trainer) == "/tmp/checkpoints"
+    assert (
+        callback._resolve_ckpt_dir(trainer)
+        == "/tmp/lightning_logs/version_0/checkpoints"
+    )
 
 
 def test_is_spike():

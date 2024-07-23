@@ -51,7 +51,7 @@ class SpikeDetection(FabricSpikeDetection, Callback):
             if is_finite_all:
                 self._update_stats(loss)
 
-    def __resolve_ckpt_dir(self, trainer: "pl.Trainer"):
+    def _resolve_ckpt_dir(self, trainer: "pl.Trainer"):
 
         if len(trainer.loggers) > 0:
             if trainer.loggers[0].save_dir is not None:
@@ -71,7 +71,7 @@ class SpikeDetection(FabricSpikeDetection, Callback):
 
     def _handle_spike(self, trainer: "pl.Trainer", batch_idx: int) -> None:
 
-        checkpoint_path = self.__resolve_ckpt_dir(trainer)
+        checkpoint_path = self._resolve_ckpt_dir(trainer)
 
         # save current model as a checkpoint
         save_checkpoint_path = os.path.join(
