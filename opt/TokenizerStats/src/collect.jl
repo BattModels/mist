@@ -1,9 +1,3 @@
-#!/usr/bin/env -S julia --project
-using PythonCall
-using OnlineStats
-using MPI: MPI
-using JSON: JSON
-
 # Maximum number of oov samples to track
 const MAX_OOV_SAMPLES = 100
 
@@ -96,7 +90,6 @@ function tabulate_dataset(ds_path, tok_name, out_file)
         name=tok_name,
         vocab_size=pyconvert(Int, tokenizer.vocab_size),
         unk_token_id=pyconvert(Int, tokenizer.unk_token_id),
-        config=JSON.parse(pyconvert(String, tokenizer.to_str()))
     )
     local_stats = tracked_stats()
     ds = setup_dataset_mpi(ds_path, tokenizer; rank, size)
@@ -134,6 +127,7 @@ function tabulate_dataset(ds_path, tok_name, out_file)
             entropy=map(value, entropy.stats),
             map(value, tokenizer_stats.stats)...
         )
+        mkpath(dirname(out_file))
         open(out_file, "w") do io
             JSON.print(io, stats)
         end
@@ -143,15 +137,3 @@ function tabulate_dataset(ds_path, tok_name, out_file)
     MPI.Finalize()
     return 0
 end
-
-
-
-function main(args::Vector{String})
-    @assert length(args) >= 2
-    ds_path = args[1]
-    tok_name = args[2]
-    out_file = length(args) == 3 ? args[3] : "stats.json"
-    tabulate_dataset(ds_path, tok_name, out_file)
-end
-
-!isinteractive() && exit(main(ARGS))
