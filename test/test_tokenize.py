@@ -1,3 +1,4 @@
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -9,7 +10,7 @@ from transformers import (
 
 import smirk
 from electrolyte_fm.tokenize.spe import PreTrainedSPETokenizer, pretrained_spe_tokenizer
-from electrolyte_fm.utils.tokenizer import load_tokenizer
+from electrolyte_fm.utils.tokenizer import load_tokenizer, rdkit_canonical
 
 SMILE_TOKENIZER = [
     "smirk",
@@ -73,6 +74,33 @@ def test_well_behaved_selfies(selfies_tokenizers):
     for selfie in ["[C][C][O]", "[O][=C][C][=C][C][=C][C][=C][Ring1][=Branch1]"]:
         code = selfies_tokenizers(selfie)
         assert selfies_tokenizers.unk_token_id not in code["input_ids"]
+
+
+""" The following SMILES strings are permissible per the OpenSMILES spec but known to not be parsed by rdkit """
+RDKIT_EXPECTED_FAILURES = [
+    "[02H]",
+    "[002H]",
+    "[NH4+:005]",
+    "C1CCCCC%01",
+    "C%00CCCCC%00",
+    "Oc1cc(.NCCO)ccc1",
+    "C%01CCCCC%01",
+]
+
+
+@pytest.mark.parametrize("file", ["opensmiles.smi", "smiles.txt"])
+def test_canonical_smiles(file):
+    smirk_test = Path(__file__).parent.parent.joinpath("smirk", "test")
+    with open(smirk_test.joinpath(file), "r") as fid:
+        for smi in fid.readlines():
+            smi = smi.strip()
+            if smi.startswith("#"):
+                continue
+            canon = rdkit_canonical(smi)
+            if smi not in RDKIT_EXPECTED_FAILURES:
+                assert canon is not None, f"failed to canonicalize {smi}"
+            else:
+                assert canon is None, f"expected failure for {smi}. got {canon}"
 
 
 def test_vocab_size(smile_tokenizer):

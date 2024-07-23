@@ -224,3 +224,14 @@ def cached_github_archive(repo, commit, file):
         extract_file(archive, file, cached_path)
 
     return cached_path
+
+
+def rdkit_canonical(smi: str) -> str:
+    """Canonicalize a SMILES encoding using rdkit"""
+    from rdkit import Chem
+
+    try:
+        mol = Chem.MolFromSmiles(smi)
+        return Chem.rdmolfiles.MolToSmiles(mol).strip()
+    except Exception:
+        return None

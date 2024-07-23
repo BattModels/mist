@@ -29,6 +29,11 @@ pytest = "^8"
 pre-commit = "^3.7"
 ruff = "^0.5.4"
 
+[tool.poetry.group.tokenizers.dependencies]
+# Additional dependencies for specific tokenisers
+smilespe = "^0.0.3"
+rdkit = "^2024.3.1"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
