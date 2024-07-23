@@ -1,4 +1,4 @@
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
 
 
 def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
@@ -10,7 +10,9 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
         if name == "smirk":
             return SmirkTokenizerFast(is_smiles=True)
         elif name == "smirk-selfies":
-            return SmirkTokenizerFast(is_smiles=False)
+            from smirk import SmirkSelfiesFast
+
+            return SmirkSelfiesFast()
 
         raise unk_name
 
@@ -22,6 +24,12 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
     else:
         # Fall back to a HuggingFace Tokenizer
         from transformers import AutoTokenizer
+
+        from smirk import SmirkTokenizerFast
+
+        AutoTokenizer.register(
+            "SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast
+        )
 
         return AutoTokenizer.from_pretrained(
             name,

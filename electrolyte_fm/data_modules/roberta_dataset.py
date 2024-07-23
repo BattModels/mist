@@ -25,7 +25,7 @@ class RobertaDataSet(pl.LightningDataModule):
 
         # Locate Tokeniser and dataset
         self.tokenizer = load_tokenizer(tokenizer)
-        self.vocab_size = self.tokenizer.vocab_size
+        self.vocab_size = len(self.tokenizer)
         self.path: Path = Path(path)
         assert self.path.is_dir() or self.path.is_file()
 
@@ -67,30 +67,27 @@ class RobertaDataSet(pl.LightningDataModule):
         )
 
         # Setup to partition datasets over ranks
-        assert self.trainer is not None
-        rank = self.trainer.global_rank
-        world_size = self.trainer.world_size
-        ds_train: IterableDataset = ds["train"].shuffle(seed=42)
-        assert ds_train.n_shards % world_size == 0
-        assert ds["validation"].n_shards % world_size == 0
-        assert ds["test"].n_shards % world_size == 0
+        if trainer := self.trainer:
+            assert trainer is not None
+            rank = trainer.global_rank
+            world_size = trainer.world_size
+            ds["train"]: IterableDataset = ds["train"].shuffle(seed=42)
+            assert ds["train"].n_shards % world_size == 0
+            assert ds["validation"].n_shards % world_size == 0
+            assert ds["test"].n_shards % world_size == 0
+
+            def build_ds(ds):
+                return split_dataset_by_node(ds, rank, world_size)
+
+        else:
+
+            def build_ds(ds):
+                return ds
 
         # Partition Datasets
-        self.train_dataset: IterableDataset = split_dataset_by_node(
-            ds_train,
-            rank=rank,
-            world_size=world_size,
-        )
-        self.val_dataset: IterableDataset = split_dataset_by_node(
-            ds["validation"],
-            rank=rank,
-            world_size=world_size,
-        )
-        self.test_dataset: IterableDataset = split_dataset_by_node(
-            ds["test"],
-            rank=rank,
-            world_size=world_size,
-        )
+        self.train_dataset: IterableDataset = build_ds(ds["train"])
+        self.val_dataset: IterableDataset = build_ds(ds["validation"])
+        self.test_dataset: IterableDataset = build_ds(ds["test"])
 
     def train_dataloader(self):
         # Increment epoch to replicate shuffling

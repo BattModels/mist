@@ -1,3 +1,8 @@
+import pickle
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import pytest
 from test_tokenize_smiles import smile_strings
 from transformers import BatchEncoding
 from transformers.data import DataCollatorForLanguageModeling
@@ -5,16 +10,74 @@ from transformers.data import DataCollatorForLanguageModeling
 import smirk
 
 
+def check_save(tokenizer):
+    """Check that the tokenzier can be saved"""
+    with TemporaryDirectory() as save_directory:
+        files = tokenizer.save_pretrained(save_directory)
+        assert len(files) == 3
+        for file in files:
+            file = Path(file)
+            assert file.is_file()
+            assert file.suffix == ".json"
+
+        loaded = tokenizer.from_pretrained(save_directory)
+    print("loaded: " + loaded.to_str())
+    print("trained: " + tokenizer.to_str())
+    assert isinstance(loaded, tokenizer.__class__)
+
+    # Check pickling
+    state = pickle.dumps(tokenizer)
+    assert state is not None
+    pickled = pickle.loads(state)
+    assert pickled.to_str() == loaded.to_str()
+    assert pickled.to_str() == tokenizer.to_str()
+    smile = "[Fe+2].[Li+].[O-]P([O-])([O-])=O"
+    assert pickled(smile) == tokenizer(smile)
+
+
+def test_saving():
+    tokenizer = smirk.SmirkTokenizerFast()
+    check_save(tokenizer)
+
+
 def test_vocab_size():
     tokenizer = smirk.SmirkTokenizerFast()
     assert len(tokenizer.get_vocab()) > 0
-    assert len(tokenizer.get_vocab()) == tokenizer.vocab_size
+    assert len(tokenizer.get_vocab()) == len(tokenizer)
+
+
+def check_tokenize(tokenizer):
+    assert tokenizer.tokenize("Br") == ["Br"]
+    assert tokenizer.tokenize("Sn[Sn]") == ["S", "n", "[", "Sn", "]"]
+
+
+def check_unknown(tokenizer):
+    assert tokenizer.tokenize("🤷") == [tokenizer.unk_token]
+    assert tokenizer.tokenize("C🤷") == ["C", tokenizer.unk_token]
+    assert tokenizer.tokenize("🤷C") == [tokenizer.unk_token, "C"]
+    assert tokenizer.tokenize("[🤷]") == ["[", tokenizer.unk_token, "]"]
+    assert tokenizer.tokenize("[C🤷]") == ["[", "C", tokenizer.unk_token, "]"]
+    assert tokenizer.tokenize("[🤷C]") == ["[", tokenizer.unk_token, "C", "]"]
+
+
+def test_tokenize():
+    tokenizer = smirk.SmirkTokenizerFast()
+    check_tokenize(tokenizer)
+
+
+def test_unknown():
+    tokenizer = smirk.SmirkTokenizerFast()
+    check_unknown(tokenizer)
 
 
 def test_special_tokens():
     tokenizer = smirk.SmirkTokenizerFast()
-    assert tokenizer.pad_token == "[PAD]"
-    assert tokenizer.pad_token_id == tokenizer.get_vocab()["[PAD]"]
+    vocab = tokenizer.get_vocab()
+    assert tokenizer.unk_token_id == vocab["[UNK]"]
+    assert tokenizer.mask_token_id == vocab["[MASK]"]
+    assert tokenizer.pad_token_id == vocab["[PAD]"]
+    assert tokenizer.bos_token_id == vocab["[BOS]"]
+    assert tokenizer.eos_token_id == vocab["[EOS]"]
 
 
 def test_pad(smile_strings):
