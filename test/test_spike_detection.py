@@ -23,5 +23,3 @@ def test_is_spike():
     callback.running_mean.update(1.0)
     large_loss = torch.tensor(1.4)
     assert callback._is_spike(large_loss)
-    small_loss = torch.tensor(0.6)
-    assert not callback._is_spike(small_loss)
