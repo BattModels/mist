@@ -24,7 +24,6 @@ from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 
 class MyLightningCLI(LightningCLI):
-
     def before_fit(self):
         if logger := self.trainer.logger:
             job_config = json.loads(os.environ.get("JOB_CONFIG", "{}"))
@@ -99,6 +98,7 @@ def cli_main(args=None):
             WandbLogger,
             project="mist",
             save_code=True,
+            id=os.environ.get("WANDB_ID", None),
         )
 
     torch.set_num_threads(8)
