@@ -1,12 +1,12 @@
 import torch
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
 from pytorch_lightning.loggers import WandbLogger
-from transformers import RobertaConfig, RobertaForMaskedLM
+from transformers import RobertaPreLayerNormConfig, RobertaPreLayerNormForMaskedLM
 
 from .model_utils import DeepSpeedMixin, LoggingMixin
 
 
-class RoBERTa(DeepSpeedMixin, LoggingMixin):
+class RoBERTaPreLayerNorm(DeepSpeedMixin, LoggingMixin):
     """
     PyTorch Lightning module for RoBERTa model MLM pre-training.
     """
@@ -20,7 +20,6 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         num_hidden_layers: int = 6,
         hidden_size: int = 768,
         initializer_range: float = 0.02,
-        layer_norm_eps: float = 1e-12,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
@@ -30,7 +29,7 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         self.vocab_size = vocab_size
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
 
-        self.config = RobertaConfig(
+        self.config = RobertaPreLayerNormConfig(
             vocab_size=vocab_size,
             intermediate_size=intermediate_size,
             hidden_size=hidden_size,
@@ -38,7 +37,6 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
             num_attention_heads=num_attention_heads,
             num_hidden_layers=num_hidden_layers,
             initializer_range=initializer_range,
-            layer_norm_eps=layer_norm_eps,
             hidden_dropout_prob=0.1,
             attention_probs_dropout_prob=0.1,
             type_vocab_size=1,
@@ -46,7 +44,7 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         self.exclude_batches = []
 
     def configure_model(self):
-        self.model = RobertaForMaskedLM(config=self.config)
+        self.model = RobertaPreLayerNormForMaskedLM(config=self.config)
 
     def get_encoder(self):
         if not hasattr(self, "model"):

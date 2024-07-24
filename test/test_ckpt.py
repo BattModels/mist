@@ -93,9 +93,15 @@ def test_ckpt(cli):
     with open(cb.config_path.joinpath("model_hparams.json"), "r") as fid:
         model_config = json.load(fid)
     assert model_config["class_path"] == __name__ + ".MockedModel"
-    assert model_config["init_args"] == {
+    assert model_config["lightning_module"] == {
+        "_instantiator": "pytorch_lightning.cli.instantiate_module",
         "linked": 10,
         "vocab_size": 256,
+    }
+
+    assert model_config["datamodule"] == {
         "_instantiator": "pytorch_lightning.cli.instantiate_module",
+        "linked": 10,
+        "tokenizer": "smirk",
     }
     assert "version" in model_config.keys()

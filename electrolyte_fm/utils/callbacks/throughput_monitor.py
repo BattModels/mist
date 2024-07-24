@@ -1,5 +1,6 @@
-""" Custom callbacks for benchmarking, adapted from GenSLM
-    https://github.com/ramanathanlab/genslm/blob/71beb030df72010f5a4883a1f1a0b25bbafbe4a8/genslm/utils.py
+"""
+Custom callback for benchmarking, adapted from GenSLM
+https://github.com/ramanathanlab/genslm/blob/71beb030df72010f5a4883a1f1a0b25bbafbe4a8/genslm/utils.py
 """
 
 import time

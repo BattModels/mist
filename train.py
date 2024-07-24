@@ -14,7 +14,12 @@ from electrolyte_fm.models.lm_finetuning import LMFinetuning
 
 # classes passed via cli
 from electrolyte_fm.models.roberta_base import RoBERTa
-from electrolyte_fm.utils.callbacks import ThroughputMonitor
+from electrolyte_fm.models.roberta_prelayernorm import RoBERTaPreLayerNorm
+from electrolyte_fm.utils.callbacks import (
+    GradientNormMonitor,
+    SpikeDetection,
+    ThroughputMonitor,
+)
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 
@@ -63,20 +68,23 @@ def cli_main(args=None):
     monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
+        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
         ModelCheckpoint(
-            save_last="link",
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
-            save_top_k=5,
+            save_top_k=2,
             verbose=True,
+            save_last="link",
+            enable_version_counter=True,
             auto_insert_metric_name=False,
         ),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}",
-            save_top_k=2,
             monitor="step",
             verbose=True,
             mode="max",
+            save_top_k=2,
+            save_last=False,
             train_time_interval=timedelta(minutes=30),
             auto_insert_metric_name=False,
         ),
@@ -87,7 +95,11 @@ def cli_main(args=None):
     if rank is not None and int(rank) != 0:
         logger = None
     else:
-        logger = lazy_instance(WandbLogger, project="mist", save_code=True)
+        logger = lazy_instance(
+            WandbLogger,
+            project="mist",
+            save_code=True,
+        )
 
     torch.set_num_threads(8)
     torch.set_float32_matmul_precision("high")

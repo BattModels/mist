@@ -35,6 +35,8 @@ class RobertaDataSet(pl.LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
+        self.hparams["tokenizer"] = tokenizer
+        self.hparams["vocab_size"] = self.vocab_size
         self.save_hyperparameters(logger=False)
 
     def prepare_data(self):
