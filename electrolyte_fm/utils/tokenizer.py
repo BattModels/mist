@@ -152,7 +152,13 @@ def regex_smiles_tokenizer(vocab: dict, regex: str, unk_token: str = "[UNK]"):
     tok.pre_tokenizer = Split(Regex(regex), "isolated")
     tok.decoder = ByteLevel()  # When decoding don't add spaces between tokens
     tok_tf = PreTrainedTokenizerFast(tokenizer_object=tok, add_special_tokens=True)
-    tok_tf.add_special_tokens({"unk_token": unk_token})
+    tok_tf.add_special_tokens(
+        {
+            "unk_token": unk_token,
+            "mask_token": "[MASK]",
+            "pad_token": "[PAD]",
+        }
+    )
     return tok_tf
 
 

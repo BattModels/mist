@@ -65,12 +65,16 @@ def selfies_tokenizers(request):
 def test_well_behaved_tokenizer(other_smiles_tokenizer):
     code = other_smiles_tokenizer("CCO")
     assert other_smiles_tokenizer.unk_token_id is not None
+    assert other_smiles_tokenizer.mask_token_id is not None
+    assert other_smiles_tokenizer.pad_token_id is not None
     assert other_smiles_tokenizer.unk_token_id not in code["input_ids"]
     check_encoding(other_smiles_tokenizer, ["CCO", "C-C-O", "CC(C)C(=O)C(C)C"])
 
 
 def test_well_behaved_selfies(selfies_tokenizers):
     assert selfies_tokenizers.unk_token_id is not None
+    assert selfies_tokenizers.mask_token_id is not None
+    assert selfies_tokenizers.pad_token_id is not None
     for selfie in ["[C][C][O]", "[O][=C][C][=C][C][=C][C][=C][Ring1][=Branch1]"]:
         code = selfies_tokenizers(selfie)
         assert selfies_tokenizers.unk_token_id not in code["input_ids"]
