@@ -46,12 +46,7 @@ class SaveConfigWithCkpts(Callback):
         if self.already_saved:
             return
 
-        log_dir = trainer.log_dir or Path.cwd()
-        if logger := trainer.logger:
-            config_path = Path(log_dir, str(logger.name), str(logger.version))
-        else:
-            config_path = Path(log_dir)
-        self.config_path = config_path
+        self.config_path = self.log_dir(trainer)
 
         if trainer.is_global_zero:
             config_path.mkdir(parents=True, exist_ok=True)
@@ -87,6 +82,15 @@ class SaveConfigWithCkpts(Callback):
 
             if logger := trainer.logger:
                 logger.log_hyperparams({"cli": self.config.as_dict()})
+
+    @staticmethod
+    def log_dir(trainer: "pl.Trainer"):
+        log_dir = trainer.log_dir or trainer.default_root_dir
+        if logger := trainer.logger:
+            config_path = Path(log_dir, str(logger.name), str(logger.version))
+        else:
+            config_path = Path(log_dir)
+        return config_path
 
     @staticmethod
     def load(checkpoint_dir: str | Path, config_path=None) -> LightningModule:

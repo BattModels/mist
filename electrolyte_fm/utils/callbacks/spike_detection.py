@@ -1,7 +1,3 @@
-""" Custom callbacks for benchmarking, adapted from GenSLM
-    https://github.com/ramanathanlab/genslm/blob/71beb030df72010f5a4883a1f1a0b25bbafbe4a8/genslm/utils.py
-"""
-
 import os
 import warnings
 from typing import Any, Mapping, Union
@@ -11,8 +7,14 @@ import torch
 from lightning.fabric.utilities.spike import SpikeDetection as FabricSpikeDetection
 from pytorch_lightning.callbacks import Callback
 
+from ..ckpt import SaveConfigWithCkpts
+
 
 class SpikeDetection(FabricSpikeDetection, Callback):
+
+    def __init__(self):
+        super().__init__()
+        self.checkpoint_path = None
 
     @torch.no_grad()
     def on_train_batch_end(  # type: ignore
@@ -52,22 +54,14 @@ class SpikeDetection(FabricSpikeDetection, Callback):
                 self._update_stats(loss)
 
     def _resolve_ckpt_dir(self, trainer: "pl.Trainer"):
-
-        if len(trainer.loggers) > 0:
-            if trainer.loggers[0].save_dir is not None:
-                save_dir = trainer.loggers[0].save_dir
-            else:
-                save_dir = trainer.default_root_dir
-            name = trainer.loggers[0].name
-            version = trainer.loggers[0].version
-            version = version if isinstance(version, str) else f"version_{version}"
-            checkpoint_path = os.path.join(save_dir, str(name), version, "checkpoints")
-        else:
-            # if no loggers, use default_root_dir
-            checkpoint_path = os.path.join(trainer.default_root_dir, "checkpoints")
-
-        ckpt_path = trainer.strategy.broadcast(checkpoint_path, src=0)
-        return ckpt_path
+        if self.checkpoint_path is None:
+            checkpoint_path = None
+            if trainer.is_global_zero:
+                checkpoint_path = str(
+                    SaveConfigWithCkpts.log_dir(trainer).joinpath("checkpoints")
+                )
+            self.checkpoint_path = trainer.strategy.broadcast(checkpoint_path, src=0)
+        return self.checkpoint_path
 
     def _handle_spike(self, trainer: "pl.Trainer", batch_idx: int) -> None:
 

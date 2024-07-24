@@ -3,22 +3,12 @@ Custom callback for benchmarking, adapted from GenSLM
 https://github.com/ramanathanlab/genslm/blob/71beb030df72010f5a4883a1f1a0b25bbafbe4a8/genslm/utils.py
 """
 
-import json
-import os
 import time
-import warnings
-from tabnanny import check
-from typing import Any, Mapping, Union
+from typing import Any
 
 import pytorch_lightning as pl
-import torch
-from pytorch_lightning.callbacks import Callback, Checkpoint
+from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.loggers import WandbLogger
-from typing_extensions import override
-
-from electrolyte_fm.models.model_utils import DeepSpeedMixin
-
-from ..ckpt import SaveConfigWithCkpts
 
 
 class ThroughputMonitor(Callback):
