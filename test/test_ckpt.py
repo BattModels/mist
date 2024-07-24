@@ -102,7 +102,6 @@ def test_ckpt(cli):
     assert model_config["datamodule"] == {
         "_instantiator": "pytorch_lightning.cli.instantiate_module",
         "linked": 10,
-        "vocab_size": 256,
         "tokenizer": "smirk",
     }
     assert "version" in model_config.keys()
