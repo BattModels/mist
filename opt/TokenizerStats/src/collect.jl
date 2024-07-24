@@ -1,11 +1,6 @@
 # Maximum number of oov samples to track
 const MAX_OOV_SAMPLES = 100
 
-# Load Python Dependencies
-const load_tokenizer = pyimport("electrolyte_fm.utils.tokenizer").load_tokenizer
-const load_dataset = pyimport("datasets").load_dataset
-const split_dataset_by_node = pyimport("datasets.distributed").split_dataset_by_node
-const rdkit_canonical = pyimport("electrolyte_fm.utils.tokenizer").rdkit_canonical
 
 function tracked_stats()
     return (;

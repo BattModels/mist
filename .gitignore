@@ -26,6 +26,7 @@ mist/
 
 # Julia
 Manifest.toml
+LocalPreferences.toml
 
 # Spack
 .spack-env/

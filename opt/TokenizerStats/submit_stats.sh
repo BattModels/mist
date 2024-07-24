@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 export TOKENIZERS="
 smirk
@@ -16,9 +17,30 @@ rxn4chemistry/rxnfp
 ChangwenXu98/TransPolymer
 "
 
+# Move to git root
+cd $(git rev-parse --show-toplevel)
+
+# Activate Environment
+module purge
+module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
+source activate
+
+# Precompile project
+export JULIA_PKG_PRECOMPILE=0
+srun -p venkvis-debug -c3 --mem 4G julia --color=yes --startup-file=no --project=opt/TokenizerStats -e '
+    using Pkg
+    Pkg.instantiate()
+    using MPIPreferences
+    @info "mpiexe" run(`which mpiexec`)
+    MPIPreferences.use_system_binary()
+    Pkg.precompile()
+'
+unset JULIA_PKG_PRECOMPILE
+
+# Submit jobs for each tokenizer
 for tok in $TOKENIZERS; do
     dataset="$(basename $1)"
-    output="stats/$tok/stats-$dataset.json"
+    output="stats/$tok/stats-$dataset-canonical.json"
     config="{\"data\":\"$1\",\"tokenizer\":\"$tok\",\"output\":\"$output\"}"
-    submit/submit.py submit/submit_tok_stats.j2 --no-confirm --json "$config" | sbatch
+    submit/submit.py opt/TokenizerStats/submit_tok_stats.j2 --no-default --no-confirm --json "$config" | sbatch
 done
