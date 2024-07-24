@@ -1,4 +1,4 @@
-local pretrain = import 'pretraining';
+local pretrain = import 'pretrain.jsonnet';
 
 {
   train: {
@@ -21,6 +21,7 @@ local pretrain = import 'pretraining';
 
         // Duplicate pre-training optimizer config
         optimizer: pretrain.train.model.init_args.optimizer,
+
         lr_schedule: {
           class_path: 'electrolyte_fm.utils.lr_schedule.RelativeCosineWarmup',
           init_args: {

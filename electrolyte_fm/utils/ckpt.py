@@ -124,9 +124,9 @@ class SaveConfigWithCkpts(Callback):
         # Import the model class and initialize the model
         import_path = cls_name.split(".")
         model_cls = importlib.import_module(
-            ".".join(import_path[:-2])
+            ".".join(import_path[:-1])
         ).__getattribute__(import_path[-1])
-        assert cls_name == f"{model_cls.__module__}.{model_cls.__name__}"
+        assert import_path[-1] == model_cls.__name__
         model = model_cls(**model_config)
         model.configure_model()
         # Load model weights from the checkpoint
@@ -148,7 +148,7 @@ class SaveConfigWithCkpts(Callback):
             config = json.load(fid)
         try:
             tokenizer = config["data"]["tokenizer"]
-        except:
+        except Exception:
             tokenizer = config["data"]["init_args"]["tokenizer"]
         print(f"tokenizer: {tokenizer}")
         return tokenizer

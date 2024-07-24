@@ -26,13 +26,13 @@ cli = typer.Typer(rich_markup_mode="markdown")
 console = rich.console.Console(stderr=True)
 
 
-def parse_data(path) -> dict:
+def parse_data(path: Path) -> dict:
+    if path.suffix == ".jsonnet":
+        return json.loads(jsonnet.evaluate_file(str(path)))
+
     with open(path, "r") as fid:
         if path.suffix in [".yaml", ".yml"]:
             return yaml.safe_load(fid)
-
-        if path.suffix == ".jsonnet":
-            return json.loads(jsonnet.evaluate_snippet(str(path), fid.read()))
 
         return json.load(fid)
 
@@ -91,7 +91,7 @@ def render(file: str, data: dict) -> str:
 def template_defaults(file: str, default: bool = True, script_config: bool = True):
     # Load data
     if default:
-        default_path = Path(file).parent.joinpath("default.yaml")
+        default_path = Path(file).parent.joinpath("default.jsonnet")
         config = parse_data(default_path)
     else:
         config = dict()
