@@ -49,7 +49,7 @@ class SaveConfigWithCkpts(Callback):
         self.config_path = self.log_dir(trainer)
 
         if trainer.is_global_zero:
-            config_path.mkdir(parents=True, exist_ok=True)
+            self.config_path.mkdir(parents=True, exist_ok=True)
             config_json = self.parser.dump(
                 self.config,
                 skip_none=False,
@@ -57,16 +57,16 @@ class SaveConfigWithCkpts(Callback):
                 skip_link_targets=False,
                 format="json",
             )
-            with open(Path(config_path, "config.json"), "w") as config_file:
+            with open(Path(self.config_path, "config.json"), "w") as config_file:
                 config_file.write(config_json)
 
             # Save full job config
             job_config = json.loads(os.environ.get("JOB_CONFIG", "{}"))
-            with open(Path(config_path, "job_config.json"), "w") as fid:
+            with open(Path(self.config_path, "job_config.json"), "w") as fid:
                 json.dump(job_config, fid)
 
             # Save model hyperparameters
-            with open(Path(config_path, "model_hparams.json"), "w") as fid:
+            with open(Path(self.config_path, "model_hparams.json"), "w") as fid:
                 model_cls = trainer.lightning_module.__class__
                 model_config = {
                     "version": self.VERSION,
@@ -77,7 +77,7 @@ class SaveConfigWithCkpts(Callback):
                 json.dump(model_config, fid, default=lambda x: str(type(x)))
 
             # Save Environment
-            with open(Path(config_path, "env.json"), "w") as fid:
+            with open(Path(self.config_path, "env.json"), "w") as fid:
                 json.dump(dict(os.environ), fid, sort_keys=True)
 
             if logger := trainer.logger:
