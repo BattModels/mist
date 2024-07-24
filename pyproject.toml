@@ -27,6 +27,7 @@ jsonnet = "^0.20.0"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8"
 pre-commit = "^3.7"
+ruff = "^0.5.4"
 
 [build-system]
 requires = ["poetry-core"]
@@ -36,5 +37,6 @@ build-backend = "poetry.core.masonry.api"
 testpaths = ["test"]
 addopts = "--color yes"
 
-[tool.isort]
-profile = "black"
+[tool.ruff.lint]
+ignore = ["F401"]
+
