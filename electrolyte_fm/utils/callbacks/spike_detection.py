@@ -12,8 +12,8 @@ from ..ckpt import SaveConfigWithCkpts
 
 class SpikeDetection(FabricSpikeDetection, Callback):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, warmup: int = 200, atol: float = 0.3, finite_only: bool = True):
+        super().__init__(warmup=warmup, atol=atol, finite_only=finite_only)
         self.checkpoint_path = None
 
     @torch.no_grad()

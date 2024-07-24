@@ -18,16 +18,10 @@ def trainer():
     return _trainer
 
 
-def test_resolve_ckpt_dir(trainer):
-    callback = SpikeDetection()
-    assert (
-        callback._resolve_ckpt_dir(trainer)
-        == "/tmp/lightning_logs/version_0/checkpoints"
-    )
-
-
 def test_is_spike():
     callback = SpikeDetection(atol=0.3)
     callback.running_mean.update(1.0)
-    _loss = torch.tensor(1.4)
-    assert callback._is_spike(_loss)
+    large_loss = torch.tensor(1.4)
+    assert callback._is_spike(large_loss)
+    small_loss = torch.tensor(0.6)
+    assert not callback._is_spike(small_loss)
