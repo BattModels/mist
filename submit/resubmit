@@ -15,6 +15,7 @@ def resubmit(
         file_okay=True, dir_okay=False, help="Jinja2 Template to render"
     ),
     ckpt=typer.Argument(file_okay=False, dir_okay=True, help="Checkpoint to Resume"),
+    resume_wandb: bool = typer.Option(False, help="Resume wandb run"),
 ):
     ckpt = Path(ckpt)
     assert ckpt.is_dir(), f"Checkpoint path {ckpt} is not a directory"
@@ -24,6 +25,10 @@ def resubmit(
         job_config = json.load(fid)
 
     job_config["train"]["ckpt_path"] = str(ckpt.resolve())
+    if resume_wandb:
+        job_config["env"]["WANBD_RESUME"] = "must"
+        job_config["env"]["WANDB_ID"] = str(ckpt.parent.parent.name)
+
     script = render(template, job_config)
     print(script)
 
