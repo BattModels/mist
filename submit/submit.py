@@ -16,6 +16,7 @@ import jinja2
 import rich
 import typer
 import yaml
+import _jsonnet as jsonnet
 from rich.json import JSON
 from rich.panel import Panel
 from rich.prompt import Confirm
@@ -29,6 +30,10 @@ def parse_data(path) -> dict:
     with open(path, "r") as fid:
         if path.suffix in [".yaml", ".yml"]:
             return yaml.safe_load(fid)
+
+        if path.suffix == ".jsonnet":
+            return json.loads(jsonnet.evaluate_snippet(str(path), fid.read()))
+
         return json.load(fid)
 
 
@@ -77,6 +82,8 @@ def render(file: str, data: dict) -> str:
         lstrip_blocks=False,
     )
     data["__config__"] = deepcopy(data)
+    data["__train_yaml__"] = yaml.safe_dump(deepcopy(data["train"]))
+
     template = env.get_template(str(file))
     return template.render(data)
 
@@ -91,9 +98,11 @@ def template_defaults(file: str, default: bool = True, script_config: bool = Tru
 
     # Load host specific config
     if script_config:
-        script_config_file = Path(file).with_suffix(".yaml")
-        if script_config_file.is_file():
-            config = merge_config(config, parse_data(script_config_file))
+        for suffix in [".jsonnet", ".yaml"]:
+            script_config_file = Path(file).with_suffix(suffix)
+            if script_config_file.is_file():
+                config = merge_config(config, parse_data(script_config_file))
+                break
 
     return config
 

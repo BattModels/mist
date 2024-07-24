@@ -7,6 +7,9 @@ nsys:
   # Uncomment to profile GPU memory usage
   # cuda-memory-usage: 'true'
 train:
-  trainer.fast_dev_run: 10
-  trainer.profiler: pytorch_lightning.profilers.PyTorchProfiler
-  trainer.profiler.emit_nvtx: true
+  trainer:
+    fast_dev_run: 10
+    profiler: 
+      class_path: pytorch_lightning.profilers.PyTorchProfiler
+      init_args:
+        emit_nvtx: true

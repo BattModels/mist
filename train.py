@@ -4,22 +4,15 @@ from datetime import timedelta
 
 import torch
 from jsonargparse import lazy_instance
-from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
-from pytorch_lightning.loggers import WandbLogger
-
-from electrolyte_fm.data_modules import PropertyPredictionDataModule, RobertaDataSet
-from electrolyte_fm.models.lm_finetuning import LMFinetuning
-
-# classes passed via cli
-from electrolyte_fm.models.roberta_base import RoBERTa
-from electrolyte_fm.models.roberta_prelayernorm import RoBERTaPreLayerNorm
-from electrolyte_fm.utils.callbacks import (
-    GradientNormMonitor,
-    SpikeDetection,
-    ThroughputMonitor,
+from pytorch_lightning.cli import (
+    LightningArgumentParser,
+    LightningCLI,
+    _InstantiatorFn,
+    _get_module_type,
 )
+from pytorch_lightning.loggers import WandbLogger
+from electrolyte_fm.utils.callbacks import ThroughputMonitor, SpikeDetection
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 
@@ -60,6 +53,26 @@ class MyLightningCLI(LightningCLI):
             "model.init_args.encoder_ckpt",
             "data.init_args.tokenizer",
             compute_fn=SaveConfigWithCkpts.get_ckpt_tokenizer,
+        )
+
+    def _add_instantiators(self) -> None:
+        self.config_dump = json.loads(
+            self.parser.dump(
+                self.config, skip_link_targets=False, skip_none=False, format="json"
+            )
+        )
+        if "subcommand" in self.config:
+            self.config_dump = self.config_dump[self.config.subcommand]
+
+        self.parser.add_instantiator(
+            _InstantiatorFn(cli=self, key="model"),
+            _get_module_type(self._model_class),
+            subclasses=self.subclass_mode_model,
+        )
+        self.parser.add_instantiator(
+            _InstantiatorFn(cli=self, key="data"),
+            _get_module_type(self._datamodule_class),
+            subclasses=self.subclass_mode_data,
         )
 
 
@@ -115,10 +128,11 @@ def cli_main(args=None):
         save_config_kwargs={"overwrite": True},
         args=args,
         subclass_mode_model=False,
+        seed_everything_default=42,
+        parser_kwargs={"parser_mode": "jsonnet", "default_env": True},
         run=args is None,  # support unit testing
     )
 
 
 if __name__ == "__main__":
-    seed_everything(42, workers=True)
     cli_main()

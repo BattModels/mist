@@ -36,3 +36,8 @@ repos:
     rev: 1.8.0
     hooks:
       - id: poetry-check
+  - repo: https://github.com/google/go-jsonnet
+    rev: v0.20.0 
+    hooks:
+      - id: jsonnet-format
+      - id: jsonnet-lint

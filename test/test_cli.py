@@ -36,6 +36,33 @@ def test_default():
     ]
 
 
+def test_json_config():
+    tag = f"testing-{randint(0, 128)}"
+
+    with TemporaryDirectory() as fake_data_dir:
+        config = {
+            "tags": [tag, "look-ma-two-tokens"],
+            "data": {
+                "class_path": "electrolyte_fm.data_modules.RobertaDataSet",
+                "init_args": {
+                    "path": fake_data_dir,
+                    "tokenizer": "ibm/MoLFormer-XL-both-10pct",
+                },
+            },
+            "model": {
+                "class_path": "electrolyte_fm.models.roberta_base.RoBERTa",
+            },
+            "trainer": {"devices": 1},
+        }
+
+        cli = cli_main(["--config", json.dumps(config)])
+        assert cli.datamodule.vocab_size == cli.model.vocab_size
+        assert cli.datamodule.vocab_size == len(cli.datamodule.tokenizer)
+        assert cli.trainer.logger.__class__ == WandbLogger
+        assert isinstance(cli.trainer.logger, WandbLogger)
+        assert cli.trainer.logger._wandb_init["tags"] == config["tags"]
+
+
 def test_finetune(monkeypatch):
     with TemporaryDirectory() as fake_data_dir:
         # Create a fake config
