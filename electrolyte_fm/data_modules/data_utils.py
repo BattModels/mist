@@ -4,7 +4,6 @@ from smirk import SmirkTokenizerFast
 
 
 class DataSetupMixin:
-
     def setup_tokenizer(self, tokenizer: str):
         # Locate Tokeniser and dataset
         if tokenizer.startswith("smirk"):

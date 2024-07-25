@@ -84,7 +84,7 @@ class SaveConfigWithCkpts(Callback):
                 logger.log_hyperparams({"cli": self.config.as_dict()})
 
     @staticmethod
-    def log_dir(trainer: "pl.Trainer"):
+    def log_dir(trainer: Trainer):
         log_dir = trainer.log_dir or trainer.default_root_dir
         if logger := trainer.logger:
             config_path = Path(log_dir, str(logger.name), str(logger.version))
