@@ -42,4 +42,3 @@ ignore = ["F401"]
 
 [tool.ruff.lint.extend-per-file-ignores]
 "test_*.py" = ["F811"]
-
