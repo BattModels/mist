@@ -6,6 +6,7 @@ from pathlib import Path
 from jsonargparse import Namespace
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.cli import LightningArgumentParser
+from pytorch_lightning.loggers import WandbLogger
 
 
 class SaveConfigWithCkpts(Callback):
@@ -86,7 +87,8 @@ class SaveConfigWithCkpts(Callback):
     @staticmethod
     def log_dir(trainer: Trainer):
         log_dir = trainer.log_dir or trainer.default_root_dir
-        if logger := trainer.logger:
+        logger = trainer.logger
+        if logger is not None and isinstance(logger, WandbLogger):
             config_path = Path(log_dir, str(logger.name), str(logger.version))
         else:
             config_path = Path(log_dir)

@@ -1,4 +1,3 @@
-import pytorch_lightning as pl
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
 
 from ..utils.ckpt import SaveConfigWithCkpts
@@ -19,7 +18,7 @@ class DeepSpeedMixin:
         raise NotImplementedError
 
 
-class LoggingMixin(pl.LightningModule):
+class LoggingMixin:
     def on_train_epoch_start(self) -> None:
         # Update the dataset's internal epoch counter
 
@@ -31,3 +30,13 @@ class LoggingMixin(pl.LightningModule):
             sync_dist=True,
         )
         return super().on_train_epoch_start()
+
+
+class CanSkip:
+    @staticmethod
+    def should_skip(self):
+        """Return true if the model should skip this batch"""
+        if self.hasattr("skip_this_batch") and self.skip_this_batch:
+            return True
+        else:
+            return False

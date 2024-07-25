@@ -1,12 +1,13 @@
 import torch
+from pytorch_lightning import LightningModule
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
 from pytorch_lightning.loggers import WandbLogger
 from transformers import RobertaConfig, RobertaForMaskedLM
 
-from .model_utils import DeepSpeedMixin, LoggingMixin
+from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
 
 
-class RoBERTa(DeepSpeedMixin, LoggingMixin):
+class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
     """
     PyTorch Lightning module for RoBERTa model MLM pre-training.
     """
@@ -43,7 +44,6 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
             attention_probs_dropout_prob=0.1,
             type_vocab_size=1,
         )
-        self.exclude_batches = []
 
     def configure_model(self):
         self.model = RobertaForMaskedLM(config=self.config)
@@ -54,6 +54,9 @@ class RoBERTa(DeepSpeedMixin, LoggingMixin):
         return self.model.roberta
 
     def forward(self, batch, **kwargs):  # type: ignore[override]
+        if self.should_skip:
+            return None
+
         out = self.model(
             batch["input_ids"],
             labels=batch["labels"],

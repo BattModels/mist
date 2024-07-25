@@ -82,7 +82,6 @@ def render(file: str, data: dict) -> str:
         lstrip_blocks=False,
     )
     data["__config__"] = deepcopy(data)
-    data["__train_yaml__"] = yaml.safe_dump(deepcopy(data["train"]))
 
     template = env.get_template(str(file))
     return template.render(data)
