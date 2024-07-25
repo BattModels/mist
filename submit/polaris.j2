@@ -54,6 +54,7 @@ export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
 {%- endif %}
 
 {{ export_job_config( __config__ ) }}
+export PL_CONFIG='{{ {"fit": train } | tojson }}'
 
 mpiexec \
     {{- cliopts( mpiexe ) | indent }} \
@@ -62,5 +63,4 @@ ${PBS_O_WORKDIR}/submit/set_node_rank \
 nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
-    python3 train.py fit \
-    {{- cliopts( train ) | indent }}
+    python3 train.py fit

@@ -16,6 +16,7 @@ spack env activate .
 source activate
 
 {{- export_job_config( __config__ ) }}
+export PL_CONFIG='{{ {"fit": train } | tojson }}'
 
 {%- if nsys is defined %}
 nsys profile \
@@ -23,5 +24,4 @@ nsys profile \
 {%- endif %}
 mpiexec \
     {{- cliopts( mpiexe ) | indent }} \
-    python3 train.py fit \
-    {{- cliopts( train ) | indent }}
+    python3 train.py fit

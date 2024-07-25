@@ -1,14 +1,13 @@
-from typing import Callable, Dict, List, Union
+from typing import Dict, List, Union
 
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from torchmetrics.classification import Accuracy, BinaryAccuracy
+from torchmetrics.classification import Accuracy
 from torchmetrics.regression import MeanAbsoluteError
 
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
-from .roberta_base import RoBERTa
 
 TaskSpecs = List[Dict[str, Union[str, int]]]
 
@@ -28,7 +27,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
-
         super().__init__()
 
         self.learning_rate = learning_rate

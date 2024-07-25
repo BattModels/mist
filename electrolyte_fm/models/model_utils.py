@@ -10,7 +10,7 @@ class DeepSpeedMixin:
         return SaveConfigWithCkpts.load(checkpoint_dir, **kwargs)
 
     def load_state(self, checkpoint_dir):
-        print(f"Loading state for checkpoint:", checkpoint_dir)
+        print("Loading state for checkpoint:", checkpoint_dir)
         state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
         self.load_state_dict(state, strict=False, assign=True)
 

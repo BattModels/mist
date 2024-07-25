@@ -37,9 +37,7 @@ def test_vocab_size():
     assert (
         trained._tokenizer.get_vocab_size(True)
         - trained._tokenizer.get_vocab_size(False)
-    ) == len(
-        smirk.SPECIAL_TOKENS
-    ) - 1  # unk should already be in the vocab
+    ) == len(smirk.SPECIAL_TOKENS) - 1  # unk should already be in the vocab
 
 
 def test_multi_file():

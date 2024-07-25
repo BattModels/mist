@@ -48,7 +48,6 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         self.save_hyperparameters()
 
     def setup(self, stage: str) -> None:
-
         ds = load_dataset(os.path.join(self.path, self.dataset_name))
 
         # Setup to partition datasets over ranks

@@ -9,7 +9,7 @@ readme = "README.md"
 python = "^3.11"
 torch = {version = "^2.3"}
 lightning = "^2.2"
-jsonargparse = {extras = ["signatures"], version = "^4.27"}
+jsonargparse = {extras = ["signatures", "jsonnet"], version = "^4.27"}
 transformers = "^4.40"
 deepspeed = { git = "https://github.com/microsoft/DeepSpeed.git", rev = "5f631abc2f930ecece38fae05dc9bd3923c555dd"}
 wandb = "^0.16"
@@ -22,10 +22,12 @@ smirk = {path = "smirk", develop=true}
 rich = "^13"
 pydoe2 = "^1.3"
 smilespe = "^0.0.3"
+jsonnet = "^0.20.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8"
 pre-commit = "^3.7"
+ruff = "^0.5.4"
 
 [build-system]
 requires = ["poetry-core"]
@@ -35,5 +37,8 @@ build-backend = "poetry.core.masonry.api"
 testpaths = ["test"]
 addopts = "--color yes"
 
-[tool.isort]
-profile = "black"
+[tool.ruff.lint]
+ignore = ["F401"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"test_*.py" = ["F811"]

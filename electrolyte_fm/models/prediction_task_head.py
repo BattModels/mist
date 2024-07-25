@@ -2,7 +2,6 @@ from torch import nn
 
 
 class PredictionTaskHead(nn.Module):
-
     def __init__(
         self, embed_dim: int, output_size: int = 1, dropout: float = 0.2
     ) -> None:

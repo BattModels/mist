@@ -11,7 +11,7 @@ runner = CliRunner()
 def get_scripts():
     submit_dir = Path(__file__).parent.parent.joinpath("submit")
     for file in submit_dir.iterdir():
-        if file.suffix == ".j2" and file.name != "cliopts.j2":
+        if file.suffix == ".j2" and file.name != "utils.j2":
             yield file.relative_to(submit_dir.parent)
 
 
@@ -23,7 +23,7 @@ def script(request):
 def get_data():
     submit_dir = Path(__file__).parent.parent.joinpath("submit")
     for file in submit_dir.iterdir():
-        if file.suffix in [".yaml", ".yml"]:
+        if file.suffix in [".yaml", ".yml", ".jsonnet"]:
             yield file
 
 
@@ -48,7 +48,7 @@ def test_multiple_data():
         [
             "submit/polaris.j2",
             "--data",
-            "submit/pretrain.yaml",
+            "submit/pretrain.jsonnet",
             "--data",
             "submit/nsys.yaml",
         ],
@@ -59,8 +59,7 @@ def test_multiple_data():
 @pytest.fixture
 def finetuning_configs():
     return [
-        "submit/finetune.yaml",
-        "submit/multitask_classification.yaml",
+        "submit/finetune.jsonnet",
     ]
 
 
