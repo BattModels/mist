@@ -54,9 +54,6 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         return self.model.roberta
 
     def forward(self, batch, **kwargs):  # type: ignore[override]
-        if self.should_skip:
-            return None
-
         out = self.model(
             batch["input_ids"],
             labels=batch["labels"],
@@ -83,6 +80,9 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         return super().on_train_epoch_start()
 
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
+        if self.should_skip:
+            return None
+
         outputs = self(batch)
         loss = outputs.loss
         self.log(
@@ -93,8 +93,6 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
             prog_bar=True,
             sync_dist=True,
         )
-        if batch_idx in self.exclude_batches:
-            return loss * 0
         return loss
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
