@@ -11,7 +11,6 @@ from ..ckpt import SaveConfigWithCkpts
 
 
 class SpikeDetection(FabricSpikeDetection, Callback):
-
     def __init__(self, warmup: int = 200, atol: float = 0.3, finite_only: bool = True):
         super().__init__(warmup=warmup, atol=atol, finite_only=finite_only)
         self.checkpoint_path = None
@@ -64,7 +63,6 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         return self.checkpoint_path
 
     def _handle_spike(self, trainer: "pl.Trainer", batch_idx: int) -> None:
-
         checkpoint_path = self._resolve_ckpt_dir(trainer)
 
         # save current model as a checkpoint
@@ -86,7 +84,6 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         print(f"Excluded batches : {trainer.model.exclude_batches}")
 
     def _is_spike(self, loss: torch.Tensor) -> bool:
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             # we might call compute more often than update

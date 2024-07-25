@@ -70,7 +70,7 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
         self,
         token_ids: Union[int, List[int]],
         skip_special_tokens: bool = False,
-        **kwargs
+        **kwargs,
     ) -> str:
         token_ids = [token_ids] if isinstance(token_ids, int) else token_ids
         tokens = [self._convert_id_to_token(id) for id in token_ids]

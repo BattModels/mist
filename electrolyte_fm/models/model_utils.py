@@ -1,9 +1,5 @@
-import json
-from pathlib import Path
-
 import pytorch_lightning as pl
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
-from pytorch_lightning.loggers import WandbLogger
 
 from ..utils.ckpt import SaveConfigWithCkpts
 
@@ -15,7 +11,7 @@ class DeepSpeedMixin:
         return SaveConfigWithCkpts.load(checkpoint_dir, **kwargs)
 
     def load_state(self, checkpoint_dir):
-        print(f"Loading state for checkpoint:", checkpoint_dir)
+        print("Loading state for checkpoint:", checkpoint_dir)
         state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
         self.load_state_dict(state, strict=False, assign=True)
 
@@ -24,7 +20,6 @@ class DeepSpeedMixin:
 
 
 class LoggingMixin(pl.LightningModule):
-
     def on_train_epoch_start(self) -> None:
         # Update the dataset's internal epoch counter
 

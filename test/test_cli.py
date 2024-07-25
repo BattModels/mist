@@ -16,13 +16,13 @@ def test_default():
         cli = cli_main(
             [
                 "--data",
-                "RobertaDataSet",
+                "electrolyte_fm.data_modules.RobertaDataSet",
                 "--data.path",
                 fake_data_dir,
                 "--data.tokenizer",
                 "ibm/MoLFormer-XL-both-10pct",
                 "--model",
-                "RoBERTa",
+                "electrolyte_fm.models.RoBERTa",
                 "--trainer.devices=1",
                 f"--tags=['{tag}']",
             ]
@@ -34,6 +34,33 @@ def test_default():
     assert cli.trainer.logger._wandb_init["tags"] == [
         tag,
     ]
+
+
+def test_json_config():
+    tag = f"testing-{randint(0, 128)}"
+
+    with TemporaryDirectory() as fake_data_dir:
+        config = {
+            "tags": [tag, "look-ma-two-tokens"],
+            "data": {
+                "class_path": "electrolyte_fm.data_modules.RobertaDataSet",
+                "init_args": {
+                    "path": fake_data_dir,
+                    "tokenizer": "ibm/MoLFormer-XL-both-10pct",
+                },
+            },
+            "model": {
+                "class_path": "electrolyte_fm.models.RoBERTa",
+            },
+            "trainer": {"devices": 1},
+        }
+
+        cli = cli_main(["--config", json.dumps(config)])
+        assert cli.datamodule.vocab_size == cli.model.vocab_size
+        assert cli.datamodule.vocab_size == len(cli.datamodule.tokenizer)
+        assert cli.trainer.logger.__class__ == WandbLogger
+        assert isinstance(cli.trainer.logger, WandbLogger)
+        assert cli.trainer.logger._wandb_init["tags"] == config["tags"]
 
 
 def test_finetune(monkeypatch):
@@ -49,7 +76,7 @@ def test_finetune(monkeypatch):
             json.dump(
                 {
                     "version": "0.2.0",
-                    "class_path": "electrolyte_fm.models.roberta_base.RoBERTa",
+                    "class_path": "electrolyte_fm.models.RoBERTa",
                     "init_args": {"vocab_size": 128},
                 },
                 fid,
@@ -65,9 +92,9 @@ def test_finetune(monkeypatch):
 
         cli = cli_main(
             [
-                "--data=PropertyPredictionDataModule",
+                "--data=electrolyte_fm.data_modules.PropertyPredictionDataModule",
                 f"--data.path={fake_data_dir}",
-                "--model=LMFinetuning",
+                "--model=electrolyte_fm.models.LMFinetuning",
                 f"--model.encoder_ckpt={ckpt}",
                 "--trainer.devices=1",
             ]

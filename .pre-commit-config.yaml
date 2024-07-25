@@ -17,14 +17,6 @@ repos:
     hooks:
       - id: remove-crlf
       - id: remove-tabs
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-  - repo: https://github.com/psf/black
-    rev: 24.3.0
-    hooks:
-      - id: black
   - repo: https://github.com/FeryET/pre-commit-rust
     rev: v1.1.0
     hooks:
@@ -36,3 +28,13 @@ repos:
     rev: 1.8.0
     hooks:
       - id: poetry-check
+  - repo: https://github.com/google/go-jsonnet
+    rev: v0.20.0
+    hooks:
+      - id: jsonnet-format
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.4
+    hooks:
+      - id: ruff
+        args: [ --fix ]
+      - id: ruff-format
