@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Any, Mapping, Union, Dict
+from typing import Any, Dict, Mapping, Union
 
 import pytorch_lightning as pl
 import torch

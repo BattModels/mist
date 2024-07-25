@@ -1,14 +1,10 @@
-import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
 
-import pytest
 import torch
-from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.demos.boring_classes import BoringModel, BoringDataModule
-from torch.utils.data import DataLoader
+from pytorch_lightning.demos.boring_classes import BoringDataModule, BoringModel
 
 from electrolyte_fm.utils.callbacks import SpikeDetection
 

@@ -4,7 +4,7 @@ from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
 from pytorch_lightning.loggers import WandbLogger
 from transformers import RobertaConfig, RobertaForMaskedLM
 
-from .model_utils import DeepSpeedMixin, LoggingMixin, CanSkip
+from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
 
 
 class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
