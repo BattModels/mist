@@ -30,3 +30,13 @@ class LoggingMixin:
             sync_dist=True,
         )
         return super().on_train_epoch_start()
+
+
+class CanSkip:
+    @staticmethod
+    def should_skip(self):
+        """Return true if the model should skip this batch"""
+        if self.hasattr("skip_this_batch") and self.skip_this_batch:
+            return True
+        else:
+            return False

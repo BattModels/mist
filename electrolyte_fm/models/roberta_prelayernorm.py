@@ -41,7 +41,6 @@ class RoBERTaPreLayerNorm(RoBERTa):
             attention_probs_dropout_prob=0.1,
             type_vocab_size=1,
         )
-        self.exclude_batches = []
 
     def configure_model(self):
         self.model = RobertaPreLayerNormForMaskedLM(config=self.config)
