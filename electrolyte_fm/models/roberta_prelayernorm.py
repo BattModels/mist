@@ -1,12 +1,12 @@
 import torch
+from pytorch_lightning import LightningModule
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from pytorch_lightning.loggers import WandbLogger
 from transformers import RobertaPreLayerNormConfig, RobertaPreLayerNormForMaskedLM
 
-from .model_utils import DeepSpeedMixin, LoggingMixin
+from .roberta_base import RoBERTa
 
 
-class RoBERTaPreLayerNorm(DeepSpeedMixin, LoggingMixin):
+class RoBERTaPreLayerNorm(RoBERTa):
     """
     PyTorch Lightning module for RoBERTa model MLM pre-training.
     """
@@ -23,7 +23,7 @@ class RoBERTaPreLayerNorm(DeepSpeedMixin, LoggingMixin):
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
-        super().__init__()
+        super(LightningModule).__init__()
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.vocab_size = vocab_size
@@ -45,79 +45,3 @@ class RoBERTaPreLayerNorm(DeepSpeedMixin, LoggingMixin):
 
     def configure_model(self):
         self.model = RobertaPreLayerNormForMaskedLM(config=self.config)
-
-    def get_encoder(self):
-        if not hasattr(self, "model"):
-            self.configure_model()
-        return self.model.roberta
-
-    def forward(self, batch, **kwargs):  # type: ignore[override]
-        out = self.model(
-            batch["input_ids"],
-            labels=batch["labels"],
-            attention_mask=batch["attention_mask"],
-            **kwargs,
-        )
-        return out
-
-    def setup(self, stage: str) -> None:
-        if isinstance(self.logger, WandbLogger):
-            for m in ["train/loss", "val/loss"]:
-                for s in ["_step", "_epoch"]:
-                    self.logger.experiment.define_metric(m + s, summary="min")
-
-    def on_train_epoch_start(self) -> None:
-        # Update the dataset's internal epoch counter
-        self.trainer.train_dataloader.dataset.set_epoch(self.trainer.current_epoch)
-        self.log(
-            "train/dataloader_epoch",
-            self.trainer.train_dataloader.dataset._epoch,
-            rank_zero_only=True,
-            sync_dist=True,
-        )
-        return super().on_train_epoch_start()
-
-    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = outputs.loss
-        self.log(
-            "train/loss",
-            loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        if batch_idx in self.exclude_batches:
-            return loss * 0
-        return loss
-
-    def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = outputs.loss
-        self.log(
-            "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
-        )
-        return loss
-
-    def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = outputs.loss
-        self.log(
-            "test/loss",
-            loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        return loss
-
-    def configure_optimizers(self):
-        optimizer = self.optimizer(self.parameters())
-        if schedule := self.lr_schedule:
-            return {
-                "optimizer": optimizer,
-                "lr_scheduler": {"scheduler": schedule(optimizer), "interval": "step"},
-            }
-        return optimizer

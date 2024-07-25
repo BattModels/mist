@@ -1,9 +1,4 @@
-import json
-from pathlib import Path
-
-import pytorch_lightning as pl
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
-from pytorch_lightning.loggers import WandbLogger
 
 from ..utils.ckpt import SaveConfigWithCkpts
 
@@ -23,8 +18,7 @@ class DeepSpeedMixin:
         raise NotImplementedError
 
 
-class LoggingMixin(pl.LightningModule):
-
+class LoggingMixin:
     def on_train_epoch_start(self) -> None:
         # Update the dataset's internal epoch counter
 

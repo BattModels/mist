@@ -1,4 +1,5 @@
 import torch
+from pytorch_lightning import LightningModule
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
 from pytorch_lightning.loggers import WandbLogger
 from transformers import RobertaConfig, RobertaForMaskedLM
@@ -6,7 +7,7 @@ from transformers import RobertaConfig, RobertaForMaskedLM
 from .model_utils import DeepSpeedMixin, LoggingMixin
 
 
-class RoBERTa(DeepSpeedMixin, LoggingMixin):
+class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin):
     """
     PyTorch Lightning module for RoBERTa model MLM pre-training.
     """

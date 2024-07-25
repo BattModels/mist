@@ -1,3 +1,4 @@
+import pytest
 import json
 from pathlib import Path
 from random import randint
@@ -10,7 +11,14 @@ from torch.nn import Module
 from train import cli_main
 
 
-def test_default():
+@pytest.mark.parametrize(
+    "model",
+    [
+        "electrolyte_fm.models.RoBERTa",
+        "electrolyte_fm.models.RoBERTaPreLayerNorm",
+    ],
+)
+def test_default(model):
     tag = f"testing-{randint(0, 128)}"
     with TemporaryDirectory() as fake_data_dir:
         cli = cli_main(
@@ -22,7 +30,8 @@ def test_default():
                 "--data.tokenizer",
                 "ibm/MoLFormer-XL-both-10pct",
                 "--model",
-                "RoBERTa",
+                "electrolyte_fm.models.RoBERTa",
+                model,
                 "--trainer.devices=1",
                 f"--tags=['{tag}']",
             ]
