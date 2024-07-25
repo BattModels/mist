@@ -20,7 +20,7 @@ class RobertaDataSet(pl.LightningDataModule):
         num_workers=0,
         prefetch_factor=None,
         persistent_workers=False,
-        canononical=False,
+        canonical=False,
     ):
         super().__init__()
 
@@ -36,9 +36,10 @@ class RobertaDataSet(pl.LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
-        self.canononical = canononical
+        self.canonical = canonical
         self.hparams["tokenizer"] = tokenizer
         self.hparams["vocab_size"] = self.vocab_size
+        self.hparams["canonical"] = self.canonical
         self.save_hyperparameters(logger=False)
 
     def prepare_data(self):
@@ -62,15 +63,13 @@ class RobertaDataSet(pl.LightningDataModule):
             mlm_probability=self.mlm_probability,
             mlm=True,
         )
-
         ds = self.__load_dataset()
-
-        # Get Canonical SMILES encodings before tokenizing
-        if self.canononical:
+        if self.canonical:
             from ..utils.tokenizer import rdkit_canonical
 
             ds = ds.map(
-                lambda smi: {"text": rdkit_canonical(smi["text"])}, batched=False
+                lambda x: {"text": rdkit_canonical(x["text"])},
+                batched=False,
             ).filter(lambda x: x["text"] is not None)
 
         ds = ds.map(
