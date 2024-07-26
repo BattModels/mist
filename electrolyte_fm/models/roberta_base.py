@@ -80,9 +80,6 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         return super().on_train_epoch_start()
 
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        if self.should_skip:
-            return None
-
         outputs = self(batch)
         loss = outputs.loss
         self.log(
@@ -93,6 +90,8 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
             prog_bar=True,
             sync_dist=True,
         )
+        if self.should_skip:
+            loss = 0 * loss
         return loss
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:

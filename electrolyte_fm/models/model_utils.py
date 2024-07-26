@@ -35,7 +35,10 @@ class LoggingMixin:
 class CanSkip:
     @staticmethod
     def should_skip(self):
-        """Return true if the model should skip this batch"""
+        """Return true if the model should skip this batch, the model
+        should still perform a forward pass, but return `0 * loss`
+        instead. Do not return `None` as unsupported by DeepSpeed
+        """
         if self.hasattr("skip_this_batch") and self.skip_this_batch:
             return True
         else:
