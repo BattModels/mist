@@ -45,7 +45,16 @@ class MyLightningCLI(LightningCLI):
             help="Tags for WandB logger",
             default=[],
         )
+        parser.add_argument(
+            "--spike_atol",
+            type=float,
+            help="Absolute tolerance for spike detection",
+            default=0.3,
+        )
         parser.link_arguments("tags", "trainer.logger.init_args.tags")
+        parser.link_arguments(
+            "spike_atol", "trainer.callbacks.init_args.init_args.atol"
+        )
 
         # Set model vocab_size from the dataset's vocab size
         parser.link_arguments(
@@ -68,7 +77,7 @@ def cli_main(args=None):
     monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
-        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
+        # SpikeDetection(atol=0.3, warmup=200, finite_only=False),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
@@ -83,12 +92,12 @@ def cli_main(args=None):
             monitor="step",
             verbose=True,
             mode="max",
-            save_top_k=2,
+            save_top_k=5,
             save_last=False,
-            train_time_interval=timedelta(minutes=30),
+            every_n_train_steps=500,
             auto_insert_metric_name=False,
         ),
-        LearningRateMonitor("step"),
+        LearningRateMonitor("step", log_momentum=True, log_weight_decay=True),
     ]
 
     rank = int(os.environ.get("MIST_PID_RANK", 0))
@@ -97,6 +106,7 @@ def cli_main(args=None):
     else:
         logger = lazy_instance(
             WandbLogger,
+            id=os.environ.get("SLURM_JOB_ID", "test"),
             project="mist",
             save_code=True,
         )
