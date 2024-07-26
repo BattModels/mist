@@ -91,8 +91,9 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
             sync_dist=True,
         )
         if self.should_skip():
-            loss = 0 * loss
-        return loss
+            outputs["loss"] *= 0
+
+        return outputs
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
