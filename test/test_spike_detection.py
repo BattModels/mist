@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -57,11 +58,20 @@ def test_spiking():
         trainer.fit(model, data)
         check_state(spike_cb)
         assert 10 in spike_cb.bad_batches
+        assert (
+            9 in spike_cb.bad_batches
+        )  # Batch before the bad batch should also be skipped
         assert spike_cb.checkpoint_path is not None
         assert hasattr(model, "skip_this_batch") and not model.skip_this_batch
         assert Path(trainer.checkpoint_callback.last_model_path).parent == Path(
             spike_cb.checkpoint_path
         )
+
+        # Check that bad batches were recorded
+        assert Path(spike_cb.exclude_batches_path).is_file()
+        with open(spike_cb.exclude_batches_path, "r") as fid:
+            bad_batches = json.load(fid)
+        assert bad_batches == spike_cb.bad_batches
 
 
 def test_is_spike():

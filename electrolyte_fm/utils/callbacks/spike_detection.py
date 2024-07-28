@@ -1,5 +1,6 @@
 import os
 import warnings
+import json
 from typing import Any, Dict, Mapping, Union
 
 import pytorch_lightning as pl
@@ -59,14 +60,6 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         if batch_idx == 0:
             self.running_mean.to(trainer.strategy.root_device)
 
-        if self.exclude_batches_path is None:
-            self.exclude_batches_path = os.getcwd()
-
-        if not str(self.exclude_batches_path).endswith(".json"):
-            self.exclude_batches_path = os.path.join(
-                self.exclude_batches_path, "skip_batches.json"
-            )
-
         is_spike = bool(batch_idx >= self.warmup and self._is_spike(loss))
         trainer.strategy.barrier()
 
@@ -98,6 +91,12 @@ class SpikeDetection(FabricSpikeDetection, Callback):
     def _handle_spike(self, trainer: "pl.Trainer", batch_idx: int) -> None:
         self.bad_batches.extend([batch_idx - 1, batch_idx])
         checkpoint_path = self._resolve_ckpt_dir(trainer)
+
+        # Update batch_batches
+        if trainer.is_global_zero:
+            assert self.exclude_batches_path is not None
+            with open(self.exclude_batches_path, "w") as f:
+                json.dump(self.bad_batches, f, indent=4)
 
         # save current model as a checkpoint
         if self.checkpoint_spikes:
