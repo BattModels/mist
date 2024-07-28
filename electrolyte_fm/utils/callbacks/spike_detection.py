@@ -31,8 +31,7 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         batch: Any,
         batch_idx: int,
     ) -> None:
-        if batch_idx in self.bad_batches:
-            pl_module.skip_this_batch = True
+        pl_module.skip_this_batch = batch_idx in self.bad_batches
 
     @torch.no_grad()
     def on_train_batch_end(  # type: ignore

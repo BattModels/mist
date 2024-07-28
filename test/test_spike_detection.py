@@ -18,7 +18,7 @@ class SpikingModel(BoringModel):
     def training_step(self, batch, batch_idx: int):
         outputs = super().training_step(batch, batch_idx)
         if batch_idx >= self.spiking_batch:
-            outputs["loss"] * self.spike_value
+            outputs["loss"] *= self.spike_value
         return outputs
 
 
@@ -53,10 +53,12 @@ def test_spiking():
         spike_cb = trainer.callbacks[0]
         assert isinstance(spike_cb, SpikeDetection)
         check_state(spike_cb)
+        assert not hasattr(model, "skip_this_batch")
         trainer.fit(model, data)
         check_state(spike_cb)
         assert 10 in spike_cb.bad_batches
         assert spike_cb.checkpoint_path is not None
+        assert hasattr(model, "skip_this_batch") and not model.skip_this_batch
         assert Path(trainer.checkpoint_callback.last_model_path).parent == Path(
             spike_cb.checkpoint_path
         )

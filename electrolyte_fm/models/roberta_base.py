@@ -90,7 +90,7 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
             prog_bar=True,
             sync_dist=True,
         )
-        if self.should_skip:
+        if self.should_skip():
             loss = 0 * loss
         return loss
 
