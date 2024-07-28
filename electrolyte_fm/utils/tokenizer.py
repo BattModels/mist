@@ -117,9 +117,9 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
         )
         tok = Tokenizer.from_file(str(tok_file))
         tok_tf = PreTrainedTokenizerFast(tokenizer_object=tok)
-        assert (
-            tok_tf.add_special_tokens({"unk_token": "<unk>"}) == 0
-        )  # don't add tokens
+        ensure_special_tokens(tok_tf)
+        assert tok_tf.mask_token == "<mask>"
+        assert tok_tf.mask_token_id == 4
         return tok_tf
 
     else:
@@ -132,12 +132,33 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
             "SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast
         )
 
-        return AutoTokenizer.from_pretrained(
+        tok_tf = AutoTokenizer.from_pretrained(
             name,
             trust_remote_code=True,
             cache_dir=".cache",  # Cache Tokenizer in working directory
             **kwargs,
         )
+        ensure_special_tokens(tok_tf)
+        return tok_tf
+
+
+def ensure_special_tokens(tok: PreTrainedTokenizerBase):
+    tok.add_special_tokens(
+        {
+            "unk_token": tok.unk_token or match_special_tokens(tok, "[UNK]", "<unk>"),
+            "mask_token": tok.mask_token
+            or match_special_tokens(tok, "[MASK]", "<mask>"),
+            "pad_token": tok.pad_token or match_special_tokens(tok, "[PAD]", "<pad>"),
+        }
+    )
+
+
+def match_special_tokens(tok: PreTrainedTokenizerBase, *candidates: list[str]):
+    vocab = tok.get_vocab()
+    for c in candidates:
+        if c in vocab.keys():
+            return c
+    return candidates[0]
 
 
 def regex_smiles_tokenizer(vocab: dict, regex: str, unk_token: str = "[UNK]"):
@@ -152,13 +173,7 @@ def regex_smiles_tokenizer(vocab: dict, regex: str, unk_token: str = "[UNK]"):
     tok.pre_tokenizer = Split(Regex(regex), "isolated")
     tok.decoder = ByteLevel()  # When decoding don't add spaces between tokens
     tok_tf = PreTrainedTokenizerFast(tokenizer_object=tok, add_special_tokens=True)
-    tok_tf.add_special_tokens(
-        {
-            "unk_token": unk_token,
-            "mask_token": "[MASK]",
-            "pad_token": "[PAD]",
-        }
-    )
+    ensure_special_tokens(tok_tf)
     return tok_tf
 
 
@@ -238,6 +253,5 @@ def rdkit_canonical(smi: str) -> str:
 
     try:
         return Chem.CanonSmiles(smi)
-        return Chem.rdmolfiles.MolToSmiles(mol).strip()
     except Exception:
         return None
