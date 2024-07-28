@@ -25,6 +25,11 @@ module purge
 module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
 source activate
 
+if [ ! -d "$1" ]; then
+    echo "Data directory ($1) does not exist"
+    exit 1
+fi
+
 # Precompile project
 export JULIA_PKG_PRECOMPILE=0
 srun -p venkvis-debug -c3 --mem 4G julia --color=yes --startup-file=no --project=opt/TokenizerStats -e '
@@ -40,7 +45,7 @@ unset JULIA_PKG_PRECOMPILE
 # Submit jobs for each tokenizer
 for tok in $TOKENIZERS; do
     dataset="$(basename $1)"
-    output="stats/$tok/stats-$dataset-canonical.json"
+    output="opt/TokenizerStats/stats/$tok/stats-$dataset-canonical.json"
     config="{\"data\":\"$1\",\"tokenizer\":\"$tok\",\"output\":\"$output\"}"
     submit/submit.py opt/TokenizerStats/submit_tok_stats.j2 --no-default --no-confirm --json "$config" | sbatch
 done

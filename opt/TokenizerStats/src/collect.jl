@@ -46,7 +46,7 @@ shannon_entropy(p::Real) = -p * log.(p)
 function shannon_entropy!(stats, example; token_entropy::Dict{Int, V}) where {V <: Real}
     code = pyconvert(Vector{Int64}, example["input_ids"])
     H = sum(Base.Fix1(getindex, token_entropy), code; init=zero(V))
-    fit!(stats, H)
+    fit!(stats, (H, H / length(code)))
     return stats
 end
 
@@ -110,6 +110,7 @@ function tabulate_dataset(ds_path, tok_name, out_file; canonical=false)
     # Compute entropy statistics for the dataset
     @info "Rank $rank: Computing tokenizer entropy"
     entropy = Series(; moments=OnlineStats.Moments(), extrema=Extrema(), hist=KHist(100))
+    entropy = Group(; per_molecule=deepcopy(entropy), per_token=deepcopy(entropy))
     for example in ds
         shannon_entropy!(entropy, example; token_entropy)
     end
