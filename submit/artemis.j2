@@ -10,6 +10,7 @@
 #SBATCH --gpu_cmode=shared
 {%- if resubmit %}
 #SBATCH --signal=SIGUSR1@90
+#SBATCH --requeue
 {%- endif %}
 
 # Training script for h001
