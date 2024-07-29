@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from datetime import timedelta
 
 import _jsonnet as jsonnet  # Unused, but otherwise we get glibc errors on delta 🫠
@@ -129,4 +130,8 @@ def cli_main(args=None):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s] {%(name)s} %(levelname)s - %(message)s",
+    )
     cli_main()

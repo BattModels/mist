@@ -8,8 +8,10 @@
 #SBATCH --cpus-per-task 16
 #SBATCH --mem-per-cpu 2G
 #SBATCH --gpu_cmode=shared
-{%- if resubmit %}
-#SBATCH --signal=SIGUSR1@90
+{%- if requeue %}
+#SBATCH --signal=USR1@90
+#SBATCH --requeue
+#SBATCH --open-mode=append
 {%- endif %}
 
 # Training script for h001
@@ -27,11 +29,6 @@ source ./activate
 # Set env variables
 {{- export_env( env ) }}
 
-# Job local tmpdir
-export TMPDIR=$(mktemp --directory --tmpdir --suffix=".${USER}.${SLURM_JOB_ID}")
-srun mkdir -p "$TMPDIR"
-trap 'srun rm -rf -- "$TMPDIR"' EXIT
-
 {% if deepspeed is defined %}
 # Write out deepspeed config
 cat > $TMPDIR/deepspeed.json<<EOF
@@ -48,6 +45,16 @@ export PL_CONFIG=$TMPDIR/lightning.json
 cat > ${PL_CONFIG}<<EOF
 {{ {"fit": train } | tojson }}
 EOF
+
+{%- if requeue %}
+# Look for a requeue checkpoint
+ckpt="./mist/requeue/${SLURM_JOB_ID}"
+if [ -d "$ckpt" ]; then
+    export PL_FIT__CKPT_PATH="$ckpt"
+    export WANDB_ID="$(basename $(dirname $(realpath $ckpt)))"
+    export WANDB_RESUME="must"
+fi
+{%- endif %}
 
 srun --mpi=pmix \
 ${PWD}/submit/set_node_rank \

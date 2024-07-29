@@ -16,4 +16,5 @@ if ! [[ -z "$PL_DEEPSPEED_CONFIG_PATH" ]]; then
     echo "$DEEPSPEED_CONFIG">$PL_DEEPSPEED_CONFIG_PATH
 fi
 
-$@
+# Replace shell with new process (need exec for signals to work)
+exec $@
