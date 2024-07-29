@@ -34,6 +34,9 @@ class SpikeDetection(FabricSpikeDetection, Callback):
     ) -> None:
         pl_module.skip_this_batch = batch_idx in self.bad_batches
 
+    def on_train_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
+        pl_module.skip_this_batch = False
+
     @torch.no_grad()
     def on_train_batch_end(  # type: ignore
         self,

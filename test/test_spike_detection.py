@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import torch
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, LightningModule
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.demos.boring_classes import BoringDataModule, BoringModel
 
@@ -21,6 +21,16 @@ class SpikingModel(BoringModel):
         if batch_idx >= self.spiking_batch:
             outputs["loss"] *= self.spike_value
         return outputs
+
+    def on_validation_start(self):
+        # skip_this_batch should be false during validation
+        if hasattr(self, "skip_this_batch"):
+            assert not self.skip_this_batch
+
+    def on_test_start(self):
+        # skip_this_batch should be false during testing
+        if hasattr(self, "skip_this_batch"):
+            assert not self.skip_this_batch
 
 
 def check_state(cb, **init_kwargs):
@@ -46,7 +56,8 @@ def test_spiking():
                 spike_cb,
             ],
             max_steps=15,
-            limit_val_batches=0,
+            limit_val_batches=2,
+            limit_test_batches=2,
             default_root_dir=ckpt_dir,
             enable_progress_bar=False,
             enable_model_summary=False,
@@ -56,6 +67,7 @@ def test_spiking():
         check_state(spike_cb)
         assert not hasattr(model, "skip_this_batch")
         trainer.fit(model, data)
+        assert hasattr(model, "skip_this_batch") and not model.skip_this_batch
         check_state(spike_cb)
         assert 10 in spike_cb.bad_batches
         assert (
