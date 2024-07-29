@@ -27,7 +27,7 @@ console = rich.console.Console(stderr=True)
 
 
 def parse_data(path: Path) -> dict:
-    if path.suffix == ".jsonnet":
+    if path.suffix in [".jsonnet", ".libsonnet"]:
         return json.loads(jsonnet.evaluate_file(str(path)))
 
     with open(path, "r") as fid:
@@ -97,7 +97,7 @@ def template_defaults(file: str, default: bool = True, script_config: bool = Tru
 
     # Load host specific config
     if script_config:
-        for suffix in [".jsonnet", ".yaml"]:
+        for suffix in [".jsonnet", ".libsonnet", ".yaml"]:
             script_config_file = Path(file).with_suffix(suffix)
             if script_config_file.is_file():
                 config = merge_config(config, parse_data(script_config_file))

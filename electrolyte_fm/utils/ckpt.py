@@ -85,7 +85,7 @@ class SaveConfigWithCkpts(Callback):
                 logger.log_hyperparams({"cli": self.config.as_dict()})
 
     @staticmethod
-    def log_dir(trainer: Trainer):
+    def log_dir(trainer: Trainer) -> Path:
         log_dir = trainer.log_dir or trainer.default_root_dir
         logger = trainer.logger
         if logger is not None and isinstance(logger, WandbLogger):
