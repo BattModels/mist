@@ -25,6 +25,10 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         self.checkpoint_path = None
         self.checkpoint_spikes = checkpoint_spikes
 
+    def setup(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", stage: str):
+        # Ensure metrics are moved to device before training starts
+        self.running_mean.to(trainer.strategy.root_device)
+
     def on_train_batch_start(
         self,
         trainer: "pl.Trainer",
@@ -59,9 +63,6 @@ class SpikeDetection(FabricSpikeDetection, Callback):
             self.exclude_batches_path = SaveConfigWithCkpts.log_dir(trainer).joinpath(
                 "skip_this_batch.json"
             )
-
-        if batch_idx == 0:
-            self.running_mean.to(trainer.strategy.root_device)
 
         is_spike = bool(batch_idx >= self.warmup and self._is_spike(loss))
         trainer.strategy.barrier()
