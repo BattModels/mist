@@ -1,4 +1,5 @@
 import json
+from unittest.mock import MagicMock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -51,11 +52,18 @@ def test_spiking():
             enable_progress_bar=False,
             enable_model_summary=False,
         )
+
+        # Setup trainer
         spike_cb = trainer.callbacks[0]
+        spike_cb.running_mean.to = MagicMock(wrap=spike_cb.running_mean.to)
         assert isinstance(spike_cb, SpikeDetection)
         check_state(spike_cb)
+        assert trainer.callbacks[0] is spike_cb
         assert not hasattr(model, "skip_this_batch")
+
         trainer.fit(model, data)
+
+        # Check post fit state
         check_state(spike_cb)
         assert 10 in spike_cb.bad_batches
         assert (
@@ -66,12 +74,19 @@ def test_spiking():
         assert Path(trainer.checkpoint_callback.last_model_path).parent == Path(
             spike_cb.checkpoint_path
         )
+        spike_cb.running_mean.to.assert_called_once()
 
         # Check that bad batches were recorded
         assert Path(spike_cb.exclude_batches_path).is_file()
         with open(spike_cb.exclude_batches_path, "r") as fid:
             bad_batches = json.load(fid)
         assert bad_batches == spike_cb.bad_batches
+
+        # Resume, check that running_mean is moved to device
+        # should only be called once
+        spike_cb.running_mean.to.configure_mock(called=False, call_count=0)
+        trainer.fit(model, ckpt_path=trainer.checkpoint_callback.last_model_path)
+        spike_cb.running_mean.to.assert_called_once()
 
 
 def test_is_spike():
