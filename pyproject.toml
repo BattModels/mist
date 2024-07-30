@@ -8,6 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 torch = {version = "^2.3"}
+torchmetrics = "^1.4.0"
 lightning = "^2.2"
 jsonargparse = {extras = ["signatures", "jsonnet"], version = "^4.27"}
 transformers = "^4.40"
