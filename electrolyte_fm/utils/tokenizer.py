@@ -47,7 +47,7 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
             vocab_file = cached_github_archive(
                 "rxn4chemistry/rxn_yields",
                 "a126bb6c7cc66f59c811e336ae117b6ad9ac85e1",
-                "trained_models/uspto/uspto_milligram_time_test_epochs_2_pretrained/vocab.txt",
+                "trained_models/uspto/uspto_milligram_time_test_epochs_2_pretrained/checkpoint-27558-epoch-2/vocab.txt",
             )
 
             # Using regex from rxnfp, as Yield-BERT uses tokenizer from there:
