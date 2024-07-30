@@ -2,6 +2,7 @@ module TokenizerStats
 
 using Makie
 using PythonCall
+using Printf: @sprintf
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights

@@ -24,7 +24,7 @@ function usage_stats!(stats, example, unk_token_id::Int)
     fit!(stats.distict_samples, pyconvert(String, example["text"].strip()))
 
     # Check for unknown tokens
-    if unk_token_id in example["input_ids"] || pyconvert(Bool, example["text"].strip() != example["decode"].strip())
+    if is_oov(unk_token_id, example)
         fit!(stats.out_of_vocab, 1)
         if length(stats.oov_samples) < MAX_OOV_SAMPLES
             push!(stats.oov_samples, pyconvert(String, example["text"]))
@@ -34,9 +34,20 @@ function usage_stats!(stats, example, unk_token_id::Int)
     return stats
 end
 
+is_oov(tok, emb) = is_oov(pyconvert(Int, tok.unk_token_id), emb)
+function is_oov(unk_token_id::Int, emb)
+    unk_token_id in emb["input_ids"] && return true
+    if "decode" in emb && "text" in emb
+        return pyconvert(Bool, emb["text"].strip() != emb["decode"].strip())
+    end
+    return false
+end
+
+tokenize(smi::String; kwargs...) = tokenize(Dict("text" => smi); kwargs...)
 function tokenize(batch; tokenizer)
     out = tokenizer(batch["text"])
-    out["decode"] = tokenizer.batch_decode(out["input_ids"], skip_special_tokens=true)
+    f = batch["text"] isa String ? tokenizer.decode : tokenizer.batch_decode
+    out["decode"] = f(out["input_ids"], skip_special_tokens=true)
     out["text"] = batch["text"]
     return out
 end
@@ -72,6 +83,62 @@ function setup_dataset_mpi(ds_path, tokenizer; rank=0, size=1, canonical=false)
         fn_kwargs=Dict("tokenizer" => tokenizer)
     )
     return split_dataset_by_node(ds, rank, size)
+end
+
+function carbon_tokens()
+    tokens = String["C", "c"]
+    symbols = ["C", "c"]
+    isotopes = [8:20..., 22]
+    chirality = ["", "@", "@@"]
+    oxidation = -4:4
+    hcount = 0:1
+    for (sym, isotope, chiral, hcount, charge) = Iterators.product(symbols, isotopes, chirality, hcount, oxidation)
+        token = join(["[", ( isotope != 12 ? "$(isotope)" : ""),
+            sym,
+            chiral,
+            (hcount > 0 ? (hcount > 1 ? "H$hcount" : "H") : ""),
+            ( charge != 0 ? @sprintf("%+d", charge) : ""),
+            "]"
+        ], "")
+        push!(tokens, token)
+    end
+    return tokens
+end
+
+function elements()
+    pse = pyimport("rdkit.Chem").GetPeriodicTable()
+    tokens = ["B", "C", "N", "O", "S", "P", "F", "Cl", "Br", "I"]
+    append!(tokens, ["b", "c", "n", "o", "s", "p"])
+    aromatic_symbols = ["b", "c", "o", "p", "s", "se", "as"]
+    for elem in Iterators.flatten((pse.GetElementSymbol.(1:118), aromatic_symbols))
+        elem in tokens && continue
+        push!(tokens, "[$elem]")
+    end
+    return tokens
+end
+
+"""
+    oov_rate(tokenizer::Py, corpus)
+
+Computes the frequency of entries in `corpus` that are outside
+the vocabulary of `tokenizer`
+"""
+function oov_rate(tokenizer::Py, corpus::Vector{<:AbstractString})
+    emb = TokenizerStats.tokenize.(corpus; tokenizer)
+    oov = count(x -> TokenizerStats.is_oov(tokenizer, x), emb)
+    return oov / length(corpus)
+end
+function oov_rate(tokenizers, corpus)
+    out = Dict{String, Float64}()
+    for name in tokenizers
+        try
+            tok = TokenizerStats.load_tokenizer(name)
+            out[name] = oov_rate(tok, corpus)
+        catch
+            @error "failed to load $name"
+        end
+    end
+    return out
 end
 
 function tabulate_dataset(ds_path, tok_name, out_file; canonical=false)

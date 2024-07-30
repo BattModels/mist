@@ -80,7 +80,7 @@ function figure_vocab_entropy_moments(results::Dict)
            tellwidth=false,
            orientation=:horizontal,
     )
-
+    resize_to_layout!(f)
     return f
 end
 
@@ -103,7 +103,6 @@ function figure_vocab_entropy(results::Dict)
         append!(values, float.(hist["centers"]))
         append!(weights, hist["counts"] ./ sum(hist["counts"]))
     end
-    colors = Makie.wong_colors()
     violin!(ax, categories, values; weights = weights, show_median=true)
     ax.xticks[] = (1:length(names), names)
 
@@ -137,7 +136,41 @@ function figure_fertility(results::Dict)
 end
 
 function figure_oov_rate(results::Dict)
-    f = Figure()
-    ax = Axis(f[1,1])
+    f = Figure(size=(600, 300))
+    ax = Axis(f[2,1];
+              ylabel="Out Of Vocab Rate",
+              limits=(nothing, (0, 100)),
+              ytickformat="{:.0f}%",
+              xticklabelrotation = 0.4,
+    )
 
+    ids = Int[]
+    groups = Int[]
+    names = String[]
+    oov_rate = Float64[]
+    for (idx, (name, file)) in enumerate(pairs(results))
+        stats = JSON.parsefile(file)
+
+        # Tabulate OOV Rate
+        tok = TokenizerStats.load_tokenizer(name)
+        oov_carbon = TokenizerStats.oov_rate(tok, TokenizerStats.carbon_tokens())
+        oov_elements = TokenizerStats.oov_rate(tok, TokenizerStats.elements())
+        oov = 100 .* (stats["out_of_vocab"] / stats["samples"], oov_carbon, oov_elements)
+
+        push!(names, name)
+        append!(ids, repeat([idx], length(oov)))
+        append!(groups, 1:length(oov))
+        append!(oov_rate, [oov...])
+    end
+    h = barplot!(ax, ids, oov_rate; dodge=groups, color=groups, gap=0.1)
+    ax.xticks[] = (1:length(names), names)
+
+    group_ids = 1:3
+    @assert group_ids == unique(groups)
+    elements = [ PolyElement(polycolor=i, colormap=h.colormap, colorrange=extrema(group_ids)) for i in unique(groups) ]
+
+    Legend(f[1, 1], elements, ["Realspace", "Carbon", "Elements"], tellheight=true, tellwidth=false, orientation=:horizontal)
+
+    resize_to_layout!(f)
+    return f
 end
