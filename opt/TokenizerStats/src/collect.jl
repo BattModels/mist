@@ -95,7 +95,7 @@ function tabulate_dataset(ds_path, tok_name, out_file; canonical=false)
         usage_stats!(local_stats, example, tokenizer_info.unk_token_id)
     end
     @info "Rank $rank has finished tokenizer stats"
-    local_tok_stats = Series(; Base.structdiff(local_stats, NamedTuple{(:oov_samples,)})...)
+    local_tok_stats = OnlineStats.Series(; Base.structdiff(local_stats, NamedTuple{(:oov_samples,)})...)
     tokenizer_stats = leader_reduce(merge!, local_tok_stats)
     oov_samples = leader_reduce(union, local_stats.oov_samples)
 
@@ -109,8 +109,8 @@ function tabulate_dataset(ds_path, tok_name, out_file; canonical=false)
 
     # Compute entropy statistics for the dataset
     @info "Rank $rank: Computing tokenizer entropy"
-    entropy = Series(; moments=OnlineStats.Moments(), extrema=Extrema(), hist=KHist(100))
-    entropy = Group(; per_molecule=deepcopy(entropy), per_token=deepcopy(entropy))
+    entropy = OnelineStats.Series(; moments=OnlineStats.Moments(), extrema=Extrema(), hist=KHist(100))
+    entropy = OnelineStats.Group(; per_molecule=deepcopy(entropy), per_token=deepcopy(entropy))
     for example in ds
         shannon_entropy!(entropy, example; token_entropy)
     end
