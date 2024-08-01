@@ -3,7 +3,7 @@ set -e
 
 export TOKENIZERS="
 smirk
-ibm/MoLFormer-XL-both-10pct
+ibm/MoLFormer-XL-both-10pct-oov
 SmilesPE/SPE_ChEMBL
 devalab/molgpt-moses
 devalab/molgpt-guacamol

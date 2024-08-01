@@ -2,10 +2,9 @@ module TokenizerStats
 
 using Makie
 using PythonCall
-using Printf: @sprintf
-using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!
+using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
 using LinearAlgebra: normalize
-using StatsBase: StatsBase, Histogram, fit, AbstractWeights
+using StatsBase: StatsBase, Histogram, fit, AbstractWeights, nobs
 using MPI: MPI
 using JSON: JSON
 
@@ -34,6 +33,7 @@ split_dataset_by_node(args...; kwargs...) = PY_DISTRIBUTED[].split_dataset_by_no
 load_dataset(args...; kwargs...) = PY_DATASETS[].load_dataset(args...; kwargs...)
 
 function __init__()
+    ENV["TOKENIZERS_PARALLELISM"] = "false" # Want one CPU per rank
     PY_TOKENIZER[] = pyimport("electrolyte_fm.utils.tokenizer")
     PY_DISTRIBUTED[] = pyimport("datasets.distributed")
     PY_DATASETS[] = pyimport("datasets")

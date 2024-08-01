@@ -10,10 +10,8 @@ MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 OnlineStats = "a15396b6-48d5-5d58-9928-6d29437db91e"
-Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
 ArgParse = "1.2.0"
-Printf = "1.11.0"
