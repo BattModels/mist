@@ -123,8 +123,5 @@ def test_signal(fake_dataset):
             capture_output=True,
             check=False,  # Likely to error during requing
         )
-        assert (
-            "electrolyte_fm.utils.callbacks.requeue:Registered handler for SIGUSR1"
-            in p.stderr
-        )
-        assert "electrolyte_fm.utils.callbacks.requeue:Requeuing using" in p.stderr
+        assert "Registered handler for SIGUSR1" in p.stderr
+        assert "Requeuing using" in p.stderr
