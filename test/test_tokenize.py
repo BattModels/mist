@@ -1,5 +1,6 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from itertools import chain
 
 import pytest
 from transformers import (
@@ -43,6 +44,7 @@ OTHER_SMILES_TOKENIZERS = [
     "rxn4chemistry/rxn_yields",
     "rxn4chemistry/rxnfp",
     "ChangwenXu98/TransPolymer",
+    "ibm/MoLFormer-XL-both-10pct-oov",
 ]
 
 
@@ -69,6 +71,33 @@ def test_well_behaved_tokenizer(other_smiles_tokenizer):
     assert other_smiles_tokenizer.pad_token_id is not None
     assert other_smiles_tokenizer.unk_token_id not in code["input_ids"]
     check_encoding(other_smiles_tokenizer, ["CCO", "C-C-O", "CC(C)C(=O)C(C)C"])
+
+
+@pytest.mark.parametrize(
+    "name", chain(SELFIES_TOKENIZERS, SMILE_TOKENIZER, OTHER_SMILES_TOKENIZERS)
+)
+def test_oov_tokens(name):
+    """Check that the unknown token is emitted for OOV tokens"""
+    tok = load_tokenizer(name)
+
+    def check_oov(tokenizer, smi):
+        code = tokenizer(smi)["input_ids"]
+        assert tok.unk_token_id in tok("Zz")["input_ids"]
+        assert tok.decode(code, skip_special_tokens=False) != smi
+
+    # Some Tokenizers don't emit the unknown token no matter what the input is.
+    # Check that the tokenizer fails the test, then mark it with xfail
+    if name == "ibm/MoLFormer-XL-both-10pct":
+        assert tok.unk_token_id not in tok("😬")["input_ids"]
+        pytest.xfail("MoLFormer strips unknown tokens pre-tokenizer")
+    if name in ["seyonec/ChemBERTa-zinc-base-v1", "ChangwenXu98/TransPolymer"]:
+        assert tok.unk_token_id not in tok("⛰️ ⋙ 🏖️")["input_ids"]
+        pytest.xfail("open vocab model")
+
+    check_oov(tok, "⚛️")
+    check_oov(tok, "Zz")
+    check_oov(tok, "[Zz]")
+    check_oov(tok, "[Zz&3]")
 
 
 def test_well_behaved_selfies(selfies_tokenizers):

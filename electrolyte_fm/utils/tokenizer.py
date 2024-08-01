@@ -122,6 +122,26 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
         assert tok_tf.mask_token_id == 4
         return tok_tf
 
+    elif name == "ibm/MoLFormer-XL-both-10pct-oov":
+        # By default "ibm/MoLFormer-XL-both-10pct" strips out unknown tokens
+        # during the pre-tokenization step, this reverts that to ensure
+        # unknown tokens are emitted
+        import json
+        from transformers import AutoTokenizer
+        from tokenizers import Regex
+        from tokenizers.pre_tokenizers import Split
+
+        tok_tf = AutoTokenizer.from_pretrained(
+            "ibm/MoLFormer-XL-both-10pct",
+            trust_remote_code=True,
+            cache=".cache",
+            **kwargs,
+        )
+        config = json.loads(tok_tf.backend_tokenizer.to_str())
+        regex = config["pre_tokenizer"]["pretokenizers"][-1]["pattern"]["Regex"]
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
+        return tok_tf
+
     else:
         # Fall back to a HuggingFace Tokenizer
         from transformers import AutoTokenizer
