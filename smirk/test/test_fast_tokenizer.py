@@ -51,6 +51,12 @@ def check_tokenize(tokenizer):
     assert tokenizer.tokenize("Sn[Sn]") == ["S", "n", "[", "Sn", "]"]
 
 
+def check_normalizer(tokenizer):
+    assert tokenizer.tokenize(" COO ") == ["C", "O", "O"]
+    assert tokenizer.tokenize("[Ca++]") == ["Ca", "+", "2"]
+    assert tokenizer.tokenize("[C--]") == ["C", "-", "2"]
+
+
 def check_unknown(tokenizer):
     assert tokenizer.tokenize("🤷") == [tokenizer.unk_token]
     assert tokenizer.tokenize("C🤷") == ["C", tokenizer.unk_token]
