@@ -197,13 +197,19 @@ def regex_smiles_tokenizer(vocab: dict, regex: str, unk_token: str = "[UNK]"):
     return tok_tf
 
 
-def download(url: str, path: Path):
+def cached_download(url: str, path: Path) -> Path:
     import urllib.request
 
-    with urllib.request.urlopen(url) as fid:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "wb") as out:
-            out.write(fid.read())
+    cache = Path(__file__).parent.parent.parent.joinpath(".cache")
+    cached_file = cache.joinpath(path)
+    cached_file.parent.mkdir(exist_ok=True, parents=True)
+    if not cached_file.exists():
+        with urllib.request.urlopen(url) as fid:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cached_file, "wb") as out:
+                out.write(fid.read())
+
+    return cached_file
 
 
 def find_member(tar, name):
@@ -254,13 +260,13 @@ def cached_github_archive(repo, commit, file):
     cache = Path(__file__).parent.parent.parent.joinpath(".cache", "smiles-tokenizers")
     cache.mkdir(exist_ok=True, parents=True)
 
-    repo_cache = cache.joinpath(repo.replace("/", "-"), commit)
-    archive = repo_cache.joinpath("archive.tar.gz")
-    if not archive.is_file():
-        url = f"https://github.com/{repo}/archive/{commit}.tar.gz"
-        download(url, archive)
+    archive = Path(
+        "smiles-tokenizers", repo.replace("/", "-"), commit, "archive.tar.gz"
+    )
+    url = f"https://github.com/{repo}/archive/{commit}.tar.gz"
+    archive = cached_download(url, archive)
 
-    cached_path = repo_cache.joinpath(file)
+    cached_path = archive.parent.joinpath(file)
     if not cached_path.is_file():
         extract_file(archive, file, cached_path)
 
