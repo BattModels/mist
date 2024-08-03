@@ -1,24 +1,27 @@
 import json
 import logging
+from pathlib import Path
 from collections import defaultdict
 from copy import deepcopy
-from itertools import product, chain, batched
 from dataclasses import dataclass
+from itertools import batched, chain, product
 from typing import Optional
-from electrolyte_fm.utils.tokenizer import load_tokenizer, PreTrainedTokenizerBase
+
+from datasets import IterableDataset, load_dataset
+from mendeleev import Element, element, get_all_elements
+
+from electrolyte_fm.utils.tokenizer import PreTrainedTokenizerBase, load_tokenizer
 from opt.build_vocab import (
     ALIPHATIC_ORGANIC,
     AROMATIC_ORGANIC,
     AROMATIC_SYMBOLS,
-    ELEMENT_SYMBOLS,
     CHIRAL,
+    ELEMENT_SYMBOLS,
+    BONDS,
 )
 
-
-from mendeleev import Element, element, get_all_elements
-from datasets import IterableDataset
-
 logging.basicConfig(level=logging.INFO)
+LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -88,41 +91,62 @@ def elements(include_wildcard=False):
     yield Atom("As", aromatic=True)
 
 
-def include_isotopes(base=elements()):
+def include_isotopes(base=None):
     """Add isotopes variants to an existing iterator"""
-    for atom in base:
+    for atom in base or elements():
         if atom.symbol == "*":
             yield atom
             continue
 
+        atom.isotope = None
+        yield deepcopy(atom)
         for isotope in element(atom.symbol).isotopes:
-            a = deepcopy(atom)
-            a.isotope = isotope.mass_number
-            yield a
+            atom.isotope = isotope.mass_number
+            yield deepcopy(atom)
 
 
-def include_chirality(base=elements(), chirality=CHIRAL):
-    """Add chirality vaiants to a base atomic iterator"""
-    for atom in base:
-        a = deepcopy(atom)
-        a.chiral = None
-        yield a
+def include_chirality(base=None, chirality=CHIRAL):
+    """Add chiral variants to a base atomic iterator"""
+    for atom in base or elements():
+        atom.chiral = None
+        yield deepcopy(atom)
         for chiral in chirality:
-            a = deepcopy(a)
-            a.chiral = chiral
-            yield a
+            atom.chiral = chiral
+            yield deepcopy(atom)
 
 
-def include_charge(base=elements()):
+def include_charge(base=None):
     """Add charge variants to the base atomic iterator based on possible oxidation states"""
-    for atom in base:
-        a = deepcopy(atom)
-        a.charge = None
-        yield a
-        for oxidation in element(a.symbol).oxidation_states():
-            a = deepcopy(a)
-            a.charge = oxidation
-            yield a
+    for atom in base or elements():
+        atom.charge = None
+        yield deepcopy(atom)
+        oxidation_states = element(atom.symbol).oxidation_states()
+        for oxidation in oxidation_states:
+            atom.charge = oxidation
+            yield deepcopy(atom)
+
+
+def bonds(element="C"):
+    """Iterator over all bonds"""
+    for bond in BONDS:
+        yield element + bond + element
+
+
+def rings():
+    """Iterator over all permissible carbon rings"""
+    for ring in range(0, 100):
+        if ring < 10:
+            yield f"C{ring:d}CCCCC{ring:d}"
+        yield f"C%{ring:02d}CCCCC%{ring:02d}"
+
+
+def fullerene():
+    """Iterator over Carbon Fullerenes from C20 to C720 from
+    https://nanotube.msu.edu/fullerene/fullerene-isomers.html
+    """
+    with open(Path(__file__).parent.parent.joinpath("fullerene.smi")) as fid:
+        for line in fid.readlines():
+            yield line.strip()
 
 
 def tokenize(tok: PreTrainedTokenizerBase, batch):
@@ -132,17 +156,50 @@ def tokenize(tok: PreTrainedTokenizerBase, batch):
     return {"oov": [o != i for o, i in zip(out["decode"], batch["text"])]}
 
 
+MOLECULARNET_DATASET = {
+    "QM8": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm8.csv",
+    "QM9": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm9.csv",
+    "ESOL": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/delaney-processed.csv",
+    "FreeSolv": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/SAMPL.csv",
+    "Lipophilicity": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/Lipophilicity.csv",
+    "MUV": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/muv.csv.gz",
+    "HIV": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/HIV.csv",
+    "BACE": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/bace.csv",
+    "BBBP": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/BBBP.csv",
+    "Tox21": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/tox21.csv.gz",
+    "ToxCast": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/toxcast_data.csv.gz",
+    "SIDER": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/sider.csv.gz",
+    "ClinTox": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/clintox.csv.gz",
+}
+
+
+def molecularnet(subset):
+    url = MOLECULARNET_DATASET[subset]
+    ds = load_dataset("csv", data_files=[url], split="train", keep_in_memory=False)
+    for batch in ds.iter(batch_size=100):
+        try:
+            yield from batch["smiles"]
+        except KeyError:
+            yield from batch["mol"]
+
+
 ATOM_DATASETS = {
     "elements": elements,
+    "rings": rings,
+    "bonds": bonds,
+    "fullerenes": fullerene,
     "isotopes": lambda: include_isotopes(elements()),
     "chiral_elements": lambda: include_chirality(elements()),
     "chiral_isotopes": lambda: include_chirality(include_isotopes()),
     "charged_elements": lambda: include_charge(elements()),
-    "charged_isotops": lambda: include_charge(include_isotopes(elements())),
+    "charged_isotops": lambda: include_isotopes(include_charge(elements())),
     "charged_chiral_isotopes": lambda: include_chirality(
-        include_charge(include_isotopes(elements()))
+        include_isotopes(include_charge(elements()))
     ),
 }
+
+for subset in MOLECULARNET_DATASET.keys():
+    ATOM_DATASETS[f"MolecularNet/{subset}"] = lambda subset=subset: molecularnet(subset)
 
 TOKENIZERS = [
     "smirk",
@@ -170,25 +227,35 @@ def build_atom_generator(name):
 if __name__ == "__main__":
     out = defaultdict(lambda: defaultdict(dict))
     for name in TOKENIZERS:
+        LOG.info("processing %s", name)
+        tok = load_tokenizer(name)
         for ds_name, iter in ATOM_DATASETS.items():
-            logging.info("processing %s - %s", name, ds_name)
-            tok = load_tokenizer(name)
             unk_token_id = tok.unk_token_id
             nobs = 0
             n_oov = 0
+            oov_samples = set()
 
             for batch in batched((str(x) for x in iter()), 1000):
-                input_ids = tok(batch)["input_ids"]
+                batch_input_ids = tok(batch)["input_ids"]
                 # Tests are in test/test_tokenizer.py::test_oov_tokens
                 # to ensure that unk_token_id is correctly emitted by
                 # tokenizers
-                for unk_token_id in input_ids:
-                    n_oov += 1
-                nobs += 1
+                for smi, obs in zip(batch, batch_input_ids):
+                    if unk_token_id in obs:
+                        n_oov += 1
+                        if len(oov_samples) < 20:
+                            oov_samples.add(smi)
+                    nobs += 1
+                LOG.info("%s - %s: finished %d", name, ds_name, nobs)
 
-            out[name][ds_name] = {"nobs": nobs, "oov": n_oov}
+            out[name][ds_name] = {
+                "nobs": nobs,
+                "oov": n_oov,
+                "oov_samples": list(oov_samples),
+            }
+            LOG.info("%s - %s: %d/%d", name, ds_name, n_oov, nobs)
+
+        break
 
     with open("stats-atomic.json", "w") as fid:
         json.dump(out, fid)
-
-    print(json.dumps(out))
