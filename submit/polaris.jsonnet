@@ -9,9 +9,11 @@
     'cpu-bind': 'numa',
   },
   train: {
-    init_args: {
-      path: '/eagle/FoundEnergy/realspace_v2',
-    },
+    data: {
+      init_args: {
+        path: '/eagle/FoundEnergy/realspace_v2',
+      }
+    }
   },
   env: {
     // NCCL Setting
