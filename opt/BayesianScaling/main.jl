@@ -8,6 +8,9 @@ using UUIDs: uuid4
 using Random
 using Enzyme
 using JLD2
+using ADTypes: AutoForwardDiff
+
+@static isinteractive() ? using GLMakie : using CairoMakie
 
 function load_dataset(dir)
     row = map(filter(f -> endswith(f, ".json"), readdir(dir; join=true))) do file
@@ -122,7 +125,7 @@ savefig(dir::String, name::String, f) = save(joinpath(dir, name), f)
 function main(args)
     dir = args[1]
     outdir = mkpath(joinpath(@__DIR__, "out", string(uuid4())) * "/")
-    @info "Saving to $outdir"
+    @info "Will save output to $outdir"
 
     @info "Instantiating model"
     df = load_dataset(dir)
@@ -149,6 +152,7 @@ function main(args)
     savefig(outdir, "chains.pdf", BayesianScaling.plot_chains(model, chains))
     savefig(outdir, "chain_cov.pdf", BayesianScaling.plot_chain_covariance(model, chains))
 
+    @info "Done"
     return 0
 end
 
