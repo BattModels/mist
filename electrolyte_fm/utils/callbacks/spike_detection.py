@@ -1,12 +1,13 @@
-import os
 import warnings
 import json
 from typing import Any, Dict, Mapping, Union
+from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
 from lightning.fabric.utilities.spike import SpikeDetection as FabricSpikeDetection
 from pytorch_lightning.callbacks import Callback
+from pytorch_lightning.utilities.rank_zero import rank_zero_info
 
 from ..ckpt import SaveConfigWithCkpts
 
@@ -82,14 +83,17 @@ class SpikeDetection(FabricSpikeDetection, Callback):
             if is_finite_all:
                 self._update_stats(loss)
 
-    def _resolve_ckpt_dir(self, trainer: "pl.Trainer"):
+    def _resolve_ckpt_dir(self, trainer: "pl.Trainer") -> Path:
         if self.checkpoint_path is None:
-            checkpoint_path = None
             if trainer.is_global_zero:
                 checkpoint_path = str(
                     SaveConfigWithCkpts.log_dir(trainer).joinpath("checkpoints")
                 )
-            self.checkpoint_path = trainer.strategy.broadcast(checkpoint_path, src=0)
+            else:
+                checkpoint_path = None
+            self.checkpoint_path = Path(
+                trainer.strategy.broadcast(checkpoint_path, src=0)
+            )
         return self.checkpoint_path
 
     def _handle_spike(self, trainer: "pl.Trainer", batch_idx: int) -> None:
@@ -105,17 +109,20 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         # save current model as a checkpoint
         if self.checkpoint_spikes:
             trainer.save_checkpoint(
-                os.path.join(checkpoint_path, f"spike_step_{trainer.global_step}.ckpt")
+                checkpoint_path.joinpath(f"spike_step_{trainer.global_step}.ckpt")
             )
 
-        ckpt = os.path.join(checkpoint_path, "last.ckpt")
-        assert os.path.exists(ckpt), f"no checkpoint to resume from: {ckpt}"
+        ckpt = checkpoint_path.joinpath("last.ckpt").resolve()
+        assert ckpt.exists(), f"no checkpoint to resume from: {ckpt}"
         checkpoint = trainer.strategy.load_checkpoint(ckpt)
-        trainer.strategy.load_model_state_dict(
-            checkpoint=checkpoint,
-        )
+        trainer.strategy.load_model_state_dict(checkpoint)
 
-        print(f"Resuming from checkpoint : {ckpt}")
+        rank_zero_info(
+            "Spike detected in batch %d (Found %d bad batches). Will resume from %s",
+            batch_idx,
+            len(set(self.bad_batches)),
+            ckpt,
+        )
 
     def _is_spike(self, loss: torch.Tensor) -> bool:
         with warnings.catch_warnings():

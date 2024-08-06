@@ -1,4 +1,5 @@
 import json
+import logging
 from unittest.mock import MagicMock
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -46,7 +47,7 @@ def test_init_state():
     check_state(spike_cb)
 
 
-def test_spiking():
+def test_spiking(caplog):
     model = SpikingModel()
     data = BoringDataModule()
     spike_cb = SpikeDetection(warmup=0)
@@ -72,7 +73,8 @@ def test_spiking():
         assert trainer.callbacks[0] is spike_cb
         assert not hasattr(model, "skip_this_batch")
 
-        trainer.fit(model, data)
+        with caplog.at_level(logging.INFO):
+            trainer.fit(model, data)
 
         # Check post fit state
         check_state(spike_cb)
@@ -86,6 +88,16 @@ def test_spiking():
             spike_cb.checkpoint_path
         )
         spike_cb.running_mean.to.assert_called_once()
+
+        # Check that resuming was logged
+        found = False
+        for record in caplog.records:
+            if record.levelno != logging.INFO:
+                continue
+            if record.message.startswith("Spike detected"):
+                found = True
+                break
+        assert found
 
         # Check that bad batches were recorded
         assert Path(spike_cb.exclude_batches_path).is_file()
