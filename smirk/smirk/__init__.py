@@ -25,13 +25,13 @@ SPECIAL_TOKENS = {
 class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
     def __init__(self, **kwargs):
         # Create SmirkTokenizer
-        default_vocab_file = str(files("smirk").joinpath("vocab_smiles.json"))
+        default_vocab_file = files("smirk").joinpath("vocab_smiles.json")
         if tokenizer := kwargs.pop("tokenizer", None):
             tokenizer = tokenizer
         elif tokenizer_file := kwargs.pop("tokenizer_file", None):
-            tokenizer = rs_smirk.SmirkTokenizer.from_file(tokenizer_file)
+            tokenizer = rs_smirk.SmirkTokenizer.from_file(str(tokenizer_file))
         elif vocab_file := kwargs.pop("vocab_file", default_vocab_file):
-            tokenizer = rs_smirk.SmirkTokenizer.from_vocab(vocab_file)
+            tokenizer = rs_smirk.SmirkTokenizer.from_vocab(str(vocab_file))
         else:
             tokenizer = rs_smirk.SmirkTokenizer()
 
