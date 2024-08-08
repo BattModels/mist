@@ -38,6 +38,12 @@ impl From<tokenizers::pre_tokenizers::split::Split> for PreTokenizerWrapper {
     }
 }
 
+impl From<tokenizers::pre_tokenizers::whitespace::Whitespace> for PreTokenizerWrapper {
+    fn from(value: tokenizers::pre_tokenizers::whitespace::Whitespace) -> Self {
+        Self::from(tokenizers::PreTokenizerWrapper::from(value))
+    }
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 pub enum TrainerWrapper {
     GpeTrainer(GpeTrainer),

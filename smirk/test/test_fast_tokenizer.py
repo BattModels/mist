@@ -58,12 +58,19 @@ def check_normalizer(tokenizer):
 
 
 def check_unknown(tokenizer):
-    assert tokenizer.tokenize("🤷") == [tokenizer.unk_token]
-    assert tokenizer.tokenize("C🤷") == ["C", tokenizer.unk_token]
-    assert tokenizer.tokenize("🤷C") == [tokenizer.unk_token, "C"]
-    assert tokenizer.tokenize("[🤷]") == ["[", tokenizer.unk_token, "]"]
-    assert tokenizer.tokenize("[C🤷]") == ["[", "C", tokenizer.unk_token, "]"]
-    assert tokenizer.tokenize("[🤷C]") == ["[", tokenizer.unk_token, "C", "]"]
+    def check_tok(tokenizer, smi: str, unk: str = "🤷"):
+        code = tokenizer(smi)["input_ids"]
+        assert tokenizer.unk_token_id in code
+        expected = smi.replace(unk, tokenizer.unk_token)
+        assert smi != expected  # Sanity check the test
+        assert "".join(tokenizer.tokenize(smi)) == expected
+
+    check_tok(tokenizer, "🤷")
+    check_tok(tokenizer, "C🤷")
+    check_tok(tokenizer, "🤷C")
+    check_tok(tokenizer, "[🤷]")
+    check_tok(tokenizer, "[C🤷]")
+    check_tok(tokenizer, "[🤷C]")
 
 
 def test_tokenize():

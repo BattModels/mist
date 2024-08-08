@@ -1,4 +1,5 @@
 use derive_builder::Builder;
+use either::Either;
 use macro_rules_attribute::derive;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -108,6 +109,8 @@ pub struct GpeTrainer {
     pub limit_alphabet: Option<usize>,
     // Special tokens to include in the vocab
     pub special_tokens: Vec<AddedToken>,
+    // Should bracket ([, ]) be candidates for merges
+    pub merge_brackets: bool,
     // Internal Map for tracking word counts
     word_counts: HashMap<String, u64>,
 }
@@ -120,6 +123,7 @@ impl Default for GpeTrainer {
             alphabet: HashSet::new(),
             limit_alphabet: None,
             special_tokens: Vec::new(),
+            merge_brackets: true,
             word_counts: HashMap::new(),
         }
     }
@@ -218,22 +222,25 @@ impl GpeTrainer {
         let mut counts: Vec<i64> = Vec::with_capacity(wc.len());
         for (word, count) in wc {
             counts.push(*count as i64);
-            let symbol_ids = model
-                .tokenize
-                .split(word)
-                .into_iter()
-                .filter(|s| !(s == "[" || s == "]")) // Exclude Brackets from potential merges
-                .map(|symbol| {
-                    w2id.get(&symbol)
-                        .map(|v| v.to_owned())
-                        .or_else(|| {
-                            let id = id2w.len() as u32;
-                            id2w.push(symbol.to_string());
-                            w2id.insert(symbol, id);
-                            Some(id)
-                        })
-                        .unwrap()
-                });
+            let token_iter = model.tokenize.split(word).into_iter();
+
+            let iter = if !self.merge_brackets {
+                Either::Left(token_iter.filter(|s| !(s == "[" || s == "]")))
+            } else {
+                Either::Right(token_iter)
+            };
+
+            let symbol_ids = iter.map(|symbol| {
+                w2id.get(&symbol)
+                    .map(|v| v.to_owned())
+                    .or_else(|| {
+                        let id = id2w.len() as u32;
+                        id2w.push(symbol.to_string());
+                        w2id.insert(symbol, id);
+                        Some(id)
+                    })
+                    .unwrap()
+            });
             words.push(symbol_ids.collect());
         }
         (words, counts)

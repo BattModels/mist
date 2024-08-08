@@ -1,3 +1,5 @@
+import json
+import itertools
 from pathlib import Path
 
 import pytest
@@ -9,10 +11,18 @@ import smirk
 SMILE_TEST_FILE = Path(__file__).parent.joinpath("smiles.txt")
 
 
-@pytest.fixture
-def trained():
+@pytest.fixture(
+    scope="session",
+    params=[
+        {"merge_brackets": False, "split_structure": False},
+        {"merge_brackets": True, "split_structure": True},
+        {"merge_brackets": True, "split_structure": False},
+        {"merge_brackets": False, "split_structure": True},
+    ],
+)
+def trained(request):
     tokenizer = smirk.SmirkTokenizerFast()
-    return tokenizer.train([str(SMILE_TEST_FILE)])
+    return tokenizer.train([str(SMILE_TEST_FILE)], **request.param)
 
 
 def test_save(trained):
@@ -53,8 +63,35 @@ def test_multi_file():
 
 
 def test_tokenizing_unknown(trained):
+    config = json.loads(trained.to_str())
+    merges = config["model"]["merges"]
     check_unknown(trained)
 
 
 def test_tokenize(trained):
     check_tokenize(trained)
+
+
+@pytest.mark.parametrize("merge_brackets", [True, False])
+def test_merge_brackets(merge_brackets):
+    tok = smirk.SmirkTokenizerFast().train(
+        [str(SMILE_TEST_FILE)],
+        merge_brackets=merge_brackets,
+        vocab_size=16384,
+    )
+    config = json.loads(tok.to_str())
+    vocab = config["model"]["vocab"]
+    merges = config["model"]["merges"]
+    left_bracket = vocab["["]
+    right_bracket = vocab["]"]
+    assert left_bracket == tok.get_vocab()["["]
+    assert right_bracket == tok.get_vocab()["]"]
+
+    # Check that the right merges happened
+    if merge_brackets:
+        assert left_bracket in itertools.chain(*merges)
+        assert right_bracket in itertools.chain(*merges)
+
+    else:
+        assert left_bracket not in itertools.chain(*merges)
+        assert right_bracket not in itertools.chain(*merges)

@@ -1006,6 +1006,7 @@ dependencies = [
  "const_format",
  "derive_builder",
  "dict_derive",
+ "either",
  "macro_rules_attribute",
  "once_cell",
  "paste",
