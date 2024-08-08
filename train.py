@@ -40,6 +40,9 @@ class MyLightningCLI(LightningCLI):
         )
         parser.link_arguments("tags", "trainer.logger.init_args.tags")
 
+        # WARN: electrolyte_fm.utils.SaveConfigWithCkpts with any new linked arguments
+        # prefer apply_on parse over instantiate
+
         # Set model vocab_size from the dataset's vocab size
         parser.link_arguments(
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
