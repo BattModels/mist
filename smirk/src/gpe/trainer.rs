@@ -123,7 +123,7 @@ impl Default for GpeTrainer {
             alphabet: HashSet::new(),
             limit_alphabet: None,
             special_tokens: Vec::new(),
-            merge_brackets: true,
+            merge_brackets: false,
             word_counts: HashMap::new(),
         }
     }
