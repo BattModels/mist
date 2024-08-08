@@ -95,27 +95,19 @@ class SaveConfigWithCkpts(Callback):
         return config_path
 
     @staticmethod
-    def load(checkpoint_dir: str | Path, config_path=None) -> LightningModule:
-        """Restore from a deepspeed checkpoint, mainly used for downstream tasks"""
-        checkpoint_dir = Path(checkpoint_dir).resolve()
-        config_path = config_path or checkpoint_dir.parent.parent.joinpath(
-            "model_hparams.json"
-        )
-        assert (
-            checkpoint_dir.is_dir()
-        ), f"Missing deepspeed checkpoint director {checkpoint_dir}"
-        assert config_path.is_file(), f"Missing model config file {config_path}"
-
+    def instantiate(config_path: Path) -> LightningModule:
+        """Instantiate a model from a checkpoint but don't load weights"""
         with open(config_path, "r") as fid:
             config = json.load(fid)
 
         # Get model class name and config
-        if "version" in config:
+        if version := config.get("version", None):
             cls_name = config["class_path"]
 
-            if config["version"].startswith("0.3"):
+            if version.startswith("0.3"):
                 model_config = config["lightning_module"]["init_args"]
                 model_config["vocab_size"] = config["datamodule"]["vocab_size"]
+
             else:
                 cls_name = config["class_path"]
                 model_config = config["init_args"]
@@ -130,7 +122,26 @@ class SaveConfigWithCkpts(Callback):
         ).__getattribute__(import_path[-1])
         assert import_path[-1] == model_cls.__name__
         model = model_cls(**model_config)
-        model.configure_model()
+
+        if hasattr(model, "configure_model"):
+            model.configure_model()
+
+        return model
+
+    @staticmethod
+    def load(checkpoint_dir: str | Path, config_path=None) -> LightningModule:
+        """Restore from a deepspeed checkpoint, mainly used for downstream tasks"""
+        checkpoint_dir = Path(checkpoint_dir).resolve()
+        config_path = config_path or checkpoint_dir.parent.parent.joinpath(
+            "model_hparams.json"
+        )
+        assert (
+            checkpoint_dir.is_dir()
+        ), f"Missing deepspeed checkpoint director {checkpoint_dir}"
+        assert config_path.is_file(), f"Missing model config file {config_path}"
+
+        model = SaveConfigWithCkpts.instantiate(config_path)
+
         # Load model weights from the checkpoint
         from deepspeed.utils.zero_to_fp32 import (
             get_fp32_state_dict_from_zero_checkpoint,

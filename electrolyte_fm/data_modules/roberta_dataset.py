@@ -20,7 +20,7 @@ class RobertaDataSet(pl.LightningDataModule):
         num_workers=0,
         prefetch_factor=None,
         persistent_workers=False,
-        canononical=False,
+        canonical=False,
     ):
         super().__init__()
 
@@ -36,7 +36,7 @@ class RobertaDataSet(pl.LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
-        self.canononical = canononical
+        self.canonical = canonical
         self.hparams["tokenizer"] = tokenizer
         self.hparams["vocab_size"] = self.vocab_size
         self.save_hyperparameters(logger=False)
