@@ -4,7 +4,7 @@ import argparse
 from . import SmirkTokenizerFast
 
 
-def cli(args=sys.argv):
+def cli(argv=sys.argv):
     p = argparse.ArgumentParser("python -m smirk.cli")
     p.add_argument("files", nargs="+")
     p.add_argument("--vocab-size", type=int, default=1024)
@@ -21,7 +21,7 @@ def cli(args=sys.argv):
         type=str,
         help="directory where trained smirk-gpe model is saved",
     )
-    args = p.parse_args()
+    args = p.parse_args(argv)
     tok = SmirkTokenizerFast()
     tok_gpe = tok.train(
         args.files,
