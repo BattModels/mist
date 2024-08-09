@@ -1,3 +1,4 @@
+from itertools import chain
 from typing import Dict, List, Union
 
 import pytorch_lightning as pl
@@ -9,8 +10,6 @@ from torchmetrics.regression import MeanAbsoluteError
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
 
-TaskSpecs = List[Dict[str, Union[str, int]]]
-
 
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     """
@@ -19,98 +18,60 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
     def __init__(
         self,
+        output_size: int,
         encoder_ckpt: str,
-        task_specs: TaskSpecs,
         freeze_encoder: bool = False,
-        learning_rate: float = 1.6e-4,
         dropout: float = 0.2,
+        task: str = "binary_classification",
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
         super().__init__()
 
-        self.learning_rate = learning_rate
         self.dropout = dropout
         self.encoder_ckpt = encoder_ckpt
-        self.task_specs = task_specs
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
+        self.freeze_encoder = freeze_encoder
         self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
 
         self.save_hyperparameters()
 
-        head_hyperparams = {
-            "embed_dim": self.encoder.config.hidden_size,
-            "dropout": self.dropout,
-        }
-
-        self.task_networks = torch.nn.ModuleDict(
-            {
-                spec["measure_name"]: PredictionTaskHead(
-                    **head_hyperparams, output_size=spec.get("n_classes", 1)
-                )
-                for spec in self.task_specs
-            }
+        print(output_size)
+        self.task_network = PredictionTaskHead(
+            embed_dim=self.encoder.config.hidden_size,
+            output_size=output_size,
+            dropout=dropout,
         )
-        self.classification_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)
-        self.regression_loss = torch.nn.MSELoss()
-        self.setup_loss_functions()
-        self.setup_metrics()
-        self.freeze_encoder = freeze_encoder
-
-    def setup_loss_functions(self):
-        for spec in self.task_specs:
-            if spec.get("n_classes", 1) > 1:
-                spec["loss"] = self.classification_loss
-            else:
-                spec["loss"] = self.regression_loss
-
-    def setup_metrics(self):
-        for spec in self.task_specs:
-            targets = spec.get("n_classes", 1)
-            if targets == 1:  # regression problem
-                spec["metric"] = MeanAbsoluteError().cuda()
-            else:  # multi-class classification
-                spec["metric"] = Accuracy(
-                    task="multiclass", num_classes=targets, ignore_index=-1
-                )
+        if task == "binary_classification":
+            self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
+        elif task == "regression":
+            self.lossfn = torch.nn.MSELoss(reduction="none")
+        else:
+            raise ValueError(f"Unknown task type {task}")
 
     def forward(self, batch, **kwargs):  # type: ignore[override]
-        embedding = self.encoder(
+        hs = self.encoder(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],
+            return_dict=True,
             **kwargs,
-            return_dict=False,
-        )
+        ).last_hidden_state
 
-        sequence_output = embedding[0]
-        out = {
-            spec["measure_name"]: self.task_networks[spec["measure_name"]](
-                sequence_output
-            )
-            for spec in self.task_specs
-        }
-        return out
+        return self.task_network(hs)
 
-    def batch_loss(self, outputs, batch):
-        loss = 0
-        for spec in self.task_specs:
-            target = spec["measure_name"]
-            w = spec.get("loss_weight", 1 / len(self.task_specs))
-            if spec.get("n_classes", 1) > 1:
-                spec_loss = w * spec["loss"](
-                    outputs[target], batch[target].to(torch.int64)
-                )
-            else:
-                labels = batch[target].reshape(batch[target].size()[0], 1)
-                spec_loss = w * spec["loss"](outputs[target], labels)
-            if not torch.isnan(spec_loss):
-                loss += spec_loss
-        return loss
+    def masked_loss(
+        self, y_hat: torch.Tensor, y: torch.Tensor, mask: torch.FloatTensor
+    ) -> torch.Tensor:
+        """Batch Averaged Loss, masking out unknown entries in y"""
+
+        loss = self.lossfn(y_hat, y.to(y_hat))
+        loss *= mask
+        return loss.sum() / mask.sum()
 
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        loss = self.batch_loss(outputs, batch)
+        loss = self.masked_loss(outputs, batch["target"], batch["target_mask"])
 
         self.log(
             "train/loss",
@@ -120,51 +81,24 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             prog_bar=True,
             sync_dist=True,
         )
-
-        for spec in self.task_specs:
-            target = spec["measure_name"]
-            labels = batch[target]
-            if spec.get("n_classes", 1) <= 1:
-                labels = labels.reshape(labels.size()[0], 1)
-
-            self.log(
-                f"train/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-            )
         return loss
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        loss = self.batch_loss(outputs, batch)
-
+        loss = self.masked_loss(outputs, batch["target"], batch["target_mask"])
         self.log(
-            "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
+            "val/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
         )
-
-        for spec in self.task_specs:
-            target = spec["measure_name"]
-            labels = batch[target]
-            if spec.get("n_classes", 1) <= 1:
-                labels = labels.reshape(labels.size()[0], 1)
-
-            self.log(
-                f"val/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-            )
         return loss
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)
-        loss = self.batch_loss(outputs, batch)
-
+        loss = self.masked_loss(outputs, batch["targets"], batch["target_mask"])
         self.log(
             "test/loss",
             loss,
@@ -174,29 +108,12 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             sync_dist=True,
         )
 
-        for spec in self.task_specs:
-            target = spec["measure_name"]
-            labels = batch[target]
-            if spec.get("n_classes", 1) <= 1:
-                labels = labels.reshape(labels.size()[0], 1)
-            self.log(
-                f"val/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-            )
         return loss
 
     def configure_optimizers(self):
-        learnable_params = [
-            p
-            for _, task_network in self.task_networks.items()
-            for p in task_network.parameters()
-        ]
+        learnable_params = self.task_network.parameters()
         if not self.freeze_encoder:
-            learnable_params.extend([p for p in self.encoder.parameters()])
+            learnable_params = chain(learnable_params, self.encoder.parameters())
 
         optimizer = self.optimizer(learnable_params)
         if schedule := self.lr_schedule:

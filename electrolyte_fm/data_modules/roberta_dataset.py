@@ -9,6 +9,13 @@ from transformers import DataCollatorForLanguageModeling
 from ..utils.tokenizer import load_tokenizer
 
 
+def maybe_shard_dataset(trainer, ds):
+    """Maybe shard a dataset across trainer ranks, if appropriate"""
+    if trainer is None:
+        return ds
+    return split_dataset_by_node(ds, trainer.global_rank, trainer.world_size)
+
+
 class RobertaDataSet(pl.LightningDataModule):
     def __init__(
         self,
@@ -76,28 +83,16 @@ class RobertaDataSet(pl.LightningDataModule):
             remove_columns="text",
         )
 
-        # Setup to partition datasets over ranks
-        if trainer := self.trainer:
-            assert trainer is not None
-            rank = trainer.global_rank
-            world_size = trainer.world_size
-            ds["train"]: IterableDataset = ds["train"].shuffle(seed=42)
-            assert ds["train"].n_shards % world_size == 0
-            assert ds["validation"].n_shards % world_size == 0
-            assert ds["test"].n_shards % world_size == 0
-
-            def build_ds(ds):
-                return split_dataset_by_node(ds, rank, world_size)
-
-        else:
-
-            def build_ds(ds):
-                return ds
-
         # Partition Datasets
-        self.train_dataset: IterableDataset = build_ds(ds["train"])
-        self.val_dataset: IterableDataset = build_ds(ds["validation"])
-        self.test_dataset: IterableDataset = build_ds(ds["test"])
+        self.train_dataset: IterableDataset = maybe_shard_dataset(
+            self.trainer, ds["train"]
+        )
+        self.val_dataset: IterableDataset = maybe_shard_dataset(
+            self.trainer, ds["validation"]
+        )
+        self.test_dataset: IterableDataset = maybe_shard_dataset(
+            self.trainer, ds["test"]
+        )
 
     def train_dataloader(self):
         # Increment epoch to replicate shuffling

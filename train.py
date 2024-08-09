@@ -49,7 +49,10 @@ class MyLightningCLI(LightningCLI):
         )
         # Set model task_specs from the dataset's task_specs
         parser.link_arguments(
-            "data.task_specs", "model.init_args.task_specs", apply_on="instantiate"
+            "data.init_args.target_columns",
+            "model.init_args.output_size",
+            apply_on="parse",
+            compute_fn=len,
         )
 
         # Configure tokenizer from checkpoint
