@@ -5,13 +5,13 @@ from typing import Dict, List, Optional, Union
 
 import pytorch_lightning as pl
 import torch
+from transformers import DataCollatorWithPadding
 from datasets import Dataset, load_dataset
 from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
 
 from ..utils.tokenizer import load_tokenizer
-
-TaskSpecs = List[Dict[str, Union[str, int]]]
+from .roberta_dataset import maybe_shard_dataset
 
 
 class PropertyPredictionDataModule(pl.LightningDataModule):
@@ -19,85 +19,77 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         self,
         path: str,
         tokenizer: str,
-        dataset_name: str = "brace",
-        task_specs: TaskSpecs = [{"measure_name": "Class", "n_classes": 2}],
         batch_size: int = 64,
         num_workers: int = 1,
         prefetch_factor: int = 4,
+        smi_column: str = "smiles",
+        target_columns: list[str] = ["Class"],
         val_batch_size: Optional[int] = None,
-        train_dataset_length: Optional[int] = None,
-        val_dataset_length: Optional[int] = None,
-        test_dataset_length: Optional[int] = None,
     ):
         super().__init__()
 
         self.tokenizer = load_tokenizer(tokenizer)
         self.vocab_size = len(self.tokenizer)
         self.path: Path = Path(path)
-        assert self.path.is_dir() or self.path.is_file()
+        assert self.path.is_dir()
+
+        self.smi_column = smi_column
+        self.target_columns = target_columns
+
         self.batch_size = batch_size
-        self.val_batch_size = val_batch_size if val_batch_size else batch_size
+        self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
-        self.dataset_name = dataset_name
-        self.task_specs = task_specs
-        self.train_dataset_length = train_dataset_length
-        self.val_dataset_length = val_dataset_length
-        self.test_dataset_length = test_dataset_length
-        self.task_specs = task_specs
-        self.save_hyperparameters()
+        self.hparams["vocab_size"] = self.vocab_size
+        self.save_hyperparameters(logger=False)
 
     def setup(self, stage: str) -> None:
-        ds = load_dataset(os.path.join(self.path, self.dataset_name))
+        # Load datasets, checking for splits
+        ds = load_dataset(str(self.path), keep_in_memory=False, streaming=True)
+        assert "train" in ds and "validation" in ds
 
-        # Setup to partition datasets over ranks
-        if self.trainer is None:
-            rank = 0
-            world_size = 1
-        else:
-            rank = self.trainer.global_rank
-            world_size = self.trainer.world_size
-        ds_train: Dataset = ds["train"].shuffle(seed=42)
+        # Remove extraneous columns and tokenize smiles
+        ds = ds.select_columns([self.smi_column, *self.target_columns])
+        ds = ds.map(
+            lambda x: self.tokenizer(x[self.smi_column]),
+            batched=True,
+            remove_columns=self.smi_column,
+        )
 
-        self.train_dataset: Dataset = split_dataset_by_node(
-            ds_train,
-            rank=rank,
-            world_size=world_size,
-        )
-        self.val_dataset: Dataset = split_dataset_by_node(
-            ds["validation"],
-            rank=rank,
-            world_size=world_size,
-        )
-        self.test_dataset: Dataset = split_dataset_by_node(
-            ds["test"],
-            rank=rank,
-            world_size=world_size,
-        )
-        self.calculate_imputation_values()
+        # Stack multiple target columns into a single vector, recording unknown elements
+        # to be masked out during training
+        def collate_target(x):
+            target = []
+            mask = []
+            for k in self.target_columns:
+                v = x[k]
+                if v is None:
+                    target.append(torch.tensor(0))  # Placeholder, should be masked out
+                    mask.append(torch.tensor(0))
+                else:
+                    target.append(torch.tensor(v))
+                    mask.append(torch.tensor(1))
 
-    def calculate_imputation_values(self):
-        for spec in self.task_specs:
-            if spec.get("n_classes", 1) > 1:
-                spec["fill_value"] = -1
-            else:
-                spec["fill_value"] = mean(
-                    d for d in self.train_dataset[spec["measure_name"]] if d is not None
-                )
+            return {"target": torch.stack(target), "target_mask": torch.stack(mask)}
+
+        ds = ds.map(collate_target, batched=False, remove_columns=self.target_columns)
+
+        self.train_dataset: Dataset = maybe_shard_dataset(
+            self.trainer, ds["train"].shuffle(seed=42)
+        )
+        self.val_dataset: Dataset = maybe_shard_dataset(self.trainer, ds["validation"])
+        self.test_dataset: Dataset = maybe_shard_dataset(self.trainer, ds["test"])
+        self.token_collator = DataCollatorWithPadding(
+            tokenizer=self.tokenizer, padding="longest"
+        )
 
     def data_collator(self, batch):
-        tokens = self.tokenizer._batch_encode_plus(
-            [sample["smiles"] for sample in batch],
-            add_special_tokens=True,
-            return_tensors="pt",
-            padding_strategy="longest",
-        )
-        for spec in self.task_specs:
-            tokens[spec["measure_name"]] = torch.tensor(
-                [sample[spec["measure_name"]] or spec["fill_value"] for sample in batch]
-            )
-
-        return tokens
+        targets = [x.pop("target") for x in batch]
+        mask = [x.pop("target_mask") for x in batch]
+        output = self.token_collator(batch)
+        output["target"] = torch.stack(targets)
+        output["target_mask"] = torch.stack(mask)
+        return output
 
     def train_dataloader(self):
         return DataLoader(
@@ -119,7 +111,6 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             pin_memory=True,
             persistent_workers=True,
-            shuffle=False,
         )
 
     def test_dataset(self):
