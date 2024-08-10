@@ -125,3 +125,8 @@ def test_ckpt_tokenizer(cli):
     # Validate tokenizer is viable
     tokenizer = load_tokenizer(tokenizer_name)
     assert tokenizer is not None and isinstance(tokenizer, PreTrainedTokenizerBase)
+
+    # Validate load_tokenizer works
+    tok2 = load_tokenizer(str(ckpt))
+    assert tokenizer is not None and isinstance(tok2, PreTrainedTokenizerBase)
+    assert tok2.to_str() == tokenizer.to_str()

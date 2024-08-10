@@ -1,7 +1,9 @@
+from pathlib import Path
+
 from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
 
 
-def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
+def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
     # Locate Tokeniser and dataset
     unk_name = RuntimeError(f"Unknown tokenizer: {name}")
     if name.startswith("smirk"):
@@ -20,6 +22,13 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
         from ..tokenize.spe import pretrained_spe_tokenizer
 
         return pretrained_spe_tokenizer()
+
+    elif Path(name).parent.parent.joinpath("config.json").exists():
+        # Reload Tokenizer from Checkpoint
+        from ..utils.ckpt import get_ckpt_tokenizer
+
+        tokenizer = get_ckpt_tokenizer(name)
+        return load_tokenizer(tokenizer, **kwargs)
 
     else:
         # Fall back to a HuggingFace Tokenizer

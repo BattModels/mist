@@ -41,7 +41,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             from ..utils.ckpt import get_ckpt_tokenizer
 
             self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
-            self.encoder_tokenizer = get_ckpt_tokenizer(encoder_ckpt)
         else:
             from transformers import AutoModel
 
@@ -49,7 +48,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
                 encoder_ckpt,
                 trust_remote_code=True,
             )
-            self.encoder_tokenizer = encoder_ckpt
 
         self.save_hyperparameters()
 
