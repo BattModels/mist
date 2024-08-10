@@ -43,6 +43,7 @@ def cli(tmp_path):
             "--data=test.test_ckpt.MockedData",
             "--data.tokenizer=smirk",
             "--trainer.strategy=ddp",
+            "--trainer.accelerator=cpu",
             "--trainer.max_steps=5",
             "--trainer.enable_progress_bar=false",
             "--trainer.enable_model_summary=false",

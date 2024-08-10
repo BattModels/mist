@@ -29,6 +29,7 @@ def test_default(model):
                 "--model",
                 model,
                 "--trainer.devices=1",
+                "--trainer.accelerator=cpu",
                 f"--tags=['{tag}']",
             ]
         )
@@ -61,7 +62,7 @@ def test_json_config(model):
             "model": {
                 "class_path": model,
             },
-            "trainer": {"devices": 1},
+            "trainer": {"devices": 1, "accelerator": "cpu"},
         }
 
         cli = cli_main(["--config", json.dumps(config)])
@@ -106,6 +107,7 @@ def test_finetune(monkeypatch):
                 "--model=electrolyte_fm.models.LMFinetuning",
                 f"--model.encoder_ckpt={ckpt}",
                 "--trainer.devices=1",
+                "--trainer.accelerator=cpu",
             ]
         )
         assert str(cli.datamodule.tokenizer.__class__)

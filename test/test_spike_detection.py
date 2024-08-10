@@ -49,6 +49,7 @@ def test_spiking():
             max_steps=15,
             limit_val_batches=0,
             default_root_dir=ckpt_dir,
+            accelerator="cpu",
             enable_progress_bar=False,
             enable_model_summary=False,
         )

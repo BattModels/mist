@@ -71,6 +71,7 @@ def test_cli():
             },
             "trainer": {
                 "devices": 1,
+                "accelerator": "cpu",
                 "callbacks": [
                     {"class_path": "electrolyte_fm.utils.callbacks.Requeue"},
                 ],
@@ -104,6 +105,7 @@ def test_signal(fake_dataset):
             "trainer": {
                 "devices": 1,
                 "strategy": "auto",
+                "accelerator": "cpu",
                 "enable_progress_bar": True,
                 "enable_model_summary": False,
                 "default_root_dir": root_dir,
