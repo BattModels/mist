@@ -65,3 +65,25 @@ def test_masked_metrics(name):
     preds[1, 0] = 0.3
     out_preds = masked_metric_forward({name: metric}, preds, targets, mask)
     assert out_init == out_preds
+
+
+def test_masked_loss():
+    lossfn = torch.nn.MSELoss()
+    preds = torch.rand(2, 3)
+    targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
+    mask = torch.tensor([[False, False, True], [True, False, False]])
+
+    loss = masked_loss(lossfn, preds, targets, mask)
+    assert ~(loss.isnan()) and loss.isfinite() and 0 < loss
+
+    # Repeat, changing a masked target
+    targets[1, 0] = 423.0
+    assert mask[1, 0]
+    loss_targets = masked_loss(lossfn, preds, targets, mask)
+    assert loss_targets == loss
+
+    # Repeat, changing a masked prediction
+    targets[0, 3] = 616.0
+    assert mask[0, 3]
+    loss_preds = masked_loss(lossfn, preds, targets, mask)
+    assert loss_preds == loss

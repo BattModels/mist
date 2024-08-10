@@ -87,7 +87,8 @@ def test_finetune(monkeypatch):
                 {
                     "version": "0.2.0",
                     "class_path": "electrolyte_fm.models.RoBERTa",
-                    "init_args": {"vocab_size": 128},
+                    # vocab_size will be validated by LMFinetuning, needs to be correct
+                    "init_args": {"vocab_size": 165},
                 },
                 fid,
             )

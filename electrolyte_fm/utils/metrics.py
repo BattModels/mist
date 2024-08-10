@@ -59,7 +59,7 @@ def masked_loss(
 ) -> torch.Tensor:
     """Batch Averaged Loss, masking out unknown entries in y"""
     loss = lossfn(preds, targets.to(preds))
-    return loss.masked_fill(mask, 0).sum() / mask.sum()
+    return loss.masked_fill(mask, 0).sum() / mask.bitwise_not().sum()
 
 
 def masked_metric_forward(
