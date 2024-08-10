@@ -152,7 +152,7 @@ class SaveConfigWithCkpts(Callback):
         return model
 
 
-def get_ckpt_tokenizer(path: str | Path):
+def get_ckpt_tokenizer(path: str | Path) -> str:
     path = Path(path)
     config_path = path.parent.parent.joinpath("config.json")
     assert config_path.is_file()

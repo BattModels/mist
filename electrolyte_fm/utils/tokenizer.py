@@ -5,7 +5,7 @@ from pathlib import Path
 from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
 
 
-def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
+def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
     # Locate Tokeniser and dataset
     unk_name = RuntimeError(f"Unknown tokenizer: {name}")
     if name.startswith("smirk"):
@@ -141,6 +141,13 @@ def load_tokenizer(name, **kwargs) -> PreTrainedTokenizerBase:
         regex = config["pre_tokenizer"]["pretokenizers"][-1]["pattern"]["Regex"]
         tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
         return tok_tf
+
+    elif Path(name).parent.parent.joinpath("config.json").exists():
+        # Reload Tokenizer from Checkpoint
+        from ..utils.ckpt import get_ckpt_tokenizer
+
+        tokenizer = get_ckpt_tokenizer(name)
+        return load_tokenizer(tokenizer, **kwargs)
 
     else:
         # Fall back to a HuggingFace Tokenizer
