@@ -1,4 +1,5 @@
 from itertools import chain
+from pathlib import Path
 from typing import Dict, List, Union
 
 import pytorch_lightning as pl
@@ -22,7 +23,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         freeze_encoder: bool = False,
         dropout: float = 0.2,
         task: str = "binary_classification",
-        metrics: list[str] = "auroc",
+        metrics: list[str] = ["auroc"],
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
@@ -34,11 +35,24 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
-        self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
+
+        # Load Encoder Model
+        if Path(encoder_ckpt).exists():
+            from ..utils.ckpt import get_ckpt_tokenizer
+
+            self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
+            self.encoder_tokenizer = get_ckpt_tokenizer(encoder_ckpt)
+        else:
+            from transformers import AutoModel
+
+            self.encoder = AutoModel.from_pretrained(
+                encoder_ckpt,
+                trust_remote_code=True,
+            )
+            self.encoder_tokenizer = encoder_ckpt
 
         self.save_hyperparameters()
 
-        print(output_size)
         self.task_network = PredictionTaskHead(
             embed_dim=self.encoder.config.hidden_size,
             output_size=output_size,
@@ -52,7 +66,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             raise ValueError(f"Unknown task type {task}")
 
         # Additional Metrics
-        self.metrics = []
+        self.metrics = {}
         for metric in metrics:
             self.metrics[metric] = get_metric(metric, task, output_size)
 

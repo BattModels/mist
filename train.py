@@ -54,13 +54,6 @@ class MyLightningCLI(LightningCLI):
             compute_fn=len,
         )
 
-        # Configure tokenizer from checkpoint
-        parser.link_arguments(
-            "model.init_args.encoder_ckpt",
-            "data.init_args.tokenizer",
-            compute_fn=SaveConfigWithCkpts.get_ckpt_tokenizer,
-        )
-
     def _add_instantiators(self) -> None:
         self.config_dump = json.loads(
             self.parser.dump(

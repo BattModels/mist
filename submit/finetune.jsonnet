@@ -6,7 +6,7 @@ local molecularnet_tasks = import 'molecularnet_tasks.libsonnet';
   queue: 'venkvis-a100',
   walltime: '1:0:0',
   train: {
-    tags: ['finetuning', 'bace'],
+    tags: ['finetuning', 'tox21'],
     data: {
       class_path: 'electrolyte_fm.data_modules.PropertyPredictionDataModule',
       init_args: {
@@ -19,7 +19,7 @@ local molecularnet_tasks = import 'molecularnet_tasks.libsonnet';
     model: {
       class_path: 'electrolyte_fm.models.LMFinetuning',
       init_args: {
-        encoder_ckpt: null,  // Replace with checkpoint
+        encoder_ckpt: 'ibm/MoLFormer-XL-both-10pct',
         task: molecularnet_tasks.tox21.task,
         freeze_encoder: true,
 
@@ -38,7 +38,7 @@ local molecularnet_tasks = import 'molecularnet_tasks.libsonnet';
     },
     trainer: {
       max_steps: 10000,
-      precision: 'bf16-true',
+      precision: '32-true',
       enable_progress_bar: false,
     },
   },
