@@ -2,25 +2,26 @@ local pretrain = import 'pretrain.jsonnet';
 
 local molecularnet_tasks = import 'molecularnet_tasks.libsonnet';
 
-{
+function(dataset='bace') {
   queue: 'venkvis-a100',
   walltime: '1:0:0',
   train: {
-    tags: ['finetuning', 'tox21'],
+    tags: ['finetuning', dataset],
     data: {
       class_path: 'electrolyte_fm.data_modules.PropertyPredictionDataModule',
       init_args: {
         batch_size: 512,
         val_batch_size: 2 * self.batch_size,
-        path: '/nfs/turbo/coe-venkvis/mist/molformer_ft_full/tox21',
-        target_columns: molecularnet_tasks.tox21.target_columns,
+        path: '/nfs/turbo/coe-venkvis/mist/molformer_ft_full/' + dataset,
+        target_columns: molecularnet_tasks[dataset].target_columns,
       },
     },
     model: {
       class_path: 'electrolyte_fm.models.LMFinetuning',
       init_args: {
         encoder_ckpt: 'ibm/MoLFormer-XL-both-10pct',
-        task: molecularnet_tasks.tox21.task,
+        task: molecularnet_tasks[dataset].task,
+        metrics: molecularnet_tasks[dataset].metrics,
         freeze_encoder: true,
 
         // Duplicate pre-training optimizer config
