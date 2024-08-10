@@ -1,35 +1,45 @@
 // Task Specification for MolecularNet Benchmarks
+// TODO: Include all benchmarks from MolecularNet
 {
   bace: {
     task: 'binary_classification',
     target_columns: ['Class'],
+    metrics: ['auroc'],
   },
   bbbp: {
     task: 'binary_classification',
     target_columns: ['p_np'],
+    metrics: ['auroc'],
   },
   clintox: {
     task: 'binary_classification',
     target_columns: ['FDA_APPROVED', 'CT_TOX'],
+    metrics: ['auroc'],
   },
   esol: {
     task: 'regression',
     target_columns: ['ESOL predicted log solubility in mols per litre'],
+    metrics: ['rmse'],
   },
   freesolv: {
     task: 'regression',
     target_columns: ['expt', 'calc'],
+    metrics: ['rmse'],
   },
   hiv: {
     task: 'binary_classification',
     target_columns: ['HIV_active'],
+    metrics: ['auroc'],
   },
   lipo: {
     task: 'regression',
+    metrics: ['rmse'],
     target_columns: ['y'],
   },
   qm9: {
     task: 'regression',
+    // MolecularNet recommends MAE, but MoLFormer used Avg-RMSE
+    metrics: ['mae', 'avg-rmse'],
     target_columns: [
       'A',
       'B',
@@ -54,6 +64,7 @@
   },
   sider: {
     task: 'binary_classification',
+    metrics: ['auroc'],
     target_columns: [
       'Hepatobiliary disorders',
       'Metabolism and nutrition disorders',
@@ -86,6 +97,7 @@
   },
   tox21: {
     task: 'binary_classification',
+    metrics: ['auroc'],
     target_columns: [
       'NR-AR',
       'NR-AR-LBD',
