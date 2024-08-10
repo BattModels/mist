@@ -65,10 +65,10 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
                 v = x[k]
                 if v is None:
                     target.append(torch.tensor(0))  # Placeholder, should be masked out
-                    mask.append(torch.tensor(0))
+                    mask.append(torch.tensor(True))
                 else:
                     target.append(torch.tensor(v))
-                    mask.append(torch.tensor(1))
+                    mask.append(torch.tensor(False))
 
             return {"target": torch.stack(target), "target_mask": torch.stack(mask)}
 
