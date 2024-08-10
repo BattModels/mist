@@ -10,11 +10,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 from pytorch_lightning.demos.boring_classes import BoringModel, BoringDataModule
 from torch.utils.data import DataLoader
-
+from transformers import PreTrainedTokenizerBase
 
 from train import cli_main
 from electrolyte_fm.utils.tokenizer import load_tokenizer
-from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
+from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
 
 
 class MockedModel(BoringModel):
@@ -109,3 +109,18 @@ def test_ckpt_load(cli):
     assert config_path.is_file()
     model = SaveConfigWithCkpts.instantiate(config_path)
     assert isinstance(model, MockedModel)
+
+
+def test_ckpt_tokenizer(cli):
+    trainer = cli.trainer
+    assert isinstance(trainer.checkpoint_callback, ModelCheckpoint)
+    ckpt = Path(trainer.checkpoint_callback.last_model_path)
+    assert ckpt.exists()
+
+    # Check that get_ckpt_tokenizer returns a tokenizer name
+    tokenizer_name = get_ckpt_tokenizer(ckpt)
+    assert tokenizer_name is not None and isinstance(tokenizer_name, str)
+
+    # Validate tokenizer is viable
+    tokenizer = load_tokenizer(tokenizer_name)
+    assert tokenizer is not None and isinstance(tokenizer, PreTrainedTokenizerBase)
