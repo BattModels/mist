@@ -151,17 +151,14 @@ class SaveConfigWithCkpts(Callback):
         model.load_state_dict(state, strict=False, assign=True)
         return model
 
-    @staticmethod
-    def get_ckpt_tokenizer(path: str | Path):
-        print(f"Loading tokenizer from {path}")
-        path = Path(path)
-        config_path = path.parent.parent.joinpath("config.json")
-        assert config_path.is_file()
-        with open(config_path, "r") as fid:
-            config = json.load(fid)
-        try:
-            tokenizer = config["data"]["tokenizer"]
-        except Exception:
-            tokenizer = config["data"]["init_args"]["tokenizer"]
-        print(f"tokenizer: {tokenizer}")
-        return tokenizer
+
+def get_ckpt_tokenizer(path: str | Path):
+    path = Path(path)
+    config_path = path.parent.parent.joinpath("config.json")
+    assert config_path.is_file()
+    with open(config_path, "r") as fid:
+        config = json.load(fid)
+    try:
+        return config["data"]["tokenizer"]
+    except KeyError:
+        return config["data"]["init_args"]["tokenizer"]
