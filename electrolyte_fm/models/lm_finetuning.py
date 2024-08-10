@@ -99,10 +99,10 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         return self._phase_step(batch, "train")
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        return self._phase_step(batch, batch_idx)
+        return self._phase_step(batch, batch_idx, "val")
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        return self._phase_step(batch, batch_idx)
+        return self._phase_step(batch, batch_idx, "test")
 
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()

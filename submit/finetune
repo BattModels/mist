@@ -1,0 +1,63 @@
+#!/usr/bin/env python
+import json
+from typing import List
+from pathlib import Path
+
+import _jsonnet as jsonnet
+import typer
+
+from submit import merge_config, parse_data, template_defaults, render
+
+cli = typer.Typer(rich_markup_mode="markdown")
+
+
+@cli.command()
+def finetune(
+    template: str = typer.Argument(
+        file_okay=True, dir_okay=False, help="Jinja2 Template to render"
+    ),
+    config: str = typer.Option(
+        Path(__file__).parent.joinpath("finetune.jsonnet"),
+        file_okay=True,
+        dir_okay=False,
+        help="Finetuning config",
+    ),
+    dataset: str = typer.Option("bace", help="Finetuning dataset(s) to process"),
+    ckpt: str = typer.Option(
+        "ibm/MoLFormer-XL-both-10pct", help="Checkpoint to finetune"
+    ),
+    data: List[str] = typer.Option(
+        [],
+        file_okay=True,
+        dir_okay=False,
+        help="YAML or JSON file specifying the template's variables. Multiple files can be provided and will be resolved sequentially",
+    ),
+    default: bool = typer.Option(
+        True,
+        help="Use the default.yaml file next to the template",
+    ),
+    script_config: bool = typer.Option(
+        True,
+        help="Apply the *.yaml file next to the template",
+    ),
+):
+    script_config = template_defaults(template, default, script_config)
+
+    # Apply Finetuning Config
+    assert config.endswith(".jsonnet")
+    finetune_config = json.loads(
+        jsonnet.evaluate_file(config, tla_vars={"dataset": dataset})
+    )
+    script_config = merge_config(script_config, finetune_config)
+    script_config["train"]["model"]["init_args"]["encoder_ckpt"] = ckpt
+
+    # Overlay additional data files
+    for data_file in data:
+        script_config = merge_config(config, parse_data(Path(data_file)))
+
+    # Generate Script
+    print(render(template, script_config))
+
+
+if __name__ == "__main__":
+    cli()
