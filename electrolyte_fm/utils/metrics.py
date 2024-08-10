@@ -1,5 +1,8 @@
+from typing import Union
+
 import torch
-from torchmetrics import Metric
+from pytorch_lightning.loggers import WandbLogger
+from torchmetrics import Metric, MetricCollection
 from torchmetrics.classification import AUROC, AveragePrecision
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
 
@@ -60,7 +63,7 @@ def masked_loss(
 
 
 def masked_metric_forward(
-    metrics: list[Metric],
+    metrics: Union[dict[Metric], MetricCollection],
     preds: torch.Tensor,
     targets: torch.Tensor,
     mask: torch.BoolTensor,
@@ -68,7 +71,20 @@ def masked_metric_forward(
     """Update metrics, masking out targets as needed"""
     out = {}
     targets = targets.masked_fill(mask, IGNORE_INDEX)
+    if isinstance(metrics, MetricCollection):
+        return metrics(preds, targets)
     for name, metric in metrics.items():
         out[name] = metric(preds, targets)
 
     return out
+
+
+def record_summary_stats(logger, metrics: MetricCollection):
+    if isinstance(logger, WandbLogger):
+        define_metric = logger.experiment.define_metric
+        for name, metric in metrics.items():
+            define_metric(
+                name + "_epoch",
+                summary="last,best",
+                goal="maximize" if metric.higher_is_better else "minimize",
+            )

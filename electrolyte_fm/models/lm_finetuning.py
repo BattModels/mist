@@ -1,14 +1,20 @@
 from itertools import chain
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import List, Optional
 
 import pytorch_lightning as pl
 import torch
+from torchmetrics import MetricCollection
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
 
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
-from ..utils.metrics import get_metric, masked_loss, masked_metric_forward
+from ..utils.metrics import (
+    get_metric,
+    masked_loss,
+    masked_metric_forward,
+    record_summary_stats,
+)
 
 
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
@@ -22,8 +28,9 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         encoder_ckpt: str,
         freeze_encoder: bool = False,
         dropout: float = 0.2,
+        vocab_size: Optional[int] = None,
         task: str = "binary_classification",
-        metrics: list[str] = ["auroc"],
+        metrics: List[str] = ["auroc"],
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
@@ -49,6 +56,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
                 trust_remote_code=True,
             )
 
+        # Validate the vocab size
+        if vocab_size is not None:
+            if hasattr(self.encoder, "config") and hasattr(
+                self.encoder.config, "vocab_size"
+            ):
+                assert self.encoder.config.vocab_size == vocab_size
+
         self.save_hyperparameters()
 
         self.task_network = PredictionTaskHead(
@@ -64,9 +78,17 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             raise ValueError(f"Unknown task type {task}")
 
         # Additional Metrics
-        self.metrics = {}
-        for metric in metrics:
-            self.metrics[metric] = get_metric(metric, task, output_size)
+        metrics = MetricCollection(
+            {metric: get_metric(metric, task, output_size) for metric in metrics}
+        )
+        self.train_metrics = metrics.clone(prefix="train/")
+        self.val_metrics = metrics.clone(prefix="val/")
+        self.test_metrics = metrics.clone(prefix="test/")
+
+    def setup(self, stage: str) -> None:
+        """Setup additional summary stats for logging"""
+        for m in [self.train_metrics, self.val_metrics, self.test_metrics]:
+            record_summary_stats(self.logger, m)
 
     def forward(self, batch, **kwargs):  # type: ignore[override]
         hs = self.encoder(
@@ -78,14 +100,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
         return self.task_network(hs)
 
-    def _phase_step(self, batch, batch_idx: int, phase: str) -> torch.FloatTensor:
+    def training_step(self, batch, batch_idx: int):
         preds = self(batch)
-        loss = self.masked_loss(preds, batch["target"], batch["target_mask"])
-        out = {phase + "loss": loss}
-        metrics = masked_metric_forward(
-            self.metrics, preds, batch["target"], batch["target_mask"]
+        loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
+        out = masked_metric_forward(
+            self.train_metrics, preds, batch["target"], batch["target_mask"]
         )
-        out.update({phase + k: v for k, v in metrics.items()})
+        out["train/loss"] = loss
         self.log_dict(
             out,
             on_step=True,
@@ -95,14 +116,37 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         )
         return loss
 
-    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        return self._phase_step(batch, "train")
+    def validation_step(self, batch, batch_idx: int):
+        preds = self(batch)
+        loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
+        out = masked_metric_forward(
+            self.val_metrics, preds, batch["target"], batch["target_mask"]
+        )
+        out["val/loss"] = loss
+        self.log_dict(
+            out,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        return loss
 
-    def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        return self._phase_step(batch, batch_idx, "val")
-
-    def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        return self._phase_step(batch, batch_idx, "test")
+    def test_step(self, batch, batch_idx: int):
+        preds = self(batch)
+        loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
+        out = masked_metric_forward(
+            self.test_metrics, preds, batch["target"], batch["target_mask"]
+        )
+        out["test/loss"] = loss
+        self.log_dict(
+            out,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        return loss
 
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()
