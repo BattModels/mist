@@ -114,6 +114,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["target"],
             batch["target_mask"],
             batch["input_ids"],
+            batch.get("is_oov", None),
         )
         out["train/loss"] = loss
         self.log_dict(
@@ -134,6 +135,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["target"],
             batch["target_mask"],
             batch["input_ids"],
+            batch.get("is_oov", None),
         )
         out["val/loss"] = loss
         self.log_dict(
@@ -154,6 +156,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["target"],
             batch["target_mask"],
             batch["input_ids"],
+            batch.get("is_oov", None),
         )
         out["test/loss"] = loss
         self.log_dict(

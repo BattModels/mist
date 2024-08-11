@@ -115,6 +115,20 @@ def test_oov_metric():
     assert out["all"] == torch.tensor(1 / 3)
 
 
+def test_oov_metric_is_oov():
+    metric = OOVMetric(Accuracy(task="binary"), unk_token_id=1)
+    out = metric(
+        torch.tensor([True, False, False]),
+        torch.tensor([False, True, False]),
+        torch.tensor([[3, 1], [0, 1], [3, 1]]),  # This will be ignored
+        torch.tensor([True, False, False]),  # As is_oov is provided
+    )
+    assert isinstance(out, dict) and "oov" in out and "non_oov" in out and "all" in out
+    assert out["oov"] == torch.tensor(0)
+    assert out["non_oov"] == torch.tensor(0.5)
+    assert out["all"] == torch.tensor(1 / 3)
+
+
 def test_oov_metric_collection():
     mc = MetricCollection(
         {"foo": Accuracy(task="binary"), "bar": Accuracy(task="binary")}

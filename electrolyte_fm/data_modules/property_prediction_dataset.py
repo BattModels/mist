@@ -24,6 +24,7 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
         prefetch_factor: int = 4,
         smi_column: str = "smiles",
         target_columns: list[str] = ["Class"],
+        strip_unk_tokens: bool = False,
         val_batch_size: Optional[int] = None,
     ):
         super().__init__()
@@ -35,6 +36,7 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
 
         self.smi_column = smi_column
         self.target_columns = target_columns
+        self.strip_unk_tokens = strip_unk_tokens
 
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size or batch_size
@@ -86,9 +88,21 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
     def data_collator(self, batch):
         targets = [x.pop("target") for x in batch]
         mask = [x.pop("target_mask") for x in batch]
+
+        # Remove unknown tokens
+        if self.strip_unk_tokens:
+            unk_token_id = self.tokenizer.unk_token_id
+            batch = [strip_unk_tokens(obs, unk_token_id) for obs in batch]
+            is_oov = [x.pop("is_oov") for x in batch]
+
+        # Tokenize
         output = self.token_collator(batch)
         output["target"] = torch.stack(targets)
         output["target_mask"] = torch.stack(mask)
+
+        # Mark oov examples
+        if self.strip_unk_tokens:
+            output["is_oov"] = torch.tensor(is_oov)
         return output
 
     def train_dataloader(self):
@@ -121,3 +135,14 @@ class PropertyPredictionDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
         )
+
+
+def strip_unk_tokens(batch: dict, unk_token_id: int) -> dict:
+    """Remove unknown tokens from input"""
+    is_oov = [id == unk_token_id for id in batch["input_ids"]]
+    out = {}
+    for k, v in batch.items():
+        assert len(v) == len(is_oov)
+        out[k] = [x for x, oov in zip(v, is_oov) if not oov]
+    out["is_oov"] = any(is_oov)
+    return out
