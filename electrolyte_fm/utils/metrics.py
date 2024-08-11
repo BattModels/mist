@@ -75,13 +75,13 @@ class OOVMetric(Metric):
 
 
 def get_metric(name: str, task_type: str, output_size: int) -> Metric:
-    if name == "auroc" and task_type == "binary_classification":
+    if name == "auroc" and task_type == "binary":
         return AUROC(
             task="binary",
             ignore_index=IGNORE_INDEX,
             thresholds=100,
         )
-    elif name == "avg-precision" and task_type == "binary_classification":
+    elif name == "avg-precision" and task_type == "binary":
         return AveragePrecision(
             task="binary",
             ignore_index=IGNORE_INDEX,

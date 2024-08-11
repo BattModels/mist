@@ -29,7 +29,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         freeze_encoder: bool = False,
         dropout: float = 0.2,
         vocab_size: Optional[int] = None,
-        task: str = "binary_classification",
+        task: str = "binary",
         metrics: List[str] = ["auroc"],
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
@@ -72,7 +72,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             output_size=output_size,
             dropout=dropout,
         )
-        if task == "binary_classification":
+        if task == "binary":
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
         elif task == "regression":
             self.lossfn = torch.nn.MSELoss(reduction="none")
