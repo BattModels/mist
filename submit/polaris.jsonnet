@@ -3,14 +3,16 @@
   nodes: 16,
   walltime: '3:00:00',
   mpiexe: {
-    np: '$NGPUs',
+    np: '$NGPUS',
     ppn: '$NGPU_PER_HOST',
     hostfile: '$PBS_NODEFILE',
     'cpu-bind': 'numa',
   },
   train: {
-    init_args: {
-      path: '/eagle/FoundEnergy/realspace_v2',
+    data: {
+      init_args: {
+        path: '/eagle/FoundEnergy/realspace_v2',
+      },
     },
   },
   env: {

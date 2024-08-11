@@ -7,15 +7,14 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-torch = {version = "^2.3"}
-lightning = "^2.2"
+torch = {version = "~2.3"}
+torchmetrics = "^1.4.0"
+lightning = "~2.3"
 jsonargparse = {extras = ["signatures", "jsonnet"], version = "^4.27"}
 transformers = "^4.40"
 deepspeed = { git = "https://github.com/microsoft/DeepSpeed.git", rev = "5f631abc2f930ecece38fae05dc9bd3923c555dd"}
 wandb = "^0.16"
 typer = "^0.9"
-h5py = "^3.11"
-protobuf = "<=3.20"
 datasets = "^2.20"
 pyspark = "^3.5.0"
 smirk = {path = "smirk", develop=true}

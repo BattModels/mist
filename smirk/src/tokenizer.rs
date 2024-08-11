@@ -11,16 +11,20 @@ use pyo3::{pyclass, pymethods, PyResult, Python};
 use regex::Regex;
 use tokenizers::decoders::fuse::Fuse;
 use tokenizers::models::wordlevel::WordLevel;
-use tokenizers::normalizers::Strip;
-use tokenizers::{self, DecoderWrapper, Model};
+use tokenizers::{self, normalizers, DecoderWrapper, Model, NormalizerWrapper};
 use tokenizers::{
     AddedToken, EncodeInput, OffsetReferential, OffsetType, PaddingDirection, PaddingParams,
     PaddingStrategy, PostProcessorWrapper, PreTokenizedString, PreTokenizer, TokenizerBuilder,
     TokenizerImpl,
 };
 
-type Tokenizer =
-    TokenizerImpl<ModelWrapper, Strip, PreTokenizerWrapper, PostProcessorWrapper, DecoderWrapper>;
+type Tokenizer = TokenizerImpl<
+    ModelWrapper,
+    NormalizerWrapper,
+    PreTokenizerWrapper,
+    PostProcessorWrapper,
+    DecoderWrapper,
+>;
 
 #[pyclass(dict, module = "smirk.smirk", name = "SmirkTokenizer")]
 #[derive(Clone)]
@@ -34,6 +38,16 @@ impl SmirkTokenizer {
     }
 }
 
+fn normalizer() -> normalizers::Sequence {
+    let steps: Vec<normalizers::NormalizerWrapper> = [
+        normalizers::Replace::new("++", "+2").unwrap().into(),
+        normalizers::Replace::new("--", "-2").unwrap().into(),
+        normalizers::Strip::new(true, true).into(),
+    ]
+    .to_vec();
+    normalizers::Sequence::new(steps)
+}
+
 #[pymethods]
 impl SmirkTokenizer {
     #[new]
@@ -41,7 +55,7 @@ impl SmirkTokenizer {
         let tokenizer: Tokenizer = TokenizerBuilder::new()
             .with_model(WordLevel::default().into())
             .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
-            .with_normalizer(Some(Strip::new(true, true)))
+            .with_normalizer(Some(normalizer().into()))
             .with_decoder(Some(Fuse::default().into()))
             .build()
             .unwrap();
@@ -62,7 +76,7 @@ impl SmirkTokenizer {
         let tokenizer = TokenizerBuilder::new()
             .with_model(model.into())
             .with_pre_tokenizer(Some(SmirkPreTokenizer::default().into()))
-            .with_normalizer(Some(Strip::new(true, true)))
+            .with_normalizer(Some(normalizer().into()))
             .with_decoder(Some(Fuse::new().into()))
             .build()
             .unwrap();
@@ -262,7 +276,7 @@ impl SmirkTokenizer {
         // Build the new tokenizer
         let mut tokenizer: TokenizerImpl<
             ModelWrapper,
-            Strip,
+            NormalizerWrapper,
             PreTokenizerWrapper,
             PostProcessorWrapper,
             DecoderWrapper,

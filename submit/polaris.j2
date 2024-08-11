@@ -5,6 +5,7 @@
 #PBS -l place=scatter
 #PBS -l filesystems=eagle:home
 #PBS -l walltime={{ walltime or "00:20:00" }}
+#PBS -j oe
 #PBS -q {{ queue or "debug" }}
 #PBS -A {{ account or "FoundEnergy" }}
 set -x
@@ -24,7 +25,7 @@ NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 NGPUS="$((${NNODES}*${NGPU_PER_HOST}))"
 
 # Lightning Env variables
-export MASTER_ADDR=$(cat $PBS_NODEFILE | head -1 | awk '{print $4}')
+export MASTER_ADDR="$(head -n1 $PBS_NODEFILE)"
 export MASTER_PORT=2345
 export WORLD_SIZE=$NGPUS
 
