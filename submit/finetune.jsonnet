@@ -1,6 +1,6 @@
 local pretrain = import 'pretrain.jsonnet';
 
-local molecularnet_tasks = import 'molecularnet_tasks.libsonnet';
+local molnet_tasks = import 'moleculenet_tasks.libsonnet';
 
 function(dataset='bace') {
   queue: 'venkvis-a100',
@@ -13,15 +13,15 @@ function(dataset='bace') {
         batch_size: 128,
         val_batch_size: 2 * self.batch_size,
         path: '/nfs/turbo/coe-venkvis/mist/molformer_ft_full/' + dataset,
-        target_columns: molecularnet_tasks[dataset].target_columns,
+        target_columns: molnet_tasks[dataset].target_columns,
       },
     },
     model: {
       class_path: 'electrolyte_fm.models.LMFinetuning',
       init_args: {
         encoder_ckpt: 'ibm/MoLFormer-XL-both-10pct',
-        task: molecularnet_tasks[dataset].task,
-        metrics: molecularnet_tasks[dataset].metrics,
+        task: molnet_tasks[dataset].task,
+        metrics: molnet_tasks[dataset].metrics,
         freeze_encoder: true,
 
         // Duplicate pre-training optimizer config
