@@ -12,8 +12,8 @@ from ..utils.metrics import (
     get_metric,
     masked_loss,
     masked_metric_forward,
-    record_summary_stats,
 )
+from .model_utils import record_summary_stats
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead

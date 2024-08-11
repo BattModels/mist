@@ -1,7 +1,6 @@
 from typing import Union, Dict, Optional
 
 import torch
-from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import Metric, MetricCollection
 from torchmetrics.wrappers.abstract import WrapperMetric
 from torchmetrics.wrappers.classwise import ClasswiseWrapper
@@ -10,16 +9,6 @@ from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
 
 """ Target Value to indicate missing data """
 IGNORE_INDEX = -100
-
-
-class AvgMeanSquaredError(MeanSquaredError):
-    """Computes the Average MSE of multiple output predictions"""
-
-    def __init__(self, squared: bool = True, num_outputs: int = 1, **kwargs):
-        super().__init__(squared=squared, num_outputs=num_outputs, **kwargs)
-
-    def compute(self) -> torch.Tensor:
-        return super().compute().mean()
 
 
 class OOVMetric(Metric):
@@ -140,14 +129,3 @@ def masked_metric_forward(
         out[name] = metric(preds, targets, *args)
 
     return out
-
-
-def record_summary_stats(logger, metrics: MetricCollection):
-    if isinstance(logger, WandbLogger):
-        define_metric = logger.experiment.define_metric
-        for name, metric in metrics.items():
-            define_metric(
-                name + "_epoch",
-                summary="last,best",
-                goal="maximize" if metric.higher_is_better else "minimize",
-            )

@@ -1,4 +1,6 @@
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+from torchmetrics import MetricCollection
+from pytorch_lightning.loggers import WandbLogger
 
 from ..utils.ckpt import SaveConfigWithCkpts
 
@@ -30,6 +32,17 @@ class LoggingMixin:
             sync_dist=True,
         )
         return super().on_train_epoch_start()
+
+
+def record_summary_stats(logger, metrics: MetricCollection):
+    if isinstance(logger, WandbLogger):
+        define_metric = logger.experiment.define_metric
+        for name, metric in metrics.items():
+            define_metric(
+                name + "_epoch",
+                summary="last,best",
+                goal="maximize" if metric.higher_is_better else "minimize",
+            )
 
 
 class CanSkip:
