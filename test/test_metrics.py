@@ -126,9 +126,11 @@ def test_oov_metric_collection():
         torch.tensor([[3, 1], [0, 0], [3, 2]]),
     )
     assert isinstance(out, dict)
+    metric_keys = list(metric.keys())
     for k in mc.keys():
         for oov_key in ["oov", "non_oov", "all"]:
             assert f"{k}_{oov_key}" in out
+            assert f"{k}_{oov_key}" in metric_keys
 
         assert out[f"{k}_oov"] == torch.tensor(0)
         assert out[f"{k}_non_oov"] == torch.tensor(0.5)

@@ -65,7 +65,7 @@ class OOVMetric(Metric):
     def items(self):
         for k in self.metrics.keys():
             m = self.metrics[k]
-            if isinstance(m, Dict):
+            if isinstance(m, MetricCollection):
                 for mk, mv in m.items():
                     yield (mk + f"_{k}", mv)
             else:
