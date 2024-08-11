@@ -25,7 +25,7 @@ class AvgMeanSquaredError(MeanSquaredError):
 class OOVMetric(Metric):
     """Track metrics for OOV, Non-OOV and All tokenized strings"""
 
-    def __init__(self, metric: Metric, unk_token_id: int, **kwargs) -> None:
+    def __init__(self, metric: Metric, unk_token_id: int) -> None:
         super().__init__()
         if not isinstance(metric, (Metric, MetricCollection)):
             raise ValueError(
@@ -58,12 +58,18 @@ class OOVMetric(Metric):
                 out.update({k: m})
         return out
 
+    def reset(self):
+        for m in self.values():
+            m.reset()
+
     def items(self):
         for k in self.metrics.keys():
             m = self.metrics[k]
-            if isinstance(m):
+            if isinstance(m, Dict):
                 for mk, mv in m.items():
                     yield (mk + f"_{k}", mv)
+            else:
+                yield k, m
 
     def keys(self):
         for k, _ in self.items():
@@ -120,17 +126,18 @@ def masked_loss(
 
 def masked_metric_forward(
     metrics: Union[dict[Metric], MetricCollection],
-    preds: torch.Tensor,
-    targets: torch.Tensor,
+    preds: torch.FloatTensor,
+    targets: Union[torch.IntTensor, torch.FloatTensor],
     mask: torch.BoolTensor,
+    *args,
 ) -> dict[str, torch.Tensor]:
     """Update metrics, masking out targets as needed"""
     out = {}
     targets = targets.masked_fill(mask, IGNORE_INDEX)
-    if isinstance(metrics, MetricCollection):
-        return metrics(preds, targets)
+    if isinstance(metrics, (MetricCollection, OOVMetric)):
+        return metrics(preds, targets, *args)
     for name, metric in metrics.items():
-        out[name] = metric(preds, targets)
+        out[name] = metric(preds, targets, *args)
 
     return out
 

@@ -11,6 +11,7 @@ from electrolyte_fm.utils.metrics import (
     masked_loss,
     masked_metric_forward,
     OOVMetric,
+    IGNORE_INDEX,
 )
 
 BINARY_METRICS = ["auroc", "avg-precision"]
@@ -132,3 +133,34 @@ def test_oov_metric_collection():
         assert out[f"{k}_oov"] == torch.tensor(0)
         assert out[f"{k}_non_oov"] == torch.tensor(0.5)
         assert out[f"{k}_all"] == torch.tensor(1 / 3)
+
+
+def test_oov_metric_masked():
+    metric = OOVMetric(
+        Accuracy(task="binary", ignore_index=IGNORE_INDEX),
+        unk_token_id=1,
+    )
+    preds = torch.tensor([1, 0, 0])
+    targets = torch.tensor([0, 1, 0])
+    input_ids = torch.tensor([[3, 1], [0, 0], [3, 2]])
+    mask = torch.tensor([False, True, False])
+
+    # Initial variant
+    out = masked_metric_forward(metric, preds, targets, mask, input_ids)
+    assert out["oov"] == torch.tensor(0)
+    assert out["non_oov"] == torch.tensor(1)
+    assert out["all"] == torch.tensor(0.5)
+
+    # Repeat, changing a masked target
+    metric.reset()
+    targets[1] = False
+    assert mask[1]
+    out_targets = masked_metric_forward(metric, preds, targets, mask, input_ids)
+    assert out_targets == out
+
+    # Repeat, changing a masked preds
+    metric.reset()
+    preds[1] = True
+    assert mask[1]
+    out_preds = masked_metric_forward(metric, preds, targets, mask, input_ids)
+    assert out_preds == out

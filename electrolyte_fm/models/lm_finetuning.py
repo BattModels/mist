@@ -109,7 +109,11 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         preds = self(batch)
         loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
         out = masked_metric_forward(
-            self.train_metrics, preds, batch["target"], batch["target_mask"]
+            self.train_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
+            batch["input_ids"],
         )
         out["train/loss"] = loss
         self.log_dict(
@@ -125,7 +129,11 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         preds = self(batch)
         loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
         out = masked_metric_forward(
-            self.val_metrics, preds, batch["target"], batch["target_mask"]
+            self.val_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
+            batch["input_ids"],
         )
         out["val/loss"] = loss
         self.log_dict(
@@ -141,7 +149,11 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         preds = self(batch)
         loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
         out = masked_metric_forward(
-            self.test_metrics, preds, batch["target"], batch["target_mask"]
+            self.test_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
+            batch["input_ids"],
         )
         out["test/loss"] = loss
         self.log_dict(
