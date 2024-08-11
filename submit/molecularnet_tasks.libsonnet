@@ -18,12 +18,12 @@
   },
   esol: {
     task: 'regression',
-    target_columns: ['ESOL predicted log solubility in mols per litre'],
+    target_columns: ['measured log solubility in mols per litre'],
     metrics: ['rmse'],
   },
   freesolv: {
     task: 'regression',
-    target_columns: ['expt', 'calc'],
+    target_columns: ['expt', 'calc'],  // MolecularNet tracks `y`
     metrics: ['rmse'],
   },
   hiv: {
@@ -34,15 +34,12 @@
   lipo: {
     task: 'regression',
     metrics: ['rmse'],
-    target_columns: ['y'],
+    target_columns: ['y'],  // MolecularNet tracks 'exp'
   },
   qm9: {
     task: 'regression',
     metrics: ['mae'],
     target_columns: [
-      'A',
-      'B',
-      'C',
       'mu',
       'alpha',
       'homo',
@@ -55,10 +52,6 @@
       'h298',
       'g298',
       'cv',
-      'u0_atom',
-      'u298_atom',
-      'h298_atom',
-      'g298_atom',
     ],
   },
   sider: {
