@@ -21,7 +21,7 @@ REGRESSION_METRICS = ["mae", "avg-rmse", "r2"]
 @pytest.mark.parametrize(
     "name,task_type",
     chain(
-        zip(BINARY_METRICS, repeat("binary_classification")),
+        zip(BINARY_METRICS, repeat("binary")),
         zip(REGRESSION_METRICS, repeat("regression")),
     ),
 )
@@ -30,7 +30,7 @@ def test_scalar(name, task_type):
     C = 4
     metric = get_metric(name, task_type, C)
     preds = torch.rand(B, C)
-    if task_type == "binary_classification":
+    if task_type == "binary":
         targets = torch.randint(0, 1, (B, C))
     else:
         targets = torch.rand(B, C)
@@ -48,7 +48,7 @@ def test_invalid():
 
 @pytest.mark.parametrize("name", BINARY_METRICS)
 def test_masked_metrics(name):
-    metric = get_metric(name, "binary_classification", 3)
+    metric = get_metric(name, "binary", 3)
     preds = torch.rand(2, 3)
     targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
     mask = torch.tensor([[False, False, True], [True, False, False]])

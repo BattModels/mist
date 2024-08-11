@@ -2,17 +2,17 @@
 // TODO: Include all benchmarks from MolecularNet
 {
   bace: {
-    task: 'binary_classification',
+    task: 'binary',
     target_columns: ['Class'],
     metrics: ['auroc'],
   },
   bbbp: {
-    task: 'binary_classification',
+    task: 'binary',
     target_columns: ['p_np'],
     metrics: ['auroc'],
   },
   clintox: {
-    task: 'binary_classification',
+    task: 'binary',
     target_columns: ['FDA_APPROVED', 'CT_TOX'],
     metrics: ['auroc'],
   },
@@ -27,7 +27,7 @@
     metrics: ['rmse'],
   },
   hiv: {
-    task: 'binary_classification',
+    task: 'binary',
     target_columns: ['HIV_active'],
     metrics: ['auroc'],
   },
@@ -63,7 +63,7 @@
     ],
   },
   sider: {
-    task: 'binary_classification',
+    task: 'binary',
     metrics: ['auroc'],
     target_columns: [
       'Hepatobiliary disorders',
@@ -96,7 +96,7 @@
     ],
   },
   tox21: {
-    task: 'binary_classification',
+    task: 'binary',
     metrics: ['auroc'],
     target_columns: [
       'NR-AR',
