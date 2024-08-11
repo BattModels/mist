@@ -3,11 +3,14 @@ from typing import Dict
 
 import pytest
 import torch
+from torchmetrics import MetricCollection
+from torchmetrics import Accuracy
 
 from electrolyte_fm.utils.metrics import (
     get_metric,
     masked_loss,
     masked_metric_forward,
+    OOVMetric,
 )
 
 BINARY_METRICS = ["auroc", "avg-precision"]
@@ -87,3 +90,36 @@ def test_masked_loss():
     assert mask[0, 3]
     loss_preds = masked_loss(lossfn, preds, targets, mask)
     assert loss_preds == loss
+
+
+def test_oov_metric():
+    metric = OOVMetric(Accuracy(task="binary"), unk_token_id=1)
+    out = metric(
+        torch.tensor([True, False, False]),
+        torch.tensor([False, True, False]),
+        torch.tensor([[3, 1], [0, 0], [3, 2]]),
+    )
+    assert isinstance(out, dict) and "oov" in out and "non_oov" in out and "all" in out
+    assert out["oov"] == torch.tensor(0)
+    assert out["non_oov"] == torch.tensor(0.5)
+    assert out["all"] == torch.tensor(1 / 3)
+
+
+def test_oov_metric_collection():
+    mc = MetricCollection(
+        {"foo": Accuracy(task="binary"), "bar": Accuracy(task="binary")}
+    )
+    metric = OOVMetric(mc, unk_token_id=1)
+    out = metric(
+        torch.tensor([True, False, False]),
+        torch.tensor([False, True, False]),
+        torch.tensor([[3, 1], [0, 0], [3, 2]]),
+    )
+    assert isinstance(out, dict)
+    for k in mc.keys():
+        for oov_key in ["oov", "non_oov", "all"]:
+            assert f"{k}_{oov_key}" in out
+
+        assert out[f"{k}_oov"] == torch.tensor(0)
+        assert out[f"{k}_non_oov"] == torch.tensor(0.5)
+        assert out[f"{k}_all"] == torch.tensor(1 / 3)

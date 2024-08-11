@@ -1,8 +1,10 @@
-from typing import Union
+from typing import Union, Dict
 
 import torch
 from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import Metric, MetricCollection
+from torchmetrics.wrappers.abstract import WrapperMetric
+from torchmetrics.wrappers.classwise import ClasswiseWrapper
 from torchmetrics.classification import AUROC, AveragePrecision
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
 
@@ -13,11 +15,63 @@ IGNORE_INDEX = -100
 class AvgMeanSquaredError(MeanSquaredError):
     """Computes the Average MSE of multiple output predictions"""
 
-    def __init__(self, squared: bool = True, num_outputs: int = 1):
-        super().__init__(squared=squared, num_outputs=num_outputs)
+    def __init__(self, squared: bool = True, num_outputs: int = 1, **kwargs):
+        super().__init__(squared=squared, num_outputs=num_outputs, **kwargs)
 
     def compute(self) -> torch.Tensor:
         return super().compute().mean()
+
+
+class OOVMetric(Metric):
+    """Track metrics for OOV, Non-OOV and All tokenized strings"""
+
+    def __init__(self, metric: Metric, unk_token_id: int, **kwargs) -> None:
+        super().__init__()
+        if not isinstance(metric, (Metric, MetricCollection)):
+            raise ValueError(
+                f"Expected metric to be a torchmetrics.Metric or torchmetrics.MetricCollection but got {metric}"
+            )
+        self.metrics = torch.nn.ModuleDict(
+            {"oov": metric.clone(), "non_oov": metric.clone(), "all": metric.clone()},
+        )
+        self.unk_token_id = unk_token_id
+
+    def update(
+        self, preds: torch.Tensor, targets: torch.Tensor, input_ids: torch.IntTensor
+    ) -> None:
+        assert input_ids.ndim == 2
+        is_oov = (input_ids == self.unk_token_id).any(1)
+        out = {}
+        out["all"] = self.metrics["all"].forward(preds, targets)
+        out["oov"] = self.metrics["oov"].forward(preds[is_oov], targets[is_oov])
+        out["non_oov"] = self.metrics["non_oov"].forward(
+            preds[~is_oov], targets[~is_oov]
+        )
+
+    def compute(self):
+        out = {}
+        for k in self.metrics.keys():
+            m = self.metrics[k].compute()
+            if isinstance(m, Dict):
+                out.update({mk + f"_{k}": mv for mk, mv in m.items()})
+            else:
+                out.update({k: m})
+        return out
+
+    def items(self):
+        for k in self.metrics.keys():
+            m = self.metrics[k]
+            if isinstance(m):
+                for mk, mv in m.items():
+                    yield (mk + f"_{k}", mv)
+
+    def keys(self):
+        for k, _ in self.items():
+            yield k
+
+    def values(self):
+        for _, v in self.items():
+            yield v
 
 
 def get_metric(name: str, task_type: str, output_size: int) -> Metric:
