@@ -1,4 +1,4 @@
-from typing import Union, Dict
+from typing import Union, Dict, Optional
 
 import torch
 from pytorch_lightning.loggers import WandbLogger
@@ -37,10 +37,16 @@ class OOVMetric(Metric):
         self.unk_token_id = unk_token_id
 
     def update(
-        self, preds: torch.Tensor, targets: torch.Tensor, input_ids: torch.IntTensor
+        self,
+        preds: torch.Tensor,
+        targets: torch.Tensor,
+        input_ids: torch.IntTensor,
+        is_oov: Optional[torch.BoolTensor] = None,
     ) -> None:
         assert input_ids.ndim == 2
-        is_oov = (input_ids == self.unk_token_id).any(1)
+        is_oov = (
+            is_oov if is_oov is not None else (input_ids == self.unk_token_id).any(1)
+        )
         out = {}
         out["all"] = self.metrics["all"].forward(preds, targets)
         out["oov"] = self.metrics["oov"].forward(preds[is_oov], targets[is_oov])
@@ -100,7 +106,7 @@ def get_metric(name: str, task_type: str, output_size: int) -> Metric:
     elif name == "rmse" and task_type == "regression":
         return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
-        return R2Score()
+        return R2Score(num_outputs=output_size)
     else:
         raise ValueError(f"Unknown metric {name} for {task_type} tasks")
 
