@@ -71,7 +71,7 @@ def test_masked_metrics(name):
 
 
 def test_masked_loss():
-    lossfn = torch.nn.MSELoss()
+    lossfn = torch.nn.MSELoss(reduction="none")
     preds = torch.rand(2, 3)
     targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
     mask = torch.tensor([[False, False, True], [True, False, False]])
@@ -86,10 +86,19 @@ def test_masked_loss():
     assert loss_targets == loss
 
     # Repeat, changing a masked prediction
-    targets[0, 3] = 616.0
-    assert mask[0, 3]
+    targets[0, 2] = 616.0
+    assert mask[0, 2]
     loss_preds = masked_loss(lossfn, preds, targets, mask)
     assert loss_preds == loss
+
+
+def test_masked_loss_reduction():
+    lossfn = torch.nn.MSELoss()
+    preds = torch.rand(2, 3)
+    targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
+    mask = torch.tensor([[False, False, True], [True, False, False]])
+    with pytest.raises(RuntimeError, match="Reduction must be 'none'"):
+        masked_loss(lossfn, preds, targets, mask)
 
 
 def test_oov_metric():

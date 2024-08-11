@@ -112,6 +112,8 @@ def masked_loss(
     mask: torch.FloatTensor,
 ) -> torch.Tensor:
     """Batch Averaged Loss, masking out unknown entries in y"""
+    if lossfn.reduction != "none":
+        raise RuntimeError("Reduction must be 'none'")
     loss = lossfn(preds, targets.to(preds))
     return loss.masked_fill(mask, 0).sum() / mask.bitwise_not().sum()
 
