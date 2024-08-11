@@ -38,8 +38,7 @@
   },
   qm9: {
     task: 'regression',
-    // MolecularNet recommends MAE, but MoLFormer used Avg-RMSE
-    metrics: ['mae', 'avg-rmse'],
+    metrics: ['mae'],
     target_columns: [
       'A',
       'B',

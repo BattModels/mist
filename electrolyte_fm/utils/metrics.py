@@ -96,17 +96,11 @@ def get_metric(name: str, task_type: str, output_size: int) -> Metric:
     elif name == "mae" and task_type == "regression":
         return MeanAbsoluteError()
     elif name == "rmse" and task_type == "regression":
-        return MeanSquaredError(
-            squared=True,
-            num_outputs=output_size,
-        )
-    elif name == "avg-rmse" and task_type == "regression":
-        return AvgMeanSquaredError(
-            squared=True,
-            num_outputs=output_size,
-        )
+        return MeanSquaredError(squared=True)
+    elif name == "rmse" and task_type == "regression":
+        return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
-        return R2Score(num_outputs=output_size)
+        return R2Score()
     else:
         raise ValueError(f"Unknown metric {name} for {task_type} tasks")
 
