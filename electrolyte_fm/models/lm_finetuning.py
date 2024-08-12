@@ -120,15 +120,14 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     def on_fit_start(self):
         """Standardized training data"""
         if self.transform == "standardize":
+            target_mean = None
+            target_std = None
             if self.global_rank == 0:
                 assert self.trainer.datamodule.target_dataset is not None
                 ds = self.trainer.datamodule.target_dataset
                 target = torch.tensor(ds.to_pandas()["target"])
                 target_mean = target.mean(dim=0, keepdim=True)
                 target_std = target.std(dim=0, keepdim=True)
-            else:
-                target_mean = None
-                target_std = None
 
             target_mean = self.trainer.strategy.broadcast(target_mean)
             target_std = self.trainer.strategy.broadcast(target_std)
