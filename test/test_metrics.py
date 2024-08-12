@@ -102,6 +102,19 @@ def test_masked_loss_reduction():
         masked_loss(lossfn, preds, targets, mask)
 
 
+def test_auroc():
+    auroc = get_metric("auroc", "binary", 1)
+    test_logits = torch.tensor([0.1, 0.2, 0.3, 0.4])
+    assert auroc(test_logits, torch.tensor([0, 0, 1, 1])) == 1.0
+    assert auroc(torch.tensor([0.4, 0.3, 0.2, 0.1]), torch.tensor([0, 1, 1, 0])) == 0.5
+    assert auroc(test_logits, torch.tensor([1, 1, 0, 0])) == 0.0
+    assert auroc(test_logits, torch.tensor([1, 0, 1, 1])) == 2.0 / 3
+    # no false positives
+    assert auroc(test_logits, torch.tensor([1, 1, 1, 1])) == 0.0
+    # no true positives
+    assert auroc(test_logits, torch.tensor([0, 0, 0, 0])) == 0.0
+
+
 def test_oov_metric():
     metric = OOVMetric(Accuracy(task="binary"), unk_token_id=1)
     out = metric(
