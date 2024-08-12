@@ -10,10 +10,10 @@ function(dataset='bace') {
     data: {
       class_path: 'electrolyte_fm.data_modules.MolNetDataModule',
       init_args: {
-        batch_size: 128,
+        name: dataset,
+        batch_size: 256,
         val_batch_size: 2 * self.batch_size,
         tokenizer: $.train.model.init_args.encoder_ckpt,
-        path: dataset,
         target_columns: molnet_tasks[dataset].target_columns,
       },
     },
@@ -26,7 +26,13 @@ function(dataset='bace') {
         freeze_encoder: true,
 
         // Duplicate pre-training optimizer config
-        optimizer: pretrain.train.model.init_args.optimizer,
+        optimizer: {
+          class_path: 'torch.optim.AdamW',
+          init_args: {
+            lr: 3.2e-4,
+            weight_decay: 0.01,
+          },
+        },
 
         lr_schedule: {
           class_path: 'electrolyte_fm.utils.lr_schedule.RelativeCosineWarmup',
@@ -39,8 +45,8 @@ function(dataset='bace') {
       },
     },
     trainer: {
-      max_steps: 10000,
-      precision: '32-true',
+      max_steps: 100000,
+      precision: 'bf16-true',
       enable_progress_bar: false,
     },
   },

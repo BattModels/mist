@@ -43,6 +43,7 @@ def finetune(
     ),
 ):
     script_config = template_defaults(template, default, script_config)
+    script_config["train"]["data"]["init_args"].pop("path", None)
 
     # Apply Finetuning Config
     assert config.endswith(".jsonnet")

@@ -11,6 +11,13 @@ from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
 IGNORE_INDEX = -100
 
 
+class SafeR2Score(R2Score):
+    def compute(self):
+        if self.total < 2:
+            return torch.tensor(float("nan"))
+        return super().compute()
+
+
 class OOVMetric(Metric):
     """Track metrics for OOV, Non-OOV and All tokenized strings"""
 
@@ -36,12 +43,9 @@ class OOVMetric(Metric):
         is_oov = (
             is_oov if is_oov is not None else (input_ids == self.unk_token_id).any(1)
         )
-        out = {}
-        out["all"] = self.metrics["all"].forward(preds, targets)
-        out["oov"] = self.metrics["oov"].forward(preds[is_oov], targets[is_oov])
-        out["non_oov"] = self.metrics["non_oov"].forward(
-            preds[~is_oov], targets[~is_oov]
-        )
+        self.metrics["all"].update(preds, targets)
+        self.metrics["oov"].update(preds[is_oov], targets[is_oov])
+        self.metrics["non_oov"].update(preds[~is_oov], targets[~is_oov])
 
     def compute(self):
         out = {}
@@ -95,7 +99,7 @@ def get_metric(name: str, task_type: str, output_size: int) -> Metric:
     elif name == "rmse" and task_type == "regression":
         return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
-        return R2Score(num_outputs=output_size)
+        return SafeR2Score(num_outputs=output_size)
     else:
         raise ValueError(f"Unknown metric {name} for {task_type} tasks")
 
@@ -113,19 +117,13 @@ def masked_loss(
     return loss.masked_fill(mask, 0).sum() / mask.bitwise_not().sum()
 
 
-def masked_metric_forward(
-    metrics: Union[dict[Metric], MetricCollection],
+def masked_metric_update(
+    metrics: Metric,
     preds: torch.FloatTensor,
     targets: Union[torch.IntTensor, torch.FloatTensor],
     mask: torch.BoolTensor,
     *args,
-) -> dict[str, torch.Tensor]:
+):
     """Update metrics, masking out targets as needed"""
-    out = {}
     targets = targets.masked_fill(mask, IGNORE_INDEX)
-    if isinstance(metrics, (MetricCollection, OOVMetric)):
-        return metrics(preds, targets, *args)
-    for name, metric in metrics.items():
-        out[name] = metric(preds, targets, *args)
-
-    return out
+    metrics.update(preds, targets, *args)

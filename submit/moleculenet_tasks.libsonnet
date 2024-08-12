@@ -22,13 +22,13 @@
   esol: {
     task: 'regression',
     target_columns: ['measured log solubility in mols per litre'],
-    metrics: ['rmse'],
+    metrics: ['rmse', 'mae', 'r2'],
     split: 'random',
   },
   freesolv: {
     task: 'regression',
     target_columns: ['y'],
-    metrics: ['rmse'],
+    metrics: ['rmse', 'mae', 'r2'],
     split: 'random',
   },
   hiv: {
@@ -39,7 +39,7 @@
   },
   lipo: {
     task: 'regression',
-    metrics: ['rmse'],
+    metrics: ['rmse', 'mae', 'r2'],
     target_columns: ['exp'],
     split: 'random',
   },
@@ -69,7 +69,7 @@
   },
   qm8: {
     task: 'regression',
-    metrics: ['mae'],
+    metrics: ['mae', 'rmse', 'r2'],
     split: 'random',
     target_columns: [
       'E1-CC2-RI-CC2/def2TZVP',
@@ -92,7 +92,7 @@
   },
   qm9: {
     task: 'regression',
-    metrics: ['mae'],
+    metrics: ['mae', 'rmse', 'r2'],
     split: 'random',
     target_columns: [
       'mu',

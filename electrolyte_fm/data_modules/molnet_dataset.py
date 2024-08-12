@@ -133,11 +133,6 @@ class MolNetDataModule(pl.LightningDataModule):
 
         # Remove extraneous columns and tokenize smiles
         ds = ds.select_columns([self.smi_column, *self.target_columns])
-        ds = ds.map(
-            lambda x: self.tokenizer(x[self.smi_column]),
-            batched=True,
-            remove_columns=self.smi_column,
-        )
 
         # Stack multiple target columns into a single vector, recording unknown elements
         # to be masked out during training
@@ -156,6 +151,16 @@ class MolNetDataModule(pl.LightningDataModule):
             return {"target": torch.stack(target), "target_mask": torch.stack(mask)}
 
         ds = ds.map(collate_target, batched=False, remove_columns=self.target_columns)
+
+        # Save training dataset for target transformations
+        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+
+        # Tokenize smiles
+        ds = ds.map(
+            lambda x: self.tokenizer(x[self.smi_column]),
+            batched=True,
+            remove_columns=self.smi_column,
+        )
 
         self.train_dataset: Dataset = maybe_shard_dataset(
             self.trainer, ds["train"].shuffle(seed=42)

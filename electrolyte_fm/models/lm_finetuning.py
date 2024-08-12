@@ -11,7 +11,7 @@ from ..utils.metrics import (
     OOVMetric,
     get_metric,
     masked_loss,
-    masked_metric_forward,
+    masked_metric_update,
 )
 from .model_utils import record_summary_stats
 from ..utils.tokenizer import load_tokenizer
@@ -19,8 +19,9 @@ from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
 
 
-class Standardize(torch.Module):
+class Standardize(torch.nn.Module):
     def __init__(self, mean: torch.Tensor, std: torch.Tensor, eps: float = 1e-8):
+        super().__init__()
         assert (std > 0).all() and mean.isfinite().all()
         self.mean = mean
         self.std = std.maximum(torch.tensor(eps))
@@ -30,6 +31,11 @@ class Standardize(torch.Module):
 
     def inverse(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.mean) / self.std
+
+    def to(self, *args, **kwargs):
+        self.mean = self.mean.to(*args, **kwargs)
+        self.std = self.std.to(*args, **kwargs)
+        return self
 
 
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
@@ -48,6 +54,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         metrics: List[str] = ["auroc"],
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
+        transform: Optional[str] = None,
     ) -> None:
         super().__init__()
 
@@ -57,6 +64,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
+        self.transform = transform
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
@@ -91,6 +99,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
         elif task == "regression":
             self.lossfn = torch.nn.MSELoss(reduction="none")
+            self.transform = self.transform or "standardize"
         else:
             raise ValueError(f"Unknown task type {task}")
 
@@ -108,14 +117,23 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         for m in [self.train_metrics, self.val_metrics, self.test_metrics]:
             record_summary_stats(self.logger, m)
 
-    def on_train_start(self):
+    def on_fit_start(self):
         """Standardized training data"""
-        if self.task == "regression" and self.trainer.datamodule is not None:
-            ds = self.trainer.datamodule.train_dataset
-            target = torch.tensor(ds.to_pandas()["target"])
-            target_mean = target.mean(dim=0, keepdim=True)
-            target_std = target.std(dim=0, keepdim=True)
+        if self.transform == "standardize":
+            if self.global_rank == 0:
+                assert self.trainer.datamodule.target_dataset is not None
+                ds = self.trainer.datamodule.target_dataset
+                target = torch.tensor(ds.to_pandas()["target"])
+                target_mean = target.mean(dim=0, keepdim=True)
+                target_std = target.std(dim=0, keepdim=True)
+            else:
+                target_mean = None
+                target_std = None
+
+            target_mean = self.trainer.strategy.broadcast(target_mean)
+            target_std = self.trainer.strategy.broadcast(target_std)
             self.transform = Standardize(target_mean, target_std)
+            self.transform.to(self.device)
         else:
             self.transform = None
 
@@ -147,7 +165,8 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
     def training_step(self, batch, batch_idx: int):
         preds, loss = self._scaled_pred_loss(batch)
-        out = masked_metric_forward(
+        self.log("train/loss", loss, on_step=True, on_epoch=True)
+        masked_metric_update(
             self.train_metrics,
             preds,
             batch["target"],
@@ -155,19 +174,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["input_ids"],
             batch.get("is_oov", None),
         )
-        out["train/loss"] = loss
-        self.log_dict(
-            out,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_dict(self.train_metrics, on_epoch=True, on_step=False, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx: int):
         preds, loss = self._scaled_pred_loss(batch)
-        out = masked_metric_forward(
+        self.log("val/loss", loss, on_step=True, on_epoch=True)
+        masked_metric_update(
             self.val_metrics,
             preds,
             batch["target"],
@@ -175,19 +188,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["input_ids"],
             batch.get("is_oov", None),
         )
-        out["val/loss"] = loss
-        self.log_dict(
-            out,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_dict(self.val_metrics, on_epoch=True, on_step=False, sync_dist=True)
         return loss
 
     def test_step(self, batch, batch_idx: int):
         preds, loss = self._scaled_pred_loss(batch)
-        out = masked_metric_forward(
+        self.log("test/loss", loss, on_step=True, on_epoch=True)
+        masked_metric_update(
             self.test_metrics,
             preds,
             batch["target"],
@@ -195,14 +202,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["input_ids"],
             batch.get("is_oov", None),
         )
-        out["test/loss"] = loss
-        self.log_dict(
-            out,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
+        self.log_dict(self.test_metrics, on_epoch=True, on_step=False, sync_dist=True)
         return loss
 
     def configure_optimizers(self):
