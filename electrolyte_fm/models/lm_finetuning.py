@@ -19,6 +19,19 @@ from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
 
 
+class Standardize(torch.Module):
+    def __init__(self, mean: torch.Tensor, std: torch.Tensor, eps: float = 1e-8):
+        assert (std > 0).all() and mean.isfinite().all()
+        self.mean = mean
+        self.std = std.maximum(torch.tensor(eps))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return (self.std * x) + self.mean
+
+    def inverse(self, x: torch.Tensor) -> torch.Tensor:
+        return (x - self.mean) / self.std
+
+
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on multiple tasks.
@@ -95,7 +108,18 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         for m in [self.train_metrics, self.val_metrics, self.test_metrics]:
             record_summary_stats(self.logger, m)
 
-    def forward(self, batch, **kwargs):  # type: ignore[override]
+    def on_train_start(self):
+        """Standardized training data"""
+        if self.task == "regression" and self.trainer.datamodule is not None:
+            ds = self.trainer.datamodule.train_dataset
+            target = torch.tensor(ds.to_pandas()["target"])
+            target_mean = target.mean(dim=0, keepdim=True)
+            target_std = target.std(dim=0, keepdim=True)
+            self.transform = Standardize(target_mean, target_std)
+        else:
+            self.transform = None
+
+    def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
         hs = self.encoder(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],
@@ -103,11 +127,26 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             **kwargs,
         ).last_hidden_state
 
-        return self.task_network(hs)
+        pred_unscaled = self.task_network(hs)
+        if self.transform and transform:
+            self.transform.forward(pred_unscaled)
+        return pred_unscaled
+
+    def _scaled_pred_loss(self, batch):
+        """Compute loss before transforming the model's predictions"""
+        preds = self.forward(batch, transform=False)
+        target = batch["target"]
+        if self.transform:
+            target = self.transform.inverse(target)
+
+        loss = masked_loss(self.lossfn, preds, target, batch["target_mask"])
+
+        if self.transform:
+            preds = self.transform.forward(preds)
+        return preds, loss
 
     def training_step(self, batch, batch_idx: int):
-        preds = self(batch)
-        loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
+        preds, loss = self._scaled_pred_loss(batch)
         out = masked_metric_forward(
             self.train_metrics,
             preds,
@@ -127,8 +166,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         return loss
 
     def validation_step(self, batch, batch_idx: int):
-        preds = self(batch)
-        loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
+        preds, loss = self._scaled_pred_loss(batch)
         out = masked_metric_forward(
             self.val_metrics,
             preds,
@@ -148,8 +186,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         return loss
 
     def test_step(self, batch, batch_idx: int):
-        preds = self(batch)
-        loss = masked_loss(self.lossfn, preds, batch["target"], batch["target_mask"])
+        preds, loss = self._scaled_pred_loss(batch)
         out = masked_metric_forward(
             self.test_metrics,
             preds,
