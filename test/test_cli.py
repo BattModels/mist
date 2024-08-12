@@ -103,8 +103,7 @@ def test_finetune(monkeypatch):
 
         cli = cli_main(
             [
-                "--data=electrolyte_fm.data_modules.PropertyPredictionDataModule",
-                f"--data.path={fake_data_dir}",
+                "--data=electrolyte_fm.data_modules.MolNetDataModule",
                 "--model=electrolyte_fm.models.LMFinetuning",
                 f"--model.encoder_ckpt={ckpt}",
                 "--trainer.devices=1",

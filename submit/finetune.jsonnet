@@ -8,12 +8,12 @@ function(dataset='bace') {
   train: {
     tags: ['finetuning', dataset],
     data: {
-      class_path: 'electrolyte_fm.data_modules.PropertyPredictionDataModule',
+      class_path: 'electrolyte_fm.data_modules.MolNetDataModule',
       init_args: {
         batch_size: 128,
         val_batch_size: 2 * self.batch_size,
         tokenizer: $.train.model.init_args.encoder_ckpt,
-        path: '/nfs/turbo/coe-venkvis/mist/molformer_ft_full/' + dataset,
+        path: dataset,
         target_columns: molnet_tasks[dataset].target_columns,
       },
     },
