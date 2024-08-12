@@ -84,13 +84,13 @@ def get_metric(name: str, task_type: str, output_size: int) -> Metric:
         return AUROC(
             task="binary",
             ignore_index=IGNORE_INDEX,
-            thresholds=100,
+            thresholds=250,
         )
     elif name == "avg-precision" and task_type == "binary":
         return AveragePrecision(
             task="binary",
             ignore_index=IGNORE_INDEX,
-            thresholds=100,
+            thresholds=250,
         )
     elif name == "mae" and task_type == "regression":
         return MeanAbsoluteError()

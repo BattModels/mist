@@ -29,7 +29,7 @@ function(dataset='bace') {
         optimizer: {
           class_path: 'torch.optim.AdamW',
           init_args: {
-            lr: 3.2e-4,
+            lr: 1.6e-4,
             weight_decay: 0.01,
           },
         },
