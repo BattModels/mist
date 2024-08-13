@@ -38,11 +38,14 @@ def record_summary_stats(logger, metrics: MetricCollection):
     if isinstance(logger, WandbLogger):
         define_metric = logger.experiment.define_metric
         for name, metric in metrics.items():
-            define_metric(
-                name + "_epoch",
-                summary="last,best",
-                goal="maximize" if metric.higher_is_better else "minimize",
-            )
+            if not hasattr(metric, "higher_is_better"):
+                continue
+            for phase in ["", "_epoch", "_step"]:
+                define_metric(
+                    name + phase,
+                    summary="last,best",
+                    goal="maximize" if metric.higher_is_better else "minimize",
+                )
 
 
 class CanSkip:

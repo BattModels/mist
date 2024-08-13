@@ -46,13 +46,6 @@ class MyLightningCLI(LightningCLI):
         parser.link_arguments(
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
         )
-        # Set model task_specs from the dataset's task_specs
-        parser.link_arguments(
-            "data.init_args.target_columns",
-            "model.init_args.output_size",
-            apply_on="parse",
-            compute_fn=len,
-        )
 
     def _add_instantiators(self) -> None:
         self.config_dump = json.loads(

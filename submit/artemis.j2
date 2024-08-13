@@ -42,7 +42,12 @@ export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
 {%- endif %}
 
 {{- export_job_config( __config__ ) }}
-export PL_CONFIG='{{ {"fit": train } | tojson }}'
+
+# Write out  lightning config
+export PL_CONFIG=$TMPDIR/lightning.json
+cat > ${PL_CONFIG}<<EOF
+{{ {"fit": train } | tojson }}
+EOF
 
 srun --mpi=pmix \
 ${PWD}/submit/set_node_rank \
