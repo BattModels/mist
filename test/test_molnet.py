@@ -5,7 +5,7 @@ from typing import List
 import _jsonnet as jsonnet
 import pytest
 from pytorch_lightning import LightningDataModule
-from datasets import DatasetDict
+from datasets import DatasetDict, load_dataset
 
 from electrolyte_fm.data_modules import MolNetDataModule
 from electrolyte_fm.data_modules.molnet_dataset import _URLS as MOLNET_URLS
@@ -55,3 +55,29 @@ def test_validate_molnet_config():
         assert isinstance(config["target_columns"], List)
         assert isinstance(config["metrics"], List)
         assert isinstance(config["metrics"], List)
+
+
+def test_scaffold_split():
+    dm = MolNetDataModule(name="clintox", split="scaffold")
+    dm.prepare_data()
+    ds = dm.dataset
+    ds_clintox = load_dataset(
+        "csv",
+        name="clintox",
+        data_files=[MOLNET_URLS["clintox"]],
+    )
+
+    # Check Lengths
+    assert len(ds_clintox) == 1
+    assert len(ds_clintox["train"]) == 1484  # Manually confirmed, website lists 1478
+    assert "train" in ds and "validation" in ds and "test" in ds
+    assert len(ds["train"]) + len(ds["validation"]) + len(ds["test"]) == 1484
+
+    # Check for overlap
+    mol = {split: set(ds[split]["smiles"]) for split in ["train", "validation", "test"]}
+    print(ds["train"].to_pandas())
+    print(ds["validation"].to_pandas())
+    print(ds["test"].to_pandas())
+    assert len(mol["train"].intersection(mol["test"])) == 0
+    assert len(mol["train"].intersection(mol["validation"])) == 0
+    assert len(mol["test"].intersection(mol["validation"])) == 0

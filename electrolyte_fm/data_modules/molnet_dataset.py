@@ -235,13 +235,13 @@ def train_val_test_split(ds, **kwargs):
     )
 
 
-def scaffold_hash(smi, nbins=1000):
+def scaffold_hash(smi: str) -> str:
     try:
         scaffold = MurckoScaffoldSmiles(smi)
     except ValueError:
         logging.warn("No scaffold for %s, using input smiles string", smi)
-        scaffold = smi  # Fall back to the input smi
-    return xxh64(scaffold).intdigest() % nbins
+        scaffold = smi
+    return scaffold
 
 
 def scaffold_split(ds: Dataset, smi_column):
@@ -259,16 +259,17 @@ def scaffold_split(ds: Dataset, smi_column):
             ds.index, groups=ds["scaffold"].values
         )
     )
+    ds_other = ds.iloc[other]
     val, test = next(
         GroupShuffleSplit(n_splits=1, test_size=0.5, random_state=42).split(
-            ds.iloc[other], groups=ds.iloc[other]["scaffold"]
+            ds_other, groups=ds.iloc[other]["scaffold"]
         )
     )
     return DatasetDict(
         {
             "train": Dataset.from_pandas(ds.iloc[train], preserve_index=False),
-            "validation": Dataset.from_pandas(ds.iloc[val], preserve_index=False),
-            "test": Dataset.from_pandas(ds.iloc[test], preserve_index=False),
+            "validation": Dataset.from_pandas(ds_other.iloc[val], preserve_index=False),
+            "test": Dataset.from_pandas(ds_other.iloc[test], preserve_index=False),
         }
     )
 
