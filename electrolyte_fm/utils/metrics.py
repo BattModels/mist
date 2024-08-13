@@ -96,8 +96,6 @@ def get_metric(name: str, task_type: str, output_size: int) -> Metric:
         return MeanAbsoluteError()
     elif name == "rmse" and task_type == "regression":
         return MeanSquaredError(squared=True)
-    elif name == "rmse" and task_type == "regression":
-        return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
         return SafeR2Score(num_outputs=output_size)
     else:
