@@ -4,19 +4,19 @@
   bace: {
     task: 'binary',
     target_columns: ['Class'],
-    metrics: ['auroc'],
+    metrics: ['auroc', 'crosstab'],
     split: 'scaffold',
   },
   bbbp: {
     task: 'binary',
     target_columns: ['p_np'],
-    metrics: ['auroc'],
+    metrics: ['auroc', 'crosstab'],
     split: 'scaffold',
   },
   clintox: {
     task: 'binary',
     target_columns: ['FDA_APPROVED', 'CT_TOX'],
-    metrics: ['auroc'],
+    metrics: ['auroc', 'crosstab'],
     split: 'random',
   },
   esol: {
@@ -34,7 +34,7 @@
   hiv: {
     task: 'binary',
     target_columns: ['HIV_active'],
-    metrics: ['auroc'],
+    metrics: ['auroc', 'crosstab'],
     split: 'scaffold',
   },
   lipo: {
@@ -45,7 +45,7 @@
   },
   muv: {
     task: 'binary',
-    metrics: ['avg-precision'],
+    metrics: ['avg-precision', 'crosstab'],
     split: 'random',
     target_columns: [
       'MUV-466',
@@ -111,7 +111,7 @@
   },
   sider: {
     task: 'binary',
-    metrics: ['auroc'],
+    metrics: ['auroc', 'crosstab'],
     split: 'random',
     target_columns: [
       'Hepatobiliary disorders',
@@ -145,7 +145,7 @@
   },
   tox21: {
     task: 'binary',
-    metrics: ['auroc'],
+    metrics: ['auroc', 'crosstab'],
     split: 'random',
     target_columns: [
       'NR-AR',
@@ -164,7 +164,7 @@
   },
   toxcast: {
     task: 'binary',
-    metrics: ['auroc'],
+    metrics: ['auroc', 'crosstab'],
     split: 'random',
     target_columns: [
       'ACEA_T47D_80hr_Negative',

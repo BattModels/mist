@@ -38,7 +38,10 @@ def record_summary_stats(logger, metrics: MetricCollection):
     if isinstance(logger, WandbLogger):
         define_metric = logger.experiment.define_metric
         for name, metric in metrics.items():
-            if not hasattr(metric, "higher_is_better"):
+            if (
+                not hasattr(metric, "higher_is_better")
+                or metric.higher_is_better is None
+            ):
                 continue
             for phase in ["", "_epoch", "_step"]:
                 define_metric(

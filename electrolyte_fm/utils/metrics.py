@@ -4,7 +4,12 @@ import torch
 from torchmetrics import Metric, MetricCollection
 from torchmetrics.wrappers.abstract import WrapperMetric
 from torchmetrics.wrappers.classwise import ClasswiseWrapper
-from torchmetrics.classification import AUROC, AveragePrecision
+from torchmetrics.classification import (
+    AUROC,
+    AveragePrecision,
+    Accuracy,
+    BinaryStatScores,
+)
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
 
 """ Target Value to indicate missing data """
@@ -16,6 +21,24 @@ class SafeR2Score(R2Score):
         if self.total < 2:
             return torch.tensor(float("nan"))
         return super().compute()
+
+
+class BinaryDictStatScores(BinaryStatScores):
+    def __init__(self, **kwargs):
+        if multidim_average := kwargs.pop("multidim_average", None):
+            if multidim_average != "global":
+                raise ValueError("multidim_average must be global")
+        super().__init__(multidim_average="global", **kwargs)
+
+    def compute(self):
+        out = super().compute()
+        return {
+            "tp": out[0],
+            "fp": out[1],
+            "tn": out[2],
+            "fn": out[3],
+            "sup": out[4],
+        }
 
 
 class OOVMetric(Metric):
@@ -92,6 +115,8 @@ def get_metric(name: str, task_type: str, output_size: int) -> Metric:
             ignore_index=IGNORE_INDEX,
             thresholds=250,
         )
+    elif name == "crosstab" and task_type == "binary":
+        return BinaryDictStatScores(ignore_index=IGNORE_INDEX)
     elif name == "mae" and task_type == "regression":
         return MeanAbsoluteError()
     elif name == "rmse" and task_type == "regression":

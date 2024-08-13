@@ -14,7 +14,7 @@ from electrolyte_fm.utils.metrics import (
     IGNORE_INDEX,
 )
 
-BINARY_METRICS = ["auroc", "avg-precision"]
+BINARY_METRICS = ["auroc", "avg-precision", "crosstab"]
 
 REGRESSION_METRICS = ["mae", "rmse", "r2"]
 
@@ -37,7 +37,27 @@ def test_scalar(name, task_type):
         targets = torch.rand(B, C)
 
     out = metric(preds, targets)
-    assert out.ndim == 0
+    if name == "crosstab":
+        for v in out.values():
+            assert v.ndim == 0
+    else:
+        assert out.ndim == 0
+
+
+@pytest.mark.parametrize(
+    "name,task_type",
+    chain(
+        zip(BINARY_METRICS, repeat("binary")),
+        zip(REGRESSION_METRICS, repeat("regression")),
+    ),
+)
+def test_higher_is_better(name, task_type):
+    m = get_metric(name, task_type, 2)
+    assert hasattr(m, "higher_is_better")
+    if name == "crosstab":
+        assert m.higher_is_better is None
+    else:
+        assert isinstance(m.higher_is_better, bool)
 
 
 def test_invalid():
@@ -55,7 +75,11 @@ def test_masked_metric(name):
     mask = torch.tensor([[False, False, True], [True, False, False]])
     masked_metric_update(metric, preds, targets, mask)
     out_init = metric.compute()
-    assert isinstance(out_init, torch.FloatTensor)
+    if name == "crosstab":
+        assert isinstance(out_init, dict)
+        assert out_init.keys() == set(["tp", "tn", "fp", "fn", "sup"])
+    else:
+        assert isinstance(out_init, torch.FloatTensor)
 
     # Repeat, changing the masked targets
     metric.reset()
@@ -81,9 +105,7 @@ def test_masked_metric(name):
 )
 def test_safe_for_nullset(name, task_type):
     metric = get_metric(name, task_type, 1)
-    out = metric.compute()
-    assert isinstance(out, torch.FloatTensor)
-    assert out is not None
+    metric.compute()
 
 
 def test_masked_loss():
