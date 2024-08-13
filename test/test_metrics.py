@@ -9,7 +9,7 @@ from torchmetrics import Accuracy
 from electrolyte_fm.utils.metrics import (
     get_metric,
     masked_loss,
-    masked_metric_forward,
+    masked_metric_update,
     OOVMetric,
     IGNORE_INDEX,
 )
@@ -48,27 +48,42 @@ def test_invalid():
 
 
 @pytest.mark.parametrize("name", BINARY_METRICS)
-def test_masked_metrics(name):
+def test_masked_metric(name):
     metric = get_metric(name, "binary", 3)
     preds = torch.rand(2, 3)
     targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
     mask = torch.tensor([[False, False, True], [True, False, False]])
-    out_init = masked_metric_forward({name: metric}, preds, targets, mask)
-    assert isinstance(out_init, Dict)
-    assert name in out_init
+    masked_metric_update(metric, preds, targets, mask)
+    out_init = metric.compute()
+    assert isinstance(out_init, torch.FloatTensor)
 
     # Repeat, changing the masked targets
     metric.reset()
     targets[1, 0] = 1
     assert mask[1, 0]
-    out_targets = masked_metric_forward({name: metric}, preds, targets, mask)
-    assert out_init == out_targets
+    masked_metric_update(metric, preds, targets, mask)
+    out_targets = metric.compute()
+    assert out_targets == out_init
 
     # Repeat, changing the masked prediction
     metric.reset()
     preds[1, 0] = 0.3
-    out_preds = masked_metric_forward({name: metric}, preds, targets, mask)
-    assert out_init == out_preds
+    masked_metric_update(metric, preds, targets, mask)
+    assert out_init == metric.compute()
+
+
+@pytest.mark.parametrize(
+    "name,task_type",
+    chain(
+        zip(BINARY_METRICS, repeat("binary")),
+        zip(REGRESSION_METRICS, repeat("regression")),
+    ),
+)
+def test_safe_for_nullset(name, task_type):
+    metric = get_metric(name, task_type, 1)
+    out = metric.compute()
+    assert isinstance(out, torch.FloatTensor)
+    assert out is not None
 
 
 def test_masked_loss():
@@ -175,7 +190,8 @@ def test_oov_metric_masked():
     mask = torch.tensor([False, True, False])
 
     # Initial variant
-    out = masked_metric_forward(metric, preds, targets, mask, input_ids)
+    masked_metric_update(metric, preds, targets, mask, input_ids)
+    out = metric.compute()
     assert out["oov"] == torch.tensor(0)
     assert out["non_oov"] == torch.tensor(1)
     assert out["all"] == torch.tensor(0.5)
@@ -184,12 +200,14 @@ def test_oov_metric_masked():
     metric.reset()
     targets[1] = False
     assert mask[1]
-    out_targets = masked_metric_forward(metric, preds, targets, mask, input_ids)
+    masked_metric_update(metric, preds, targets, mask, input_ids)
+    out_targets = metric.compute()
     assert out_targets == out
 
     # Repeat, changing a masked preds
     metric.reset()
     preds[1] = True
     assert mask[1]
-    out_preds = masked_metric_forward(metric, preds, targets, mask, input_ids)
+    masked_metric_update(metric, preds, targets, mask, input_ids)
+    out_preds = metric.compute()
     assert out_preds == out
