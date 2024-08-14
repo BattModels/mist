@@ -68,8 +68,10 @@ class OOVMetric(Metric):
             is_oov if is_oov is not None else (input_ids == self.unk_token_id).any(1)
         )
         self.metrics["all"].update(preds, targets)
-        self.metrics["oov"].update(preds[is_oov], targets[is_oov])
-        self.metrics["non_oov"].update(preds[~is_oov], targets[~is_oov])
+        if is_oov.any():
+            self.metrics["oov"].update(preds[is_oov], targets[is_oov])
+        if not is_oov.all():
+            self.metrics["non_oov"].update(preds[~is_oov], targets[~is_oov])
 
     def compute(self):
         out = {}

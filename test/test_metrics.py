@@ -153,7 +153,7 @@ def test_auroc():
 
 
 def test_oov_metric():
-    metric = OOVMetric(Accuracy(task="binary"), unk_token_id=1)
+    metric = OOVMetric(Accuracy(task="binary", ignore_index=IGNORE_INDEX), unk_token_id=1)
     out = metric(
         torch.tensor([True, False, False]),
         torch.tensor([False, True, False]),
@@ -164,6 +164,38 @@ def test_oov_metric():
     assert out["non_oov"] == torch.tensor(0.5)
     assert out["all"] == torch.tensor(1 / 3)
 
+@pytest.mark.parametrize(
+    "name,task_type",
+    chain(
+        zip(BINARY_METRICS, repeat("binary")),
+        zip(REGRESSION_METRICS, repeat("regression")),
+    ),
+)
+def test_oov_metric_empty_group(name, task_type):
+    base_metric = get_metric(name, task_type, 3)
+    metric = OOVMetric(base_metric, unk_token_id=1)
+    preds = torch.rand(8, 3)
+    targets = torch.randint(1, (8, 3))
+
+    # Check for all non_oov
+    input_ids = torch.zeros((8, 8))
+    out = metric(preds, targets, input_ids)
+    assert isinstance(out, dict) 
+    if hasattr(base_metric, "keys"):
+        for k in base_metric:
+            assert f"{k}_oov" in out and f"{k}_non_oov" in out and f"{k}_all" in out
+    else:
+        assert "oov" in out and "non_oov" in out and "all" in out 
+
+    # Check for all oov
+    input_ids = torch.ones((8, 8))
+    out = metric(preds, targets, input_ids)
+    assert isinstance(out, dict) 
+    if hasattr(base_metric, "keys"):
+        for k in base_metric:
+            assert f"{k}_oov" in out and f"{k}_non_oov" in out and f"{k}_all" in out
+    else:
+        assert "oov" in out and "non_oov" in out and "all" in out 
 
 def test_oov_metric_is_oov():
     metric = OOVMetric(Accuracy(task="binary"), unk_token_id=1)
