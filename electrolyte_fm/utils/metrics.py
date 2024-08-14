@@ -24,7 +24,8 @@ class SafeR2Score(R2Score):
 
 
 class BinaryDictStatScores(BinaryStatScores):
-    def __init__(self, **kwargs):
+    def __init__(self, name, **kwargs):
+        self.name = name
         if multidim_average := kwargs.pop("multidim_average", None):
             if multidim_average != "global":
                 raise ValueError("multidim_average must be global")
@@ -38,7 +39,7 @@ class BinaryDictStatScores(BinaryStatScores):
             "tn": out[2],
             "fn": out[3],
             "sup": out[4],
-        }
+        }[self.name]
 
 
 class OOVMetric(Metric):
@@ -116,7 +117,12 @@ def get_metric(name: str, task_type: str, output_size: int) -> Metric:
             thresholds=250,
         )
     elif name == "crosstab" and task_type == "binary":
-        return BinaryDictStatScores(ignore_index=IGNORE_INDEX)
+        return MetricCollection(
+            {
+                name: BinaryDictStatScores(name, ignore_index=IGNORE_INDEX)
+                for name in ["tp", "tn", "fp", "fn", "sup"]
+            }
+        )
     elif name == "mae" and task_type == "regression":
         return MeanAbsoluteError()
     elif name == "rmse" and task_type == "regression":

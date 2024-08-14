@@ -53,10 +53,10 @@ def test_scalar(name, task_type):
 )
 def test_higher_is_better(name, task_type):
     m = get_metric(name, task_type, 2)
-    assert hasattr(m, "higher_is_better")
     if name == "crosstab":
-        assert m.higher_is_better is None
+        assert not hasattr(m, "higher_is_better")
     else:
+        assert hasattr(m, "higher_is_better")
         assert isinstance(m.higher_is_better, bool)
 
 
