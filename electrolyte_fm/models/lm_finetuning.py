@@ -173,8 +173,15 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["input_ids"],
             batch.get("is_oov", None),
         )
-        self.log_dict(self.train_metrics, on_epoch=True, on_step=False, sync_dist=True)
         return loss
+
+    def on_train_epoch_end(self):
+        self.log_dict(
+            self.train_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.train_metrics.reset()
 
     def validation_step(self, batch, batch_idx: int):
         preds, loss = self._scaled_pred_loss(batch)
@@ -190,6 +197,14 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.log_dict(self.val_metrics, on_epoch=True, on_step=False, sync_dist=True)
         return loss
 
+    def on_validation_epoch_end(self):
+        self.log_dict(
+            self.val_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.val_metrics.reset()
+
     def test_step(self, batch, batch_idx: int):
         preds, loss = self._scaled_pred_loss(batch)
         self.log("test/loss", loss, on_step=True, on_epoch=True)
@@ -203,6 +218,14 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         )
         self.log_dict(self.test_metrics, on_epoch=True, on_step=False, sync_dist=True)
         return loss
+
+    def on_test_epoch_end(self):
+        self.log_dict(
+            self.test_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.test_metrics.reset()
 
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()
