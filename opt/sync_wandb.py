@@ -135,7 +135,7 @@ def finetuning_summary(run):
 
 
 METRIC_REGEX = re.compile(
-    r"(?P<split>\w+)/(?P<metric>[a-zA-Z0-9]+)_(?P<tok_group>(?:oov)|(?:all)|(?:non_oov))(?:_(?P<bootstrap>(?:mean)|(?:std)))?"
+    r"(?P<split>\w+)/(?P<metric>\w+?)_(?P<tok_group>(?:oov)|(?:all)|(?:non_oov))(?:_(?P<bootstrap>(?:mean)|(?:std)))?"
 )
 
 
@@ -152,6 +152,12 @@ def identify_metrics(summary_metrics):
             entry["type"] = "last"
             entry["value"] = v
             metrics.append(entry)
+
+        elif isinstance(v, str):
+            entry["type"] = "last"
+            entry["value"] = v if v != "NaN" else float("nan")
+            metrics.append(entry)
+
         else:
             # Multiple summary metrics were logged
             for sk, sv in v.items():
@@ -205,24 +211,23 @@ if __name__ == "__main__":
     runs = api.runs(
         "incite-mist/mist",
         filters={
-            "State": {"$in": ["Failed", "Finished"]},
+            "State": {"$in": ["Crashed", "Finished"]},
             "tags": {"$in": ["pretraining"], "$nin": ["debug"]},
             "summary_metrics.trainer/global_step": {"$exists": True, "$gte": 100},
             "summary_metrics.val/loss_epoch.min": {"$exists": True},
         },
     )
-    # export_runs(pretraining_summary, cache_path, runs, name="pretraining")
+    export_runs(pretraining_summary, cache_path, runs, name="pretraining")
 
     # Sync Finetuning
     runs = api.runs(
         "incite-mist/mist",
         filters={
-            "State": {"$in": ["Failed", "Finished"]},
+            "State": {"$in": ["Crashed", "Finished"]},
             "tags": {"$in": ["finetuning"], "$nin": ["debug"]},
             "summary_metrics.trainer/global_step": {"$exists": True, "$gte": 100},
             "summary_metrics.val/loss_epoch": {"$exists": True},
             "config.cli.model.init_args.encoder_ckpt": {"$exists": True},
-            # "config.cli.data.init_args.name": {"$exists": True},
         },
     )
     export_runs(finetuning_summary, cache_path, runs, name="finetuning")
