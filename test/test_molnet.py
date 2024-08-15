@@ -7,7 +7,7 @@ import pytest
 from pytorch_lightning import LightningDataModule
 from datasets import DatasetDict, load_dataset
 
-from electrolyte_fm.data_modules import MolNetDataModule
+from electrolyte_fm.data_modules import MolNetDataModule, PropertyPredictionDataModule
 from electrolyte_fm.data_modules.molnet_dataset import _URLS as MOLNET_URLS
 
 MOLNET_CONFIG = Path(__file__).parent.parent.joinpath(
@@ -29,6 +29,17 @@ def check_dataloader(dl, limit_batches, keys=["input_ids", "attention_mask"]):
             assert key in batch
         if idx >= limit_batches:
             break
+
+
+@pytest.mark.parametrize("name", MOLNET_URLS.keys())
+def test_datamodule(name):
+    task_config = json.loads(jsonnet.evaluate_file(str(MOLNET_CONFIG)))[name]
+    dm = MolNetDataModule(
+        name=name,
+        target_columns=task_config["target_columns"],
+        split=task_config["split"],
+    )
+    check_datamodule(dm)
 
 
 @pytest.mark.parametrize("name", MOLNET_URLS.keys())
