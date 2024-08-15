@@ -231,7 +231,9 @@ def collate_target(x, target_columns):
 
 def train_val_test_split(ds, **kwargs):
     ds_train_other = ds.train_test_split(test_size=0.2, seed=42, **kwargs)
-    ds_val_test = ds.train_test_split(test_size=0.5, seed=42, **kwargs)
+    ds_val_test = ds_train_other["test"].train_test_split(
+        test_size=0.5, seed=42, **kwargs
+    )
     return DatasetDict(
         {
             "train": ds_train_other["train"],

@@ -68,8 +68,9 @@ def test_validate_molnet_config():
         assert isinstance(config["metrics"], List)
 
 
-def test_scaffold_split():
-    dm = MolNetDataModule(name="clintox", split="scaffold")
+@pytest.mark.parametrize("split", ["scaffold", "random"])
+def test_splits(split):
+    dm = MolNetDataModule(name="clintox", split=split)
     dm.prepare_data()
     ds = dm.dataset
     ds_clintox = load_dataset(
