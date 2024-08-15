@@ -2,6 +2,7 @@ import json
 import os
 from datetime import timedelta
 
+import _jsonnet as jsonnet  # Unused, but otherwise we get glibc errors on delta 🫠
 import torch
 from jsonargparse import lazy_instance
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint

@@ -3,9 +3,11 @@ local pretrain = import 'pretrain.jsonnet';
 local molnet_tasks = import 'moleculenet_tasks.libsonnet';
 
 function(dataset='bace') {
-  queue: 'venkvis-a100',
   walltime: '1:0:0',
   nodes: 1,  // Multi-node is not currently supported. Config is only on leader node
+  env: {
+   TOKENIZERS_PARALLELISM: true,
+  },
   train: {
     tags: ['finetuning', dataset],
     data: {
