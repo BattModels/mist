@@ -49,6 +49,8 @@ def get_cluster(hostname: str) -> str:
         return "artemis"
     elif hostname.startswith("x"):
         return "polaris"
+    elif hostname.endswith("delta.ncsa.illinois.edu"):
+        return "delta"
     else:
         return hostname
 
