@@ -19,7 +19,11 @@ IGNORE_INDEX = -100
 class SafeR2Score(R2Score):
     def compute(self):
         if self.total < 2:
-            return torch.tensor(float("nan"))
+            return torch.tensor(
+                float("nan"),
+                device=self.total.device,
+                dtype=self.sum_error.dtype,
+            )
         return super().compute()
 
 
@@ -31,7 +35,11 @@ class BinaryDictStatScores(BinaryStatScores):
                 raise ValueError("multidim_average must be global")
         super().__init__(multidim_average="global", **kwargs)
 
-    def compute(self):
+    def update(self, preds: torch.FloatTensor, targets: torch.IntTensor) -> None:
+        # StatScores doesn't support bf16
+        super().update(preds.float(), targets.float())
+
+    def compute(self) -> torch.Tensor:
         out = super().compute()
         return {
             "tp": out[0],
@@ -110,7 +118,7 @@ def get_metric(name: str, task_type: str, output_size: int) -> Metric:
         return AUROC(
             task="binary",
             ignore_index=IGNORE_INDEX,
-            thresholds=250,
+            thresholds=500,
         )
     elif name == "avg-precision" and task_type == "binary":
         return AveragePrecision(
