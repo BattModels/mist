@@ -104,7 +104,9 @@ def test_finetune(monkeypatch):
         cli = cli_main(
             [
                 "--data=electrolyte_fm.data_modules.MolNetDataModule",
+                "--data.name=bace",
                 "--model=electrolyte_fm.models.LMFinetuning",
+                "--model.output_size=1",  # Normally set by the submission script
                 f"--model.encoder_ckpt={ckpt}",
                 "--trainer.devices=1",
                 "--trainer.accelerator=cpu",
