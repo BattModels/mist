@@ -4,7 +4,6 @@ from statistics import mean
 from typing import Dict, List, Optional, Union
 import logging
 
-from xxhash import xxh64
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from sklearn.model_selection import GroupShuffleSplit
 import pytorch_lightning as pl
