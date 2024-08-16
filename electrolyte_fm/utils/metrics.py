@@ -50,6 +50,49 @@ class BinaryDictStatScores(BinaryStatScores):
         }[self.name]
 
 
+class HotellingTwoSample(Metric):
+    def __init__(self, num_outputs: int, unk_token_id: Optional[int] = None, **kwargs):
+        super().__init__(**kwargs)
+        self.unk_token_id = unk_token_id
+        self.add_state("residual_oov", list(), dist_reduce_fx="cat")
+        self.add_state("residual_non_oov", list(), dist_reduce_fx="cat")
+
+    def update(self, preds, targets, input_ids, is_oov=None) -> None:
+        is_oov = (
+            is_oov if is_oov is not None else (input_ids == self.unk_token_id).any(1)
+        )
+        residual = preds - targets
+        self.residual_oov.append(residual[is_oov])
+        self.residual_non_oov.append(residual[~is_oov])
+
+    def compute(self) -> torch.Tensor:
+        oov = torch.cat(self.residual_oov)
+        non_oov = torch.cat(self.residual_non_oov)
+        p = non_oov.size(1)
+        assert (
+            oov.ndim == 2 and non_oov.ndim == 2 and oov.size(1) == non_oov.size(1) == p
+        )
+
+        # Pooled Covariance matrix
+        n_oov = oov.size(0)
+        n_non_oov = non_oov.size(0)
+        df = n_oov + n_non_oov - 2
+        sigma = (n_oov - 1) * oov.T.cov() + (n_non_oov - 1) * non_oov.T.cov()
+        sigma /= df
+        assert sigma.ndim == 2
+        assert sigma.size(0) == sigma.size(1) == p
+
+        # Hotelling's T
+        t = (n_oov * n_non_oov) / (n_oov + n_non_oov)
+        avg_diff = oov.mean(0) - non_oov.mean(0)
+        t *= avg_diff.dot(torch.linalg.solve(sigma, avg_diff))
+
+        # Rescale to the F-distribution
+        d2 = n_oov + n_non_oov - p - 1
+        t_fdit = t * d2 / (df * p)
+        return {"t2": t, "t_fdist": t_fdit, "df": df, "p": p, "d2": d2}
+
+
 class OOVMetric(Metric):
     """Track metrics for OOV, Non-OOV and All tokenized strings"""
 

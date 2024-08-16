@@ -11,6 +11,7 @@ from electrolyte_fm.utils.metrics import (
     masked_loss,
     masked_metric_update,
     OOVMetric,
+    HotellingTwoSample,
     IGNORE_INDEX,
 )
 
@@ -269,3 +270,24 @@ def test_oov_metric_masked():
     masked_metric_update(metric, preds, targets, mask, input_ids)
     out_preds = metric.compute()
     assert out_preds == out
+
+
+def test_hotellings():
+    metric = HotellingTwoSample(num_outputs=4, unk_token_id=1)
+    rng = torch.manual_seed(0)
+    p = 8
+    batches = 8
+    batch_size = 32
+    for i in range(batches):
+        preds = torch.randn(batch_size, p, generator=rng)
+        targets = torch.randn(batch_size, p, generator=rng)
+        input_ids = torch.randint(10, (batch_size, 16), generator=rng)
+        metric.update(preds, targets, input_ids)
+
+    out = metric.compute()
+    assert isinstance(out, dict)
+    assert isinstance(out["t2"], torch.FloatTensor) and out["t2"].ndim == 0
+    assert isinstance(out["t_fdist"], torch.FloatTensor) and out["t_fdist"].ndim == 0
+    assert isinstance(out["df"], int) and 0 < out["df"]
+    assert isinstance(out["p"], int) and out["p"] == p
+    assert isinstance(out["d2"], int) and out["d2"] == batch_size * batches - p - 1
