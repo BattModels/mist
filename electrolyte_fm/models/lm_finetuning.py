@@ -21,11 +21,12 @@ from .prediction_task_head import PredictionTaskHead
 
 
 class Standardize(torch.nn.Module):
-    def __init__(self, mean: torch.Tensor, std: torch.Tensor, eps: float = 1e-8):
+    def __init__(self, num_outputs: int, eps: float = 1e-8):
         super().__init__()
-        assert (std > 0).all() and mean.isfinite().all()
-        self.mean = mean
-        self.std = std.maximum(torch.tensor(eps))
+        self.register_buffer("mean", torch.zeros(num_outputs))
+        self.register_buffer("std", torch.zeros(num_outputs))
+        self.eps = float(eps)
+        assert 0 <= self.eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return (self.std * x) + self.mean
@@ -33,10 +34,12 @@ class Standardize(torch.nn.Module):
     def inverse(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.mean) / self.std
 
-    def to(self, *args, **kwargs):
-        self.mean = self.mean.to(*args, **kwargs)
-        self.std = self.std.to(*args, **kwargs)
-        return self
+    def fit(self, ds) -> dict:
+        target = torch.stack([torch.tensor(x) for x in ds["target"]])
+        print(f"target: {target.shape}")
+        self.mean = target.mean(0).to(self.mean)
+        self.std = target.std(0).to(self.std) + self.eps
+        return self.state_dict()
 
 
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
@@ -65,7 +68,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
-        self.transform = transform
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
@@ -100,9 +102,16 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
         elif task == "regression":
             self.lossfn = torch.nn.MSELoss(reduction="none")
-            self.transform = self.transform or "standardize"
+            transform = transform or "standardize"
         else:
             raise ValueError(f"Unknown task type {task}")
+
+        # Init Transform
+        if transform == "standardize":
+            self.transform = Standardize(output_size)
+        else:
+            self.transform = torch.nn.Identity()
+        self.transform.eval()
 
         # Additional Metrics
         metrics = MetricCollection(
@@ -125,20 +134,15 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
     def on_fit_start(self):
         """Standardized training data"""
-        if self.transform == "standardize":
-            target_mean = None
-            target_std = None
+        if not isinstance(self.transform, torch.nn.Identity):
+            state = None
             if self.global_rank == 0:
                 assert self.trainer.datamodule.target_dataset is not None
                 ds = self.trainer.datamodule.target_dataset
-                target = torch.tensor(ds.to_pandas()["target"])
-                target_mean = target.mean(dim=0, keepdim=True)
-                target_std = target.std(dim=0, keepdim=True)
+                state = self.transform.fit(ds)
 
-            target_mean = self.trainer.strategy.broadcast(target_mean)
-            target_std = self.trainer.strategy.broadcast(target_std)
-            self.transform = Standardize(target_mean, target_std)
-            self.transform.to(self.device)
+            state = self.trainer.strategy.broadcast(state)
+            self.transform.load_state_dict(state)
         else:
             self.transform = None
 
