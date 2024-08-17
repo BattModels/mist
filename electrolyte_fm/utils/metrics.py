@@ -167,7 +167,7 @@ class OOVMetric(Metric):
             yield v
 
 
-def get_metric(name: str, task_type: str, output_size: int) -> Metric:
+def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> Metric:
     if name == "auroc" and task_type == "binary":
         return AUROC(
             task="binary",

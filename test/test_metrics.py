@@ -291,3 +291,13 @@ def test_hotellings():
     assert isinstance(out["df"], int) and 0 < out["df"]
     assert isinstance(out["p"], int) and out["p"] == p
     assert isinstance(out["d2"], int) and out["d2"] == batch_size * batches - p - 1
+
+
+def test_binary_stats():
+    metric = OOVMetric(get_metric("crosstab", "binary"), 1)
+    preds = torch.randn(32, 8)
+    targets = torch.randint(1, (32, 8))
+    input_ids = torch.ones(32, 8)
+    metric.update(preds, targets, input_ids)
+    out = metric.compute()
+    assert out["tp_oov"] + out["tn_oov"] + out["fp_oov"] + out["fn_oov"] == 32 * 8
