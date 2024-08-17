@@ -23,11 +23,15 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
         return pretrained_spe_tokenizer()
 
-    elif Path(name).parent.parent.joinpath("config.json").exists():
+    elif (
+        Path(name).is_dir()
+        and Path(name).parent.parent.joinpath("config.json").exists()
+    ):
         # Reload Tokenizer from Checkpoint
         from ..utils.ckpt import get_ckpt_tokenizer
 
         tokenizer = get_ckpt_tokenizer(name)
+        print(f"Loading {tokenizer} for {name}")
         return load_tokenizer(tokenizer, **kwargs)
 
     elif name == "ibm/MoLFormer-XL-both-10pct-oov":
@@ -47,7 +51,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         )
         config = json.loads(tok_tf.backend_tokenizer.to_str())
         regex = config["pre_tokenizer"]["pretokenizers"][-1]["pattern"]["Regex"]
-        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(
+            Regex(regex), "isolated")
         return tok_tf
 
     else:
