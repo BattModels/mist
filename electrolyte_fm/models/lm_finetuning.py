@@ -9,7 +9,6 @@ from torchmetrics import MetricCollection
 
 from ..utils.metrics import (
     OOVMetric,
-    HotellingTwoSample,
     get_metric,
     masked_loss,
     masked_metric_update,
@@ -122,11 +121,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
         self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
 
-        # HotellingTwoSample
-        if task == "regression":
-            self.val_hotelling = HotellingTwoSample(output_size, unk_token_id)
-            self.test_hotelling = HotellingTwoSample(output_size, unk_token_id)
-
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
         for m in [self.train_metrics, self.val_metrics, self.test_metrics]:
@@ -205,14 +199,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch.get("is_oov", None),
         )
         self.log_dict(self.val_metrics, on_epoch=True, on_step=False, sync_dist=True)
-
-        # Compare oov / non-oov regression perf
-        if hasattr(self, "val_hotelling"):
-            assert not batch["target_mask"].any()
-            self.val_hotelling.update(
-                preds, batch["target"], batch["input_ids"], batch.get("is_oov", None)
-            )
-
         return loss
 
     def on_validation_epoch_end(self):
@@ -235,13 +221,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch.get("is_oov", None),
         )
         self.log_dict(self.test_metrics, on_epoch=True, on_step=False, sync_dist=True)
-
-        # Compare oov / non-oov regression perf
-        if hasattr(self, "test_hotelling"):
-            assert not batch["target_mask"].any()
-            self.test_hotelling.update(
-                preds, batch["target"], batch["input_ids"], batch.get("is_oov", None)
-            )
         return loss
 
     def on_test_epoch_end(self):
@@ -251,6 +230,22 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             sync_dist=True,
         )
         self.test_metrics.reset()
+
+    def predict_step(self, batch, *args):
+        hs = self.encoder(
+            batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            return_dict=True,
+        ).last_hidden_state
+        embedding = hs[:, 0, :]
+
+        preds = self.task_network(hs)
+        preds = self.transform.forward(preds) if self.transform else preds
+
+        out = {"embedding": embedding, "prediction": preds}
+        if "target" in batch:
+            out["target"] = batch["target"]
+        return out
 
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()

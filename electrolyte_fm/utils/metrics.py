@@ -66,8 +66,11 @@ class HotellingTwoSample(Metric):
         self.residual_non_oov.append(residual[~is_oov])
 
     def compute(self) -> torch.Tensor:
-        oov = torch.cat(self.residual_oov)
-        non_oov = torch.cat(self.residual_non_oov)
+        # Collate residuals
+        oov = self.residual_oov
+        non_oov = self.residual_non_oov
+        if oov.size(0) < 2 or non_oov.size(0) < 2:
+            return dict()
         p = non_oov.size(1)
         assert (
             oov.ndim == 2 and non_oov.ndim == 2 and oov.size(1) == non_oov.size(1) == p
@@ -90,7 +93,15 @@ class HotellingTwoSample(Metric):
         # Rescale to the F-distribution
         d2 = n_oov + n_non_oov - p - 1
         t_fdit = t * d2 / (df * p)
-        return {"t2": t, "t_fdist": t_fdit, "df": df, "p": p, "d2": d2}
+        return {
+            "t2": t,
+            "t_fdist": t_fdit,
+            "df": df,
+            "p": p,
+            "d2": d2,
+            "oov_rmse": oov.mean(0).norm(2),
+            "non_oov_rmse": non_oov.mean().norm(2),
+        }
 
 
 class OOVMetric(Metric):
