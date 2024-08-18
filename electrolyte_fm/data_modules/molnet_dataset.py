@@ -140,7 +140,8 @@ class MolNetDataModule(pl.LightningDataModule):
         )
 
         # Save training dataset for target transformations
-        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+        self.target_dataset = ds["train"].select_columns(
+            ["target", "target_mask"])
 
         # Tokenize smiles
         ds = ds.map(
@@ -153,8 +154,10 @@ class MolNetDataModule(pl.LightningDataModule):
         self.train_dataset: Dataset = maybe_shard_dataset(
             self.trainer, ds["train"].shuffle(seed=42)
         )
-        self.val_dataset: Dataset = maybe_shard_dataset(self.trainer, ds["validation"])
-        self.test_dataset: Dataset = maybe_shard_dataset(self.trainer, ds["test"])
+        self.val_dataset: Dataset = maybe_shard_dataset(
+            self.trainer, ds["validation"])
+        self.test_dataset: Dataset = maybe_shard_dataset(
+            self.trainer, ds["test"])
         self.token_collator = DataCollatorWithPadding(
             tokenizer=self.tokenizer, padding="longest"
         )
@@ -164,19 +167,18 @@ class MolNetDataModule(pl.LightningDataModule):
         mask = [torch.tensor(x.pop("target_mask"), dtype=bool) for x in batch]
 
         # Remove unknown tokens
+        unk_token_id = self.tokenizer.unk_token_id
         if self.strip_unk_tokens:
-            unk_token_id = self.tokenizer.unk_token_id
             batch = [strip_unk_tokens(obs, unk_token_id) for obs in batch]
             is_oov = [x.pop("is_oov") for x in batch]
+        else:
+            is_oov = [unk_token_id in obs["input_ids"] for obs in batch]
 
         # Tokenize
         output = self.token_collator(batch)
         output["target"] = torch.stack(targets)
         output["target_mask"] = torch.stack(mask)
-
-        # Mark oov examples
-        if self.strip_unk_tokens:
-            output["is_oov"] = torch.tensor(is_oov)
+        output["is_oov"] = torch.tensor(is_oov)
         return output
 
     def train_dataloader(self):
