@@ -43,8 +43,13 @@ export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
 # Write out  lightning config
 export PL_CONFIG=$TMPDIR/lightning.json
 cat > ${PL_CONFIG}<<EOF
+{% if test is defined %}
+{{ {"test": test } | tojson }}
+{% else %}
 {{ {"fit": train } | tojson }}
+{%- endif %}
 EOF
+sbcast --force ${PL_CONFIG} ${PL_CONFIG}
 
 srun \
 ${PWD}/submit/set_node_rank \
@@ -52,4 +57,8 @@ ${PWD}/submit/set_node_rank \
 nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
+{%- if test is defined %}
+    python3 train.py test
+{%- else %}
     python3 train.py fit
+{%- endif %}
