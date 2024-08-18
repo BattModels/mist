@@ -3,7 +3,7 @@
   nodes: 16,
   walltime: '3:00:00',
   mpiexe: {
-    np: '$NGPUs',
+    np: '$NGPUS',
     ppn: '$NGPU_PER_HOST',
     hostfile: '$PBS_NODEFILE',
     'cpu-bind': 'numa',
