@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+from typing import Optional
 from pathlib import Path
 
 from jsonargparse import Namespace
@@ -102,15 +103,16 @@ class SaveConfigWithCkpts(Callback):
 
         # Get model class name and config
         if version := config.get("version", None):
-            cls_name = config["class_path"]
-
             if version.startswith("0.3"):
-                model_config = config["lightning_module"]["init_args"]
-                model_config["vocab_size"] = config["datamodule"]["vocab_size"]
+                cls_name, model_config = norm_class_config(
+                    config["lightning_module"],
+                    class_path=config.get("class_path", None),
+                )
+                _, data_config = norm_class_config(config["datamodule"])
+                model_config["vocab_size"] = data_config["vocab_size"]
 
             else:
-                cls_name = config["class_path"]
-                model_config = config["init_args"]
+                cls_name, model_config = norm_class_config(config)
         else:
             cls_name = "electrolyte_fm.models.roberta_base.RoBERTa"
             model_config = config
@@ -162,3 +164,22 @@ def get_ckpt_tokenizer(path: str | Path) -> str:
         return config["data"]["tokenizer"]
     except KeyError:
         return config["data"]["init_args"]["tokenizer"]
+
+
+def norm_class_config(config: dict, class_path: Optional[str] = None) -> (str, dict):
+    """Parse a dictionary of hparams for a class name and init args"""
+    init_args = dict()
+    if "init_args" in config:
+        init_args = config.pop("init_args")
+
+    if "class_path" in config:
+        class_path = config["class_path"]
+    elif "_class_path" in config:
+        class_path = config.pop("_class_path")
+        init_args = config
+
+    # Remove instantiator from init_args
+    init_args.pop("_instantiator", None)
+    init_args.pop("instantiator", None)
+
+    return class_path, init_args
