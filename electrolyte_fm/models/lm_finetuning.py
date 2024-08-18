@@ -41,6 +41,11 @@ class Standardize(torch.nn.Module):
         return self.state_dict()
 
 
+class IdentityTransform(torch.nn.Identity):
+    def inverse(self, x: torch.Tensor) -> torch.Tensor:
+        return x
+
+
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on multiple tasks.
@@ -70,8 +75,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
-            from ..utils.ckpt import get_ckpt_tokenizer
-
             self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
         else:
             from transformers import AutoModel
@@ -109,17 +112,21 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         if transform == "standardize":
             self.transform = Standardize(output_size)
         else:
-            self.transform = torch.nn.Identity()
+            self.transform = IdentityTransform()
         self.transform.eval()
 
         # Additional Metrics
         metrics = MetricCollection(
-            {metric: get_metric(metric, task, output_size) for metric in metrics}
+            {metric: get_metric(metric, task, output_size)
+             for metric in metrics}
         )
         unk_token_id = load_tokenizer(encoder_ckpt).unk_token_id
-        self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
-        self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
-        self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
+        self.train_metrics = OOVMetric(
+            metrics.clone(prefix="train/"), unk_token_id)
+        self.val_metrics = OOVMetric(
+            metrics.clone(prefix="val/"), unk_token_id)
+        self.test_metrics = OOVMetric(
+            metrics.clone(prefix="test/"), unk_token_id)
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
@@ -140,7 +147,8 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         else:
             self.transform = None
 
-    def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
+    # type: ignore[override]
+    def forward(self, batch, transform=True, **kwargs):
         hs = self.encoder(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],
@@ -149,26 +157,29 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         ).last_hidden_state
 
         pred_unscaled = self.task_network(hs)
-        if self.transform and transform:
-            self.transform.forward(pred_unscaled)
+        if transform:
+            return self.transform.forward(pred_unscaled)
         return pred_unscaled
 
     def _scaled_pred_loss(self, batch):
         """Compute loss before transforming the model's predictions"""
         preds = self.forward(batch, transform=False)
         target = batch["target"]
-        if self.transform:
-            target = self.transform.inverse(target)
+        target = self.transform.inverse(target)
 
         loss = masked_loss(self.lossfn, preds, target, batch["target_mask"])
-
-        if self.transform:
-            preds = self.transform.forward(preds)
+        preds = self.transform.forward(preds)
         return preds, loss
 
     def training_step(self, batch, batch_idx: int):
         preds, loss = self._scaled_pred_loss(batch)
-        self.log("train/loss", loss, on_step=True, on_epoch=True)
+        self.log(
+            "train/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            sync_dist=True,
+        )
         masked_metric_update(
             self.train_metrics,
             preds,
@@ -189,7 +200,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
     def validation_step(self, batch, batch_idx: int):
         preds, loss = self._scaled_pred_loss(batch)
-        self.log("val/loss", loss, on_step=True, on_epoch=True)
+        self.log(
+            "val/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            sync_dist=True,
+        )
         masked_metric_update(
             self.val_metrics,
             preds,
@@ -198,7 +215,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["input_ids"],
             batch.get("is_oov", None),
         )
-        self.log_dict(self.val_metrics, on_epoch=True, on_step=False, sync_dist=True)
         return loss
 
     def on_validation_epoch_end(self):
@@ -211,7 +227,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
     def test_step(self, batch, batch_idx: int):
         preds, loss = self._scaled_pred_loss(batch)
-        self.log("test/loss", loss, on_step=True, on_epoch=True)
+        self.log(
+            "test/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            sync_dist=True,
+        )
         masked_metric_update(
             self.test_metrics,
             preds,
@@ -220,7 +242,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["input_ids"],
             batch.get("is_oov", None),
         )
-        self.log_dict(self.test_metrics, on_epoch=True, on_step=False, sync_dist=True)
         return loss
 
     def on_test_epoch_end(self):
@@ -240,17 +261,20 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         embedding = hs[:, 0, :]
 
         preds = self.task_network(hs)
-        preds = self.transform.forward(preds) if self.transform else preds
+        preds = self.transform.forward(preds)
 
         out = {"embedding": embedding, "prediction": preds}
-        if "target" in batch:
-            out["target"] = batch["target"]
+        for key in ["target", "is_oov"]:
+            if key in batch.keys():
+                out[key] = batch[key]
+
         return out
 
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()
         if not self.freeze_encoder:
-            learnable_params = chain(learnable_params, self.encoder.parameters())
+            learnable_params = chain(
+                learnable_params, self.encoder.parameters())
 
         optimizer = self.optimizer(learnable_params)
         if schedule := self.lr_schedule:
