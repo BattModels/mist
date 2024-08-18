@@ -21,7 +21,6 @@ pyspark = "^3.5.0"
 smirk = {path = "smirk", develop=true}
 rich = "^13"
 pydoe2 = "^1.3"
-smilespe = "^0.0.3"
 jsonnet = "^0.20.0"
 
 [tool.poetry.group.dev.dependencies]
