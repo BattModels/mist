@@ -1,8 +1,11 @@
-using TokenizerStats: tokenizer_label, moments!, hist_nbins, find, tokenusage!
+using TokenizerStats: TokenizerStats, tokenizer_label, moments!, hist_nbins, find, tokenusage!
 using GLMakie
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights
 using JSON
+using DataFrames
+
+const GIT_ROOT = strip(read(`git rev-parse --show-toplevel`, String))
 
 function fit_hist(counts; kwargs...)
     x = map(Base.Fix1(parse, Int)∘string, collect(keys(counts)))
@@ -135,42 +138,135 @@ function figure_fertility(results::Dict)
     return f
 end
 
-function figure_oov_rate(results::Dict)
+collate_atomic_oov(key::String, results::Dict) = results[key]["oov"] / results[key]["nobs"]
+function collate_atomic_oov(key::Regex, results::Dict)
+    nobs = 0
+    oov = 0
+    for (k, v) in results
+        if !isnothing(match(key, k))
+            nobs += v["nobs"]
+            oov += v["oov"]
+        end
+    end
+    return oov / nobs
+end
+
+
+
+function figure_oov_rate(filename)
+    datasets = [
+        "Elements" => "elements",
+        "Bonds" => "bonds",
+        "Isotopes" => "isotopes",
+        "Carbon Rings" => "rings",
+        "Ions" => "charged_elements",
+        "Chirality" => "chiral_elements",
+        "Charged, Chiral Isotopes" => "charged_chiral_isotopes",
+        "MoleculeNet" => r"^MoleculeNet/",
+    ]
+
+    tokenizers = [
+        "smirk" => "smirk",
+        "seyonec/ChemBERTa-zinc-base-v1" => "ChemBERTa v1",
+        "ChangwenXu98/TransPolymer" => "TransPolymer",
+        "ibm/MoLFormer-XL-both-10pct-oov" => "MoLFormer",
+        "HUBioDataLab/SELFormer" => "SELFormer",
+        "devalab/molgpt-moses" => "MolGPT, moses",
+        "devalab/molgpt-guacamol" => "MolGPT, guacamol",
+        "rxn4chemistry/rxn_yields" => "Yield-BERT",
+        "rxn4chemistry/rxnfp" => "RXNFP",
+        "MolecularAI/Chemformer" => "Chemformer",
+        "SmilesPE/SPE_ChEMBL" => "SmilesPE",
+        "sagawa/ReactionT5-product-prediction" => "ReactionT5, Products",
+        "sagawa/ReactionT5-yield-prediction" => "ReactionT5, Yield",
+    ]
     f = Figure(size=(600, 300))
-    ax = Axis(f[2,1];
-              ylabel="Out Of Vocab Rate",
-              limits=(nothing, (0, 100)),
-              ytickformat="{:.0f}%",
-              xticklabelrotation = 0.4,
+    ax = Axis(f[1,1];
+        ylabel="Out of Vocab Rate [%]",
+        limits=(nothing, (0, 100)),
+        ytickformat="{:.0f}%",
+        xticklabelrotation = 0.4,
+        xticks=(1:length(tokenizers), last.(tokenizers)),
+        xticklabelsize=10,
     )
 
-    ids = Int[]
-    groups = Int[]
-    names = String[]
+    data = JSON.parsefile(filename)
+    tok_pos = Int[]
+    ds_group_pos = Int[]
     oov_rate = Float64[]
-    for (idx, (name, file)) in enumerate(pairs(results))
-        stats = JSON.parsefile(file)
-
-        # Tabulate OOV Rate
-        tok = TokenizerStats.load_tokenizer(name)
-        oov_carbon = TokenizerStats.oov_rate(tok, TokenizerStats.carbon_tokens())
-        oov_elements = TokenizerStats.oov_rate(tok, TokenizerStats.elements())
-        oov = 100 .* (stats["out_of_vocab"] / stats["samples"], oov_carbon, oov_elements)
-
-        push!(names, name)
-        append!(ids, repeat([idx], length(oov)))
-        append!(groups, 1:length(oov))
-        append!(oov_rate, [oov...])
+    for (idx, name) in enumerate(first.(tokenizers))
+        tok_results = data[name]
+        for (gdx, group_key) in enumerate(last.(datasets))
+            group_oov_rate = collate_atomic_oov(group_key, tok_results) * 100
+            push!(tok_pos, idx)
+            push!(ds_group_pos, gdx)
+            push!(oov_rate, group_oov_rate)
+        end
     end
-    h = barplot!(ax, ids, oov_rate; dodge=groups, color=groups, gap=0.1)
-    ax.xticks[] = (1:length(names), names)
 
-    group_ids = 1:3
-    @assert group_ids == unique(groups)
-    elements = [ PolyElement(polycolor=i, colormap=h.colormap, colorrange=extrema(group_ids)) for i in unique(groups) ]
-
-    Legend(f[1, 1], elements, ["Realspace", "Carbon", "Elements"], tellheight=true, tellwidth=false, orientation=:horizontal)
+    h = barplot!(ax, tok_pos, oov_rate;
+                 dodge=ds_group_pos,
+                 color=ds_group_pos,
+                 gap=0.1,
+                 colorrange=(1, length(datasets)),
+                 colormap=:Set1_8,
+                 strokewidth=0.25,
+                 strokecolor=:black,
+    )
+    ds_elements = map(1:length(datasets)) do gdx
+        PolyElement(polycolor=gdx, colormap=h.colormap, colorrange=h.colorrange)
+    end
+    Legend(f[1,2], ds_elements, collect(first.(datasets));
+        tellheight=true, tellwidth=true, orientation=:vertical,
+        nbanks=1, labelsize=10, patchsize=(10,10), rowgap=3, colgap=4,
+        framevisible=false,
+        patchstrokecolor=:black, patchstrokewidth=1,
+    )
+    rowgap!(f.layout, 5)
+    colgap!(f.layout, 5)
 
     resize_to_layout!(f)
     return f
+end
+
+function figure_equal_odds()
+    df_runs, df_metrics = TokenizerStats.summarize_finetuning(joinpath(".cache", "wandb-export", "finetuning"))
+    subset!(df_runs,
+        :tags => ByRow(tags -> "sweep-aug15-1" in tags),
+        :state => ByRow(==("finished")),
+    )
+    df_metrics = innerjoin(df_metrics, df_runs[!, [:id]]; on=:id)
+
+    # Compute Equal Odds
+    xtab = TokenizerStats.widden_crosstab(df_metrics)
+    eq_odd_diff = combine(groupby(xtab, [:split, :id])) do gdf
+        n_oov = only(gdf[gdf.tok_group .== "oov", :nobs])
+        n_non_oov = only(gdf[gdf.tok_group .== "non_oov", :nobs])
+
+        # Prevalence
+        n_obs = only(gdf[gdf.tok_group .== "all", :nobs])
+        tp = only(gdf[gdf.tok_group .== "all", :tp])
+        fn = only(gdf[gdf.tok_group .== "all", :fn])
+        prevalence = (tp + fn) / n_obs
+
+        # Misclassification Spread
+        gdf = gdf[gdf.tok_group .!= "all", :]
+        fpr_range = maximum(1 .- gdf.tpr) - minimum(1 .- gdf.tpr)
+        fnr_range = maximum(1 .- gdf.tnr) - minimum(1 .- gdf.tnr)
+
+        # If only one group is present, equal_odds_diff is undef
+        if n_oov == 0 || n_non_oov == 0
+            equal_odds_diff = missing
+        else
+            equal_odds_diff = max(fpr_range, fnr_range)
+        end
+        (; equal_odds_diff, prevalence)
+    end
+
+    # Add Dataset
+    equal_odds_diff = leftjoin(eq_odd_diff, df_runs[!, [:id, :dataset, :tokenizer]]; on=:id)
+    equal_odds_diff.tokenizer .= replace.(equal_odds_diff.tokenizer, r".*\.ckpt" => "smirk")
+    sort!(equal_odds_diff, [:dataset, :tokenizer, :split])
+    equal_odds_diff
+
 end
