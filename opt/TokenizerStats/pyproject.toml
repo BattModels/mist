@@ -1,0 +1,13 @@
+[tool.poetry]
+package-mode = false
+authors = ["Alexius Wadell <awadell@umich.edu>"]
+
+[tool.poetry.dependencies]
+python = ">=3.11,~3.12"
+mendeleev = "^0.16"
+electrolyte_fm = { path = "../../", develop=true, extras = ["tokenizers"] }
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
