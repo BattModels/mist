@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import List
+from itertools import product
 
 import _jsonnet as jsonnet
 import pytest
@@ -68,22 +69,44 @@ def test_validate_molnet_config():
         assert isinstance(config["metrics"], List)
 
 
-@pytest.mark.parametrize("split", ["scaffold", "random"])
-def test_splits(split):
-    dm = MolNetDataModule(name="clintox", split=split)
+DATASET_SIZE = {
+    "clintox": 1484,  # Manually confirmed, website lists 1478
+    "hiv": 41127,
+    "qm9": 133885,
+    "esol": 1128,
+    "freesolv": 642,
+    "lipo": 4200,
+    "muv": 93087,
+    "bace": 1513,
+    "bbbp": 2039,
+    "sider": 1427,
+    "tox21": 7831,
+    "toxcast": 8575,
+    "clintox": 1478,
+}
+
+
+@pytest.mark.parametrize(
+    "dataset,split", product(DATASET_SIZE.keys(), ["scaffold", "random"])
+)
+def test_splits(dataset, split):
+    dm = MolNetDataModule(name=dataset, split=split)
     dm.prepare_data()
     ds = dm.dataset
-    ds_clintox = load_dataset(
+    ds_ref = load_dataset(
         "csv",
         name="clintox",
         data_files=[MOLNET_URLS["clintox"]],
     )
 
     # Check Lengths
-    assert len(ds_clintox) == 1
-    assert len(ds_clintox["train"]) == 1484  # Manually confirmed, website lists 1478
+    assert len(ds_ref) == 1
+    assert len(ds_ref["train"]) == DATASET_SIZE[dataset]
     assert "train" in ds and "validation" in ds and "test" in ds
-    assert len(ds["train"]) + len(ds["validation"]) + len(ds["test"]) == 1484
+    assert (
+        len(ds["train"]) + len(ds["validation"]) + len(ds["test"])
+        == DATASET_SIZE[dataset]
+    )
 
     # Check for overlap
     mol = {split: set(ds[split]["smiles"]) for split in ["train", "validation", "test"]}
