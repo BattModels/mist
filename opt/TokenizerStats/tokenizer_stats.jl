@@ -1,5 +1,5 @@
 #!/usr/bin/env -S julia --project --startup-file=no
-using TokenizerStats: tabulate_dataset
+using TokenizerStats: TokenizerStats, tabulate_dataset
 using ArgParse
 
 function main(args::Vector{String})
@@ -11,16 +11,35 @@ function main(args::Vector{String})
         "--output"
             help = "Path of output file"
             arg_type = String
-            default = "stats.json"
         "dataset"
-            help = "Path to the dataset to process"
+            help = "Path to the dataset to process, or name of a MolNet Dataset"
             arg_type = String
+            required = true
         "tokenizer"
             arg_type = String
+            required = true
     end
     args = parse_args(s)
-    out_file = length(args) == 3 ? args[3] : "stats.json"
-    tabulate_dataset(args["dataset"], args["tokenizer"], args["output"]; canonical=args["canonicalize"])
+    if isdir(args["dataset"])
+        @assert false "idk my bff jill"
+        dm = TokenizerStats.pretrain(args["dataset"]; tokenizer=args["tokenizer"])
+        dataset_name = basename(args["dataset"])
+    else
+        dm = TokenizerStats.molnet(args["dataset"]; tokenizer=args["tokenizer"])
+        dataset_name = args["dataset"]
+    end
+
+    # Parse output file
+    if isnothing(args["output"])
+        out_file = joinpath(@__DIR__, "stats", args["tokenizer"], dataset_name)
+    else
+        out_file = args["output"]
+    end
+    out_file = out_file * ".json"
+    @info "will save results to $out_file"
+
+
+    tabulate_dataset(dm, out_file; tokenizer_name=args["tokenizer"])
 end
 
 !isinteractive() && main(ARGS)

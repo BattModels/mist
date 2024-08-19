@@ -17,22 +17,17 @@ rxn4chemistry/rxnfp
 ChangwenXu98/TransPolymer
 "
 
-# Move to git root
-cd $(git rev-parse --show-toplevel)
+# Move to TokenizerStats dir
+cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 
 # Activate Environment
 module purge
 module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
-source activate
-
-if [ ! -d "$1" ]; then
-    echo "Data directory ($1) does not exist"
-    exit 1
-fi
+source ./activate
 
 # Precompile project
 export JULIA_PKG_PRECOMPILE=0
-srun -p venkvis-debug -c3 --mem 4G julia --color=yes --startup-file=no --project=opt/TokenizerStats -e '
+srun -p venkvis-debug -c3 --mem 4G julia --color=yes --startup-file=no --project -e '
     using Pkg
     Pkg.instantiate()
     using MPIPreferences
@@ -42,10 +37,10 @@ srun -p venkvis-debug -c3 --mem 4G julia --color=yes --startup-file=no --project
 '
 unset JULIA_PKG_PRECOMPILE
 
-# Submit jobs for each tokenizer
+# Submit jobs for each tokenizer + dataset
 for tok in $TOKENIZERS; do
-    dataset="$(basename $1)"
-    output="opt/TokenizerStats/stats/$tok/stats-$dataset-canonical.json"
-    config="{\"data\":\"$1\",\"tokenizer\":\"$tok\",\"output\":\"$output\"}"
-    submit/submit.py opt/TokenizerStats/submit_tok_stats.j2 --no-default --no-confirm --json "$config" | sbatch
+    sbatch ./submit_tok_stats.sh /nfs/turbo/coe-venkvis/mist/realspace_v4_dev $tok
+    for dataset in qm8 qm9 esol freesolv lipo muv hiv bace bbbp tox21 toxcast sider clintox; do
+        sbatch ./submit_tok_stats.sh $dataset $tok
+    done
 done

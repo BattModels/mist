@@ -13,22 +13,17 @@ function tracked_stats()
     )
 end
 
-usage_stats(example) = usage_stats!(tracked_stats(), example)
-function usage_stats!(stats, example)
-    code = example.input_ids
+usage_stats(example, is_oov) = usage_stats!(tracked_stats(), example, is_oov)
+function usage_stats!(stats, code::Vector{Int}, is_oov::Bool)
 
     # Track usage stats
     fit!(stats.fertility, length(code))
     fit!(stats.nunique, length(unique(code)))
     fit!(stats.token_usage, code)
-    fit!(stats.distict_samples, example.text)
 
     # Check for unknown tokens
-    if example.is_oov
+    if is_oov
         fit!(stats.out_of_vocab, 1)
-        if length(stats.oov_samples) < MAX_OOV_SAMPLES
-            push!(stats.oov_samples, example.text)
-        end
     end
 
     return stats
@@ -46,15 +41,6 @@ function batch_tokenize(text::Py, tokenizer::Py; unk_token_id::Integer)
     end
 end
 
-shannon_entropy(p::Real) = -p * log2.(p)
-
-function shannon_entropy!(stats, example; token_entropy::Dict{Int, V}) where {V <: Real}
-    code = pyconvert(Vector{Int64}, example["input_ids"])
-    H = sum(Base.Fix1(getindex, token_entropy), code; init=zero(V))
-    fit!(stats, (H, H / length(code)))
-    return stats
-end
-
 function leader_reduce(f, x)
     comm = MPI.COMM_WORLD
     g = MPI.gather(x, comm; root=0)
@@ -64,21 +50,20 @@ function leader_reduce(f, x)
     return nothing
 end
 
-function setup_dataset_mpi(ds_path, tokenizer; rank=0, size=1, canonical=false)
-    ds_path = realpath(expanduser(ds_path))
-    ds = load_dataset(ds_path, split="train", streaming=true, keep_in_memory=false)
-    if canonical
-        ds = ds.map(x -> pydict(; text=rdkit_canonical(x["text"])), batched=false)
-        ds = ds.filter(x -> pybool(x["text"]))
+function setup_dm_mpi(dm::Py, split::AbstractString; rank::Int=0, size::Int=1)
+    if split == "train"
+        ds = dm.train_dataset
+    elseif split == "val"
+        ds = dm.val_dataset
+    elseif split == "test"
+        ds = dm.test_dataset
+    else
+        throw(ArgumentError(lazy"Invalid split: $split"))
     end
-    ds = split_dataset_by_node(ds, rank, size)
-    ds = Iterators.map(Base.Fix2(getindex, "text"), ds.iter(10000))
-    unk_token_id = pyconvert(Int, tokenizer.unk_token_id)
-    ds = Iterators.map(batch -> batch_tokenize(batch, tokenizer; unk_token_id), ds)
-    return Iterators.flatten(ds)
+    return split_dataset_by_node(ds, rank, size)
 end
 
-function tabulate_dataset(ds_path, tok_name, out_file; canonical=false)
+function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="")
     # Setup mpi
     MPI.Init()
     comm = MPI.COMM_WORLD
@@ -87,19 +72,30 @@ function tabulate_dataset(ds_path, tok_name, out_file; canonical=false)
     @info "Rank $rank of $size is starting"
 
     # Load Dataset and Tokenizer
-    tokenizer = load_tokenizer(tok_name)
+    tokenizer = datamodule.tokenizer
     tokenizer_info = (;
-        name=tok_name,
+        name=tokenizer_name,
         vocab_size=pyconvert(Int, tokenizer.vocab_size),
         unk_token_id=pyconvert(Int, tokenizer.unk_token_id),
     )
     local_stats = tracked_stats()
-    ds = setup_dataset_mpi(ds_path, tokenizer; rank, size, canonical)
+    ds = setup_dm_mpi(datamodule, "train"; rank, size)
+    collator = datamodule.data_collator
+    start_time = time()
     for (idx, example) in enumerate(ds)
-        usage_stats!(local_stats, example)
-        idx % 100_000 && @info "rank $rank on molecule $idx"
+        input_ids = pyconvert(Vector{Int}, example["input_ids"])
+        is_oov = tokenizer_info.unk_token_id in input_ids
+        usage_stats!(local_stats, input_ids, is_oov)
+        if idx % 100_000 == 1
+            elapsed = time() - start_time
+            @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
+        end
     end
-    @info "Rank $rank has finished tokenizer stats"
+    n_obs = nobs(local_stats[:fertility])
+    elapsed = time() - start_time
+    @info "Rank $rank has finished tokenizer stats" n_obs elapsed n_obs / elapsed
+
+    # Reduce stats over ranks
     local_tok_stats = OnlineStats.Series(; Base.structdiff(local_stats, NamedTuple{(:oov_samples,)})...)
     tokenizer_stats = leader_reduce(merge!, local_tok_stats)
     oov_samples = leader_reduce(union, local_stats.oov_samples)
@@ -109,26 +105,12 @@ function tabulate_dataset(ds_path, tok_name, out_file; canonical=false)
     token_usage = MPI.bcast(token_usage, comm; root=0)
     n_tokens = sum(values(token_usage))
 
-    # Tabulate the entropy of each token
-    token_entropy = Dict(k => shannon_entropy(v / n_tokens) for (k, v) in token_usage)
-
-    # Compute entropy statistics for the dataset
-    @info "Rank $rank: Computing tokenizer entropy"
-    entropy = OnlineStats.Series(; moments=OnlineStats.Moments(), extrema=Extrema(), hist=KHist(100))
-    entropy = OnlineStats.Group(; per_molecule=deepcopy(entropy), per_token=deepcopy(entropy))
-    for example in ds
-        shannon_entropy!(entropy, example; token_entropy)
-    end
-    entropy = leader_reduce(merge!, entropy)
-    @info "Rank $rank: Finished tokenizer entropy"
-
     if rank == 0
         @info "Tabulating stats on rank $rank"
         stats = (;
             tokenizer=tokenizer_info,
             samples=nobs(tokenizer_stats[:fertility]),
             oov_samples,
-            entropy=map(value, entropy.stats),
             map(value, tokenizer_stats.stats)...
         )
         mkpath(dirname(out_file))

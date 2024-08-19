@@ -24,20 +24,51 @@ end
 
 # Delay loading python code until initialization
 # https://juliapy.github.io/PythonCall.jl/stable/pythoncall/#Precompilation
-const PY_TOKENIZER = Ref{Py}()
 const PY_DISTRIBUTED = Ref{Py}()
-const PY_DATASETS = Ref{Py}()
+const PY_DATAMODULE = Ref{Py}()
+const PY_JSONNET = Ref{Py}()
 
-load_tokenizer(name; kwargs...) = PY_TOKENIZER[].load_tokenizer(name; kwargs...)
-rdkit_canonical(smi) = PY_TOKENIZER[].rdkit_canonical(smi)
 split_dataset_by_node(args...; kwargs...) = PY_DISTRIBUTED[].split_dataset_by_node(args...; kwargs...)
-load_dataset(args...; kwargs...) = PY_DATASETS[].load_dataset(args...; kwargs...)
+
+function molnet_config(name::AbstractString)
+    file = joinpath(@__DIR__, "..", "..", "..", "submit", "moleculenet_tasks.libsonnet")
+    config = JSON.parse(pyconvert(String, PY_JSONNET[].evaluate_file(file)))
+    return config[name]
+end
+
+function molnet(name::AbstractString; tokenizer="smirk", canonical::Bool=false)
+    @assert !canonical "molnet datamodule doesn't support cannonical"
+    config = molnet_config(name)
+    dm = PY_DATAMODULE[].MolNetDataModule(name,
+        tokenizer=tokenizer,
+        target_columns=config["target_columns"],
+        strip_unk_tokens=false,
+        batch_size=1,
+        val_batch_size=1,
+    )
+    dm.prepare_data()
+    dm.setup("fit")
+    return dm
+end
+
+function pretrain(path::AbstractString; tokenizer="smirk", canonical::Bool=false)
+    dm = PY_DATAMODULE[].RobertaDataSet(
+        path,
+        tokenizer,
+        batch_size=1,
+        val_batch_size=1,
+        canonical=canonical,
+    )
+    dm.prepare_data()
+    dm.setup("fit")
+    return dm
+end
 
 function __init__()
     ENV["TOKENIZERS_PARALLELISM"] = "false" # Want one CPU per rank
-    PY_TOKENIZER[] = pyimport("electrolyte_fm.utils.tokenizer")
+    PY_JSONNET[] = pyimport("_jsonnet")
     PY_DISTRIBUTED[] = pyimport("datasets.distributed")
-    PY_DATASETS[] = pyimport("datasets")
+    PY_DATAMODULE[] = pyimport("electrolyte_fm.data_modules")
     return nothing
 end
 
