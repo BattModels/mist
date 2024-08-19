@@ -82,7 +82,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         # Source: https://github.com/devalab/molgpt/blob/72ff33ae747c0a4908b822732019a66e965a595a/train/train.py#L96C15-L96C122
         regex = r"(\[[^\]]+]|<|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
 
-        repo_ver = ("devalab/molgpt", "72ff33ae747c0a4908b822732019a66e965a595a")
+        repo_ver = ("devalab/molgpt",
+                    "72ff33ae747c0a4908b822732019a66e965a595a")
         if name.endswith("moses"):
             file = cached_github_archive(*repo_ver, "moses2_stoi.json")
         else:
@@ -139,15 +140,41 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         )
         config = json.loads(tok_tf.backend_tokenizer.to_str())
         regex = config["pre_tokenizer"]["pretokenizers"][-1]["pattern"]["Regex"]
-        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(
+            Regex(regex), "isolated")
         return tok_tf
 
-    elif Path(name).parent.parent.joinpath("config.json").exists():
+    elif (
+        Path(name).is_dir()
+        and Path(name).parent.parent.joinpath("config.json").exists()
+    ):
         # Reload Tokenizer from Checkpoint
         from ..utils.ckpt import get_ckpt_tokenizer
 
         tokenizer = get_ckpt_tokenizer(name)
+        print(f"Loading {tokenizer} for {name}")
         return load_tokenizer(tokenizer, **kwargs)
+
+    elif name == "ibm/MoLFormer-XL-both-10pct-oov":
+        # By default "ibm/MoLFormer-XL-both-10pct" strips out unknown tokens
+        # during the pre-tokenization step, this reverts that to ensure
+        # unknown tokens are emitted
+        import json
+        from transformers import AutoTokenizer
+        from tokenizers import Regex
+        from tokenizers.pre_tokenizers import Split
+
+        tok_tf = AutoTokenizer.from_pretrained(
+            "ibm/MoLFormer-XL-both-10pct",
+            trust_remote_code=True,
+            cache=".cache",
+            **kwargs,
+        )
+        config = json.loads(tok_tf.backend_tokenizer.to_str())
+        regex = config["pre_tokenizer"]["pretokenizers"][-1]["pattern"]["Regex"]
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(
+            Regex(regex), "isolated")
+        return tok_tf
 
     else:
         # Fall back to a HuggingFace Tokenizer
@@ -264,7 +291,8 @@ def vocab_from_words(file: str, add_unk_token=True, unk_token: str = "[UNK]"):
 
 
 def cached_github_archive(repo, commit, file):
-    cache = Path(__file__).parent.parent.parent.joinpath(".cache", "smiles-tokenizers")
+    cache = Path(__file__).parent.parent.parent.joinpath(
+        ".cache", "smiles-tokenizers")
     cache.mkdir(exist_ok=True, parents=True)
 
     archive = Path(

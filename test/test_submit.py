@@ -63,10 +63,12 @@ def finetuning_configs():
     ]
 
 
-def test_finetuning(finetuning_configs):
-    for config in finetuning_configs:
-        result = runner.invoke(
-            cli,
-            ["submit/h001.j2", "--data", config],
-        )
-        assert result.exit_code == 0
+@pytest.mark.parametrize(
+    "machine", ["submit/h001.j2", "submit/artemis.j2", "submit/polaris.j2"]
+)
+def test_finetuning(machine):
+    result = runner.invoke(
+        cli,
+        [machine, "--data", "submit/finetune.jsonnet"],
+    )
+    assert result.exit_code == 0

@@ -273,6 +273,21 @@ impl SmirkTokenizer {
         .unwrap()
         .into();
 
+        // Build the new tokenizer
+        let mut tokenizer: TokenizerImpl<
+            ModelWrapper,
+            NormalizerWrapper,
+            PreTokenizerWrapper,
+            PostProcessorWrapper,
+            DecoderWrapper,
+        > = TokenizerBuilder::default()
+            .with_normalizer(self.tokenizer.get_normalizer().cloned())
+            .with_pre_tokenizer(Some(split_structure().into()))
+            .with_model(model)
+            .with_decoder(self.tokenizer.get_decoder().cloned())
+            .build()
+            .unwrap();
+
         // Remove any special tokens (i.e. [PAD]) from the initial vocab
         let is_special = Regex::new(r"\[[A-Z]+?\]").unwrap();
         let alphabet: HashSet<String> = self
@@ -290,7 +305,6 @@ impl SmirkTokenizer {
 
         // Configure the trainer
         let mut builder = GpeTrainer::builder();
-        let mut opt_split_structure = false;
         builder.alphabet(alphabet);
         if let Some(kwargs) = kwargs {
             for (key, value) in kwargs.iter() {
@@ -305,35 +319,10 @@ impl SmirkTokenizer {
                     "limit_alphabet" => {
                         builder.limit_alphabet(value.extract().unwrap());
                     }
-                    "merge_brackets" => {
-                        builder.merge_brackets(value.extract().unwrap());
-                    }
-                    "split_structure" => {
-                        opt_split_structure = value.extract().unwrap();
-                    }
                     _ => println!("Unknown parameter {:?} ignoring", key),
                 }
             }
         }
-
-        // Build the Smirk-GPE tokenizer
-        let mut tok_builder = TokenizerBuilder::default()
-            .with_normalizer(self.tokenizer.get_normalizer().cloned())
-            .with_model(model)
-            .with_decoder(self.tokenizer.get_decoder().cloned());
-
-        if opt_split_structure {
-            tok_builder = tok_builder.with_pre_tokenizer(Some(split_structure().into()));
-        } else {
-            tok_builder = tok_builder.with_pre_tokenizer(None);
-        }
-        let mut tokenizer: TokenizerImpl<
-            ModelWrapper,
-            NormalizerWrapper,
-            PreTokenizerWrapper,
-            PostProcessorWrapper,
-            DecoderWrapper,
-        > = tok_builder.build().unwrap();
 
         // Train tokenizer
         let mut trainer: TrainerWrapper = builder.build().unwrap().into();

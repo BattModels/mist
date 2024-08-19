@@ -1,8 +1,8 @@
 import json
 import os
-import logging
 from datetime import timedelta
 
+import _jsonnet as jsonnet  # Unused, but otherwise we get glibc errors on delta 🫠
 import torch
 from jsonargparse import lazy_instance
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -46,18 +46,6 @@ class MyLightningCLI(LightningCLI):
         # Set model vocab_size from the dataset's vocab size
         parser.link_arguments(
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
-        )
-        # Set model task_specs from the dataset's task_specs
-        parser.link_arguments(
-            "data.init_args.target_columns",
-            "model.init_args.output_size",
-            apply_on="parse",
-            compute_fn=len,
-        )
-
-        # Set tokenizer from encoder's tokenizer
-        parser.link_arguments(
-            "model.init_args.encoder_ckpt", "data.init_args.tokenizer"
         )
 
     def _add_instantiators(self) -> None:
@@ -140,8 +128,4 @@ def cli_main(args=None):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="[%(asctime)s] {%(name)s} %(levelname)s - %(message)s",
-    )
     cli_main()

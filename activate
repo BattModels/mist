@@ -1,16 +1,21 @@
 #!/bin/bash
 # Source this to activate the environment
-PROJECT_DIR="$(git rev-parse --show-toplevel)"
+
+# Locate Project Root
+GIT_ROOT=$(git rev-parse --show-toplevel)
 
 # Activate virtual environment
 source .venv/bin/activate
 
 # Add NVIDIA libraries
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:$PROJECT_DIR/.venv/lib64:$PROJECT_DIR/.venv/lib"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GIT_ROOT}/.venv/lib64:${GIT_ROOT}.venv/lib"
 
 # DISABLE Compat Check
 export DS_SKIP_CUDA_CHECK=1
 
+# HuggingFace
+export HF_HOME="$GIT_ROOT/.cache/huggingface"
+
 # Julia
 export JULIA_CONDAPKG_BACKEND=Null
-export JULIA_PYTHONCALL_EXE="$PROJECT_DIR/.venv/bin/python"
+export JULIA_PYTHONCALL_EXE="${GIT_ROOT}/.venv/bin/python"

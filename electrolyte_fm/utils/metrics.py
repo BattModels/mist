@@ -1,25 +1,107 @@
 from typing import Union, Dict, Optional
 
 import torch
-from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import Metric, MetricCollection
 from torchmetrics.wrappers.abstract import WrapperMetric
 from torchmetrics.wrappers.classwise import ClasswiseWrapper
-from torchmetrics.classification import AUROC, AveragePrecision
+from torchmetrics.classification import (
+    AUROC,
+    AveragePrecision,
+    Accuracy,
+    BinaryStatScores,
+)
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
 
 """ Target Value to indicate missing data """
 IGNORE_INDEX = -100
 
 
-class AvgMeanSquaredError(MeanSquaredError):
-    """Computes the Average MSE of multiple output predictions"""
+class SafeR2Score(R2Score):
+    def compute(self):
+        if self.total < 2:
+            return torch.tensor(
+                float("nan"),
+                device=self.total.device,
+                dtype=self.sum_error.dtype,
+            )
+        return super().compute()
 
-    def __init__(self, squared: bool = True, num_outputs: int = 1, **kwargs):
-        super().__init__(squared=squared, num_outputs=num_outputs, **kwargs)
+
+class BinaryDictStatScores(BinaryStatScores):
+    def __init__(self, name, **kwargs):
+        self.name = name
+        if multidim_average := kwargs.pop("multidim_average", None):
+            if multidim_average != "global":
+                raise ValueError("multidim_average must be global")
+        super().__init__(multidim_average="global", **kwargs)
+
+    def update(self, preds: torch.FloatTensor, targets: torch.IntTensor) -> None:
+        # StatScores doesn't support bf16
+        super().update(preds.float(), targets.float())
 
     def compute(self) -> torch.Tensor:
-        return super().compute().mean()
+        out = super().compute()
+        return {
+            "tp": out[0],
+            "fp": out[1],
+            "tn": out[2],
+            "fn": out[3],
+            "sup": out[4],
+        }[self.name]
+
+
+class HotellingTwoSample(Metric):
+    def __init__(self, num_outputs: int, unk_token_id: Optional[int] = None, **kwargs):
+        super().__init__(**kwargs)
+        self.unk_token_id = unk_token_id
+        self.add_state("residual_oov", list(), dist_reduce_fx="cat")
+        self.add_state("residual_non_oov", list(), dist_reduce_fx="cat")
+
+    def update(self, preds, targets, input_ids, is_oov=None) -> None:
+        is_oov = (
+            is_oov if is_oov is not None else (input_ids == self.unk_token_id).any(1)
+        )
+        residual = preds - targets
+        self.residual_oov.append(residual[is_oov])
+        self.residual_non_oov.append(residual[~is_oov])
+
+    def compute(self) -> torch.Tensor:
+        # Collate residuals
+        oov = self.residual_oov
+        non_oov = self.residual_non_oov
+        if oov.size(0) < 2 or non_oov.size(0) < 2:
+            return dict()
+        p = non_oov.size(1)
+        assert (
+            oov.ndim == 2 and non_oov.ndim == 2 and oov.size(1) == non_oov.size(1) == p
+        )
+
+        # Pooled Covariance matrix
+        n_oov = oov.size(0)
+        n_non_oov = non_oov.size(0)
+        df = n_oov + n_non_oov - 2
+        sigma = (n_oov - 1) * oov.T.cov() + (n_non_oov - 1) * non_oov.T.cov()
+        sigma /= df
+        assert sigma.ndim == 2
+        assert sigma.size(0) == sigma.size(1) == p
+
+        # Hotelling's T
+        t = (n_oov * n_non_oov) / (n_oov + n_non_oov)
+        avg_diff = oov.mean(0) - non_oov.mean(0)
+        t *= avg_diff.dot(torch.linalg.solve(sigma, avg_diff))
+
+        # Rescale to the F-distribution
+        d2 = n_oov + n_non_oov - p - 1
+        t_fdit = t * d2 / (df * p)
+        return {
+            "t2": t,
+            "t_fdist": t_fdit,
+            "df": df,
+            "p": p,
+            "d2": d2,
+            "oov_rmse": oov.mean(0).norm(2),
+            "non_oov_rmse": non_oov.mean().norm(2),
+        }
 
 
 class OOVMetric(Metric):
@@ -47,12 +129,11 @@ class OOVMetric(Metric):
         is_oov = (
             is_oov if is_oov is not None else (input_ids == self.unk_token_id).any(1)
         )
-        out = {}
-        out["all"] = self.metrics["all"].forward(preds, targets)
-        out["oov"] = self.metrics["oov"].forward(preds[is_oov], targets[is_oov])
-        out["non_oov"] = self.metrics["non_oov"].forward(
-            preds[~is_oov], targets[~is_oov]
-        )
+        self.metrics["all"].update(preds, targets)
+        if is_oov.any():
+            self.metrics["oov"].update(preds[is_oov], targets[is_oov])
+        if not is_oov.all():
+            self.metrics["non_oov"].update(preds[~is_oov], targets[~is_oov])
 
     def compute(self):
         out = {}
@@ -86,27 +167,32 @@ class OOVMetric(Metric):
             yield v
 
 
-def get_metric(name: str, task_type: str, output_size: int) -> Metric:
+def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> Metric:
     if name == "auroc" and task_type == "binary":
         return AUROC(
             task="binary",
             ignore_index=IGNORE_INDEX,
-            thresholds=100,
+            thresholds=500,
         )
     elif name == "avg-precision" and task_type == "binary":
         return AveragePrecision(
             task="binary",
             ignore_index=IGNORE_INDEX,
-            thresholds=100,
+            thresholds=250,
+        )
+    elif name == "crosstab" and task_type == "binary":
+        return MetricCollection(
+            {
+                name: BinaryDictStatScores(name, ignore_index=IGNORE_INDEX)
+                for name in ["tp", "tn", "fp", "fn", "sup"]
+            }
         )
     elif name == "mae" and task_type == "regression":
         return MeanAbsoluteError()
     elif name == "rmse" and task_type == "regression":
         return MeanSquaredError(squared=True)
-    elif name == "rmse" and task_type == "regression":
-        return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
-        return R2Score(num_outputs=output_size)
+        return SafeR2Score(num_outputs=output_size)
     else:
         raise ValueError(f"Unknown metric {name} for {task_type} tasks")
 
@@ -124,30 +210,13 @@ def masked_loss(
     return loss.masked_fill(mask, 0).sum() / mask.bitwise_not().sum()
 
 
-def masked_metric_forward(
-    metrics: Union[dict[Metric], MetricCollection],
+def masked_metric_update(
+    metrics: Metric,
     preds: torch.FloatTensor,
     targets: Union[torch.IntTensor, torch.FloatTensor],
     mask: torch.BoolTensor,
     *args,
-) -> dict[str, torch.Tensor]:
+):
     """Update metrics, masking out targets as needed"""
-    out = {}
     targets = targets.masked_fill(mask, IGNORE_INDEX)
-    if isinstance(metrics, (MetricCollection, OOVMetric)):
-        return metrics(preds, targets, *args)
-    for name, metric in metrics.items():
-        out[name] = metric(preds, targets, *args)
-
-    return out
-
-
-def record_summary_stats(logger, metrics: MetricCollection):
-    if isinstance(logger, WandbLogger):
-        define_metric = logger.experiment.define_metric
-        for name, metric in metrics.items():
-            define_metric(
-                name + "_epoch",
-                summary="last,best",
-                goal="maximize" if metric.higher_is_better else "minimize",
-            )
+    metrics.update(preds, targets, *args)

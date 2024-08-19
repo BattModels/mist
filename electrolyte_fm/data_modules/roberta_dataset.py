@@ -68,13 +68,15 @@ class RobertaDataSet(pl.LightningDataModule):
             mlm_probability=self.mlm_probability,
             mlm=True,
         )
+
         ds = self.__load_dataset()
-        if self.canonical:
+
+        # Get Canonical SMILES encodings before tokenizing
+        if self.canononical:
             from ..utils.tokenizer import rdkit_canonical
 
             ds = ds.map(
-                lambda x: {"text": rdkit_canonical(x["text"])},
-                batched=False,
+                lambda smi: {"text": rdkit_canonical(smi["text"])}, batched=False
             ).filter(lambda x: x["text"] is not None)
 
         ds = ds.map(
