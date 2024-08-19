@@ -51,8 +51,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         )
         config = json.loads(tok_tf.backend_tokenizer.to_str())
         regex = config["pre_tokenizer"]["pretokenizers"][-1]["pattern"]["Regex"]
-        tok_tf.backend_tokenizer.pre_tokenizer = Split(
-            Regex(regex), "isolated")
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
         return tok_tf
 
     else:

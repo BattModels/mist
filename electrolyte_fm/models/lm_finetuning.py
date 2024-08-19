@@ -117,16 +117,12 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
         # Additional Metrics
         metrics = MetricCollection(
-            {metric: get_metric(metric, task, output_size)
-             for metric in metrics}
+            {metric: get_metric(metric, task, output_size) for metric in metrics}
         )
         unk_token_id = load_tokenizer(encoder_ckpt).unk_token_id
-        self.train_metrics = OOVMetric(
-            metrics.clone(prefix="train/"), unk_token_id)
-        self.val_metrics = OOVMetric(
-            metrics.clone(prefix="val/"), unk_token_id)
-        self.test_metrics = OOVMetric(
-            metrics.clone(prefix="test/"), unk_token_id)
+        self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
+        self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
+        self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
@@ -273,8 +269,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()
         if not self.freeze_encoder:
-            learnable_params = chain(
-                learnable_params, self.encoder.parameters())
+            learnable_params = chain(learnable_params, self.encoder.parameters())
 
         optimizer = self.optimizer(learnable_params)
         if schedule := self.lr_schedule:

@@ -82,7 +82,6 @@ DATASET_SIZE = {
     "sider": 1427,
     "tox21": 7831,
     "toxcast": 8575,
-    "clintox": 1478,
 }
 
 
