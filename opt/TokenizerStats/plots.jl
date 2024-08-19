@@ -7,6 +7,23 @@ using DataFrames
 
 const GIT_ROOT = strip(read(`git rev-parse --show-toplevel`, String))
 
+TOKENIZERS = [
+        "smirk" => "smirk",
+        "seyonec/ChemBERTa-zinc-base-v1" => "ChemBERTa v1",
+        "ChangwenXu98/TransPolymer" => "TransPolymer",
+        "ibm/MoLFormer-XL-both-10pct-oov" => "MoLFormer",
+        "HUBioDataLab/SELFormer" => "SELFormer",
+        "devalab/molgpt-moses" => "MolGPT, moses",
+        "devalab/molgpt-guacamol" => "MolGPT, guacamol",
+        "rxn4chemistry/rxn_yields" => "Yield-BERT",
+        "rxn4chemistry/rxnfp" => "RXNFP",
+        "MolecularAI/Chemformer" => "Chemformer",
+        "SmilesPE/SPE_ChEMBL" => "SmilesPE",
+        "sagawa/ReactionT5-product-prediction" => "ReactionT5, Products",
+        "sagawa/ReactionT5-yield-prediction" => "ReactionT5, Yield",
+]
+
+
 function fit_hist(counts; kwargs...)
     x = map(Base.Fix1(parse, Int)∘string, collect(keys(counts)))
     w = Int.(collect(values(counts))) |> StatsBase.FrequencyWeights
@@ -27,22 +44,59 @@ function collect_results()
 end
 
 function figure_token_usage(results::Dict)
-    f = Figure(; size=(950, 500))
+    f = Figure(; size=(500, 300))
     l = 1e-5
     ax = Axis(f[1,1];
-        limits=((0, 100), (1e-10, 1)),
-        xlabel="Token Relative Rank [%]",
-        ylabel="Token Relative Usage [%]",
-        yscale=log10,
-        xtickformat="{:d}%",
+        limits=((0, 1), (0, 32)),
+        xlabel="Token Usage Rank [%]",
+        ylabel="Information Content [nats]",
+        xtickformat="{:.0%}",
     )
 
-    for (name, file) in pairs(results)
-        stats = JSON.parsefile(file)
-        tokenusage!(ax, stats; label=name)
+    for (tok_name, plt_name) in TOKENIZERS
+        if tok_name in keys(results)
+            stats = JSON.parsefile(results[tok_name])
+            tokenusage!(ax, stats; label=plt_name)
+        end
     end
 
-    Legend(f[2,1], ax; tellwidth=true, tellheight=true, nbanks=3)
+    Legend(f[1,2], ax; tellwidth=true, tellheight=false, nbanks=1,
+           orientation=:vertical, valign=:top, framevisible=false,
+           rowgap=1, labelsize=10, patchsize=(10, 10),
+    )
+    colgap!(f.layout, 1)
+    resize_to_layout!(f)
+    return f
+end
+
+
+function figure_ignorance(results::Dict)
+    f = Figure()
+    ax = Axis(f[1,1])
+    tok_names = String[]
+    tok_entropy = Float64[]
+    tok_unk_info = Float64[]
+
+    for (tok_name, plt_name) in TOKENIZERS
+        tok_name in keys(results) || continue
+        tok_stats = JSON.parsefile(results[tok_name])
+
+        # Compute Corpus Entropy
+        vocab_size = Int(tok_stats["tokenizer"]["vocab_size"])
+
+        # Check max token id in usage, add 1 to account for zero indexing
+        vocab_size = max(vocab_size, 1+maximum(parse.(Int, keys(tok_stats["token_usage"]))))
+        usage = TokenizerStats.collate_token_usage(0:vocab_size-1, tok_stats["token_usage"]; smoothing=1)
+        token_prob = usage ./ sum(usage)
+        token_entropy = @. -token_prob * log2(token_prob)
+        entropy = sum(token_entropy; init=0.0)
+
+        unk_token_id = Int(tok_stats["tokenizer"]["unk_token_id"])
+        push!(tok_names, plt_name)
+        push!(tok_entropy, entropy)
+        push!(tok_unk_info, token_entropy[unk_token_id+1])
+    end
+    scatter!(ax, tok_entropy, tok_unk_info)
     return f
 end
 

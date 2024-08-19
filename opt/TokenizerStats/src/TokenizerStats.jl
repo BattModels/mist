@@ -1,5 +1,6 @@
 module TokenizerStats
 
+using DataFrames
 using Makie
 using PythonCall
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
@@ -42,5 +43,6 @@ end
 
 include("collect.jl")
 include("plotting.jl")
+include("finetune.jl")
 
 end
