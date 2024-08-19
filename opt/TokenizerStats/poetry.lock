@@ -2490,6 +2490,17 @@ doc = ["jupyterlite-pyodide-kernel", "jupyterlite-sphinx (>=0.12.0)", "jupytext"
 test = ["array-api-strict", "asv", "gmpy2", "hypothesis (>=6.30)", "mpmath", "pooch", "pytest", "pytest-cov", "pytest-timeout", "pytest-xdist", "scikit-umfpack", "threadpoolctl"]
 
 [[package]]
+name = "selfies"
+version = "2.1.2"
+description = "SELFIES (SELF-referencIng Embedded Strings) is a general-purpose, sequence-based, robust representation of semantically constrained graphs."
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "selfies-2.1.2-py3-none-any.whl", hash = "sha256:30f675b9b0e9ac71d8489b36cc19e82389dbf319260743d90c9de5d19587b98f"},
+    {file = "selfies-2.1.2.tar.gz", hash = "sha256:bbb7b28a7cb562471a9db732e34a1486fd033a3086f892d4b0362764b396696c"},
+]
+
+[[package]]
 name = "sentry-sdk"
 version = "2.13.0"
 description = "Python client for Sentry (https://sentry.io)"
@@ -3584,4 +3595,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,~3.12"
-content-hash = "d30d4b89898677ac22ebec3995907e75040ed749130ffc7a80ac25406872294a"
+content-hash = "6fd16654e953c6b01d25cc591ba16b49984c7486916913da41b8e47d94fe6a1e"

@@ -4,11 +4,12 @@ from pathlib import Path
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
-from itertools import batched, chain, product
-from typing import Optional
+from itertools import batched, chain
+from typing import Optional, Any
 
-from datasets import IterableDataset, load_dataset
-from mendeleev import Element, element, get_all_elements
+import selfies
+from datasets import load_dataset
+from mendeleev import element
 
 from electrolyte_fm.utils.tokenizer import PreTrainedTokenizerBase, load_tokenizer
 from opt.build_vocab import (
@@ -151,12 +152,13 @@ def fullerene():
 
 def tokenize(tok: PreTrainedTokenizerBase, batch):
     out = tok(batch["text"])
-    out["decode"] = tok.batch_decode(out["input_ids"], skip_special_tokens=True)
+    out["decode"] = tok.batch_decode(
+        out["input_ids"], skip_special_tokens=True)
     out["text"] = batch
     return {"oov": [o != i for o, i in zip(out["decode"], batch["text"])]}
 
 
-MOLECULARNET_DATASET = {
+MOLNET_DATASET = {
     "QM8": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm8.csv",
     "QM9": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm9.csv",
     "ESOL": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/delaney-processed.csv",
@@ -174,8 +176,13 @@ MOLECULARNET_DATASET = {
 
 
 def molecularnet(subset):
-    url = MOLECULARNET_DATASET[subset]
-    ds = load_dataset("csv", data_files=[url], split="train", keep_in_memory=False)
+    url = MOLNET_DATASET[subset]
+    ds = load_dataset(
+        "csv",
+        data_files=[url],
+        split="train",
+        keep_in_memory=False,
+    )
     for batch in ds.iter(batch_size=100):
         try:
             yield from batch["smiles"]
@@ -198,24 +205,30 @@ ATOM_DATASETS = {
     ),
 }
 
-for subset in MOLECULARNET_DATASET.keys():
-    ATOM_DATASETS[f"MolecularNet/{subset}"] = lambda subset=subset: molecularnet(subset)
+for subset in MOLNET_DATASET.keys():
+    name = f"MoleculeNet/{subset}"
+    ATOM_DATASETS[name] = lambda subset=subset: molecularnet(subset)
 
-TOKENIZERS = [
-    "smirk",
-    "ibm/MoLFormer-XL-both-10pct-oov",
-    "SmilesPE/SPE_ChEMBL",
-    "devalab/molgpt-moses",
-    "devalab/molgpt-guacamol",
-    "MolecularAI/Chemformer",
-    "MolecularAI/Chemformer-downstream",
-    "seyonec/ChemBERTa-zinc-base-v1",
-    "sagawa/ReactionT5-product-prediction",
-    "sagawa/ReactionT5-yield-prediction",
-    "rxn4chemistry/rxn_yields",
-    "rxn4chemistry/rxnfp",
-    "ChangwenXu98/TransPolymer",
-]
+TOKENIZERS = {
+    "smiles": [
+        "smirk",
+        "ibm/MoLFormer-XL-both-10pct-oov",
+        "SmilesPE/SPE_ChEMBL",
+        "devalab/molgpt-moses",
+        "devalab/molgpt-guacamol",
+        "MolecularAI/Chemformer",
+        "MolecularAI/Chemformer-downstream",
+        "seyonec/ChemBERTa-zinc-base-v1",
+        "sagawa/ReactionT5-product-prediction",
+        "sagawa/ReactionT5-yield-prediction",
+        "rxn4chemistry/rxn_yields",
+        "rxn4chemistry/rxnfp",
+        "ChangwenXu98/TransPolymer",
+    ],
+    "selfies": [
+        "HUBioDataLab/SELFormer",
+    ],
+}
 
 
 def build_atom_generator(name):
@@ -224,38 +237,67 @@ def build_atom_generator(name):
         yield {"text": str(atom)}
 
 
+def safe_selfies(iter):
+    """Skip molecules that can not be encoded as SELFIES"""
+    for smi in iter:
+        try:
+            yield selfies.encoder(str(smi), strict=False)
+        except selfies.exceptions.EncoderError:
+            LOG.warn("failed to encode %s as a SELFIES", smi)
+
+
+def tabulate_tokenizer(
+    tok: PreTrainedTokenizerBase,
+    datasets: dict[str, Any],
+    encoding: str = "smiles",
+) -> dict:
+    out = dict()
+    for ds_name, iter in datasets.items():
+        unk_token_id = tok.unk_token_id
+        nobs = 0
+        n_oov = 0
+        oov_samples = set()
+
+        # Encode molecules
+        if encoding == "smiles":
+            ds = (str(x) for x in iter())
+        elif encoding == "selfies":
+            ds = safe_selfies(iter())
+        else:
+            raise ValueError(f"Unknown encoding {encoding}")
+
+        for batch in batched(ds, 1000):
+            batch_input_ids = tok(batch)["input_ids"]
+            # Tests are in test/test_tokenizer.py::test_oov_tokens
+            # to ensure that unk_token_id is correctly emitted by
+            # tokenizers
+            for smi, obs in zip(batch, batch_input_ids):
+                if unk_token_id in obs:
+                    n_oov += 1
+                    if len(oov_samples) < 20:
+                        oov_samples.add(smi)
+                nobs += 1
+            LOG.info("%s - %s: finished %d", name, ds_name, nobs)
+
+        out[ds_name] = {
+            "nobs": nobs,
+            "oov": n_oov,
+            "oov_samples": list(oov_samples),
+        }
+        LOG.info("%s - %s: %d/%d", name, ds_name, n_oov, nobs)
+    return out
+
+
 if __name__ == "__main__":
     out = defaultdict(lambda: defaultdict(dict))
-    for name in TOKENIZERS:
-        LOG.info("processing %s", name)
-        tok = load_tokenizer(name)
-        for ds_name, iter in ATOM_DATASETS.items():
-            unk_token_id = tok.unk_token_id
-            nobs = 0
-            n_oov = 0
-            oov_samples = set()
-
-            for batch in batched((str(x) for x in iter()), 1000):
-                batch_input_ids = tok(batch)["input_ids"]
-                # Tests are in test/test_tokenizer.py::test_oov_tokens
-                # to ensure that unk_token_id is correctly emitted by
-                # tokenizers
-                for smi, obs in zip(batch, batch_input_ids):
-                    if unk_token_id in obs:
-                        n_oov += 1
-                        if len(oov_samples) < 20:
-                            oov_samples.add(smi)
-                    nobs += 1
-                LOG.info("%s - %s: finished %d", name, ds_name, nobs)
-
-            out[name][ds_name] = {
-                "nobs": nobs,
-                "oov": n_oov,
-                "oov_samples": list(oov_samples),
-            }
-            LOG.info("%s - %s: %d/%d", name, ds_name, n_oov, nobs)
-
-        break
+    for encoding, tokenizers in TOKENIZERS.items():
+        if encoding != "selfies":
+            pass
+            # continue
+        for name in tokenizers:
+            LOG.info("processing %s", name)
+            tok = load_tokenizer(name)
+            out[name] = tabulate_tokenizer(tok, ATOM_DATASETS, encoding)
 
     with open("stats-atomic.json", "w") as fid:
         json.dump(out, fid)

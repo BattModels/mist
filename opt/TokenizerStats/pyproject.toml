@@ -6,6 +6,7 @@ authors = ["Alexius Wadell <awadell@umich.edu>"]
 python = ">=3.11,~3.12"
 mendeleev = "^0.16"
 electrolyte_fm = { path = "../../", develop=true, extras = ["tokenizers"] }
+selfies = "^2.1.2"
 
 
 [build-system]
