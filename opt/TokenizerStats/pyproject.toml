@@ -3,7 +3,7 @@ package-mode = false
 authors = ["Alexius Wadell <awadell@umich.edu>"]
 
 [tool.poetry.dependencies]
-python = ">=3.11,~3.12"
+python = ">=3.11,<3.13"
 mendeleev = "^0.16"
 electrolyte_fm = { path = "../../", develop=true, extras = ["tokenizers"] }
 selfies = "^2.1.2"
