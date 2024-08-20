@@ -1,15 +1,49 @@
-from typing import Dict, List, Union
+from itertools import chain
+from pathlib import Path
+from typing import List, Optional
 
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from torchmetrics.classification import Accuracy
-from torchmetrics.regression import MeanAbsoluteError
+from torchmetrics import MetricCollection
 
+from ..utils.metrics import (
+    OOVMetric,
+    get_metric,
+    masked_loss,
+    masked_metric_update,
+)
+from .model_utils import record_summary_stats
+from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
 
-TaskSpecs = List[Dict[str, Union[str, int]]]
+
+class Standardize(torch.nn.Module):
+    def __init__(self, num_outputs: int, eps: float = 1e-8):
+        super().__init__()
+        self.register_buffer("mean", torch.zeros(num_outputs))
+        self.register_buffer("std", torch.zeros(num_outputs))
+        self.eps = float(eps)
+        assert 0 <= self.eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return (self.std * x) + self.mean
+
+    def inverse(self, x: torch.Tensor) -> torch.Tensor:
+        return (x - self.mean) / self.std
+
+    def fit(self, ds) -> dict:
+        target = torch.stack([torch.tensor(x) for x in ds["target"]])
+        print(f"target: {target.shape}")
+        self.mean = target.mean(0).to(self.mean)
+        self.std = target.std(0).to(self.std) + self.eps
+        return self.state_dict()
+
+
+class IdentityTransform(torch.nn.Identity):
+    def inverse(self, x: torch.Tensor) -> torch.Tensor:
+        return x
 
 
 class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
@@ -19,184 +53,223 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
     def __init__(
         self,
+        output_size: int,
         encoder_ckpt: str,
-        task_specs: TaskSpecs,
         freeze_encoder: bool = False,
-        learning_rate: float = 1.6e-4,
         dropout: float = 0.2,
+        vocab_size: Optional[int] = None,
+        task: str = "binary",
+        metrics: List[str] = ["auroc"],
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
+        transform: Optional[str] = None,
     ) -> None:
         super().__init__()
 
-        self.learning_rate = learning_rate
+        self.task = task
         self.dropout = dropout
         self.encoder_ckpt = encoder_ckpt
-        self.task_specs = task_specs
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
-        self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
+        self.freeze_encoder = freeze_encoder
+
+        # Load Encoder Model
+        if Path(encoder_ckpt).exists():
+            self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
+        else:
+            from transformers import AutoModel
+
+            self.encoder = AutoModel.from_pretrained(
+                encoder_ckpt,
+                trust_remote_code=True,
+            )
+
+        # Validate the vocab size
+        if vocab_size is not None:
+            if hasattr(self.encoder, "config") and hasattr(
+                self.encoder.config, "vocab_size"
+            ):
+                assert (
+                    self.encoder.config.vocab_size == vocab_size
+                ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
 
         self.save_hyperparameters()
 
-        head_hyperparams = {
-            "embed_dim": self.encoder.config.hidden_size,
-            "dropout": self.dropout,
-        }
-
-        self.task_networks = torch.nn.ModuleDict(
-            {
-                spec["measure_name"]: PredictionTaskHead(
-                    **head_hyperparams, output_size=spec.get("n_classes", 1)
-                )
-                for spec in self.task_specs
-            }
+        self.task_network = PredictionTaskHead(
+            embed_dim=self.encoder.config.hidden_size,
+            output_size=output_size,
+            dropout=dropout,
         )
-        self.classification_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)
-        self.regression_loss = torch.nn.MSELoss()
-        self.setup_loss_functions()
-        self.setup_metrics()
-        self.freeze_encoder = freeze_encoder
+        if task == "binary":
+            self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
+        elif task == "regression":
+            self.lossfn = torch.nn.MSELoss(reduction="none")
+            transform = transform or "standardize"
+        else:
+            raise ValueError(f"Unknown task type {task}")
 
-    def setup_loss_functions(self):
-        for spec in self.task_specs:
-            if spec.get("n_classes", 1) > 1:
-                spec["loss"] = self.classification_loss
-            else:
-                spec["loss"] = self.regression_loss
+        # Init Transform
+        if transform == "standardize":
+            self.transform = Standardize(output_size)
+        else:
+            self.transform = IdentityTransform()
+        self.transform.eval()
 
-    def setup_metrics(self):
-        for spec in self.task_specs:
-            targets = spec.get("n_classes", 1)
-            if targets == 1:  # regression problem
-                spec["metric"] = MeanAbsoluteError().cuda()
-            else:  # multi-class classification
-                spec["metric"] = Accuracy(
-                    task="multiclass", num_classes=targets, ignore_index=-1
-                )
+        # Additional Metrics
+        metrics = MetricCollection(
+            {metric: get_metric(metric, task, output_size) for metric in metrics}
+        )
+        unk_token_id = load_tokenizer(encoder_ckpt).unk_token_id
+        self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
+        self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
+        self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
 
-    def forward(self, batch, **kwargs):  # type: ignore[override]
-        embedding = self.encoder(
+    def setup(self, stage: str) -> None:
+        """Setup additional summary stats for logging"""
+        for m in [self.train_metrics, self.val_metrics, self.test_metrics]:
+            record_summary_stats(self.logger, m)
+
+    def on_fit_start(self):
+        """Standardized training data"""
+        if not isinstance(self.transform, torch.nn.Identity):
+            state = None
+            if self.global_rank == 0:
+                assert self.trainer.datamodule.target_dataset is not None
+                ds = self.trainer.datamodule.target_dataset
+                state = self.transform.fit(ds)
+
+            state = self.trainer.strategy.broadcast(state)
+            self.transform.load_state_dict(state)
+        else:
+            self.transform = None
+
+    # type: ignore[override]
+    def forward(self, batch, transform=True, **kwargs):
+        hs = self.encoder(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],
+            return_dict=True,
             **kwargs,
-            return_dict=False,
-        )
+        ).last_hidden_state
 
-        sequence_output = embedding[0]
-        out = {
-            spec["measure_name"]: self.task_networks[spec["measure_name"]](
-                sequence_output
-            )
-            for spec in self.task_specs
-        }
-        return out
+        pred_unscaled = self.task_network(hs)
+        if transform:
+            return self.transform.forward(pred_unscaled)
+        return pred_unscaled
 
-    def batch_loss(self, outputs, batch):
-        loss = 0
-        for spec in self.task_specs:
-            target = spec["measure_name"]
-            w = spec.get("loss_weight", 1 / len(self.task_specs))
-            if spec.get("n_classes", 1) > 1:
-                spec_loss = w * spec["loss"](
-                    outputs[target], batch[target].to(torch.int64)
-                )
-            else:
-                labels = batch[target].reshape(batch[target].size()[0], 1)
-                spec_loss = w * spec["loss"](outputs[target], labels)
-            if not torch.isnan(spec_loss):
-                loss += spec_loss
-        return loss
+    def _scaled_pred_loss(self, batch):
+        """Compute loss before transforming the model's predictions"""
+        preds = self.forward(batch, transform=False)
+        target = batch["target"]
+        target = self.transform.inverse(target)
 
-    def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = self.batch_loss(outputs, batch)
+        loss = masked_loss(self.lossfn, preds, target, batch["target_mask"])
+        preds = self.transform.forward(preds)
+        return preds, loss
 
+    def training_step(self, batch, batch_idx: int):
+        preds, loss = self._scaled_pred_loss(batch)
         self.log(
             "train/loss",
             loss,
             on_step=True,
             on_epoch=True,
-            prog_bar=True,
             sync_dist=True,
         )
-
-        for spec in self.task_specs:
-            target = spec["measure_name"]
-            labels = batch[target]
-            if spec.get("n_classes", 1) <= 1:
-                labels = labels.reshape(labels.size()[0], 1)
-
-            self.log(
-                f"train/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-            )
-        return loss
-
-    def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = self.batch_loss(outputs, batch)
-
-        self.log(
-            "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
+        masked_metric_update(
+            self.train_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
+            batch["input_ids"],
+            batch.get("is_oov", None),
         )
-
-        for spec in self.task_specs:
-            target = spec["measure_name"]
-            labels = batch[target]
-            if spec.get("n_classes", 1) <= 1:
-                labels = labels.reshape(labels.size()[0], 1)
-
-            self.log(
-                f"val/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-            )
         return loss
 
-    def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        outputs = self(batch)
-        loss = self.batch_loss(outputs, batch)
+    def on_train_epoch_end(self):
+        self.log_dict(
+            self.train_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.train_metrics.reset()
 
+    def validation_step(self, batch, batch_idx: int):
+        preds, loss = self._scaled_pred_loss(batch)
+        self.log(
+            "val/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            sync_dist=True,
+        )
+        masked_metric_update(
+            self.val_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
+            batch["input_ids"],
+            batch.get("is_oov", None),
+        )
+        return loss
+
+    def on_validation_epoch_end(self):
+        self.log_dict(
+            self.val_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.val_metrics.reset()
+
+    def test_step(self, batch, batch_idx: int):
+        preds, loss = self._scaled_pred_loss(batch)
         self.log(
             "test/loss",
             loss,
             on_step=True,
             on_epoch=True,
-            prog_bar=True,
             sync_dist=True,
         )
-
-        for spec in self.task_specs:
-            target = spec["measure_name"]
-            labels = batch[target]
-            if spec.get("n_classes", 1) <= 1:
-                labels = labels.reshape(labels.size()[0], 1)
-            self.log(
-                f"val/{target}_{spec['metric'].__class__.__name__}",
-                spec["metric"].to(loss.device)(outputs[target], labels),
-                on_step=False,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-            )
+        masked_metric_update(
+            self.test_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
+            batch["input_ids"],
+            batch.get("is_oov", None),
+        )
         return loss
 
+    def on_test_epoch_end(self):
+        self.log_dict(
+            self.test_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.test_metrics.reset()
+
+    def predict_step(self, batch, *args):
+        hs = self.encoder(
+            batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            return_dict=True,
+        ).last_hidden_state
+        embedding = hs[:, 0, :]
+
+        preds = self.task_network(hs)
+        preds = self.transform.forward(preds)
+
+        out = {"embedding": embedding, "prediction": preds}
+        for key in ["target", "is_oov"]:
+            if key in batch.keys():
+                out[key] = batch[key]
+
+        return out
+
     def configure_optimizers(self):
-        learnable_params = [
-            p
-            for _, task_network in self.task_networks.items()
-            for p in task_network.parameters()
-        ]
+        learnable_params = self.task_network.parameters()
         if not self.freeze_encoder:
-            learnable_params.extend([p for p in self.encoder.parameters()])
+            learnable_params = chain(learnable_params, self.encoder.parameters())
 
         optimizer = self.optimizer(learnable_params)
         if schedule := self.lr_schedule:

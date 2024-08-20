@@ -29,6 +29,7 @@ def test_default(model):
                 "--model",
                 model,
                 "--trainer.devices=1",
+                "--trainer.accelerator=cpu",
                 f"--tags=['{tag}']",
             ]
         )
@@ -61,7 +62,7 @@ def test_json_config(model):
             "model": {
                 "class_path": model,
             },
-            "trainer": {"devices": 1},
+            "trainer": {"devices": 1, "accelerator": "cpu"},
         }
 
         cli = cli_main(["--config", json.dumps(config)])
@@ -86,7 +87,8 @@ def test_finetune(monkeypatch):
                 {
                     "version": "0.2.0",
                     "class_path": "electrolyte_fm.models.RoBERTa",
-                    "init_args": {"vocab_size": 128},
+                    # vocab_size will be validated by LMFinetuning, needs to be correct
+                    "init_args": {"vocab_size": 165},
                 },
                 fid,
             )
@@ -101,11 +103,13 @@ def test_finetune(monkeypatch):
 
         cli = cli_main(
             [
-                "--data=electrolyte_fm.data_modules.PropertyPredictionDataModule",
-                f"--data.path={fake_data_dir}",
+                "--data=electrolyte_fm.data_modules.MolNetDataModule",
+                "--data.name=bace",
                 "--model=electrolyte_fm.models.LMFinetuning",
+                "--model.output_size=1",  # Normally set by the submission script
                 f"--model.encoder_ckpt={ckpt}",
                 "--trainer.devices=1",
+                "--trainer.accelerator=cpu",
             ]
         )
         assert str(cli.datamodule.tokenizer.__class__)

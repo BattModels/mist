@@ -1,91 +1,80 @@
 import json
 from unittest import mock
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
 import pytest
 import torch
-from pytorch_lightning import LightningDataModule, LightningModule
+from pytorch_lightning import LightningDataModule, LightningModule, Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
+from pytorch_lightning.demos.boring_classes import BoringModel, BoringDataModule
 from torch.utils.data import DataLoader
+from transformers import PreTrainedTokenizerBase
 
-from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
+from train import cli_main
+from electrolyte_fm.utils.tokenizer import load_tokenizer
+from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
 
 
-class MockedModel(LightningModule):
-    def __init__(self, vocab_size: int, linked: int):
+class MockedModel(BoringModel):
+    def __init__(self, vocab_size: int):
         self.save_hyperparameters()
         super().__init__()
 
-    def forward(self, input):
-        return input
 
-    def training_step(self, batch, batch_idx):
-        self.forward(batch)  # Mock calling forward
-        return torch.zeros(1, requires_grad=True)
-
-    def configure_optimizers(self):
-        pass
-
-
-class MockedData(LightningDataModule):
-    def __init__(self, tokenizer: str, linked: int):
-        self.tokenizer = tokenizer
-        self.save_hyperparameters()
+class MockedData(BoringDataModule):
+    def __init__(self, tokenizer: str, batch_size: int = 32):
         super().__init__()
-
-    def train_dataloader(self):
-        return DataLoader(range(5), batch_size=1)
+        self.tokenizer = load_tokenizer(tokenizer)
+        self.vocab_size = len(self.tokenizer)
+        self.batch_size = batch_size
+        self.val_batch_size = batch_size
+        # save_hyperparameters only saves args to the model
+        self.hparams["vocab_size"] = self.vocab_size
+        self.save_hyperparameters(logger=False)
 
 
 @pytest.fixture()
 def cli(tmp_path):
-    with mock.patch(
-        "sys.argv",
+    cli = cli_main(
         [
-            "any.py",
+            "--model=test.test_ckpt.MockedModel",
+            "--data=test.test_ckpt.MockedData",
             "--data.tokenizer=smirk",
-            "--data.linked=10",
-            "--model.vocab_size=256",
-        ],
-    ):
-        parser = LightningArgumentParser()
-        parser.add_class_arguments(MockedModel, "model")
-        parser.add_class_arguments(MockedData, "data")
-        parser.link_arguments("data.linked", "model.linked", apply_on="parse")
-        parsed_args = dict(parser.parse_args())
-        args_ = [
-            "fit",
+            "--trainer.strategy=auto",
+            "--trainer.accelerator=cpu",
+            "--trainer.max_steps=5",
+            "--trainer.enable_progress_bar=false",
+            "--trainer.enable_model_summary=false",
+            "--trainer.enable_checkpointing=true",
+            f"--trainer.default_root_dir={tmp_path}",
+            "--trainer.logger=true",
         ]
-        args_.extend(["--" + k + "=" + str(v) for k, v in parsed_args.items()])
-
-    _cli = LightningCLI(
-        trainer_defaults={
-            "max_steps": 2,
-            "default_root_dir": tmp_path,
-        },
-        model_class=MockedModel,
-        datamodule_class=MockedData,
-        save_config_callback=SaveConfigWithCkpts,
-        args=args_,
     )
-    return _cli
+    cli.trainer.fit(cli.model, cli.datamodule)
+    return cli
+
+
+def get_single_callback(cls, callbacks):
+    cb = list(filter(lambda cb: cb.__class__.__name__ == cls.__name__, callbacks))
+    assert len(cb) == 1
+    return cb[0]
 
 
 def test_ckpt(cli):
     # Locate callback
-    cb = list(
-        filter(lambda cb: isinstance(cb, SaveConfigWithCkpts), cli.trainer.callbacks)
-    )
-    assert len(cb) == 1
-    cb: SaveConfigWithCkpts = cb[0]
-
+    cb = get_single_callback(SaveConfigWithCkpts, cli.trainer.callbacks)
     assert cb.config_path is not None
     assert cb.config_path.is_dir()
     assert cb.config_path.joinpath("config.json").is_file()
     assert cb.config_path.joinpath("model_hparams.json").is_file()
 
     # Check that the dataloader config is saved
-    data_config = {"linked": 10, "tokenizer": "smirk"}
-    assert dict(cb.config["data"]) == data_config
+    data_config = {
+        "class_path": "test.test_ckpt.MockedData",
+        "init_args": {"tokenizer": "smirk", "batch_size": 32},
+    }
     with open(cb.config_path.joinpath("config.json"), "r") as fid:
         assert json.load(fid)["data"] == data_config
 
@@ -94,14 +83,50 @@ def test_ckpt(cli):
         model_config = json.load(fid)
     assert model_config["class_path"] == __name__ + ".MockedModel"
     assert model_config["lightning_module"] == {
+        "class_path": __name__ + ".MockedModel",
         "_instantiator": "pytorch_lightning.cli.instantiate_module",
-        "linked": 10,
-        "vocab_size": 256,
+        "init_args": {"vocab_size": None},
     }
-
     assert model_config["datamodule"] == {
         "_instantiator": "pytorch_lightning.cli.instantiate_module",
-        "linked": 10,
-        "tokenizer": "smirk",
+        "vocab_size": cli.datamodule.vocab_size,
+        **data_config,
     }
     assert "version" in model_config.keys()
+    assert model_config["version"] == "0.3.0"
+
+
+def test_ckpt_load(cli):
+    trainer = cli.trainer
+
+    cb = get_single_callback(SaveConfigWithCkpts, trainer.callbacks)
+    assert cb.config_path is not None
+    assert cb.config_path.is_dir()
+    assert isinstance(trainer.checkpoint_callback, ModelCheckpoint)
+    assert Path(trainer.checkpoint_callback.last_model_path).exists()
+
+    # validate model_hparams
+    config_path = cb.config_path.joinpath("model_hparams.json")
+    assert config_path.is_file()
+    model = SaveConfigWithCkpts.instantiate(config_path)
+    assert isinstance(model, MockedModel)
+
+
+def test_ckpt_tokenizer(cli):
+    trainer = cli.trainer
+    assert isinstance(trainer.checkpoint_callback, ModelCheckpoint)
+    ckpt = Path(trainer.checkpoint_callback.last_model_path)
+    assert ckpt.exists()
+
+    # Check that get_ckpt_tokenizer returns a tokenizer name
+    tokenizer_name = get_ckpt_tokenizer(ckpt)
+    assert tokenizer_name is not None and isinstance(tokenizer_name, str)
+
+    # Validate tokenizer is viable
+    tokenizer = load_tokenizer(tokenizer_name)
+    assert tokenizer is not None and isinstance(tokenizer, PreTrainedTokenizerBase)
+
+    # Validate load_tokenizer works
+    tok2 = load_tokenizer(str(ckpt))
+    assert tokenizer is not None and isinstance(tok2, PreTrainedTokenizerBase)
+    assert tok2.to_str() == tokenizer.to_str()

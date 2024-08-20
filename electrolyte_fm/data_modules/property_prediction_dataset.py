@@ -5,128 +5,59 @@ from typing import Dict, List, Optional, Union
 
 import pytorch_lightning as pl
 import torch
+from transformers import DataCollatorWithPadding
 from datasets import Dataset, load_dataset
 from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
 
 from ..utils.tokenizer import load_tokenizer
+from .roberta_dataset import maybe_shard_dataset
+from .molnet_dataset import MolNetDataModule
 
-TaskSpecs = List[Dict[str, Union[str, int]]]
 
-
-class PropertyPredictionDataModule(pl.LightningDataModule):
+class PropertyPredictionDataModule(MolNetDataModule):
     def __init__(
         self,
         path: str,
         tokenizer: str,
-        dataset_name: str = "brace",
-        task_specs: TaskSpecs = [{"measure_name": "Class", "n_classes": 2}],
         batch_size: int = 64,
         num_workers: int = 1,
         prefetch_factor: int = 4,
+        smi_column: str = "smiles",
+        target_columns: list[str] = ["Class"],
+        strip_unk_tokens: bool = False,
         val_batch_size: Optional[int] = None,
-        train_dataset_length: Optional[int] = None,
-        val_dataset_length: Optional[int] = None,
-        test_dataset_length: Optional[int] = None,
     ):
         super().__init__()
 
         self.tokenizer = load_tokenizer(tokenizer)
         self.vocab_size = len(self.tokenizer)
         self.path: Path = Path(path)
-        assert self.path.is_dir() or self.path.is_file()
+        assert self.path.is_dir()
+
+        self.smi_column = smi_column
+        self.target_columns = target_columns
+        self.strip_unk_tokens = strip_unk_tokens
+
         self.batch_size = batch_size
-        self.val_batch_size = val_batch_size if val_batch_size else batch_size
+        self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
-        self.dataset_name = dataset_name
-        self.task_specs = task_specs
-        self.train_dataset_length = train_dataset_length
-        self.val_dataset_length = val_dataset_length
-        self.test_dataset_length = test_dataset_length
-        self.task_specs = task_specs
-        self.save_hyperparameters()
+        self.hparams["vocab_size"] = self.vocab_size
+        self.save_hyperparameters(logger=False)
 
-    def setup(self, stage: str) -> None:
-        ds = load_dataset(os.path.join(self.path, self.dataset_name))
+        # # Inject methods from MolNetDataModule
+        # self.data_collator = MolNetDataModule.data_collator
+        # self.setup = MolNetDataModule.setup
+        #
 
-        # Setup to partition datasets over ranks
-        if self.trainer is None:
-            rank = 0
-            world_size = 1
-        else:
-            rank = self.trainer.global_rank
-            world_size = self.trainer.world_size
-        ds_train: Dataset = ds["train"].shuffle(seed=42)
+    @property
+    def dataset(self):
+        if hasattr(self, "__dataset"):
+            return self.__dataset
 
-        self.train_dataset: Dataset = split_dataset_by_node(
-            ds_train,
-            rank=rank,
-            world_size=world_size,
-        )
-        self.val_dataset: Dataset = split_dataset_by_node(
-            ds["validation"],
-            rank=rank,
-            world_size=world_size,
-        )
-        self.test_dataset: Dataset = split_dataset_by_node(
-            ds["test"],
-            rank=rank,
-            world_size=world_size,
-        )
-        self.calculate_imputation_values()
-
-    def calculate_imputation_values(self):
-        for spec in self.task_specs:
-            if spec.get("n_classes", 1) > 1:
-                spec["fill_value"] = -1
-            else:
-                spec["fill_value"] = mean(
-                    d for d in self.train_dataset[spec["measure_name"]] if d is not None
-                )
-
-    def data_collator(self, batch):
-        tokens = self.tokenizer._batch_encode_plus(
-            [sample["smiles"] for sample in batch],
-            add_special_tokens=True,
-            return_tensors="pt",
-            padding_strategy="longest",
-        )
-        for spec in self.task_specs:
-            tokens[spec["measure_name"]] = torch.tensor(
-                [sample[spec["measure_name"]] or spec["fill_value"] for sample in batch]
-            )
-
-        return tokens
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            collate_fn=self.data_collator,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            prefetch_factor=self.prefetch_factor,
-            pin_memory=True,
-            persistent_workers=True,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            collate_fn=self.data_collator,
-            batch_size=self.val_batch_size,
-            num_workers=self.num_workers,
-            prefetch_factor=self.prefetch_factor,
-            pin_memory=True,
-            persistent_workers=True,
-            shuffle=False,
-        )
-
-    def test_dataset(self):
-        return DataLoader(
-            self.test_dataset,
-            collate_fn=self.data_collator,
-            batch_size=self.val_batch_size,
-            num_workers=self.num_workers,
-            prefetch_factor=self.prefetch_factor,
-        )
+        # Load datasets, checking for splits
+        ds = load_dataset(str(self.path), keep_in_memory=False, streaming=True)
+        assert "train" in ds and "validation" in ds
+        self.__dataset = ds
+        return self.__dataset

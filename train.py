@@ -2,6 +2,7 @@ import json
 import os
 from datetime import timedelta
 
+import _jsonnet as jsonnet  # Unused, but otherwise we get glibc errors on delta 🫠
 import torch
 from jsonargparse import lazy_instance
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -18,10 +19,11 @@ from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 class MyLightningCLI(LightningCLI):
     def before_fit(self):
-        if logger := self.trainer.logger:
+        if self.trainer.logger is not None and hasattr(
+            self.trainer.logger, "log_hyperparams"
+        ):
             job_config = json.loads(os.environ.get("JOB_CONFIG", "{}"))
-
-            logger.log_hyperparams(
+            self.trainer.logger.log_hyperparams(
                 {
                     "job_config": job_config,
                     "n_gpus_per_node": self.trainer.num_devices,
@@ -39,20 +41,12 @@ class MyLightningCLI(LightningCLI):
         )
         parser.link_arguments("tags", "trainer.logger.init_args.tags")
 
+        # WARN: electrolyte_fm.utils.SaveConfigWithCkpts with any new linked arguments
+        # prefer apply_on parse over instantiate
+
         # Set model vocab_size from the dataset's vocab size
         parser.link_arguments(
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
-        )
-        # Set model task_specs from the dataset's task_specs
-        parser.link_arguments(
-            "data.task_specs", "model.init_args.task_specs", apply_on="instantiate"
-        )
-
-        # Configure tokenizer from checkpoint
-        parser.link_arguments(
-            "model.init_args.encoder_ckpt",
-            "data.init_args.tokenizer",
-            compute_fn=SaveConfigWithCkpts.get_ckpt_tokenizer,
         )
 
     def _add_instantiators(self) -> None:

@@ -61,6 +61,7 @@ def test_spiking(caplog):
             limit_val_batches=2,
             limit_test_batches=2,
             default_root_dir=ckpt_dir,
+            accelerator="cpu",
             enable_progress_bar=False,
             enable_model_summary=False,
         )

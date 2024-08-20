@@ -37,14 +37,13 @@ class ThroughputMonitor(Callback):
         batch_size: int,
         trainer: "pl.Trainer",
     ):
-        self.macro_batch_size[stage] = batch_size * trainer.world_size
-        trainer.logger.log_hyperparams(
-            {f"stats/{stage}_macro_batch_size": self.macro_batch_size[stage]},
-        )
-
         # Configure summary metrics
+        self.macro_batch_size[stage] = batch_size * trainer.world_size
         if isinstance(trainer.logger, WandbLogger) and trainer.is_global_zero:
             logger = trainer.logger
+            trainer.logger.log_hyperparams(
+                {f"stats/{stage}_macro_batch_size": self.macro_batch_size[stage]},
+            )
             logger.experiment.define_metric(f"stats/{stage}_batch_time", summary="none")
             logger.experiment.define_metric(
                 f"stats/{stage}_batch_throughput", summary="mean"

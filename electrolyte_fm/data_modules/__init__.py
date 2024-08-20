@@ -1,2 +1,3 @@
-from .property_prediction_dataset import PropertyPredictionDataModule
+from .molnet_dataset import MolNetDataModule
 from .roberta_dataset import RobertaDataSet
+from .property_prediction_dataset import PropertyPredictionDataModule

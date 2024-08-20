@@ -96,17 +96,8 @@ class SaveConfigWithCkpts(Callback):
         return config_path
 
     @staticmethod
-    def load(checkpoint_dir: str | Path, config_path=None) -> LightningModule:
-        """Restore from a deepspeed checkpoint, mainly used for downstream tasks"""
-        checkpoint_dir = Path(checkpoint_dir).resolve()
-        config_path = config_path or checkpoint_dir.parent.parent.joinpath(
-            "model_hparams.json"
-        )
-        assert (
-            checkpoint_dir.is_dir()
-        ), f"Missing deepspeed checkpoint director {checkpoint_dir}"
-        assert config_path.is_file(), f"Missing model config file {config_path}"
-
+    def instantiate(config_path: Path) -> LightningModule:
+        """Instantiate a model from a checkpoint but don't load weights"""
         with open(config_path, "r") as fid:
             config = json.load(fid)
 
@@ -117,8 +108,7 @@ class SaveConfigWithCkpts(Callback):
                     config["lightning_module"],
                     class_path=config.get("class_path", None),
                 )
-                _, data_config = norm_class_config(config["datamodule"])
-                model_config["vocab_size"] = data_config["vocab_size"]
+                model_config["vocab_size"] = config["datamodule"]["vocab_size"]
 
             else:
                 cls_name, model_config = norm_class_config(config)
@@ -133,7 +123,26 @@ class SaveConfigWithCkpts(Callback):
         ).__getattribute__(import_path[-1])
         assert import_path[-1] == model_cls.__name__
         model = model_cls(**model_config)
-        model.configure_model()
+
+        if hasattr(model, "configure_model"):
+            model.configure_model()
+
+        return model
+
+    @staticmethod
+    def load(checkpoint_dir: str | Path, config_path=None) -> LightningModule:
+        """Restore from a deepspeed checkpoint, mainly used for downstream tasks"""
+        checkpoint_dir = Path(checkpoint_dir).resolve()
+        config_path = config_path or checkpoint_dir.parent.parent.joinpath(
+            "model_hparams.json"
+        )
+        assert (
+            checkpoint_dir.is_dir()
+        ), f"Missing deepspeed checkpoint director {checkpoint_dir}"
+        assert config_path.is_file(), f"Missing model config file {config_path}"
+
+        model = SaveConfigWithCkpts.instantiate(config_path)
+
         # Load model weights from the checkpoint
         from deepspeed.utils.zero_to_fp32 import (
             get_fp32_state_dict_from_zero_checkpoint,
@@ -143,17 +152,17 @@ class SaveConfigWithCkpts(Callback):
         model.load_state_dict(state, strict=False, assign=True)
         return model
 
-    @staticmethod
-    def get_ckpt_tokenizer(path: str | Path) -> str:
-        path = Path(path)
-        config_path = path.parent.parent.joinpath("config.json")
-        assert config_path.is_file()
-        with open(config_path, "r") as fid:
-            config = json.load(fid)
-        try:
-            return config["data"]["tokenizer"]
-        except KeyError:
-            return config["data"]["init_args"]["tokenizer"]
+
+def get_ckpt_tokenizer(path: str | Path) -> str:
+    path = Path(path)
+    config_path = path.parent.parent.joinpath("config.json")
+    assert config_path.is_file()
+    with open(config_path, "r") as fid:
+        config = json.load(fid)
+    try:
+        return config["data"]["tokenizer"]
+    except KeyError:
+        return config["data"]["init_args"]["tokenizer"]
 
 
 def norm_class_config(config: dict, class_path: Optional[str] = None) -> (str, dict):
