@@ -67,8 +67,15 @@ class HotellingTwoSample(Metric):
 
     def compute(self) -> torch.Tensor:
         # Collate residuals
-        oov = self.residual_oov
-        non_oov = self.residual_non_oov
+        if isinstance(self.residual_oov, list):
+            oov = torch.cat(self.residual_oov)
+        else:
+            oov = self.residual_oov
+        if isinstance(self.residual_non_oov):
+            non_oov = torch.cat(self.residual_non_oov)
+        else:
+            non_oov = self.residual_non_oov
+
         if oov.size(0) < 2 or non_oov.size(0) < 2:
             return dict()
         p = non_oov.size(1)
