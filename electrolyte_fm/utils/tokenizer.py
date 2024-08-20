@@ -24,8 +24,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         return pretrained_spe_tokenizer()
 
     elif (
-        Path(name).is_dir()
-        and Path(name).parent.parent.joinpath("config.json").exists()
+        Path(name).exists()
+        and Path(name).parent.parent.joinpath("config.json").is_file()
     ):
         # Reload Tokenizer from Checkpoint
         from ..utils.ckpt import get_ckpt_tokenizer

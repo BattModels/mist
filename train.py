@@ -19,10 +19,11 @@ from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 class MyLightningCLI(LightningCLI):
     def before_fit(self):
-        if logger := self.trainer.logger:
+        if self.trainer.logger is not None and hasattr(
+            self.trainer.logger, "log_hyperparams"
+        ):
             job_config = json.loads(os.environ.get("JOB_CONFIG", "{}"))
-
-            logger.log_hyperparams(
+            self.trainer.logger.log_hyperparams(
                 {
                     "job_config": job_config,
                     "n_gpus_per_node": self.trainer.num_devices,

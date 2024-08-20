@@ -108,8 +108,7 @@ class SaveConfigWithCkpts(Callback):
                     config["lightning_module"],
                     class_path=config.get("class_path", None),
                 )
-                _, data_config = norm_class_config(config["datamodule"])
-                model_config["vocab_size"] = data_config["vocab_size"]
+                model_config["vocab_size"] = config["datamodule"]["vocab_size"]
 
             else:
                 cls_name, model_config = norm_class_config(config)
