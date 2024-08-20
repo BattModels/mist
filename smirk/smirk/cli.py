@@ -1,10 +1,9 @@
-import sys
 import argparse
 
 from . import SmirkTokenizerFast
 
 
-def cli(argv=sys.argv):
+def cli(argv=None):
     p = argparse.ArgumentParser("python -m smirk.cli")
     p.add_argument("files", nargs="+")
     p.add_argument("--vocab-size", type=int, default=1024)
