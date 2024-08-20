@@ -40,6 +40,7 @@ def smile_tokenizer(request):
 @pytest.mark.parametrize("name", chain(SMILE_TOKENIZER, OTHER_SMILES_TOKENIZERS))
 def test_well_behaved_tokenizer(name):
     tokenizer = load_tokenizer(name)
+    assert tokenizer.__repr__() is not None
     code = tokenizer("CCO")
     assert tokenizer.unk_token_id is not None
     assert tokenizer.mask_token_id is not None

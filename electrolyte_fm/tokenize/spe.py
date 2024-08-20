@@ -19,12 +19,18 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
             self._tokenizer = SPE_Tokenizer(fid)
         super().__init__(**kwargs)
 
+    def __repr__(self):
+        return "SPETokenizer"
+
     def get_vocab(self) -> dict[str, int]:
         return self._vocab
 
     @property
     def vocab_size(self):
         return len(self)
+
+    def is_fast(self):
+        return False
 
     def __len__(self) -> int:
         return len(self._vocab)
