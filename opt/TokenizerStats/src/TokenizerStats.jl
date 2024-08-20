@@ -57,7 +57,7 @@ function pretrain(path::AbstractString; tokenizer="smirk", canonical::Bool=false
         tokenizer,
         batch_size=1,
         val_batch_size=1,
-        canonical=canonical,
+        canonical
     )
     dm.prepare_data()
     dm.setup("fit")

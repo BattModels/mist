@@ -86,7 +86,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
         input_ids = pyconvert(Vector{Int}, example["input_ids"])
         is_oov = tokenizer_info.unk_token_id in input_ids
         usage_stats!(local_stats, input_ids, is_oov)
-        if idx % 100_000 == 1
+        if idx % 1_000_000 == 0
             elapsed = time() - start_time
             @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
         end

@@ -21,7 +21,6 @@ function main(args::Vector{String})
     end
     args = parse_args(s)
     if isdir(args["dataset"])
-        @assert false "idk my bff jill"
         dm = TokenizerStats.pretrain(args["dataset"]; tokenizer=args["tokenizer"])
         dataset_name = basename(args["dataset"])
     else

@@ -37,10 +37,11 @@ srun -p venkvis-debug -c3 --mem 4G julia --color=yes --startup-file=no --project
 '
 unset JULIA_PKG_PRECOMPILE
 
+set -x
 # Submit jobs for each tokenizer + dataset
 for tok in $TOKENIZERS; do
-    sbatch ./submit_tok_stats.sh /nfs/turbo/coe-venkvis/mist/realspace_v4_dev $tok
+    sbatch --time 2-0:0:0 -n 64 ./submit_tok_stats.sh /nfs/turbo/coe-venkvis/mist/realspace_v4_dev $tok
     for dataset in qm8 qm9 esol freesolv lipo muv hiv bace bbbp tox21 toxcast sider clintox; do
-        sbatch ./submit_tok_stats.sh $dataset $tok
+        sbatch -n 1 ./submit_tok_stats.sh $dataset $tok
     done
 done
