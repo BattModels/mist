@@ -7,7 +7,9 @@ using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, 
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights, nobs
 using MPI: MPI
+using BSON: BSON
 using JSON: JSON
+using SparseArrays: sparse
 
 function find(dir, pattern)
     found = String[]
@@ -72,6 +74,7 @@ function __init__()
     return nothing
 end
 
+include("ngrams.jl")
 include("collect.jl")
 include("plotting.jl")
 include("finetune.jl")

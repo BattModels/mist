@@ -6,10 +6,8 @@ function tracked_stats()
     return (;
         fertility=CountMap(Int),
         nunique=CountMap(Int),
-        token_usage=CountMap(Int),
+        ngrams=ntuple(i -> CountMap(NTuple{i, Int}), 5),
         out_of_vocab=Counter(Int),
-        oov_samples=Set{String}(),
-        distict_samples=HyperLogLog(String)
     )
 end
 
@@ -19,7 +17,11 @@ function usage_stats!(stats, code::Vector{Int}, is_oov::Bool)
     # Track usage stats
     fit!(stats.fertility, length(code))
     fit!(stats.nunique, length(unique(code)))
-    fit!(stats.token_usage, code)
+
+    # Track n-grams
+    for (n, s) in enumerate(stats.ngrams)
+        fit!(s, SlidingWindow(code, n))
+    end
 
     # Check for unknown tokens
     if is_oov
@@ -27,18 +29,6 @@ function usage_stats!(stats, code::Vector{Int}, is_oov::Bool)
     end
 
     return stats
-end
-
-function batch_tokenize(text::Py, tokenizer::Py; unk_token_id::Integer)
-    code = tokenizer(text)["input_ids"]
-
-    # Convert to julia
-    code_jl = pyconvert(Vector{Vector{Int}}, code)
-    text = pyconvert(Vector{String}, text)
-    is_oov = unk_token_id in code_jl
-    return Iterators.map(zip(code_jl, text, is_oov)) do (code, text, is_oov)
-        (; code, text, is_oov)
-    end
 end
 
 function leader_reduce(f, x)
@@ -80,13 +70,12 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     )
     local_stats = tracked_stats()
     ds = setup_dm_mpi(datamodule, "train"; rank, size)
-    collator = datamodule.data_collator
     start_time = time()
     for (idx, example) in enumerate(ds)
         input_ids = pyconvert(Vector{Int}, example["input_ids"])
         is_oov = tokenizer_info.unk_token_id in input_ids
         usage_stats!(local_stats, input_ids, is_oov)
-        if idx % 1_000_000 == 0
+        if idx % 1_000_000 == 0 && rank == 0
             elapsed = time() - start_time
             @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
         end
@@ -96,27 +85,48 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     @info "Rank $rank has finished tokenizer stats" n_obs elapsed n_obs / elapsed
 
     # Reduce stats over ranks
-    local_tok_stats = OnlineStats.Series(; Base.structdiff(local_stats, NamedTuple{(:oov_samples,)})...)
-    tokenizer_stats = leader_reduce(merge!, local_tok_stats)
-    oov_samples = leader_reduce(union, local_stats.oov_samples)
+    local_stats = OnlineStats.Series(;
+        fertility=local_stats.fertility,
+        nunique=local_stats.nunique,
+        out_of_vocab=local_stats.out_of_vocab,
+        ngrams=OnlineStats.Series(local_stats.ngrams),
+    )
+    tokenizer_stats = leader_reduce(merge!, local_stats)
 
-    # Broadcast token usage to all ranks
-    token_usage = rank == 0 ? value(tokenizer_stats[:token_usage]) : nothing
-    token_usage = MPI.bcast(token_usage, comm; root=0)
-    n_tokens = sum(values(token_usage))
-
+    # Dump Initial Stats
+    local stats
     if rank == 0
         @info "Tabulating stats on rank $rank"
         stats = (;
             tokenizer=tokenizer_info,
             samples=nobs(tokenizer_stats[:fertility]),
-            oov_samples,
             map(value, tokenizer_stats.stats)...
         )
         mkpath(dirname(out_file))
-        open(out_file, "w") do io
-            JSON.print(io, stats)
+        BSON.bson(out_file; stats...)
+    end
+
+    # Broadcast n-gram counts to all ranks, and construct n-gram models
+    ngrams = rank == 0 ? value.(tokenizer_stats[:ngrams]) : nothing
+    ngrams = MPI.bcast(ngrams, comm)
+    ngrams = map(g -> NGramModel(g, tokenizer_info.vocab_size), ngrams)
+
+    # Evaluate the log probability of the validation set
+    ds = setup_dm_mpi(datamodule, "train"; rank, size)
+    log_odds = zeros(length(ngrams))
+    for (idx, example) in enumerate(ds)
+        input_ids = pyconvert(Vector{Int}, example["input_ids"])
+        for (ndx, model) in enumerate(ngrams)
+            log_odds[ndx] += log_probability(model, input_ids)
         end
+    end
+    MPI.Reduce!(log_odds, +, comm)
+
+    if rank == 0
+        @info "Saving n-gram results on rank $rank"
+        log_odds ./= stats.samples
+        stats = (; stats..., ngram_log_odds=log_odds)
+        BSON.bson(out_file; stats...)
     end
 
     MPI.Barrier(comm)

@@ -9,18 +9,19 @@ const GIT_ROOT = strip(read(`git rev-parse --show-toplevel`, String))
 
 TOKENIZERS = [
         "smirk" => "smirk",
+        "smirk-gpe-50k-mb-ss" => "smirk-gpe-50k-mb-ss",
         "seyonec/ChemBERTa-zinc-base-v1" => "ChemBERTa v1",
-        "ChangwenXu98/TransPolymer" => "TransPolymer",
+        # "ChangwenXu98/TransPolymer" => "TransPolymer",
         "ibm/MoLFormer-XL-both-10pct-oov" => "MoLFormer",
         "HUBioDataLab/SELFormer" => "SELFormer",
-        "devalab/molgpt-moses" => "MolGPT, moses",
+        # "devalab/molgpt-moses" => "MolGPT, moses",
         "devalab/molgpt-guacamol" => "MolGPT, guacamol",
-        "rxn4chemistry/rxn_yields" => "Yield-BERT",
+        # "rxn4chemistry/rxn_yields" => "Yield-BERT",
         "rxn4chemistry/rxnfp" => "RXNFP",
         "MolecularAI/Chemformer" => "Chemformer",
         "SmilesPE/SPE_ChEMBL" => "SmilesPE",
-        "sagawa/ReactionT5-product-prediction" => "ReactionT5, Products",
-        "sagawa/ReactionT5-yield-prediction" => "ReactionT5, Yield",
+        # "sagawa/ReactionT5-product-prediction" => "ReactionT5, Products",
+        # "sagawa/ReactionT5-yield-prediction" => "ReactionT5, Yield",
 ]
 
 
@@ -34,9 +35,9 @@ function fit_hist(counts; kwargs...)
     return centers, h.weights
 end
 
-function collect_results()
+function collect_results(glob=r"stats-.*\.json")
     tokenizers = Dict{String, String}()
-    for result in find(joinpath(@__DIR__, "stats"), r"stats-.*\.json")
+    for result in find(joinpath(@__DIR__, "stats"), glob)
         name = joinpath(splitpath(relpath(result, @__DIR__))[2:end-1])
         tokenizers[name] = result
     end
@@ -47,7 +48,7 @@ function figure_token_usage(results::Dict)
     f = Figure(; size=(500, 300))
     l = 1e-5
     ax = Axis(f[1,1];
-        limits=((0, 1), (0, 32)),
+        limits=((0, 1), (0, nothing)),
         xlabel="Token Usage Rank [%]",
         ylabel="Information Content [nats]",
         xtickformat="{:.0%}",
@@ -97,47 +98,6 @@ function figure_ignorance(results::Dict)
         push!(tok_unk_info, token_entropy[unk_token_id+1])
     end
     scatter!(ax, tok_entropy, tok_unk_info)
-    return f
-end
-
-function figure_vocab_entropy_moments(results::Dict)
-    f = Figure()
-    ax = Axis(f[2,1];
-        ylabel="Entropy Moments [bits]",
-        limits=(nothing, (1e-1, nothing)),
-        yscale=log10,
-        xticklabelrotation = 0.4,
-    )
-    names = String[]
-    xpos = Int[]
-    heights = Float64[]
-    dodge = Int[]
-    for (idx, (name, file)) in enumerate(pairs(results))
-        stats = JSON.parsefile(file)
-        push!(names, name)
-        for (i, m) in enumerate(stats["entropy"]["moments"])
-            push!(xpos, idx)
-            push!(heights, m)
-            push!(dodge, i)
-        end
-    end
-    colors = Makie.wong_colors()
-    barplot!(ax, xpos, heights;
-             dodge,
-             color=colors[dodge],
-             fillto=1e-4,
-             )
-    ax.xticks[] = (1:length(names), names)
-
-    # Legend
-    labels = ["Mean", "Variance", "Skewness", "Kurtosis"]
-    elements = [PolyElement(polycolor = colors[i]) for i in 1:length(labels)]
-    title = "Moments"
-    Legend(f[1,1], elements, labels, title;
-           tellwidth=false,
-           orientation=:horizontal,
-    )
-    resize_to_layout!(f)
     return f
 end
 

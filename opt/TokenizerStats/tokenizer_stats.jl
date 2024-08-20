@@ -34,9 +34,8 @@ function main(args::Vector{String})
     else
         out_file = args["output"]
     end
-    out_file = out_file * ".json"
+    out_file = out_file * ".bson"
     @info "will save results to $out_file"
-
 
     tabulate_dataset(dm, out_file; tokenizer_name=args["tokenizer"])
 end
