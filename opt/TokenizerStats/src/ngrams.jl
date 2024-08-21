@@ -29,45 +29,74 @@ function transition(bigrams::AbstractDict, vocab_size=0)
     return s
 end
 
-struct NGramModel{N, M}
-    counts::Dict{NTuple{N, Int}, Int}
-    priors::Dict{NTuple{M, Int}, Int}
-    total::Int
+struct NGramModel{N, G}
+    ngrams::G
+    total::NTuple{N, Int}
     vocab_size::Int
 end
 
 token_ids(m::NGramModel) = range(0; length=m.vocab_size)
 
-function NGramModel(dist::AbstractDict{<:Union{Int, NTuple}, Int}, vocab_size::Int)
+function ngram_counts(dist::AbstractDict{<:Union{Int, NTuple}, Int})
     n = length(first(keys(dist)))
     K = NTuple{n, Int}
     grams = keytype(dist) <: NTuple ? keys(dist) : Iterators.map(tuple, keys(dist))
-    counts = Dict{K, Int}(zip(grams, values(dist)))
-    priors = Dict{NTuple{n-1, Int}, Int}()
-    if n > 1
-        for (gram, count) in counts
-            pgram = condgram(gram)
-            priors[pgram] = get(counts, gram, 0) + get(priors, pgram, 0)
-        end
-    end
-    total = sum(values(dist); init=0) + vocab_size^n
-    NGramModel(counts, priors, total, vocab_size)
+    return Dict{K, Int}(zip(grams, values(dist)))
+end
+
+function NGramModel(ngrams, vocab_size::Int)
+    ngrams = map(ngram_counts, ngrams)
+    totals = map(g -> sum(values(g); init=0), ngrams)
+    return NGramModel(ngrams, totals, vocab_size)
 end
 
 condgram(gram::NTuple{N, Int}) where {N} = reverse(Base.tail(reverse(gram)))
 
-function log_probability(model::NGramModel{1}, gram::NTuple{1, Int})
-    count = get(model.counts, gram, 0) + 1
-    return log(count) - log(model.total)
+function log_probability(model::NGramModel, gram::NTuple{N, Int}) where {N}
+    @assert N <= length(model.total)
+    counts = get(model.ngrams[N], gram, 0) + 1
+    if N == 1
+        n = first(model.total) + model.vocab_size
+        return log(counts) - log(n)
+    end
+    prior = get(model.ngrams[N-1], condgram(gram), 0) + model.vocab_size
+    return log(counts) - log(prior)
 end
 
-function log_probability(model::NGramModel{N}, gram::NTuple{N, Int}) where {N}
-    next = get(model.counts, gram, 0) + 1
-    prior = get(model.priors, condgram(gram), 0) + model.vocab_size^(N-1)
-    return log(next) - log(prior)
+log_probability(m::NGramModel{N}, code) where {N} = _ngram_log_odds(Val{N}(), m, code)
+log_probability(m::NGramModel, code, N) = _ngram_log_odds(Val{N}(), m, code)
+function _ngram_log_odds(::Val{N}, m::NGramModel, code::Vector{Int}) where {N}
+    log_odds = 0.0
+    for idx in range(1, N)
+        log_odds += log_probability(m, ntuple(i -> code[i], idx))
+    end
+    for gram in SlidingWindow(code, N)
+        log_odds += log_probability(m, gram)
+    end
+    return log_odds
 end
 
-function log_probability(m::NGramModel{N}, code::Vector{Int}) where {N}
-    sum(Iterators.map(Base.Fix1(log_probability, m), SlidingWindow(code, N)); init=0.0)
+function ngram_perf()
+    rows = []
+    stats_dir = joinpath(@__DIR__, "..", "stats")
+    for file in find(stats_dir, r".*\.bson")
+        data = BSON.load(file)
+        file = relpath(file, stats_dir)
+        tokenizer = joinpath(splitpath(file)[1:end-1])
+        dataset = first(splitext(basename(file)))
+        push!(rows, (;
+            tokenizer,
+            dataset,
+            vocab_size = data[:tokenizer][:vocab_size],
+            samples = data[:samples],
+            out_of_vocab = data[:out_of_vocab],
+            unigram_log_odds = data[:ngram_log_odds][1],
+            bigram_log_odds = data[:ngram_log_odds][2],
+            trigram_log_odds = data[:ngram_log_odds][3],
+            quadgram_log_odds = data[:ngram_log_odds][4],
+            pentagram_log_odds = data[:ngram_log_odds][5],
+        ))
+    end
+    return DataFrame(rows)
 end
 
