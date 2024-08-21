@@ -109,15 +109,16 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     # Broadcast n-gram counts to all ranks, and construct n-gram models
     ngrams = rank == 0 ? value.(tokenizer_stats[:ngrams]) : nothing
     ngrams = MPI.bcast(ngrams, comm)
-    ngrams = map(g -> NGramModel(g, tokenizer_info.vocab_size), ngrams)
+    ngrams = NGramModel(ngrams, tokenizer_info.vocab_size)
 
     # Evaluate the log probability of the validation set
     ds = setup_dm_mpi(datamodule, "train"; rank, size)
-    log_odds = zeros(length(ngrams))
+    n = length(ngrams.total)
+    log_odds = zeros(n)
     for (idx, example) in enumerate(ds)
         input_ids = pyconvert(Vector{Int}, example["input_ids"])
-        for (ndx, model) in enumerate(ngrams)
-            log_odds[ndx] += log_probability(model, input_ids)
+        for n in eachindex(log_odds)
+            log_odds[n] += log_probability(ngrams, input_ids, n)
         end
     end
     MPI.Reduce!(log_odds, +, comm)

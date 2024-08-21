@@ -67,7 +67,7 @@ log_probability(m::NGramModel{N}, code) where {N} = _ngram_log_odds(Val{N}(), m,
 log_probability(m::NGramModel, code, N) = _ngram_log_odds(Val{N}(), m, code)
 function _ngram_log_odds(::Val{N}, m::NGramModel, code::Vector{Int}) where {N}
     log_odds = 0.0
-    for idx in range(1, N)
+    for idx in range(1, min(N, length(code)))
         log_odds += log_probability(m, ntuple(i -> code[i], idx))
     end
     for gram in SlidingWindow(code, N)
@@ -78,7 +78,7 @@ end
 
 function ngram_perf()
     rows = []
-    stats_dir = joinpath(@__DIR__, "..", "stats")
+    stats_dir = joinpath(@__DIR__, "..", "stats-2")
     for file in find(stats_dir, r".*\.bson")
         data = BSON.load(file)
         file = relpath(file, stats_dir)
