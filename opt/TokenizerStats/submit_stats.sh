@@ -26,19 +26,22 @@ module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
 source ./activate
 
 # Precompile project
-export JULIA_PKG_PRECOMPILE=0
-srun -p venkvis-debug -c3 --mem 4G julia --color=yes --startup-file=no --project -e '
-    using Pkg
-    Pkg.instantiate()
-    using MPIPreferences
-    @info "mpiexe" run(`which mpiexec`)
-    MPIPreferences.use_system_binary()
-    Pkg.precompile()
-'
-unset JULIA_PKG_PRECOMPILE
+if [[ ! -f Manifest.toml ]]; then
+    export JULIA_PKG_PRECOMPILE=0
+    srun -p venkvis-debug -c2 --mem 4G julia --color=yes --startup-file=no --project -e '
+        using Pkg
+        Pkg.resolve()
+        Pkg.instantiate()
+        using MPIPreferences
+        @info "mpiexe" run(`which mpiexec`)
+        MPIPreferences.use_system_binary()
+        Pkg.precompile()
+    '
+    unset JULIA_PKG_PRECOMPILE
+fi
 
-set -x
 # Submit jobs for each tokenizer + dataset
+set -x
 for tok in $TOKENIZERS; do
     sbatch --time 2-0:0:0 -n 64 ./submit_tok_stats.sh /nfs/turbo/coe-venkvis/mist/realspace_v4_dev $tok
     for dataset in qm8 qm9 esol freesolv lipo muv hiv bace bbbp tox21 toxcast sider clintox; do
