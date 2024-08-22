@@ -2,10 +2,16 @@ import codecs
 import json
 from pathlib import Path
 from typing import List, Union
+import pickle
+import shutil
+import urllib.request
+from zipfile import ZipFile
 
 from SmilesPE.tokenizer import SPE_Tokenizer
 from transformers import PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
+
+from ..utils import cached_download
 
 
 class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
@@ -106,33 +112,19 @@ def process_vocab(vocab_list: list[str]) -> dict[str, int]:
     return token_to_id
 
 
-def pretrained_spe_tokenizer(cache=".cache", cache_generated=False):
-    import json
-    import pickle
-    import shutil
-    import urllib.request
-    from pathlib import Path
-    from zipfile import ZipFile
-
+def pretrained_spe_tokenizer(cache_generated=False):
     # Download ChEMBL_1M_SPE: https://github.com/XinhaoLi74/MolPMoFiT
     # DOI: https://doi.org/10.6084/m9.figshare.20696935.v1
-    cache = Path(cache)
-    cache.mkdir(exist_ok=True)
-    pretrained = cache.joinpath("spe_pretrained.zip")
-    if not pretrained.is_file():
-        urllib.request.urlretrieve(
-            "https://figshare.com/ndownloader/files/36910486",
-            str(pretrained),
-        )
+    pretrained = cached_download(
+        "https://figshare.com/ndownloader/files/36910486", "spe_pretrained.zip"
+    )
 
     # Extract Vocab
+    cache = pretrained.parent
     spe_file = cache.joinpath("SPE_ChEMBL.txt")
     if not spe_file.is_file():
         with ZipFile(pretrained) as zip:
-            path = zip.extract(
-                "models/SPE_ChEMBL.txt",
-                path=cache,
-            )
+            path = zip.extract("models/SPE_ChEMBL.txt", cache)
             shutil.move(path, spe_file)
 
     vocab_file = cache.joinpath("ChEMBL_LM_SPE_vocab.json")

@@ -26,6 +26,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         return pretrained_spe_tokenizer()
 
     elif name.startswith("rxn4chemistry"):
+        from .cache import cached_github_archive
+
         if name == "rxn4chemistry/rxnfp":
             # https://github.com/rxn4chemistry/rxnfp/blob/9c8e4a2b90399a42403481db5d40a806c310e69e/rxnfp/tokenization.py#L23
             # Matches version from https://doi.org/10.5281/zenodo.4277570
@@ -62,6 +64,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
             )
 
     elif name.startswith("MolecularAI/Chemformer"):
+        from .cache import cached_github_archive
+
         # https://github.com/MolecularAI/Chemformer/blob/0ca3c1b5f810a0ff106bbb846f511629eac3b4a5/molbart/build_tokeniser.py#L13
         regex = r"\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9]"
 
@@ -109,6 +113,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
     elif name == "HUBioDataLab/SELFormer":
         from tokenizers import Tokenizer
+        from .cache import cached_github_archive
 
         tok_file = cached_github_archive(
             "HUBioDataLab/SELFormer",
@@ -134,7 +139,6 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tok_tf = AutoTokenizer.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
             trust_remote_code=True,
-            cache=".cache",
             **kwargs,
         )
         config = json.loads(tok_tf.backend_tokenizer.to_str())
@@ -165,7 +169,6 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tok_tf = AutoTokenizer.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
             trust_remote_code=True,
-            cache=".cache",
             **kwargs,
         )
         config = json.loads(tok_tf.backend_tokenizer.to_str())
@@ -220,7 +223,6 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tok_tf = AutoTokenizer.from_pretrained(
             name,
             trust_remote_code=True,
-            cache_dir=".cache",  # Cache Tokenizer in working directory
             **kwargs,
         )
         ensure_special_tokens(tok_tf)
@@ -262,45 +264,6 @@ def regex_smiles_tokenizer(vocab: dict, regex: str, unk_token: str = "[UNK]"):
     return tok_tf
 
 
-def cached_download(url: str, path: Path) -> Path:
-    import urllib.request
-
-    cache = Path(__file__).parent.parent.parent.joinpath(".cache")
-    cached_file = cache.joinpath(path)
-    cached_file.parent.mkdir(exist_ok=True, parents=True)
-    if not cached_file.exists():
-        with urllib.request.urlopen(url) as fid:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(cached_file, "wb") as out:
-                out.write(fid.read())
-
-    return cached_file
-
-
-def find_member(tar, name):
-    for m in tar.getmembers():
-        # Strip the first path component
-        p = Path(*str(m.name).split("/")[1:])
-        if str(p) == name:
-            return m
-
-    return None
-
-
-def extract_file(archive, name, output: Path, **kwargs):
-    import tarfile
-    from shutil import move
-    from tempfile import TemporaryDirectory
-
-    with tarfile.open(archive) as fid:
-        member = find_member(fid, name)
-        assert member is not None
-        with TemporaryDirectory() as tmp:
-            fid.extract(member, filter="data", path=tmp, **kwargs)
-            Path(output).parent.mkdir(parents=True, exist_ok=True)
-            move(str(Path(tmp).joinpath(member.name)), str(output))
-
-
 def vocab_from_words(file: str, add_unk_token=True, unk_token: str = "[UNK]"):
     import json
 
@@ -319,23 +282,6 @@ def vocab_from_words(file: str, add_unk_token=True, unk_token: str = "[UNK]"):
     if add_unk_token:
         vocab[unk_token] = len(vocab)
     return vocab
-
-
-def cached_github_archive(repo, commit, file):
-    cache = Path(__file__).parent.parent.parent.joinpath(".cache", "smiles-tokenizers")
-    cache.mkdir(exist_ok=True, parents=True)
-
-    archive = Path(
-        "smiles-tokenizers", repo.replace("/", "-"), commit, "archive.tar.gz"
-    )
-    url = f"https://github.com/{repo}/archive/{commit}.tar.gz"
-    archive = cached_download(url, archive)
-
-    cached_path = archive.parent.joinpath(file)
-    if not cached_path.is_file():
-        extract_file(archive, file, cached_path)
-
-    return cached_path
 
 
 def rdkit_canonical(smi: str) -> str:

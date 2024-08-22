@@ -16,6 +16,12 @@ sagawa/ReactionT5-yield-prediction
 rxn4chemistry/rxn_yields
 rxn4chemistry/rxnfp
 ChangwenXu98/TransPolymer
+../../smirk-gpe-50k-mb-ss
+../../smirk-gpe-50k-nmb-ss
+../../smirk-gpe-small-50k-mb-ss
+google/gemma-7b
+Xenova/gpt-4o
+meta-llama/Meta-Llama-3.1-8B
 "
 
 # Move to TokenizerStats dir
