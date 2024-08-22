@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-from pathlib import Path
-import subprocess
-from typing import Optional
 import logging
+import subprocess
+from pathlib import Path
+from typing import Optional
+from random import randint
 
 from electrolyte_fm.data_modules.molnet_dataset import _URLS as MOLNET_URLS
 
@@ -37,22 +38,23 @@ TOKENIZERS = [
 ]
 
 
-def sbatch(args: list, output: Optional[str] = None, test=True) -> Optional[int]:
+def sbatch(args: list, output: Optional[str] = None, test=False) -> Optional[int]:
     args = [str(x) for x in args]
     if output is not None and Path(output).exists():
-        logging.info("skipping job for %s", output)
+        # logging.info("skipping job for %s", output)
         return None
     logging.info("submit sbatch: %s", args)
     if test:
-        return 5
+        return randint(0, 100)
+
     out = subprocess.run(
-        "sbatch",
         args,
+        executable="sbatch",
         text=True,
         capture_output=True,
         check=True,
     )
-    return int(out.split(" ")[-1])
+    return int(out.stdout.split(" ")[-1])
 
 
 def sub_realspace(tok):
@@ -61,8 +63,9 @@ def sub_realspace(tok):
     id = sbatch(
         [
             "--time=1-0:0:0",
-            "-n=64",
+            "--ntasks=64",
             "submit_tok_stats.sh",
+            "usage",
             REALSPACE,
             tok,
         ],
@@ -72,35 +75,42 @@ def sub_realspace(tok):
 
 
 _, char_id, char_realspace = sub_realspace("character")
+assert char_id is not None
 
 
 for tok in TOKENIZERS:
     # Submit realspace_v4_dev job
-    tok_name, id, file = sub_realspace(tok)
+    if tok != "character":
+        tok_name, id, file = sub_realspace(tok)
+    else:
+        tok_name = "character"
+        id = char_id
+        file = char_realspace
 
     # Compute realspace model loss
     for ds in MOLNET_URLS.keys():
-        args = ["-n=1", "submit_tok_stats.sh", "loss", file, ds]
+        args = ["--ntasks=1", "submit_tok_stats.sh", "loss", file, ds]
         if id:
             args.insert(0, f"-d=afterok:{id}")
         sbatch(args, STATS_DIR.joinpath(tok, f"{ds}_model_loss.bson"))
 
         # Process molnets datsets too
         sbatch(
-            ["-n=1", "submit_tok_stats.sh", tok, ds],
+            ["-n=1", "submit_tok_stats.sh", "usage", ds, tok],
             STATS_DIR.joinpath(tok_name, f"{ds}.bson"),
         )
 
         # Compute Info loss
         args = [
-            "-n=32",
+            "--ntasks=32",
             "submit_tok_stats.sh",
             "distortion",
             f"--reference={char_realspace}",
-            tok,
             ds,
+            tok,
         ]
-        if id:
+        if char_id:
             args.insert(0, f"-d=afterok:{char_id}")
 
-        sbatch(args, STATS_DIR.joinpath(f"{ds}_character_info_loss.bson"))
+        if tok != "character":
+            sbatch(args, STATS_DIR.joinpath(f"{ds}_character_info_loss.bson"))

@@ -13,7 +13,7 @@ end
 
 function get_dataset(name_or_path, tokenizer)
     if isdir(name_or_path)
-        dm = TokenizerStats.pretrain(name; tokenizer)
+        dm = TokenizerStats.pretrain(name_or_path; tokenizer)
         dataset_name = basename(name_or_path)
     else
         dm = TokenizerStats.molnet(name_or_path; tokenizer)
@@ -74,8 +74,7 @@ function main(args::Vector{String})
         avg_information_loss(dm, args_cmd["reference"], out_file)
 
     elseif args["%COMMAND%"] == "loss"
-        ref_slug = slug(args_cmd["ngram"])
-        tokenizer = BSON.load(arg_cmd["ngram"])[:tokenizer][:name]
+        tokenizer = BSON.load(args_cmd["ngram"])[:tokenizer][:name]
         dm, dataset = get_dataset(args_cmd["dataset"], tokenizer)
         out_file = joinpath(args["output"], tokenizer, dataset_name * "_model_loss.bson")
         model_loss(dm, args_cmd["ngram"], out_file)
@@ -85,7 +84,7 @@ function main(args::Vector{String})
         tokenizer = isdir(tokenizer) ? basename(tokenizer) : tokenizer
         dm, dataset = get_dataset(args_cmd["dataset"], tokenizer)
         out_file = joinpath(args["output"], tokenizer, dataset * ".bson")
-        tabulate_dataset(dm, out_file; tokenizer_name)
+        tabulate_dataset(dm, out_file; tokenizer_name=tokenizer)
     end
     return 0
 end

@@ -208,7 +208,9 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tok.normalizer = Strip()
         tok.pre_tokenizer = Split(Regex("."), "isolated")
         tok.decoder = ByteLevel()
-        return PreTrainedTokenizerFast(tokenizer_object=tok)
+        tok_tf = PreTrainedTokenizerFast(tokenizer_object=tok)
+        ensure_special_tokens(tok_tf)
+        return tok_tf
 
     else:
         # Fall back to a HuggingFace Tokenizer

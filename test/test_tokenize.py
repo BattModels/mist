@@ -27,8 +27,13 @@ STANDARD_SMILES = [
 
 # Tokenizers not actively used for training
 OTHER_SMILES_TOKENIZERS = [
+    "character",
     "SmilesPE/SPE_ChEMBL",
     "ibm/MoLFormer-XL-both-10pct-oov",
+    "devalab/molgpt-moses",
+    "MolecularAI/Chemformer",
+    "seyonec/ChemBERTa-zinc-base-v1",
+    "sagawa/ReactionT5-product-prediction",
 ]
 
 
@@ -81,11 +86,6 @@ def test_vocab_size(smile_tokenizer):
     # should be smaller (or equal if the model knows of all added tokens)
     # than the length of of the tokenizer
     assert smile_tokenizer.vocab_size <= len(smile_tokenizer)
-
-
-def test_character_tokenzier():
-    tok = load_tokenizer("character")
-    check_encoding(tok, STANDARD_SMILES)
 
 
 def test_pretrained_smirk():

@@ -109,8 +109,6 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
             samples=nobs(tokenizer_stats[:fertility]),
             map(value, tokenizer_stats.stats)...
         )
-        mkpath(dirname(out_file))
-        BSON.bson(out_file; stats...)
     end
 
     # Broadcast n-gram counts to all ranks, and construct n-gram models
@@ -134,6 +132,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
         @info "Saving n-gram results on rank $rank"
         log_odds ./= stats.samples
         stats = (; stats..., ngram_log_odds=log_odds)
+        mkpath(dirname(out_file))
         BSON.bson(out_file; stats...)
     end
 
@@ -142,7 +141,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     return 0
 end
 
-slug(file) = bytes2hex(SHA.sha256(read(ref_file)))
+slug(file) = bytes2hex(SHA.sha256(read(file)))
 
 function model_loss(datamodule::Py, ref_file::String, output::String)
     # Init MPI
@@ -150,6 +149,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     size = MPI.Comm_size(comm)
+    @info "Rank $rank of $size is starting"
 
     # Load Reference Tokenizer / n-gram model
     ref = BSON.load(ref_file)
@@ -192,6 +192,11 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         MPI.Barrier(comm)
     end
 
+    if rank == 0
+        mkpath(dirname(out_file))
+        BSON.bson(out_file; fit_stats...)
+    end
+
     MPI.Barrier(comm)
     MPI.Finalize()
     return nothing
@@ -204,6 +209,7 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     size = MPI.Comm_size(comm)
+    @info "Rank $rank of $size is starting"
 
     # Load Reference Tokenizer / n-gram model
     ref = BSON.load(ref_file)
@@ -243,6 +249,7 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
             samples=nobs(stats),
             info_loss=map(value, stats),
         )
+        mkpath(dirname(out_file))
         BSON.bson(output; stats...)
     end
 
