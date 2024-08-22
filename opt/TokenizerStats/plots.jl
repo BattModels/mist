@@ -1,8 +1,10 @@
 using TokenizerStats: TokenizerStats, tokenizer_label, moments!, hist_nbins, find, tokenusage!
+using PythonCall
 using GLMakie
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights
 using JSON
+using BSON
 using DataFrames
 
 const GIT_ROOT = strip(read(`git rev-parse --show-toplevel`, String))
@@ -283,4 +285,46 @@ function figure_equal_odds()
     sort!(equal_odds_diff, [:dataset, :tokenizer, :split])
     equal_odds_diff
 
+end
+
+function figure_info_loss()
+    smi = "CCN(CC)C(=O)[C@H]1CN([C@@H]2Cc3c[nH]c4c3c(ccc4)C2=C1)C"
+    r = BSON.load("stats/ibm/MoLFormer-XL-both-10pct-oov/realspace_v4_dev.bson")
+    # r = BSON.load("stats/smirk/realspace_v4_dev.bson")
+    ngram = TokenizerStats.NGramModel(r[:ngrams], r[:tokenizer][:vocab_size])
+    tok = TokenizerStats.load_tokenizer(r[:tokenizer][:name])
+    vocab = pyconvert(Dict{String, Int}, tok.get_vocab())
+    tokens = first.(sort(collect(pairs(vocab)); by=x-> x[2]))
+
+    code = pyconvert(Vector{Int}, tok(smi)["input_ids"])
+    smi_tokens = pyconvert(Vector{String}, tok.tokenize(smi))
+    if length(code) == (length(smi_tokens) + 2)
+        code = code[2:end-1]
+    end
+    mask = falses(length(code))
+    mask[13] = true
+    # mask[13:17] .= true
+
+    i, P, Q = TokenizerStats.information_loss(ngram, code, mask)
+    @info i
+
+    f = Figure(size=(600, 600))
+    ax_p = Axis(f[1, 1], title="Unmasked", xlabel="Tokens Ids",
+        # limits=((1, 100), nothing),
+        yticks=(1:length(code), smi_tokens),
+        yticksvisible=false,
+        yticklabelsize=8,
+        # xticks=(1:length(tokens), tokens),
+        # xticksvisible=false,
+        # xticklabelsize=5,
+        # xticklabelrotation=-pi/2,
+    )
+    ax_q = Axis(f[1, 2], title="Masked", xlabel="Token Ids",
+        # limits=((1, 100), nothing)
+    )
+    heatmap!(ax_p, P)
+    heatmap!(ax_q, Q)
+    hideydecorations!(ax_q)
+    colgap!(f.layout, 5)
+    return f
 end

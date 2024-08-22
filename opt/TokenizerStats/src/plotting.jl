@@ -77,3 +77,10 @@ function Makie.plot!(plt::TokenUsage)
     x = range(0, 1; length=length(usage))
     stairs!(plt, x, token_information)
 end
+
+function plot_token_log_prob(ax, prob::Matrix, tokens::Vector{String})
+    heatmap!(ax, prob)
+    ax.yticks = (1:length(tokens), tokens)
+    ax.yticksvisible = false
+    return nothing
+end

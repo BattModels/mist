@@ -60,42 +60,106 @@ function ngram(code::Vector{Int}, indices::UnitRange)
     return ntuple(i -> code[indices[i]], length(indices))
 end
 
-function gram_counts(model::NGramModel, gram::NTuple{N, Int}) where {N}
-    @assert N <= length(model)
+function gram_odds(model::NGramModel, gram::NTuple{N, Int}) where {N}
+    @assert 1 <= N <= length(model)
     counts = get(model.ngrams[N], gram, 0) + 1
     if N == 1
         n = first(model.total) + model.vocab_size
         return counts, n
     end
-    prior = get(model.ngrams[N-1], condgram(gram), 0) + model.vocab_size
-    return counts, prior
+    marginal = get(model.ngrams[N-1], condgram(gram), 0) + model.vocab_size
+    return counts, marginal
 end
 
 function log_probability(model::NGramModel, gram::NTuple{N, Int}) where {N}
-    c, n = gram_counts(model, gram)
+    c, n = gram_odds(model, gram)
     return log(c) - log(n)
 end
-log_probability(m::NGramModel{N}, code) where {N} = _ngram_log_proability(Val{N}(), m, code)
-log_probability(m::NGramModel, code, N) = _ngram_log_proability(Val{N}(), m, code)
 
-function _ngram_log_proability(::Val{N}, m::NGramModel, code::Vector{Int}) where {N}
-    ell = 0.0
-    for idx in 1:length(code)
-        ell += log_probability(m, ngram(code, idx, N))
+function autoregressive_kld(model::NGramModel, code::Vector{Int}; N=length(model))
+    counts = 0
+    marginal = 0
+    for i in 1:length(code)
+        c, m = gram_odds(model, ngram(code, i, N))
+        counts += c
+        marginal += m
     end
-    return ell
+    return log(counts) - log(marginal)
 end
 
-function forward_log_proability(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
-    ell = zeros(Float64, m.vocab_size, length(code))
+function fb_log_proability(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
+    fc, fm, fmasked = forward_odds(m, code; mask, N)
+    bc, bm, bmasked = backward_odds(m, code; mask, N)
+
+    # Total up forward/ backwards odds
+    counts = fc .+ bc
+    marginal = fm .+ bm
+    masked = fmasked .+ bmasked
+
+    # Add marginal counts for first/last tokens (unigrams)
+    marginal[1] += m.total[1]
+    marginal[end] += m.total[1]
+
+    # Add smoothed counts
+    ell = Matrix{Float64}(undef, m.vocab_size, length(code))
+    V = m.vocab_size
     for i in 1:length(code)
-        cgram = condgram(code, i, N)
-        for (j, token) in enumerate(token_ids(m))
-            @inbounds ell[j, i] = masked_log_proability(m, (cgram..., token); mask)
+        n_masked = masked[i]
+        denom = log_smoothed_counts(marginal[i], n_masked + 1, V)
+        for j in 1:V
+            num = log_smoothed_counts(counts[j, i], n_masked, V)
+            ell[j,i] = num - denom
         end
     end
     return ell
 end
+
+"""
+Computes `log(counts + vocab_size^nmasked)` in a numerically stable way
+"""
+function log_smoothed_counts(counts::Integer, nmasked::Int, vocab_size::Int)
+    ln_mask = nmasked * log(vocab_size)
+    ln_counts = log(counts)
+    if counts == 0
+        return ln_mask
+    elseif ln_counts > ln_mask
+        return ln_counts + log1p(exp(ln_mask - ln_counts))
+    else
+        return ln_mask + log1p(exp(ln_counts - ln_mask))
+    end
+end
+
+function forward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
+    counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
+    marginal = Vector{UInt64}(undef, length(code))
+    masked_counts = Vector{Int}(undef, length(code))
+    for i in 1:length(code)
+        cgram = condgram(code, i, N)
+        marginal[i] = masked_counts_unsmoothed(m, cgram, mask)
+        masked_counts[i] = count(==(mask), cgram)
+        for (j, token) in enumerate(token_ids(m))
+            counts[j,i] = masked_counts_unsmoothed(m, (cgram..., token), mask)
+        end
+    end
+    return counts, marginal, masked_counts
+end
+
+function backward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
+    code = reverse(code)
+    counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
+    marginal = Vector{UInt64}(undef, length(code))
+    masked_counts = Vector{Int}(undef, length(code))
+    for (i, ri) in enumerate(range(length(code), 1; step=-1))
+        cgram = reverse(condgram(code, i, N))
+        marginal[ri] = masked_counts_unsmoothed(m, cgram, mask)
+        masked_counts[ri] = count(==(mask), cgram)
+        for (j, token) in enumerate(token_ids(m))
+            counts[j,ri] = masked_counts_unsmoothed(m, (token, cgram...), mask)
+        end
+    end
+    return counts, marginal, masked_counts
+end
+
 
 """
 Computes the Information Loss (KL-Divergence) from masking out tokens in an input code for a
@@ -107,37 +171,19 @@ function information_loss(m::NGramModel, code::Vector{Int}, mask::Union{BitVecto
     mask_value = -100
     masked_code = copy(code)
     masked_code[mask] .= mask_value
-    for i in 1:length(code)
-        cgram = condgram(code, i, N)
-        cgram_masked = condgram(masked_code, i, N)
-        for (j, token) in enumerate(token_ids(m))
-            ell_ref = log_probability(m, (cgram..., token))
-            ell_dist = masked_log_proability(m, (cgram_masked..., token); mask=mask_value)
-            loss += exp(ell_ref) * (ell_ref - ell_dist)
-        end
+    P = fb_log_proability(m, code; N)
+    Q = fb_log_proability(m, masked_code; N)
+    for idx in eachindex(P)
+        loss += exp(P[idx]) * (P[idx] - Q[idx])
     end
-    return loss
+    return loss, P, Q
 end
 
-function masked_log_proability(m::NGramModel, gram::NTuple{N, Int}; mask::Int) where {N}
+function masked_counts_unsmoothed(m::NGramModel, gram::NTuple{N, Int}, mask::Int) where {N}
     # If gram is unmasked, likelihood is based on counts
-    mask ∉ gram && return log_probability(m, gram)
-    if N == 1
-        @assert only(gram) != mask
-        return log_probability(m, gram)
-    end
-
-    # Observed masked counts
-    counts = masked_counts(m, gram, mask) |> Int128
-    marginal = masked_counts(m, condgram(gram), mask) |> Int128
-
-    # Add One Smoothing
-    n_masked = count(==(mask), gram)
-    smoothed_counts = Int128(m.vocab_size)^n_masked
-    counts += smoothed_counts
-    marginal += smoothed_counts * Int128(m.vocab_size)
-    @assert counts >= 0 && marginal >= 0 "Overflowed"
-    return log(counts) - log(marginal)
+    N == 0 && return 0
+    mask ∉ gram && return first(gram_odds(m, gram)) - 1
+    return masked_counts(m, gram, mask)
 end
 
 function masked_counts(m::NGramModel, gram::NTuple{N, Int}, mask::Int) where {N}

@@ -6,10 +6,12 @@ using PythonCall
 using ArgParse
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
 using LinearAlgebra: normalize
-using StatsBase: StatsBase, Histogram, fit, AbstractWeights, nobs
+using StatsBase: StatsBase, Histogram, fit, AbstractWeights, nobs, mean, std
+using LogExpFunctions: logsumexp
 using MPI: MPI
 using BSON: BSON
 using JSON: JSON
+using SHA: SHA
 using SparseArrays: sparse
 
 function find(dir, pattern)
