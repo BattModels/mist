@@ -22,6 +22,7 @@ ChangwenXu98/TransPolymer
 google/gemma-7b
 Xenova/gpt-4o
 meta-llama/Meta-Llama-3.1-8B
+meta-llama/Meta-Llama-3-8B
 "
 
 # Move to TokenizerStats dir

@@ -53,7 +53,7 @@ function main(args::Vector{String})
 
     # Parse output file
     if isnothing(args["output"])
-        out_file = joinpath(@__DIR__, "stats", args_cmd["tokenizer"], dataset_name)
+        out_file = joinpath(@__DIR__, "..", "stats", args_cmd["tokenizer"], dataset_name)
     else
         out_file = args["output"]
     end
