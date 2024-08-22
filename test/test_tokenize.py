@@ -42,7 +42,8 @@ def test_well_behaved_tokenizer(name):
     tokenizer = load_tokenizer(name)
     assert tokenizer.__repr__() is not None
     code = tokenizer("CCO")
-    assert tokenizer.unk_token_id is not None
+    tokens = tokenizer.tokenize("CCO")
+    assert isinstance(tokens, list) and len(tokens) >= 1 and isinstance(tokens[0], str)
     assert tokenizer.mask_token_id is not None
     assert tokenizer.pad_token_id is not None
     assert tokenizer.unk_token_id not in code["input_ids"]
@@ -58,6 +59,7 @@ def test_oov_tokens(name):
         code = tokenizer(smi)["input_ids"]
         assert tok.unk_token_id in tok("Zz")["input_ids"]
         assert tok.decode(code, skip_special_tokens=False) != smi
+        assert str(tok.unk_token) in tok.tokenize(smi)
 
     # Some Tokenizers don't emit the unknown token no matter what the input is.
     # Check that the tokenizer fails the test, then mark it with xfail
@@ -79,6 +81,11 @@ def test_vocab_size(smile_tokenizer):
     # should be smaller (or equal if the model knows of all added tokens)
     # than the length of of the tokenizer
     assert smile_tokenizer.vocab_size <= len(smile_tokenizer)
+
+
+def test_character_tokenzier():
+    tok = load_tokenizer("character")
+    check_encoding(tok, STANDARD_SMILES)
 
 
 def test_pretrained_smirk():
@@ -149,4 +156,5 @@ def test_spe_setup():
     vocab = tokenizer.get_vocab()
     assert "xxfake" not in vocab
     assert "[BOS]" in vocab
+    assert "[N+]" in vocab
     assert "[N+]" in vocab

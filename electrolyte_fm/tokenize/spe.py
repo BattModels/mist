@@ -35,18 +35,16 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
     def __len__(self) -> int:
         return len(self._vocab)
 
-    def tokenize(self, smile):
-        return [
-            self._convert_token_to_id(tok)
-            for tok in self._tokenizer.tokenize(smile).split(" ")
-        ]
+    def tokenize(self, smile: str) -> list[str]:
+        code = self(smile)["input_ids"]
+        return [self._convert_id_to_token(id) for id in code]
 
-    def _convert_token_to_id(self, token: str):
+    def _convert_token_to_id(self, token: str) -> int:
         vocab = self.get_vocab()
         try:
             return vocab[token]
         except KeyError:
-            return vocab[self.unk_token]
+            return self.unk_token_id
 
     def convert_tokens_to_ids(self, tokens: str | list[str]):
         if isinstance(tokens, list):
@@ -60,15 +58,19 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
     def _batch_encode_plus(
         self, batch_text_or_text_pairs: list[str], **kwargs
     ) -> BatchEncoding:
-        encoding = [self.tokenize(x) for x in batch_text_or_text_pairs]
+        encoding = [self._encode_plus(x) for x in batch_text_or_text_pairs]
         return BatchEncoding(
-            data={"input_ids": encoding},
+            data={"input_ids": [x["input_ids"] for x in encoding]},
             n_sequences=len(encoding),
         )
 
     def _encode_plus(self, text: str, **kwargs):
+        input_ids = [
+            self._convert_token_to_id(token)
+            for token in self._tokenizer.tokenize(text).split(" ")
+        ]
         return BatchEncoding(
-            data={"input_ids": self.tokenize(text)},
+            data={"input_ids": input_ids},
             n_sequences=1,
         )
 

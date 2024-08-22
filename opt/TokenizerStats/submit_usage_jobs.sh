@@ -3,6 +3,7 @@ set -e
 
 export TOKENIZERS="
 smirk
+character
 ibm/MoLFormer-XL-both-10pct-oov
 SmilesPE/SPE_ChEMBL
 devalab/molgpt-moses
@@ -43,8 +44,8 @@ fi
 # Submit jobs for each tokenizer + dataset
 set -x
 for tok in $TOKENIZERS; do
-    sbatch --time 2-0:0:0 -n 64 ./submit_tok_stats.sh /nfs/turbo/coe-venkvis/mist/realspace_v4_dev $tok
+    sbatch --time 2-0:0:0 -n 64 ./submit_tok_stats.sh usage /nfs/turbo/coe-venkvis/mist/realspace_v4_dev $tok
     for dataset in qm8 qm9 esol freesolv lipo muv hiv bace bbbp tox21 toxcast sider clintox; do
-        sbatch -n 1 ./submit_tok_stats.sh $dataset $tok
+        sbatch -n 1 ./submit_tok_stats.sh usage $dataset $tok
     done
 done

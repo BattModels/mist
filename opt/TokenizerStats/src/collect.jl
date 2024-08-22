@@ -53,6 +53,13 @@ function setup_dm_mpi(dm::Py, split::AbstractString; rank::Int=0, size::Int=1)
     return split_dataset_by_node(ds, rank, size)
 end
 
+function evaluate_unknown(dataset::Py, ref_tokenizer::Py, ngram::NGramModel)
+    for example in dataset
+        code = pyconvert(Vector{Int}, example["input_ids"])
+        smi = pyconvert(String, example["smiles"])
+    end
+end
+
 function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="")
     # Setup mpi
     MPI.Init()
@@ -66,7 +73,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     tokenizer_info = (;
         name=tokenizer_name,
         vocab_size=pyconvert(Int, tokenizer.vocab_size),
-        unk_token_id=pyconvert(Int, tokenizer.unk_token_id),
+        unk_token_id=pyconvert(Union{Int, Nothing}, tokenizer.unk_token_id),
     )
     local_stats = tracked_stats()
     ds = setup_dm_mpi(datamodule, "train"; rank, size)
@@ -133,4 +140,55 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     MPI.Barrier(comm)
     MPI.Finalize()
     return 0
+end
+
+function avg_information_loss(datamodule::Py, ref_file::String, outdir::String)
+    # Init MPI
+    MPI.Init()
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+    size = MPI.Comm_size(comm)
+
+    # Load Reference Tokenizer / n-gram model
+    ref = BSON.load(ref_file)
+    ref_name = ref[:tokenizer][:name]
+    ngram = TokenizerStats.NGramModel(ref[:ngrams], ref[:tokenizer][:vocab_size])
+    ref_tok = load_tokenizer(ref_name)
+    rank == 0 && @info "Loaded n-gram model for $ref_name from $ref_file"
+
+    ds = setup_dm_mpi(datamodule, "val"; rank, size)
+    unk_token_id = pyconvert(Int, datamodule.tokenizer.unk_token_id)
+    stats = map(1:length(ngram)) do _
+        OnlineStats.Series(;
+            moments=OnlineStats.Moments(),
+            extrema=Extrema(),
+        )
+    end |> OnlineStats.Group
+    info_loss = zeros(length(ngram))
+
+    @info "rank $rank: started processing"
+    for encoding in ds
+        for N in 1:length(ngram)
+            info_loss[N] += information_loss(ngram, ref_tok, encoding, unk_token_id; N)
+        end
+        fit!(stats, (info_loss))
+    end
+    stats = leader_reduce(merge!, stats)
+    if rank == 0
+        tok = datamodule.tokenizer
+        stats = (;
+            tokenizer=(;
+                vocab_size=pyconvert(Int, tok.vocab_size),
+                unk_token_id=pyconvert(Union{Int, Nothing}, tok.unk_token_id),
+            ),
+            ref_tokenizer=ref[:tokenizer],
+            samples=nobs(stats),
+            map(value, stats)...
+        )
+        BSON.bson(joinpath(outdir,"info_loss.bson"); stats...)
+    end
+
+    MPI.Barrier()
+    MPI.Finalize()
+    return nothing
 end

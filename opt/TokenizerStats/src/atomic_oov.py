@@ -152,8 +152,7 @@ def fullerene():
 
 def tokenize(tok: PreTrainedTokenizerBase, batch):
     out = tok(batch["text"])
-    out["decode"] = tok.batch_decode(
-        out["input_ids"], skip_special_tokens=True)
+    out["decode"] = tok.batch_decode(out["input_ids"], skip_special_tokens=True)
     out["text"] = batch
     return {"oov": [o != i for o, i in zip(out["decode"], batch["text"])]}
 

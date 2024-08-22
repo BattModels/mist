@@ -46,6 +46,7 @@ class MolNetDataModule(pl.LightningDataModule):
         target_columns: list[str] = ["Class"],
         strip_unk_tokens: bool = False,
         val_batch_size: Optional[int] = None,
+        include_smiles=True,
     ):
         super().__init__()
 
@@ -54,6 +55,7 @@ class MolNetDataModule(pl.LightningDataModule):
         self.tokenizer = load_tokenizer(tokenizer)
         self.vocab_size = len(self.tokenizer)
         self.split = split
+        self.include_smiles = include_smiles
 
         # Set smi_column
         if smi_column is None and name == "bace":
@@ -148,8 +150,16 @@ class MolNetDataModule(pl.LightningDataModule):
             self.tokenizer,
             batched=True,
             input_columns=self.smi_column,
-            remove_columns=self.smi_column,
+            fn_kwargs={
+                "return_offsets_mapping": self.tokenizer.is_fast and self.include_smiles
+            },
         )
+
+        # Optionally include a smiles column
+        if self.include_smiles:
+            ds.remove_columns(self.smi_column)
+        else:
+            ds.rename_column(self.smi_column, "smiles")
 
         self.train_dataset: Dataset = maybe_shard_dataset(
             self.trainer, ds["train"].shuffle(seed=42)
