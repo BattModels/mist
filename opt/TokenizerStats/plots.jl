@@ -6,6 +6,8 @@ using StatsBase: StatsBase, Histogram, fit, AbstractWeights
 using JSON
 using BSON
 using DataFrames
+using CategoricalArrays: categorical, levelcode, levels
+
 
 const GIT_ROOT = strip(read(`git rev-parse --show-toplevel`, String))
 
@@ -285,6 +287,52 @@ function figure_equal_odds()
     sort!(equal_odds_diff, [:dataset, :tokenizer, :split])
     equal_odds_diff
 
+end
+
+function figure_ngram_fits(df)
+    df = subset(df, :dataset => ByRow(==("realspace_v4_dev")))
+    pos = Int[]
+    group = Int[]
+    log_prob = Float64[]
+    ngram_cols = filter(n -> endswith(string(n), "log_odds"), propertynames(df))
+    df = stack(df, ngram_cols; variable_name=:ngram, value_name=:log_odds)
+    df.tokenizer = categorical(df.tokenizer)
+
+    ngrams = levels(df.ngram)
+    log_odds = df.log_odds
+    tokenizer = levels(df.tokenizer)
+    df.ngram = replace(df.ngram,
+        "unigram_log_odds" => 1,
+        "bigram_log_odds" => 2,
+        "trigram_log_odds" => 3,
+        "quadgram_log_odds" => 4,
+        "pentagram_log_odds" => 5,
+    ) .|> Int
+
+    f = Figure()
+    ax = Axis(f[1,1])
+    h = barplot!(ax, levelcode.(df.tokenizer), df.log_odds;
+        dodge=df.ngram,
+        color=df.ngram,
+        colormap=:Set2_5,
+    )
+    ax.xticks = (1:length(tokenizer), tokenizer)
+    ax.xticklabelrotation = 0.4
+
+    ds_elements = map(1:length(ngrams)) do gdx
+        PolyElement(polycolor=gdx,
+            colormap=h.colormap,
+            colorrange=(1, 5),
+        )
+    end
+    Legend(f[1,2], ds_elements, ["unigram", "bigram", "trigram", "4-gram", "5-gram"];
+        tellheight=true, tellwidth=true, orientation=:vertical,
+        nbanks=1, labelsize=10, patchsize=(10,10), rowgap=3, colgap=4,
+        framevisible=false,
+        patchstrokecolor=:black, patchstrokewidth=1,
+    )
+
+    return f
 end
 
 function figure_info_loss()

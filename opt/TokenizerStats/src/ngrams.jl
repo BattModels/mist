@@ -210,7 +210,7 @@ end
 
 function ngram_perf()
     rows = []
-    stats_dir = joinpath(@__DIR__, "..", "stats-2")
+    stats_dir = joinpath(@__DIR__, "..", "stats")
     for file in find(stats_dir, r".*\.bson")
         data = BSON.load(file)
         file = relpath(file, stats_dir)
