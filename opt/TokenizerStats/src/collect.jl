@@ -72,7 +72,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     tokenizer = datamodule.tokenizer
     tokenizer_info = (;
         name=tokenizer_name,
-        vocab_size=pyconvert(Int, tokenizer.vocab_size),
+        vocab_size=pyconvert(Int, length(tokenizer)),
         unk_token_id=pyconvert(Union{Int, Nothing}, tokenizer.unk_token_id),
     )
     local_stats = tracked_stats()
@@ -141,8 +141,6 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     return 0
 end
 
-slug(file) = bytes2hex(SHA.sha256(read(file)))
-
 function model_loss(datamodule::Py, ref_file::String, output::String)
     # Init MPI
     MPI.Init()
@@ -152,19 +150,15 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
     @info "Rank $rank of $size is starting"
 
     # Load Reference Tokenizer / n-gram model
-    ref = BSON.load(ref_file)
-    ref_name = ref[:tokenizer][:name]
-    ngram = TokenizerStats.NGramModel(ref[:ngrams], ref[:tokenizer][:vocab_size])
-    ref_tok = load_tokenizer(ref_name)
+    ngram, ref_tok, ref_info = load_ngram_model(ref_file)
     rank == 0 && @info "Loaded n-gram model for $ref_name from $ref_file"
 
     fit_stats = Dict{Symbol, NamedTuple}(
         :tokenizer => (;
-            vocab_size=pyconvert(Int, tok.vocab_size),
+            vocab_size=pyconvert(Int, len(tok)),
             unk_token_id=pyconvert(Union{Int, Nothing}, tok.unk_token_id),
         ),
-        :ref_tokenizer => ref[:tokenizer],
-        :ref_sha256 => slug(ref_file),
+        ref_tokenizer=ref_info,
     )
 
     for split in ["train", "val"]
@@ -212,11 +206,8 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
     @info "Rank $rank of $size is starting"
 
     # Load Reference Tokenizer / n-gram model
-    ref = BSON.load(ref_file)
-    ref_name = ref[:tokenizer][:name]
-    ngram = TokenizerStats.NGramModel(ref[:ngrams], ref[:tokenizer][:vocab_size])
-    ref_tok = load_tokenizer(ref_name)
-    rank == 0 && @info "Loaded n-gram model for $ref_name from $ref_file"
+    ngram, ref_tok, ref_info = load_ngram_model(ref_file)
+    rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file"
 
     ds = setup_dm_mpi(datamodule, "val"; rank, size)
     unk_token_id = pyconvert(Int, datamodule.tokenizer.unk_token_id)
@@ -241,11 +232,10 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
         tok = datamodule.tokenizer
         stats = (;
             tokenizer=(;
-                vocab_size=pyconvert(Int, tok.vocab_size),
+                vocab_size=pyconvert(Int, length(tok)),
                 unk_token_id=pyconvert(Union{Int, Nothing}, tok.unk_token_id),
             ),
-            ref_tokenizer=ref[:tokenizer],
-            ref_sha256 = slug(ref_file),
+            ref_tokenizer=ref_info,
             samples=nobs(stats),
             info_loss=map(value, stats),
         )

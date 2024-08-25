@@ -12,6 +12,7 @@ using BSON: BSON
 using JSON: JSON
 using SHA: SHA
 using SparseArrays: sparse
+using Intervals: Intervals, Interval
 
 function find(dir, pattern)
     found = String[]

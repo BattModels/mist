@@ -335,44 +335,71 @@ function figure_ngram_fits(df)
     return f
 end
 
-function figure_info_loss()
-    smi = "CCN(CC)C(=O)[C@H]1CN([C@@H]2Cc3c[nH]c4c3c(ccc4)C2=C1)C"
-    r = BSON.load("stats/ibm/MoLFormer-XL-both-10pct-oov/realspace_v4_dev.bson")
-    # r = BSON.load("stats/smirk/realspace_v4_dev.bson")
-    ngram = TokenizerStats.NGramModel(r[:ngrams], r[:tokenizer][:vocab_size])
-    tok = TokenizerStats.load_tokenizer(r[:tokenizer][:name])
-    vocab = pyconvert(Dict{String, Int}, tok.get_vocab())
-    tokens = first.(sort(collect(pairs(vocab)); by=x-> x[2]))
-
+function figure_log_prob(file,
+    smi = "CCN(CC)C(=O)[51C@H]1CN([C@@H]2Cc3c[nH]c4c3c(ccc4)C2=C1)C",
+)
+    ngram, tok, info = TokenizerStats.load_ngram_model(file)
     code = pyconvert(Vector{Int}, tok(smi)["input_ids"])
-    smi_tokens = pyconvert(Vector{String}, tok.tokenize(smi))
-    if length(code) == (length(smi_tokens) + 2)
-        code = code[2:end-1]
-    end
-    mask = falses(length(code))
-    mask[13] = true
-    # mask[13:17] .= true
+    P = TokenizerStats.fb_log_proability(ngram, code)
+    mP = maximum(abs, P)
+    heatmap(P; colormap=:vik, colorrange=(-mP, mP))
+end
 
-    i, P, Q = TokenizerStats.information_loss(ngram, code, mask)
-    @info i
+function figure_info_loss(ref_file,
+    # tok="ibm/MoLFormer-XL-both-10pct-oov",
+    tok="devalab/molgpt-moses",
+    smi = "CCN(CC)C(=O)[51C@H]1CN([C@@H]2Cc3c[nH]c4c3c(ccc4)C2=C1)C",
+)
 
-    f = Figure(size=(600, 600))
-    ax_p = Axis(f[1, 1], title="Unmasked", xlabel="Tokens Ids",
-        # limits=((1, 100), nothing),
-        yticks=(1:length(code), smi_tokens),
+    # Load model
+    ngram, ref_tok, ref_info = TokenizerStats.load_ngram_model(ref_file)
+    tok = TokenizerStats.load_tokenizer(tok)
+
+    # Tokens to mask
+    masked_tokens = pyconvert(Int, tok.unk_token_id)
+    smi_mask = pyconvert(String, tok.decode(masked_tokens))
+
+    overlap, ref_tokens, tokens = TokenizerStats.token_overlap(smi, ref_tok, tok)
+    baseline_masked = map(∈(masked_tokens), tokens)
+    masked = vec(any(overlap[:, baseline_masked]; dims=2))
+
+    f = Figure(size=(650, 550))
+    smi_tokens = pyconvert(Vector{String}, ref_tok.tokenize(smi))
+
+    # Get Ref vocab
+    vocab = pyconvert(Dict{String, Int}, ref_tok.get_vocab(add_special_tokens=false))
+    ref_vocab = first.(sort(collect(pairs(vocab)); by=x-> x[2]))
+    p = sortperm(ref_vocab)
+
+    # Compute information loss
+    i, P, Q = TokenizerStats.information_loss(ngram, ref_tokens, masked; N=2)
+    i_round = round(i; sigdigits=3)
+    # Reorder tokens
+    p = sortperm(ref_vocab)
+    permute!(ref_vocab, p)
+    Δℓ = P - Q
+    Δℓ = Base.permutecols!!(Δℓ', p)'
+    @assert size(Δℓ, 1) == length(ref_vocab)
+    @assert size(Δℓ, 2) == length(smi_tokens)
+
+    ax = Axis(f[1, 1], title="Information Loss of $(i_round) nats for $smi_mask",
+        xlabel="5-gram Predicted Tokens",
+        ylabel="Input SMILE String",
+        xticks=(1:length(ref_vocab), ref_vocab),
+        yticks=(1:length(smi_tokens), smi_tokens),
         yticksvisible=false,
-        yticklabelsize=8,
-        # xticks=(1:length(tokens), tokens),
-        # xticksvisible=false,
-        # xticklabelsize=5,
-        # xticklabelrotation=-pi/2,
+        yticklabelsize=7,
+        xticksvisible=false,
+        xticklabelsize=7,
+        xticklabelrotation=-pi/2,
     )
-    ax_q = Axis(f[1, 2], title="Masked", xlabel="Token Ids",
-        # limits=((1, 100), nothing)
+    max_change = maximum(abs, Δℓ)
+    h = heatmap!(ax, Δℓ;
+        colormap=:vik,
+        colorrange=(-max_change, max_change),
     )
-    heatmap!(ax_p, P)
-    heatmap!(ax_q, Q)
-    hideydecorations!(ax_q)
+    Colorbar(f[1,2], h; label=L"$\Delta\ell$ [nats]")
     colgap!(f.layout, 5)
+    resize_to_layout!(f)
     return f
 end

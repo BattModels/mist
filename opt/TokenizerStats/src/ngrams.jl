@@ -15,70 +15,104 @@ end
 Base.length(sw::SlidingWindow{N}) where {N} = length(sw.data) - N + 1
 Base.eltype(sw::SlidingWindow{N, T}) where {N, T} = NTuple{N, T}
 
-function transition(bigrams::AbstractDict, vocab_size=0)
-    I = first.(keys(bigrams))
-    J = last.(keys(bigrams))
-    V = collect(values(bigrams))
-    vocab_size = vocab_size > 0 ? vocab_size : max(maximum(I), maximum(J))
-    s = sparse(I .+ 1, J .+ 1, V, vocab_size + 1, vocab_size + 1)
-    # s ./= sum(s; dims=2)
-
-    w = vec(sum(s; dims=1)) .+ vec(sum(s; dims=2))
-    p = sortperm(w; rev=true)
-    permute!(s, p, p)
-    return s
-end
-
 struct NGramModel{N, G}
-    ngrams::G
-    total::NTuple{N, Int}
+    total::Int
     vocab_size::Int
+    ngrams::G
+    special_tokens::Vector{Int}
 end
 
 Base.length(m::NGramModel{N}) where {N} = N
+
+""" Iterator of all token ids (including special) for the model"""
 token_ids(m::NGramModel) = range(0; length=m.vocab_size)
 
-function ngram_counts(dist::AbstractDict{<:Union{Int, NTuple}, Int})
+"""Vocab size, less special tokens"""
+nonspecial_vocab_size(m::NGramModel) = length(token_ids(m)) - length(m.special_tokens)
+
+function NGramModel(tokenizer::Py, ngrams::Tuple)
+    vocab_size = pyconvert(Int, length(tokenizer))
+    special_tokens = pyconvert(Vector{Int}, tokenizer.all_special_ids)
+    unk_token = pyconvert(Union{Nothing, String}, tokenizer.unk_token)
+    !isnothing(unk_token) && setdiff!(special_tokens, unk_token)
+    return NGramModel(ngrams, vocab_size; special_tokens)
+end
+
+function NGramModel(ngrams::Union{Tuple, Vector}, vocab_size::Int; special_tokens::Vector{Int}=Int[])
+    total = sum(values(first(ngrams)); init=0)
+    ngrams = ntuple(i -> ngram_counts(ngrams[i], vocab_size), length(ngrams))
+    N = length(ngrams)
+    G = typeof(ngrams)
+    return NGramModel{N,G}(total, vocab_size, ngrams, special_tokens)
+end
+
+function load_ngram_model(file::String)
+    ref = BSON.load(file)
+    name = ref[:tokenizer][:name]
+    tok = load_tokenizer(name)
+    vocab_size = pyconvert(Int, length(tok))
+    ngram = NGramModel(tok, ref[:ngrams])
+    info =(;
+        name=ref[:tokenizer][:name],
+        unk_token_id=ref[:tokenizer][:unk_token_id],
+        vocab_size,
+        sha256=bytes2hex(SHA.sha256(read(file)))
+    )
+    return ngram, tok, info
+end
+
+function ngram_counts(dist::AbstractDict{<:Union{Int, NTuple}, Int}, vocab_size::Int)
     n = length(first(keys(dist)))
     K = NTuple{n, Int}
     grams = keytype(dist) <: NTuple ? keys(dist) : Iterators.map(tuple, keys(dist))
+    for gram in grams
+        @assert all(t -> 0 <= t < vocab_size, gram) "Expected all counts to be ∈ [0, vocab_size)"
+    end
     return Dict{K, Int}(zip(grams, values(dist)))
 end
 
-function NGramModel(ngrams, vocab_size::Int)
-    ngrams = map(ngram_counts, ngrams)
-    totals = map(g -> sum(values(g); init=0), ngrams)
-    return NGramModel(ngrams, totals, vocab_size)
-end
 
+""" Return the conditional n-gram `(..., x_i-1)` for the given n-gram `(..., x_i)`"""
 condgram(gram::NTuple{N, Int}) where {N} = reverse(Base.tail(reverse(gram)))
 condgram(code::Vector{Int}, edx::Int, length::Int) = ngram(code, edx-1, length-1)
 
+""" Return the n-gram starting at `edx` of at most `length` """
 ngram(code::Vector{Int}, edx::Int, length::Int) = ngram(code, range(; stop=edx, length))
 function ngram(code::Vector{Int}, indices::UnitRange)
     indices = filter(in(eachindex(code)), indices)
     return ntuple(i -> code[indices[i]], length(indices))
 end
 
+"""
+    c, m = gram_odds(m::NGramModel, gram::NTuple{N, Int})
+
+The observed `c` and marginal `m` counts for the n-gram `gram`.
+No smoothing is applied
+"""
 function gram_odds(model::NGramModel, gram::NTuple{N, Int}) where {N}
     @assert 1 <= N <= length(model)
-    counts = get(model.ngrams[N], gram, 0) + 1
-    if N == 1
-        n = first(model.total) + model.vocab_size
-        return counts, n
-    end
-    marginal = get(model.ngrams[N-1], condgram(gram), 0) + model.vocab_size
+    counts = get(model.ngrams[N], gram, 0)
+    marginal = N == 1 ? model.total : get(model.ngrams[N-1], condgram(gram), 0)
     return counts, marginal
 end
 
 function log_probability(model::NGramModel, gram::NTuple{N, Int}) where {N}
     c, n = gram_odds(model, gram)
-    return log(c) - log(n)
+    ln_c = any(∈(model.special_tokens), gram) ? log(c) : log1p(c)
+    ln_n = log_smoothed_counts(n, 1, nonspecial_vocab_size(model))
+    return ln_c - ln_n
+end
+
+function log_odds(model::NGramModel, gram::NTuple{N, Int}) where {N}
+    c, n = gram_odds(model, gram)
+    ln_c = any(∈(model.special_tokens), gram) ? log(c) : log1p(c)
+    return ln_c - log_smoothed_counts(n - c, 1, nonspecial_vocab_size(model))
 end
 
 function autoregressive_kld(model::NGramModel, code::Vector{Int}; N=length(model))
-    counts = 0
-    marginal = 0
+    @assert !any(∈(model.special_tokens), code)
+    counts = length(code)
+    marginal = length(code) * nonspecial_vocab_size(model)
     for i in 1:length(code)
         c, m = gram_odds(model, ngram(code, i, N))
         counts += c
@@ -87,7 +121,7 @@ function autoregressive_kld(model::NGramModel, code::Vector{Int}; N=length(model
     return log(counts) - log(marginal)
 end
 
-function fb_log_proability(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
+function fb_log_probability(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     fc, fm, fmasked = forward_odds(m, code; mask, N)
     bc, bm, bmasked = backward_odds(m, code; mask, N)
 
@@ -95,20 +129,22 @@ function fb_log_proability(m::NGramModel, code::Vector; mask::Int=-100, N=length
     counts = fc .+ bc
     marginal = fm .+ bm
     masked = fmasked .+ bmasked
-
-    # Add marginal counts for first/last tokens (unigrams)
-    marginal[1] += m.total[1]
-    marginal[end] += m.total[1]
+    @assert all(vec(sum(counts; dims=1)) .== marginal)
 
     # Add smoothed counts
     ell = Matrix{Float64}(undef, m.vocab_size, length(code))
-    V = m.vocab_size
+    V = nonspecial_vocab_size(m)
     for i in 1:length(code)
         n_masked = masked[i]
         denom = log_smoothed_counts(marginal[i], n_masked + 1, V)
-        for j in 1:V
-            num = log_smoothed_counts(counts[j, i], n_masked, V)
-            ell[j,i] = num - denom
+        for j in axes(ell, 1)
+            if (j - 1) in m.special_tokens
+                @assert counts[j, i] == 0
+                ell[j, i] = -Inf
+            else
+                num = log_smoothed_counts(counts[j, i], n_masked, V)
+                ell[j,i] = num - denom
+            end
         end
     end
     return ell
@@ -131,33 +167,35 @@ end
 
 function forward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
-    marginal = Vector{UInt64}(undef, length(code))
-    masked_counts = Vector{Int}(undef, length(code))
+    marginal = zeros(Int, length(code))
+    n_masked = Vector{Int}(undef, length(code))
     for i in 1:length(code)
         cgram = condgram(code, i, N)
-        marginal[i] = masked_counts_unsmoothed(m, cgram, mask)
-        masked_counts[i] = count(==(mask), cgram)
+        n_masked[i] = count(==(mask), cgram)
         for (j, token) in enumerate(token_ids(m))
-            counts[j,i] = masked_counts_unsmoothed(m, (cgram..., token), mask)
+            c = masked_counts(m, (cgram..., token), mask)
+            counts[j,i] = c
+            marginal[i] += c
         end
     end
-    return counts, marginal, masked_counts
+    return counts, marginal, n_masked
 end
 
 function backward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     code = reverse(code)
     counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
-    marginal = Vector{UInt64}(undef, length(code))
-    masked_counts = Vector{Int}(undef, length(code))
+    marginal = zeros(Int, length(code))
+    n_masked = Vector{Int}(undef, length(code))
     for (i, ri) in enumerate(range(length(code), 1; step=-1))
         cgram = reverse(condgram(code, i, N))
-        marginal[ri] = masked_counts_unsmoothed(m, cgram, mask)
-        masked_counts[ri] = count(==(mask), cgram)
+        n_masked[ri] = count(==(mask), cgram)
         for (j, token) in enumerate(token_ids(m))
-            counts[j,ri] = masked_counts_unsmoothed(m, (token, cgram...), mask)
+            c = masked_counts(m, (token, cgram...), mask)
+            counts[j,ri] = c
+            marginal[ri] += c
         end
     end
-    return counts, marginal, masked_counts
+    return counts, marginal, n_masked
 end
 
 
@@ -171,23 +209,17 @@ function information_loss(m::NGramModel, code::Vector{Int}, mask::Union{BitVecto
     mask_value = -100
     masked_code = copy(code)
     masked_code[mask] .= mask_value
-    P = fb_log_proability(m, code; N)
-    Q = fb_log_proability(m, masked_code; N)
+    P = fb_log_probability(m, code; N)
+    Q = fb_log_probability(m, masked_code; N)
     for idx in eachindex(P)
         loss += exp(P[idx]) * (P[idx] - Q[idx])
     end
     return loss, P, Q
 end
 
-function masked_counts_unsmoothed(m::NGramModel, gram::NTuple{N, Int}, mask::Int) where {N}
-    # If gram is unmasked, likelihood is based on counts
-    N == 0 && return 0
-    mask ∉ gram && return first(gram_odds(m, gram)) - 1
-    return masked_counts(m, gram, mask)
-end
-
 function masked_counts(m::NGramModel, gram::NTuple{N, Int}, mask::Int) where {N}
-    @assert 1 <= N <= length(m)
+    N == 0 && return 0
+    mask ∉ gram && return first(gram_odds(m, gram))
     counts = 0
     for (candidate, c) in m.ngrams[N]
         if masked_match(gram, candidate; mask)
@@ -248,3 +280,42 @@ function information_loss(m::NGramModel, ref_tokenizer::Py, encoding::Py, unk_to
     end
     return information_loss(m, ref_code, is_unknown; kwargs...)
 end
+
+token_overlap(a, b) = token_overlap(tokens_and_offset(a), tokens_and_offset(b))
+
+function tokens_and_offset(emb::Py)
+    tokens = pyconvert(Vector{Int}, emb["input_ids"])
+    offsets = pyconvert(Vector{NTuple{2, Int}}, emb["offset_mapping"])
+    offsets = Iterators.map(o -> (o[1]+1, o[2]), offsets) # covert to closed intervals
+    o = Iterators.filter(x -> x[2][2] >= x[2][1], zip(tokens, offsets))
+    tokens = first.(o)
+    offsets = last.(o)
+    return (; tokens, offsets)
+end
+
+function token_overlap(a::NamedTuple, b::NamedTuple)
+    overlap = Matrix{Bool}(undef, length(a.tokens), length(b.tokens))
+    I = Int[]
+    J = Int[]
+    V = Bool[]
+    for (i, ao) in enumerate(a.offsets)
+        for (j, bo) in enumerate(b.offsets)
+            a_less_b = ao[1] < bo[1] && ao[2] < bo[1]
+            b_less_a = bo[1] < ao[1] && bo[2] < ao[1]
+            if !a_less_b && !b_less_a
+                push!(I, i)
+                push!(J, j)
+                push!(V, true)
+            end
+        end
+    end
+    return sparse(I, J, V), a.tokens, b.tokens
+end
+
+function token_overlap(text::String, tok_a::Py, tok_b::Py)
+    emb_a = tok_a(text, return_offsets_mapping=true)
+    emb_b = tok_b(text, return_offsets_mapping=true)
+    return token_overlap(emb_a, emb_b)
+end
+
+

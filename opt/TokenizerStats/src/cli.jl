@@ -61,7 +61,8 @@ function main(args::Vector{String})
             required = true
     end
 
-    args = parse_args(s)
+    args = parse_args(args, s)
+    isnothing(args) && return 0
     args_cmd = args[args["%COMMAND%"]]
 
     # Run command
