@@ -202,11 +202,12 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
             ")",
             "[",
             "]",
+            "[UNK]",
         }
         alphabet |= set(string.ascii_letters)
         alphabet |= set(string.digits)
 
-        tok = Tokenizer(WordLevel({c: id for id, c in enumerate(alphabet)}))
+        tok = Tokenizer(WordLevel({c: id for id, c in enumerate(alphabet)}, "[UNK]"))
         tok.normalizer = Strip()
         tok.pre_tokenizer = Split(Regex("."), "isolated")
         tok.decoder = ByteLevel()

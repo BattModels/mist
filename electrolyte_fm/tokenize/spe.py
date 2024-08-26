@@ -4,14 +4,13 @@ from pathlib import Path
 from typing import List, Union
 import pickle
 import shutil
-import urllib.request
 from zipfile import ZipFile
 
 from SmilesPE.tokenizer import SPE_Tokenizer
 from transformers import PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 
-from ..utils import cached_download
+from ..utils.cache import cached_download
 
 
 class PreTrainedSPETokenizer(PreTrainedTokenizerBase):

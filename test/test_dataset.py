@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from pytorch_lightning import Trainer, LightningDataModule
 from electrolyte_fm.data_modules import RobertaDataSet, PropertyPredictionDataModule
-from electrolyte_fm.data_modules.property_prediction_dataset import strip_unk_tokens
+from electrolyte_fm.data_modules.molnet_dataset import strip_unk_tokens
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 
