@@ -53,13 +53,6 @@ function setup_dm_mpi(dm::Py, split::AbstractString; rank::Int=0, size::Int=1)
     return split_dataset_by_node(ds, rank, size)
 end
 
-function evaluate_unknown(dataset::Py, ref_tokenizer::Py, ngram::NGramModel)
-    for example in dataset
-        code = pyconvert(Vector{Int}, example["input_ids"])
-        smi = pyconvert(String, example["smiles"])
-    end
-end
-
 function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="")
     # Setup mpi
     MPI.Init()
@@ -206,11 +199,12 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
     @info "Rank $rank of $size is starting"
 
     # Load Reference Tokenizer / n-gram model
+    tokenizer = datamodule.tokenizer
     ngram, ref_tok, ref_info = load_ngram_model(ref_file)
     rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file"
+    @assert ref_info.name == "character"
 
-    ds = setup_dm_mpi(datamodule, "val"; rank, size)
-    unk_token_id = pyconvert(Int, datamodule.tokenizer.unk_token_id)
+    # Stats to track
     stats = map(1:length(ngram)) do _
         OnlineStats.Series(;
             moments=OnlineStats.Moments(),
@@ -221,9 +215,7 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
 
     @info "rank $rank: started processing"
     for encoding in ds
-        for N in 1:length(ngram)
-            info_loss[N] += information_loss(ngram, ref_tok, encoding, unk_token_id; N)[1]
-        end
+        info_loss = unk_information_loss(ngram, ref_tok, encoding, tokenizer, encoding)
         fit!(stats, (info_loss))
     end
     stats = leader_reduce(merge!, stats)

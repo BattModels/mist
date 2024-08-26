@@ -21,9 +21,9 @@ using OnlineStats
 export randngram
 
 # Build random n-gram counts
-function randngram(N=3)
+function randngram(N=3; vocab_size=9)
     stats = map(n -> CountMap(NTuple{n, Int}), 1:N)
-    corpus = rand(0:8, 8, 32)
+    corpus = rand(range(0; length=vocab_size), 8, 32)
     for i in axes(corpus, 2)
         for (n, s) in enumerate(stats)
             fit!(s, SlidingWindow(corpus[:, i], n))
@@ -139,4 +139,62 @@ end
         @test i == 0
         @test P == Q
     end
+end
+
+@testitem "autoregressive_kld" setup=[NGramModelSetup] begin
+    using TokenizerStats: NGramModel, autoregressive_kld
+    m = NGramModel(randngram(), 9)
+    code = rand(1:8, 32)
+    loss = zeros(length(m))
+    for N in 1:length(m)
+        loss[N] = autoregressive_kld(m, code; N)
+    end
+    @test all(<(0), loss)
+end
+
+@testitem "unk token information loss" setup=[NGramModelSetup] begin
+    using PythonCall: pyconvert
+    using TokenizerStats: NGramModel, load_tokenizer, unk_information_loss
+
+    # Create a random reference ngram for the character tokenizer
+    ref_tok = load_tokenizer("character")
+    vocab_size = pyconvert(Int, length(ref_tok)) + 1 - length(ref_tok.all_special_tokens)
+    ngram_counts = randngram(5; vocab_size)
+    ngram = NGramModel(ref_tok, ngram_counts)
+
+    # Use Molformer with a smiles that will have OOVs (rings)
+    tok = load_tokenizer("ibm/MoLFormer-XL-both-10pct-oov")
+    smi = "CC(=O)NCCC%01=CNC2=C%01C=C(C=C2)OC"
+    emb = tok(smi)
+    emb["smiles"] = smi
+    loss = unk_information_loss(ngram, ref_tok, tok, emb)
+    @test all(>=(0), loss) && all(isfinite, loss)
+    @test loss isa Vector{Float64} && length(loss) == 5 == length(ngram)
+end
+
+@testitem "align_deletions" begin
+    using TokenizerStats: align_unknown
+    using SparseArrays: sparse, I
+
+    function check_commutative(a, b)
+        out = align_unknown(a, b)
+        a == b && @test out == I
+        @test out == align_unknown(b, a)'
+        return out
+    end
+
+    @testset "single-char" begin
+        check_commutative(["c", "a", "t"], ["c", "a", "t"])
+        @test sparse([1, 2], [1, 2], ones(Int, 2), 3, 3) == check_commutative(["c", "a", "[UNK]"], ["c", "a", "t"])
+        @test sparse([2, 3], [2, 3], ones(Int, 2), 3, 3) == check_commutative(["<unk>", "a", "t"], ["c", "a", "t"])
+        out = check_commutative(["b", "a", "t", "t", "e", "r"], ["b", "a", "<unk>", "t", "e", "r"])
+        @test sparse([1, 2, 4, 5, 6], [1, 2, 4, 5, 6], ones(Int, 5), 6, 6) ==  out
+    end
+    @testset "multi-char" begin
+        check_commutative(["C", "Co", "C"], ["C", "Co", "C"])
+        check_commutative(["C", "C", "o", "C"], ["C", "Co", "C"])
+        out = check_commutative(["C", "C", "o", "C"], ["C", "<unk>", "C"])
+        @test out == sparse([1, 4], [1, 3], trues(2), 4, 3)
+    end
+
 end

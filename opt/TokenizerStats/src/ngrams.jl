@@ -30,11 +30,16 @@ token_ids(m::NGramModel) = range(0; length=m.vocab_size)
 """Vocab size, less special tokens"""
 nonspecial_vocab_size(m::NGramModel) = length(token_ids(m)) - length(m.special_tokens)
 
-function NGramModel(tokenizer::Py, ngrams::Tuple)
+function NGramModel(tokenizer::Py, ngrams::Union{Tuple, Vector})
     vocab_size = pyconvert(Int, length(tokenizer))
     special_tokens = pyconvert(Vector{Int}, tokenizer.all_special_ids)
-    unk_token = pyconvert(Union{Nothing, String}, tokenizer.unk_token)
-    !isnothing(unk_token) && setdiff!(special_tokens, unk_token)
+
+    # Don't remove in-use special tokens
+    unk_token_id = pyconvert(Union{Nothing, Int}, tokenizer.unk_token_id)
+    used_special = pyconvert(Vector{Int}, tokenizer("")["input_ids"])
+    !isnothing(unk_token_id) && setdiff!(special_tokens, unk_token_id)
+    setdiff!(special_tokens, used_special)
+
     return NGramModel(ngrams, vocab_size; special_tokens)
 end
 
@@ -212,6 +217,7 @@ function information_loss(m::NGramModel, code::Vector{Int}, mask::Union{BitVecto
     P = fb_log_probability(m, code; N)
     Q = fb_log_probability(m, masked_code; N)
     for idx in eachindex(P)
+        !isfinite(P[idx])  && continue
         loss += exp(P[idx]) * (P[idx] - Q[idx])
     end
     return loss, P, Q
@@ -265,57 +271,96 @@ function ngram_perf()
     return DataFrame(rows)
 end
 
-function information_loss(m::NGramModel, ref_tokenizer::Py, encoding::Py, unk_token_id::Int; kwargs...)
+"""
+Compute the information_loss from unknown tokens using a character-tokenizer as a reference
+"""
+function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram))
+    unk_token_id = pyconvert(Int, tok.unk_token_id)
     code = pyconvert(Vector{Int}, encoding["input_ids"])
-    offsets = pyconvert(Vector{NTuple{2, Int}}, encoding["offset_mapping"])
-    ref_emb = ref_tokenizer(encoding["smiles"]; return_offsets_mapping=true)
-    ref_offsets = pyconvert(Vector{NTuple{2, Int}}, ref_emb["offset_mapping"])
-    ref_code = pyconvert(Vector{Int}, ref_emb["input_ids"])
-    @assert all(x -> x[2] - x[1] == 1, ref_offsets)
-    is_unknown = falses(length(ref_code))
-    for (token, offset) in zip(code, offsets)
-        if token == unk_token_id
-            is_unknown[range(offset[1]+1, offset[2])] .= true
-        end
+    unk_token_id ∉ code && return 0
+
+    # Align both tokenizations
+    smi_tokens = pyconvert(Vector{String}, tok.tokenize(encoding["smiles"]))
+    ref_tokens = pyconvert(Vector{String}, ref_tok.tokenize(encoding["smiles"]))
+    A = align_unknown(ref_tokens, smi_tokens)
+
+    # Compute information_loss from unknown tokens
+    masked = vec(any(A[:, code .== unk_token_id]; dims=2))
+    ref_code = pyconvert(Vector{Int}, ref_tok(encoding["smiles"])["input_ids"])
+    return map(n -> first(information_loss(ngram, ref_code, masked; N=n)), N)
+end
+
+function _advance_idx(token::String, index::NamedTuple)
+    (; idx, char) = index
+    if char < lastindex(token)
+        char = nextind(token, char)
+    else
+        char = 1
+        idx += 1
     end
-    return information_loss(m, ref_code, is_unknown; kwargs...)
+    return (; idx, char)
 end
 
-token_overlap(a, b) = token_overlap(tokens_and_offset(a), tokens_and_offset(b))
+"""
+    A = align_unknown(a::Vector{String}, b::Vector{String})
 
-function tokens_and_offset(emb::Py)
-    tokens = pyconvert(Vector{Int}, emb["input_ids"])
-    offsets = pyconvert(Vector{NTuple{2, Int}}, emb["offset_mapping"])
-    offsets = Iterators.map(o -> (o[1]+1, o[2]), offsets) # covert to closed intervals
-    o = Iterators.filter(x -> x[2][2] >= x[2][1], zip(tokens, offsets))
-    tokens = first.(o)
-    offsets = last.(o)
-    return (; tokens, offsets)
-end
-
-function token_overlap(a::NamedTuple, b::NamedTuple)
-    overlap = Matrix{Bool}(undef, length(a.tokens), length(b.tokens))
+Computes the alignment `A` between two tokenizations of the same input string.
+The two tokenizations must be decode to the same string, barring deletions
+from unknown tokens. i.e. normalizations must be applied to both.
+"""
+function align_unknown(a::Vector{String}, b::Vector{String})
+    replace!(a, "<unk>" => "[UNK]")
+    replace!(b, "<unk>" => "[UNK]")
+    i = (; idx = firstindex(a), char = 1)
+    j = (; idx = firstindex(b), char = 1)
     I = Int[]
     J = Int[]
-    V = Bool[]
-    for (i, ao) in enumerate(a.offsets)
-        for (j, bo) in enumerate(b.offsets)
-            a_less_b = ao[1] < bo[1] && ao[2] < bo[1]
-            b_less_a = bo[1] < ao[1] && bo[2] < ao[1]
-            if !a_less_b && !b_less_a
-                push!(I, i)
-                push!(J, j)
-                push!(V, true)
+    is_unknown(x) = x == "[UNK]"
+    unk_a_flag = false
+    unk_b_flag = false
+    while i.idx <= lastindex(a) && j.idx <= lastindex(b)
+        ac = a[i.idx][i.char]
+        bc = b[j.idx][j.char]
+        unk_a = is_unknown(a[i.idx])
+        unk_b = is_unknown(b[j.idx])
+        if xor(unk_a, unk_b)
+            # Skip the unknown token, and the first char of the other
+            # token stream, will keep skipping chars until steams are
+            # realigned
+            if unk_a
+                i = (; idx=i.idx+1, char=1)
+                j = _advance_idx(b[j.idx], j)
             end
+            if unk_b
+                i = _advance_idx(a[i.idx], i)
+                j = (; idx=j.idx+1, char=1)
+            end
+            unk_a_flag = unk_a
+            unk_b_flag = unk_b
+            continue
+        elseif ac == bc
+            # Tokens are aligned, emit alignment entry
+            push!(I, i.idx)
+            push!(J, j.idx)
+            i = _advance_idx(a[i.idx], i)
+            j = _advance_idx(b[j.idx], j)
+            unk_a_flag = false
+            unk_b_flag = false
+        elseif ac != bc && (unk_a_flag || unk_b_flag)
+            # Steams are still miss-aligned advance steam without an
+            # active unknown token, until realigned
+            if unk_b_flag
+                i = _advance_idx(a[i.idx], i)
+            end
+            if unk_a_flag
+                j = _advance_idx(b[j.idx], j)
+            end
+        else
+            error(lazy"Failed to align $a and $b")
         end
     end
-    return sparse(I, J, V), a.tokens, b.tokens
+    @assert 0 <= i.idx - lastindex(a) <= 1
+    @assert 0 <= j.idx - lastindex(b) <= 1
+    return sparse(I, J, trues(length(I)), length(a), length(b))
 end
-
-function token_overlap(text::String, tok_a::Py, tok_b::Py)
-    emb_a = tok_a(text, return_offsets_mapping=true)
-    emb_b = tok_b(text, return_offsets_mapping=true)
-    return token_overlap(emb_a, emb_b)
-end
-
 
