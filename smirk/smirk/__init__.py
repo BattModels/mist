@@ -85,22 +85,38 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         ]
         return self._tokenizer.add_tokens(new_tokens)
 
-    def batch_decode_plus(self, ids, **kwargs):
+    def batch_decode_plus(self, ids, **kwargs) -> list[str]:
         skip_special_tokens = kwargs.pop("skip_special_tokens", True)
-        return self._tokenizer.decode_batch(ids)(
+        return self._tokenizer.decode_batch(
             ids, skip_special_tokens=skip_special_tokens
         )
 
-    def _batch_encode_plus(self, batch_text_or_text_pairs, **kwargs):
+    def _batch_encode_plus(self, batch_text_or_text_pairs, **kwargs) -> BatchEncoding:
         add_special_tokens = kwargs.pop("add_special_tokens", True)
+        assert not kwargs.pop(
+            "is_pretokenized", False
+        ), "Pretokenized input is not supported"
         encoding = self._tokenizer.encode_batch(
             batch_text_or_text_pairs, add_special_tokens=add_special_tokens
         )
+
+        # Convert encoding to dict
+        data = {
+            "input_ids": [x["input_ids"] for x in encoding],
+            "token_type_ids": [x["token_type_ids"] for x in encoding],
+            "attention_mask": [x["attention_mask"] for x in encoding],
+            "special_tokens_mask": [x["special_tokens_mask"] for x in encoding],
+        }
+        if kwargs.pop("return_offsets_mapping", False):
+            data["offset_mapping"] = [x["offsets"] for x in encoding]
+
         batch = BatchEncoding(
-            data={k: [dic[k] for dic in encoding] for k in encoding[0]},
-            encoding=encoding,
+            data,
+            encoding,
             n_sequences=len(encoding),
+            tensor_type=kwargs.get("return_tensors", None),
         )
+
         if kwargs.pop("padding_strategy") is not PaddingStrategy.DO_NOT_PAD:
             return pad_without_fast_tokenizer_warning(
                 self, batch, return_tensors=kwargs.pop("return_tensors", "pt"), **kwargs
@@ -111,7 +127,16 @@ class SmirkTokenizerFast(PreTrainedTokenizerBase, SpecialTokensMixin):
         self, text: str, add_special_tokens: bool = True, **kwargs
     ) -> BatchEncoding:
         encoding = self._tokenizer.encode(text, add_special_tokens=add_special_tokens)
-        return BatchEncoding(data=encoding, encoding=encoding, n_sequences=1)
+        data = {
+            "input_ids": encoding["input_ids"],
+            "token_type_ids": encoding["token_type_ids"],
+            "attention_mask": encoding["attention_mask"],
+            "special_tokens_mask": encoding["special_tokens_mask"],
+        }
+        if kwargs.pop("return_offsets_mapping", False):
+            data["offset_mapping"] = encoding["offsets"]
+
+        return BatchEncoding(data, encoding, n_sequences=1)
 
     def _decode(self, token_ids, **kwargs):
         skip_special_tokens = kwargs.get("skip_special_tokens", False)

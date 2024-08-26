@@ -348,6 +348,7 @@ pub struct Encoding {
     pub token_type_ids: Vec<u32>,
     pub attention_mask: Vec<u32>,
     pub special_tokens_mask: Vec<u32>,
+    pub offsets: Vec<(usize, usize)>,
 }
 
 impl From<tokenizers::Encoding> for Encoding {
@@ -357,6 +358,7 @@ impl From<tokenizers::Encoding> for Encoding {
             token_type_ids: encoding.get_type_ids().to_vec(),
             attention_mask: encoding.get_attention_mask().to_vec(),
             special_tokens_mask: encoding.get_special_tokens_mask().to_vec(),
+            offsets: encoding.get_offsets().to_vec(),
         }
     }
 }

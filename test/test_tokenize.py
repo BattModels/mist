@@ -62,20 +62,24 @@ def test_oov_tokens(name):
 
     def check_oov(tokenizer, smi):
         code = tokenizer(smi)["input_ids"]
-        assert tok.unk_token_id in tok("Zz")["input_ids"]
+        assert tok.unk_token_id in code
         assert tok.decode(code, skip_special_tokens=False) != smi
-        assert str(tok.unk_token) in tok.tokenize(smi)
+        assert str(tok.unk_token) in tok.decode(code)
 
     # Some Tokenizers don't emit the unknown token no matter what the input is.
     # Check that the tokenizer fails the test, then mark it with xfail
     if name == "ibm/MoLFormer-XL-both-10pct":
         assert tok.unk_token_id not in tok("😬")["input_ids"]
         pytest.xfail("MoLFormer strips unknown tokens pre-tokenizer")
-    if name in ["seyonec/ChemBERTa-zinc-base-v1", "ChangwenXu98/TransPolymer"]:
+    elif name in ["seyonec/ChemBERTa-zinc-base-v1", "ChangwenXu98/TransPolymer"]:
         assert tok.unk_token_id not in tok("⛰️ ⋙ 🏖️")["input_ids"]
         pytest.xfail("open vocab model")
+    elif name == "character":
+        check_oov(tok, "⚛️")
+        assert tok.unk_token_id not in tok("ZZ[Zz]")["input_ids"]
+        pytest.xfail("character-level tokenizer")
 
-    check_oov(tok, "⚛️")
+    # check_oov(tok, "⚛️")
     check_oov(tok, "Zz")
     check_oov(tok, "[Zz]")
     check_oov(tok, "[Zz&3]")

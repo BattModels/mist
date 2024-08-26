@@ -102,14 +102,36 @@ def test_pad(smile_strings):
     assert len(code["special_tokens_mask"][0]) == len(code["special_tokens_mask"][1])
 
 
-def test_encode(smile_strings):
+@pytest.mark.parametrize("return_offsets_mapping", [True, False, None])
+def test_encode(return_offsets_mapping):
     tokenizer = smirk.SmirkTokenizerFast()
-    codes = [tokenizer(smile) for smile in smile_strings]
-    for code, smile in zip(codes, smile_strings):
-        assert "input_ids" in code
-        assert "special_tokens_mask" in code
-        assert "attention_mask" in code
-        assert tokenizer.decode(code["input_ids"], skip_special_tokens=True) == smile
+    kwargs = {"return_offsets_mapping": return_offsets_mapping}
+    code = tokenizer("NCCc1cc(O)c(O)cc1", **kwargs)
+    assert "input_ids" in code
+    assert "special_tokens_mask" in code
+    assert "attention_mask" in code
+    assert (
+        tokenizer.decode(code["input_ids"], skip_special_tokens=True)
+        == "NCCc1cc(O)c(O)cc1"
+    )
+    if return_offsets_mapping:
+        assert "offset_mapping" in code
+
+
+@pytest.mark.parametrize("return_offsets_mapping", [True, False, None])
+def test_encode_batch(smile_strings, return_offsets_mapping):
+    tokenizer = smirk.SmirkTokenizerFast()
+    kwargs = {"return_offsets_mapping": return_offsets_mapping}
+    batch = tokenizer(smile_strings, **kwargs)
+    assert "input_ids" in batch
+    assert "special_tokens_mask" in batch
+    assert "attention_mask" in batch
+    assert (
+        tokenizer.batch_decode_plus(batch["input_ids"], skip_special_tokens=True)
+        == smile_strings
+    )
+    if return_offsets_mapping:
+        assert "offset_mapping" in batch
 
 
 def test_collate(smile_strings):
