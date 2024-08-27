@@ -107,6 +107,7 @@ def cli_main(args=None):
             project="mist",
             save_code=True,
             id=os.environ.get("WANDB_ID", None),
+            resume=os.environ.get("WANBD_RESUME", "allow"),
         )
 
     torch.set_num_threads(8)
