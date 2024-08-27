@@ -71,13 +71,15 @@ function main(args::Vector{String})
         tokenizer = args_cmd["tokenizer"]
         tokenizer = isdir(tokenizer) ? basename(tokenizer) : tokenizer
         dm, dataset = get_dataset(args_cmd["dataset"], args_cmd["tokenizer"])
-        out_file = joinpath(args["output"], tokenizer, dataset *"_$(replace(tokenizer, "/" => "--"))_info_loss.bson")
-        avg_information_loss(dm, args_cmd["reference"], out_file)
+        ref_tokenizer = args_cmd["reference"]
+        ref_name = replace(ref_tokenizer, "/" => "--")
+        out_file = joinpath(args["output"], tokenizer, dataset *"_$(ref_name)_info_loss.bson")
+        avg_information_loss(dm, ref_tokenizer, out_file)
 
     elseif args["%COMMAND%"] == "loss"
         tokenizer = BSON.load(args_cmd["ngram"])[:tokenizer][:name]
         dm, dataset = get_dataset(args_cmd["dataset"], tokenizer)
-        out_file = joinpath(args["output"], tokenizer, dataset_name * "_model_loss.bson")
+        out_file = joinpath(args["output"], tokenizer, dataset * "_model_loss.bson")
         model_loss(dm, args_cmd["ngram"], out_file)
 
     else

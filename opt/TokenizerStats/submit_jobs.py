@@ -5,13 +5,27 @@ from pathlib import Path
 from typing import Optional
 from random import randint
 
-from electrolyte_fm.data_modules.molnet_dataset import _URLS as MOLNET_URLS
-
 logging.basicConfig(level=logging.INFO)
 
 STATS_DIR = Path(__file__).joinpath("..", "stats").resolve()
 
 REALSPACE = "/nfs/turbo/coe-venkvis/mist/realspace_v4_dev"
+
+MOLNET_DATASETS = [
+    "qm8",
+    "qm9",
+    "esol",
+    "freesolv",
+    "lipo",
+    "muv",
+    "hiv",
+    "bace",
+    "bbbp",
+    "tox21",
+    "toxcast",
+    "sider",
+    "clintox",
+]
 
 TOKENIZERS = [
     "smirk",
@@ -43,7 +57,7 @@ def sbatch(args: list, output: Optional[str] = None, test=False) -> Optional[int
     if output is not None and Path(output).exists():
         # logging.info("skipping job for %s", output)
         return None
-    logging.info("submit sbatch: %s", args)
+    logging.info("submit sbatch: %s => %s", args, output)
     if test:
         return randint(0, 100)
 
@@ -58,12 +72,13 @@ def sbatch(args: list, output: Optional[str] = None, test=False) -> Optional[int
 
 
 def sub_realspace(tok):
-    tok_name = Path(tok).parent.name if Path(tok).is_dir() else tok
+    tok_name = Path(tok).name if Path(tok).is_dir() else tok
     out = STATS_DIR.joinpath(tok_name, "realspace_v4_dev.bson")
     id = sbatch(
         [
             "--time=1-0:0:0",
-            "--ntasks=64",
+            "--ntasks=48",
+            "--cpus-per-task=1",
             "submit_tok_stats.sh",
             "usage",
             REALSPACE,
@@ -75,8 +90,6 @@ def sub_realspace(tok):
 
 
 _, char_id, char_realspace = sub_realspace("character")
-assert char_id is not None
-
 
 for tok in TOKENIZERS:
     # Submit realspace_v4_dev job
@@ -88,8 +101,16 @@ for tok in TOKENIZERS:
         file = char_realspace
 
     # Compute realspace model loss
-    for ds in MOLNET_URLS.keys():
-        args = ["--ntasks=1", "submit_tok_stats.sh", "loss", file, ds]
+    for ds in MOLNET_DATASETS:
+        args = [
+            "--ntasks=1",
+            "--time=0:30:0",
+            "--cpus-per-task=1",
+            "submit_tok_stats.sh",
+            "loss",
+            file,
+            ds,
+        ]
         if id:
             args.insert(0, f"-d=afterok:{id}")
         sbatch(args, STATS_DIR.joinpath(tok, f"{ds}_model_loss.bson"))
@@ -102,7 +123,9 @@ for tok in TOKENIZERS:
 
         # Compute Info loss
         args = [
-            "--ntasks=32",
+            "--ntasks=24",
+            "--cpus-per-task=1",
+            "--time=2:0:0",
             "submit_tok_stats.sh",
             "distortion",
             f"--reference={char_realspace}",
@@ -113,4 +136,4 @@ for tok in TOKENIZERS:
             args.insert(0, f"-d=afterok:{char_id}")
 
         if tok != "character":
-            sbatch(args, STATS_DIR.joinpath(f"{ds}_character_info_loss.bson"))
+            sbatch(args, STATS_DIR.joinpath(tok_name, f"{ds}_character_info_loss.bson"))

@@ -144,14 +144,16 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
 
     # Load Reference Tokenizer / n-gram model
     ngram, ref_tok, ref_info = load_ngram_model(ref_file)
-    rank == 0 && @info "Loaded n-gram model for $ref_name from $ref_file"
+    rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file"
 
-    fit_stats = Dict{Symbol, NamedTuple}(
+    # Init Fit Stats
+    tok = datamodule.tokenizer
+    fit_stats = Dict{Symbol, Any}(
         :tokenizer => (;
-            vocab_size=pyconvert(Int, len(tok)),
+            vocab_size=pyconvert(Int, length(tok)),
             unk_token_id=pyconvert(Union{Int, Nothing}, tok.unk_token_id),
         ),
-        ref_tokenizer=ref_info,
+        :ref_tokenizer => ref_info,
     )
 
     for split in ["train", "val"]
@@ -165,8 +167,9 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         end |> OnlineStats.Group
         loss = zeros(length(ngram))
 
-        @info "rank $rank: started processing"
+        @info "rank $rank: started processing $split"
         for encoding in ds
+            code = pyconvert(Vector{Int}, encoding["input_ids"])
             for N in 1:length(ngram)
                 loss[N] += autoregressive_kld(ngram, code; N)
             end
@@ -174,14 +177,15 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         end
         stats = leader_reduce(merge!, stats)
         if rank == 0
-            fit_stats[Symbol(split)] = value(stats)
+            fit_stats[Symbol(split)] = map(value, stats)
         end
         MPI.Barrier(comm)
     end
 
     if rank == 0
-        mkpath(dirname(out_file))
-        BSON.bson(out_file; fit_stats...)
+        @info "rank $rank: saving stats to $output" fit_stats
+        mkpath(dirname(output))
+        BSON.bson(output; fit_stats...)
     end
 
     MPI.Barrier(comm)

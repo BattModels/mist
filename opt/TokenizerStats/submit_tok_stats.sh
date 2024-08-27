@@ -16,7 +16,7 @@ module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
 source ./activate
 export TOKENIZERS_PARALLELISM=false
 srun --mpi=pmix \
-    julia --project --threads=$SBATCH_CPUS_PER_TASK --color=yes --starup-file=no -- \
+    julia --project --threads=$SLURM_CPUS_PER_TASK --color=no --startup-file=no -- \
     ./main.jl $@
 echo "`date`: done"
 
