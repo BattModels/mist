@@ -23,7 +23,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
     elif name == "SmilesPE/SPE_ChEMBL":
         from ..tokenize.spe import pretrained_spe_tokenizer
 
-        return pretrained_spe_tokenizer()
+        return pretrained_spe_tokenizer(cache_generated=True)
 
     elif name.startswith("rxn4chemistry"):
         from .cache import cached_github_archive
