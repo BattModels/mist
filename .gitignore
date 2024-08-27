@@ -5,7 +5,6 @@ wandb/
 electrolyte-fm/
 lightning_logs/
 .venv/
-Manifest.toml
 
 # Log files
 *.o*
@@ -28,6 +27,7 @@ mist
 # Julia
 Manifest.toml
 LocalPreferences.toml
+.CondaPkg/
 
 # Spack
 .spack-env/
@@ -39,3 +39,4 @@ spack.lock
 # outputs
 *.json
 *.jsonl
+*.bson
