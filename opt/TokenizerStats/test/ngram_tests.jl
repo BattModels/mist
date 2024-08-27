@@ -196,5 +196,10 @@ end
         out = check_commutative(["C", "C", "o", "C"], ["C", "<unk>", "C"])
         @test out == sparse([1, 4], [1, 3], trues(2), 4, 3)
     end
-
+    @testset "double unknown" begin
+        ref = ["C", "Z", "[", "C", "o", "+", "2", "]", "2", "c"]
+        smi = ["C", "<unk>", "<unk>", "2", "c"]
+        out = check_commutative(ref, smi)
+        @test out == sparse([1, 9, 10], [1, 4, 5], trues(3), length(ref), length(smi))
+    end
 end

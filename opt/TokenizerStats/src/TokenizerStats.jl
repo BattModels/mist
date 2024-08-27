@@ -2,8 +2,8 @@ module TokenizerStats
 
 using DataFrames
 using Makie
-using PythonCall
-using ArgParse
+using PythonCall: Py, pyimport, pyconvert, @pyconst
+using ArgParse: ArgParseSettings, parse_args, @add_arg_table!
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights, nobs, mean, std
@@ -12,7 +12,6 @@ using BSON: BSON
 using JSON: JSON
 using SHA: SHA
 using SparseArrays: sparse
-using Intervals: Intervals, Interval
 
 function find(dir, pattern)
     found = String[]

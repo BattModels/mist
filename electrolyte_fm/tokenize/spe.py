@@ -105,7 +105,9 @@ def process_vocab(vocab_list: list[str]) -> dict[str, int]:
     )
 
     token_to_id = {}
-    for id, token in enumerate(list(vocab)):
+    vocab = list(vocab)
+    vocab.sort()
+    for id, token in enumerate(vocab):
         token_to_id[token] = id
 
     return token_to_id

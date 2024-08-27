@@ -209,18 +209,20 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
         OnlineStats.Series(;
             moments=OnlineStats.Moments(),
             extrema=Extrema(),
+            histogram=KHist(100),
         )
     end |> OnlineStats.Group
     info_loss = zeros(length(ngram))
 
     @info "rank $rank: started processing"
+    ds = setup_dm_mpi(datamodule, "val"; rank, size)
     for encoding in ds
-        info_loss = unk_information_loss(ngram, ref_tok, encoding, tokenizer, encoding)
-        fit!(stats, (info_loss))
+        info_loss = unk_information_loss(ngram, ref_tok, tokenizer, encoding)
+        fit!(stats, tuple(info_loss))
     end
     stats = leader_reduce(merge!, stats)
     if rank == 0
-        @info "saving results to $output"
+        @info "saving results to $output" stats
         tok = datamodule.tokenizer
         stats = (;
             tokenizer=(;
@@ -231,7 +233,7 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
             samples=nobs(stats),
             info_loss=map(value, stats),
         )
-        mkpath(dirname(out_file))
+        mkpath(dirname(output))
         BSON.bson(output; stats...)
     end
 

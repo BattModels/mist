@@ -174,7 +174,7 @@ function forward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
     marginal = zeros(Int, length(code))
     n_masked = Vector{Int}(undef, length(code))
-    for i in 1:length(code)
+    Threads.@threads for i in 1:length(code)
         cgram = condgram(code, i, N)
         n_masked[i] = count(==(mask), cgram)
         for (j, token) in enumerate(token_ids(m))
@@ -191,7 +191,7 @@ function backward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
     marginal = zeros(Int, length(code))
     n_masked = Vector{Int}(undef, length(code))
-    for (i, ri) in enumerate(range(length(code), 1; step=-1))
+    Threads.@threads for (i, ri) in collect(enumerate(range(length(code), 1; step=-1)))
         cgram = reverse(condgram(code, i, N))
         n_masked[ri] = count(==(mask), cgram)
         for (j, token) in enumerate(token_ids(m))
@@ -277,16 +277,24 @@ Compute the information_loss from unknown tokens using a character-tokenizer as 
 function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram))
     unk_token_id = pyconvert(Int, tok.unk_token_id)
     code = pyconvert(Vector{Int}, encoding["input_ids"])
-    unk_token_id ∉ code && return 0
+    (unk_token_id ∉ code) && return zeros(length(N))
 
     # Align both tokenizations
     smi_tokens = pyconvert(Vector{String}, tok.tokenize(encoding["smiles"]))
     ref_tokens = pyconvert(Vector{String}, ref_tok.tokenize(encoding["smiles"]))
     A = align_unknown(ref_tokens, smi_tokens)
 
+    # Check for bos/eos tokens
+    if length(code) - length(smi_tokens) == 2
+        code = code[2:end-1]
+    end
+    @assert length(code) == length(smi_tokens)
+
     # Compute information_loss from unknown tokens
-    masked = vec(any(A[:, code .== unk_token_id]; dims=2))
+    masked = map(!, vec(any(A; dims=2)))
+    @assert any(masked) == true "expected at least one token to be masked"
     ref_code = pyconvert(Vector{Int}, ref_tok(encoding["smiles"])["input_ids"])
+    @assert length(masked) == length(ref_code)
     return map(n -> first(information_loss(ngram, ref_code, masked; N=n)), N)
 end
 
@@ -318,6 +326,7 @@ function align_unknown(a::Vector{String}, b::Vector{String})
     is_unknown(x) = x == "[UNK]"
     unk_a_flag = false
     unk_b_flag = false
+    mark = nothing
     while i.idx <= lastindex(a) && j.idx <= lastindex(b)
         ac = a[i.idx][i.char]
         bc = b[j.idx][j.char]
@@ -340,6 +349,7 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             continue
         elseif ac == bc
             # Tokens are aligned, emit alignment entry
+            mark = (; i, j, unk_a_flag, unk_b_flag, n=length(I))
             push!(I, i.idx)
             push!(J, j.idx)
             i = _advance_idx(a[i.idx], i)
@@ -356,11 +366,19 @@ function align_unknown(a::Vector{String}, b::Vector{String})
                 j = _advance_idx(b[j.idx], j)
             end
         else
-            error(lazy"Failed to align $a and $b")
+            if mark.unk_a_flag
+                i = mark.i
+            end
+            if mark.unk_b_flag
+                j = mark.j
+            end
+            unk_a_flag = mark.unk_a_flag
+            unk_b_flag = mark.unk_b_flag
+            I = I[1:mark.n]
+            J = J[1:mark.n]
+            mark = (; i, j, unk_a_flag, unk_b_flag, n=length(I))
         end
     end
-    @assert 0 <= i.idx - lastindex(a) <= 1
-    @assert 0 <= j.idx - lastindex(b) <= 1
     return sparse(I, J, trues(length(I)), length(a), length(b))
 end
 
