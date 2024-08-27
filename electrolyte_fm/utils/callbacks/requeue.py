@@ -75,16 +75,6 @@ class Requeue(Callback):
         run(["scontrol", "requeue", job_id], check=True)
 
     def _requeue_pbs(self, ckpt_path: Path):
-        if job_array_id := os.environ.get("PBS_ARRAY_ID", None):
-            job_id = job_array_id + "_" + os.environ["PBS_ARRAY_INDEX"]
-        else:
-            job_id = os.environ["PBS_JOBID"]
-
-        requeue_marker = ckpt_path.parent.parent.joinpath("requeue", job_id)
-        requeue_marker.parent.mkdir(exist_ok=True, parents=True)
-        requeue_marker.unlink(missing_ok=True)
-        os.symlink(ckpt_path.resolve(), requeue_marker)
-
         script = Popen(
             ["submit/resubmit", "submit/polaris.j2", ckpt_path, "--resume-wandb"],
             stdout=PIPE,
