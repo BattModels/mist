@@ -216,9 +216,14 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
 
     @info "rank $rank: started processing"
     ds = setup_dm_mpi(datamodule, "val"; rank, size)
-    for encoding in ds
+    start_time = time()
+    for (idx, encoding) in enumerate(ds)
         info_loss = unk_information_loss(ngram, ref_tok, tokenizer, encoding)
         fit!(stats, tuple(info_loss))
+        if idx % 10 == 0 && rank == 0
+            elapsed = time() - start_time
+            @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
+        end
     end
     stats = leader_reduce(merge!, stats)
     if rank == 0
