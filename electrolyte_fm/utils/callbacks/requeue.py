@@ -19,7 +19,13 @@ log = logging.getLogger(__name__)
 
 class Requeue(Callback):
     def __init__(self, requeue_signal: Optional[signal.Signals] = None):
-        requeue_signal = requeue_signal or signal.SIGTERM
+        if which("scontrol"):
+            self.scheduler = "slurm"
+            default_requeue = signal.SIGUSR1
+        elif which("qrerun"):
+            self.scheduler = "pbs"
+            default_requeue = signal.SIGTERM
+        requeue_signal = requeue_signal or default_requeue
         self.signal = signal.Signals(requeue_signal)
         self.ckpt_path: Optional[Path] = None
         self.requeue_count: int = 0
@@ -45,9 +51,9 @@ class Requeue(Callback):
             self.requeue(ckpt_path)
 
     def requeue(self, ckpt_path: Path):
-        if which("scontrol"):
+        if self.scheduler == "slurm":
             self._requeue_slurm(ckpt_path)
-        if which("qrerun"):
+        elif self.scheduler == "pbs":
             self._requeue_pbs(ckpt_path)
         else:
             raise RuntimeError("Unknown HPC Environment -> Failed to requeue")

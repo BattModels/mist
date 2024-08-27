@@ -6,6 +6,7 @@
 #PBS -l filesystems=eagle:home
 #PBS -l walltime={{ walltime or "00:20:00" }}
 #PBS -j oe
+#PBS -r y
 #PBS -q {{ queue or "debug" }}
 #PBS -A {{ account or "FoundEnergy" }}
 set -x
