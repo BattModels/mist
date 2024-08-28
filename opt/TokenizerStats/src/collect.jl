@@ -160,7 +160,10 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         end
         stats = leader_reduce(merge!, stats)
         if rank == 0
-            fit_stats[Symbol(split)] = map(value, stats)
+            fit_stats[Symbol(split)] = (;
+                samples=nobs(stats[:moments]),
+                map(value, stats)...
+            )
         end
         MPI.Barrier(comm)
     end
