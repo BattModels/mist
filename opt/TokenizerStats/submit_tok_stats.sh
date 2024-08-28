@@ -18,5 +18,6 @@ export TOKENIZERS_PARALLELISM=false
 srun --mpi=pmix \
     julia --project --threads=$SLURM_CPUS_PER_TASK --color=no --startup-file=no -- \
     ./main.jl $@
+exit_code=$?
 echo "`date`: done"
-
+exit $exit_code

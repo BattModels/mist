@@ -43,6 +43,11 @@ function main(args::Vector{String})
             action = :command
     end
     common_args!(s["usage"])
+    @add_arg_table! s["usage"] begin
+        "--splits"
+            help = "Which splits to compute stats for (comman separated)"
+            default = "train"
+    end
     common_args!(s["distortion"])
     @add_arg_table! s["distortion"] begin
         "--reference", "-r"
@@ -69,12 +74,12 @@ function main(args::Vector{String})
     args["output"] = realpath(args["output"])
     if args["%COMMAND%"] == "distortion"
         tokenizer = args_cmd["tokenizer"]
-        tokenizer = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        dm, dataset = get_dataset(args_cmd["dataset"], args_cmd["tokenizer"])
-        ref_tokenizer = args_cmd["reference"]
-        ref_name = replace(ref_tokenizer, "/" => "--")
-        out_file = joinpath(args["output"], tokenizer, dataset *"_$(ref_name)_info_loss.bson")
-        avg_information_loss(dm, ref_tokenizer, out_file)
+        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
+        dm, dataset = get_dataset(args_cmd["dataset"], tokenizer)
+        ref_name = BSON.load(args_cmd["reference"])[:tokenizer][:name]
+        ref_name = replace(ref_name, "/" => "--")
+        out_file = joinpath(args["output"], tokenizer_name, dataset *"_$(ref_name)_info_loss.bson")
+        avg_information_loss(dm, args_cmd["reference"], out_file)
 
     elseif args["%COMMAND%"] == "loss"
         tokenizer = BSON.load(args_cmd["ngram"])[:tokenizer][:name]
@@ -84,10 +89,10 @@ function main(args::Vector{String})
 
     else
         tokenizer = args_cmd["tokenizer"]
-        tokenizer = isdir(tokenizer) ? basename(tokenizer) : tokenizer
+        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
         dm, dataset = get_dataset(args_cmd["dataset"], tokenizer)
-        out_file = joinpath(args["output"], tokenizer, dataset * ".bson")
-        tabulate_dataset(dm, out_file; tokenizer_name=tokenizer)
+        out_file = joinpath(args["output"], tokenizer_name, dataset * ".bson")
+        tabulate_dataset(dm, out_file; tokenizer_name, splits=split(args_cmd["splits"], ","))
     end
     return 0
 end

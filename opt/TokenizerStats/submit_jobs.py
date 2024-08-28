@@ -77,7 +77,7 @@ def sub_realspace(tok):
     id = sbatch(
         [
             "--time=1-0:0:0",
-            "--ntasks=48",
+            "--ntasks=32",  # Needs to divide datasets evenly (big perf. hit otherwise)
             "--cpus-per-task=1",
             "submit_tok_stats.sh",
             "usage",
@@ -104,7 +104,7 @@ for tok in TOKENIZERS:
     for ds in MOLNET_DATASETS:
         args = [
             "--ntasks=1",
-            "--time=0:30:0",
+            "--time=4:0:0",
             "--cpus-per-task=1",
             "submit_tok_stats.sh",
             "loss",
@@ -123,9 +123,9 @@ for tok in TOKENIZERS:
 
         # Compute Info loss
         args = [
-            "--ntasks=24",
+            "--ntasks=48",
             "--cpus-per-task=1",
-            "--time=2:0:0",
+            "--time=1-0:0:0",
             "submit_tok_stats.sh",
             "distortion",
             f"--reference={char_realspace}",

@@ -40,8 +40,16 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
     def __len__(self) -> int:
         return len(self._vocab)
 
+    def _flush_cache(self):
+        # SPE_Tokenizer maintains a cache to speed up tokenization, but it
+        # doesn't have limits on it's size, causing memory issues. This
+        # function flushes the cache to prevent memory issues
+        if len(self._tokenizer.cache) > 100:
+            self._tokenizer.cache.clear()
+
     def tokenize(self, smile: str) -> list[str]:
         code = self(smile)["input_ids"]
+        self._flush_cache()
         return [self._convert_id_to_token(id) for id in code]
 
     def _convert_token_to_id(self, token: str) -> int:
@@ -64,6 +72,7 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
         self, batch_text_or_text_pairs: list[str], **kwargs
     ) -> BatchEncoding:
         encoding = [self._encode_plus(x) for x in batch_text_or_text_pairs]
+        self._flush_cache()
         return BatchEncoding(
             data={"input_ids": [x["input_ids"] for x in encoding]},
             n_sequences=len(encoding),
@@ -74,6 +83,7 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
             self._convert_token_to_id(token)
             for token in self._tokenizer.tokenize(text).split(" ")
         ]
+        self._flush_cache()
         return BatchEncoding(
             data={"input_ids": input_ids},
             n_sequences=1,

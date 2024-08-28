@@ -53,7 +53,7 @@ function setup_dm_mpi(dm::Py, split::AbstractString; rank::Int=0, size::Int=1)
     return split_dataset_by_node(ds, rank, size)
 end
 
-function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="")
+function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="", splits=["train"])
     # Setup mpi
     MPI.Init()
     comm = MPI.COMM_WORLD
@@ -68,64 +68,47 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
         vocab_size=pyconvert(Int, length(tokenizer)),
         unk_token_id=pyconvert(Union{Int, Nothing}, tokenizer.unk_token_id),
     )
+    stats = Dict{Symbol, Any}()
     local_stats = tracked_stats()
-    ds = setup_dm_mpi(datamodule, "train"; rank, size)
-    start_time = time()
-    for (idx, example) in enumerate(ds)
-        input_ids = pyconvert(Vector{Int}, example["input_ids"])
-        is_oov = tokenizer_info.unk_token_id in input_ids
-        usage_stats!(local_stats, input_ids, is_oov)
-        if idx % 1_000_000 == 0 && rank == 0
-            elapsed = time() - start_time
-            @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
+    splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
+    for split in splits
+        ds = setup_dm_mpi(datamodule, "train"; rank, size)
+        start_time = time()
+        for (idx, example) in enumerate(ds)
+            input_ids = pyconvert(Vector{Int}, example["input_ids"])
+            is_oov = tokenizer_info.unk_token_id in input_ids
+            usage_stats!(local_stats, input_ids, is_oov)
+            if idx % 1_000_000 == 0 && rank == 0
+                elapsed = time() - start_time
+                @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
+            end
         end
-    end
-    n_obs = nobs(local_stats[:fertility])
-    elapsed = time() - start_time
-    @info "Rank $rank has finished tokenizer stats" n_obs elapsed n_obs / elapsed
+        n_obs = nobs(local_stats[:fertility])
+        elapsed = time() - start_time
+        @info "Rank $rank has finished tokenizer stats" n_obs elapsed n_obs / elapsed
 
-    # Reduce stats over ranks
-    local_stats = OnlineStats.Series(;
-        fertility=local_stats.fertility,
-        nunique=local_stats.nunique,
-        out_of_vocab=local_stats.out_of_vocab,
-        ngrams=OnlineStats.Series(local_stats.ngrams),
-    )
-    tokenizer_stats = leader_reduce(merge!, local_stats)
-
-    # Dump Initial Stats
-    local stats
-    if rank == 0
-        @info "Tabulating stats on rank $rank"
-        stats = (;
-            tokenizer=tokenizer_info,
-            samples=nobs(tokenizer_stats[:fertility]),
-            map(value, tokenizer_stats.stats)...
+        # Reduce stats over ranks
+        local_stats = OnlineStats.Series(;
+            fertility=local_stats.fertility,
+            nunique=local_stats.nunique,
+            out_of_vocab=local_stats.out_of_vocab,
+            ngrams=OnlineStats.Series(local_stats.ngrams),
         )
-    end
-
-    # Broadcast n-gram counts to all ranks, and construct n-gram models
-    ngrams = rank == 0 ? value.(tokenizer_stats[:ngrams]) : nothing
-    ngrams = MPI.bcast(ngrams, comm)
-    ngrams = NGramModel(ngrams, tokenizer_info.vocab_size)
-
-    # Evaluate the log probability of the validation set
-    ds = setup_dm_mpi(datamodule, "train"; rank, size)
-    n = length(ngrams.total)
-    log_odds = zeros(n)
-    for (idx, example) in enumerate(ds)
-        input_ids = pyconvert(Vector{Int}, example["input_ids"])
-        for n in eachindex(log_odds)
-            log_odds[n] += autoregressive_kld(ngrams, input_ids; N=n)
+        tokenizer_stats = leader_reduce(merge!, local_stats)
+        if rank == 0
+            @info "Saving results for $split on rank $rank"
+            stats[Symbol(split)] = (;
+                samples=nobs(tokenizer_stats[:fertility]),
+                map(value, tokenizer_stats.stats)...
+            )
         end
     end
-    MPI.Reduce!(log_odds, +, comm)
 
+    # Save stats
     if rank == 0
-        @info "Saving n-gram results on rank $rank"
-        log_odds ./= stats.samples
-        stats = (; stats..., ngram_log_odds=log_odds)
+        @info "Saving stats on rank $rank to $out_file"
         mkpath(dirname(out_file))
+        stats[:tokenizer] = tokenizer_info
         BSON.bson(out_file; stats...)
     end
 
@@ -156,7 +139,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         :ref_tokenizer => ref_info,
     )
 
-    for split in ["train", "val"]
+    for split in ["train", "val", "test"]
         ds = setup_dm_mpi(datamodule, split; rank, size)
         unk_token_id = pyconvert(Int, datamodule.tokenizer.unk_token_id)
         stats = map(1:length(ngram)) do _
@@ -226,7 +209,7 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
         fit!(stats, tuple(info_loss))
         if idx % 10 == 0 && rank == 0
             elapsed = time() - start_time
-            @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
+            @info "rank $rank on molecule $idx" idx elapsed idx / elapsed stats
         end
     end
     stats = leader_reduce(merge!, stats)

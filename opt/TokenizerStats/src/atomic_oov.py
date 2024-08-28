@@ -4,7 +4,7 @@ from pathlib import Path
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
-from itertools import batched, chain
+from itertools import islice, chain
 from typing import Optional, Any
 
 import selfies
@@ -23,6 +23,16 @@ from opt.build_vocab import (
 
 logging.basicConfig(level=logging.INFO)
 LOG = logging.getLogger(__name__)
+
+
+def batched(iterable, n):
+    # backport itertools.batched from 3.12
+    # Source: https://docs.python.org/3.12/library/itertools.html#itertools.batched
+    if n < 1:
+        raise ValueError("n must be at least one")
+    iterator = iter(iterable)
+    while batch := tuple(islice(iterator, n)):
+        yield batch
 
 
 @dataclass
@@ -223,6 +233,13 @@ TOKENIZERS = {
         "rxn4chemistry/rxn_yields",
         "rxn4chemistry/rxnfp",
         "ChangwenXu98/TransPolymer",
+        "../../smirk-gpe-50k-mb-ss",
+        "../../smirk-gpe-50k-nmb-ss",
+        "../../smirk-gpe-small-50k-mb-ss",
+        "google/gemma-7b",
+        "Xenova/gpt-4o",
+        "meta-llama/Meta-Llama-3.1-8B",
+        "meta-llama/Meta-Llama-3-8B",
     ],
     "selfies": [
         "HUBioDataLab/SELFormer",
