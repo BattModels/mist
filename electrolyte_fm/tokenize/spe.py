@@ -44,8 +44,7 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
         # SPE_Tokenizer maintains a cache to speed up tokenization, but it
         # doesn't have limits on it's size, causing memory issues. This
         # function flushes the cache to prevent memory issues
-        if len(self._tokenizer.cache) > 100:
-            self._tokenizer.cache.clear()
+        self._tokenizer.cache.clear()
 
     def tokenize(self, smile: str) -> list[str]:
         code = self(smile)["input_ids"]

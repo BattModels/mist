@@ -69,16 +69,16 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
         unk_token_id=pyconvert(Union{Int, Nothing}, tokenizer.unk_token_id),
     )
     stats = Dict{Symbol, Any}()
-    local_stats = tracked_stats()
     splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
     for split in splits
-        ds = setup_dm_mpi(datamodule, "train"; rank, size)
+        ds = setup_dm_mpi(datamodule, split; rank, size)
+        local_stats = tracked_stats()
         start_time = time()
         for (idx, example) in enumerate(ds)
             input_ids = pyconvert(Vector{Int}, example["input_ids"])
             is_oov = tokenizer_info.unk_token_id in input_ids
             usage_stats!(local_stats, input_ids, is_oov)
-            if idx % 1_000_000 == 0 && rank == 0
+            if idx % 1_000_000 == 0
                 elapsed = time() - start_time
                 @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
             end
@@ -148,21 +148,27 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
                 extrema=Extrema(),
             )
         end |> OnlineStats.Group
-        loss = zeros(length(ngram))
+        stats = (; kld=deepcopy(stats), mlm=deepcopy(stats))
 
         @info "rank $rank: started processing $split"
+        loss = zeros(length(ngram))
+        fb_loss = zeros(length(ngram))
         for encoding in ds
             code = pyconvert(Vector{Int}, encoding["input_ids"])
             for N in 1:length(ngram)
-                loss[N] += autoregressive_kld(ngram, code; N)
+                loss[N] = autoregressive_kld(ngram, code; N)
+                fb_loss[N] = fb_log_probability(ngram, code; N)
             end
-            fit!(stats, (loss))
+            fit!(stats.kld, tuple(loss))
+            fit!(stats.mlm, tuple(fb_loss))
         end
-        stats = leader_reduce(merge!, stats)
+        # Reduce stats over ranks
+        stats = leader_reduce(merge!, OnlineStats.Group(; stats...))
         if rank == 0
             fit_stats[Symbol(split)] = (;
-                samples=nobs(stats[:moments]),
-                map(value, stats)...
+                samples=nobs(stats),
+                kld=map(value, stats[:kld]),
+                mlm=map(value, stats[:mlm]),
             )
         end
         MPI.Barrier(comm)
