@@ -314,18 +314,24 @@ function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding
     ref_tokens = pyconvert(Vector{String}, ref_tok.tokenize(encoding["smiles"]))
     A = align_unknown(ref_tokens, smi_tokens)
 
-    # Check for bos/eos tokens
-    if length(code) - length(smi_tokens) == 2
-        code = code[2:end-1]
-    end
-    @assert length(code) == length(smi_tokens)
-
     # Compute information_loss from unknown tokens
     masked = map(!, vec(any(A; dims=2)))
     @assert any(masked) == true "expected at least one token to be masked"
     ref_code = pyconvert(Vector{Int}, ref_tok(encoding["smiles"])["input_ids"])
+    ref_code = rm_special_tokens(ref_tok, ref_code, length(masked))
     @assert length(masked) == length(ref_code)
     return map(n -> first(information_loss(ngram, ref_code, masked; N=n)), N)
+end
+
+function rm_special_tokens(tok::Py, code::Vector{Int}, n::Int)
+    # If the code is already of length n, return it
+    length(code) == n  && return code
+
+    # Remove special tokens from the code
+    unk_token_id = pyconvert(Int, tok.unk_token_id)
+    special_tokens = pyconvert(Vector{Int}, tok.all_special_ids)
+    special_tokens = setdiff(special_tokens, unk_token_id)
+    return filter(∉(special_tokens), code)
 end
 
 function _advance_idx(token::String, index::NamedTuple)

@@ -127,7 +127,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
 
     # Load Reference Tokenizer / n-gram model
     ngram, ref_tok, ref_info = load_ngram_model(ref_file)
-    rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file"
+    rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
 
     # Init Fit Stats
     tok = datamodule.tokenizer
@@ -146,6 +146,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
             OnlineStats.Series(;
                 moments=OnlineStats.Moments(),
                 extrema=Extrema(),
+                histogram=KHist(100),
             )
         end |> OnlineStats.Group
         stats = (; kld=deepcopy(stats), mlm=deepcopy(stats))
@@ -153,14 +154,19 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         @info "rank $rank: started processing $split"
         loss = zeros(length(ngram))
         fb_loss = zeros(length(ngram))
-        for encoding in ds
+        start_time = time()
+        for (idx, encoding) in enumerate(ds)
             code = pyconvert(Vector{Int}, encoding["input_ids"])
             for N in 1:length(ngram)
                 loss[N] = autoregressive_kld(ngram, code; N)
-                fb_loss[N] = fb_log_probability(ngram, code; N)
+                fb_loss[N] = cross_entropy(fb_log_probability(ngram, code; N), code)
             end
             fit!(stats.kld, tuple(loss))
             fit!(stats.mlm, tuple(fb_loss))
+            if idx % 1_000 == 0 && rank == 0
+                elapsed = time() - start_time
+                @info "rank $rank on molecule $idx" idx elapsed idx / elapsed stats
+            end
         end
         # Reduce stats over ranks
         stats = leader_reduce(merge!, OnlineStats.Group(; stats...))
@@ -197,8 +203,7 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
     # Load Reference Tokenizer / n-gram model
     tokenizer = datamodule.tokenizer
     ngram, ref_tok, ref_info = load_ngram_model(ref_file)
-    rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file"
-    @assert ref_info.name == "character"
+    rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
 
     # Stats to track
     stats = map(1:length(ngram)) do _
