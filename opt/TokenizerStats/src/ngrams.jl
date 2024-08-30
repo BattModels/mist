@@ -30,6 +30,8 @@ token_ids(m::NGramModel) = range(0; length=m.vocab_size)
 """Vocab size, less special tokens"""
 nonspecial_vocab_size(m::NGramModel) = length(token_ids(m)) - length(m.special_tokens)
 
+nonspecial_vocab(m::NGramModel) = filter(∉(m.special_tokens), token_ids(m))
+
 function NGramModel(tokenizer::Py, ngrams::Union{Tuple, Vector})
     vocab_size = pyconvert(Int, length(tokenizer))
     special_tokens = pyconvert(Vector{Int}, tokenizer.all_special_ids)
@@ -114,18 +116,67 @@ function log_odds(model::NGramModel, gram::NTuple{N, Int}) where {N}
     return ln_c - log_smoothed_counts(n - c, 1, nonspecial_vocab_size(model))
 end
 
+"""
+    loss = autoregressive_kld(model::NGramModel, code::Vector{Int}; N=length(model))
+
+Computes the KL-Divergence loss (cross-entropy) using an `N`-gram model for `code`.
+"""
 function autoregressive_kld(model::NGramModel, code::Vector{Int}; N=length(model))
     @assert !any(∈(model.special_tokens), code)
-    counts = length(code)
-    marginal = length(code) * nonspecial_vocab_size(model)
+    counts = 0
+    marginal = 0
+    loss = 0.0
+    V = nonspecial_vocab_size(model)
     for i in 1:length(code)
         c, m = gram_odds(model, ngram(code, i, N))
-        counts += c
-        marginal += m
+        loss += log1p(c) - log_add(m, V)
     end
-    return log(counts) - log(marginal)
+    return -loss
 end
 
+"""
+    H = cross_entropy(ℓ::AbstractMatrix, code::Vector{Int}; ignore_id=-100)
+
+Computes the cross entropy of the code `code` given the log-probabilities `ℓ`.
+Will ignore tokens with id `ignore_id` in `code`
+"""
+function cross_entropy(ℓ::AbstractMatrix, code::Vector{Int}; ignore_id=-100)
+    H = 0.0
+    for i in axes(ℓ, 2)
+        code[i] == ignore_id && continue
+        H += ℓ[code[i] + 1, i]
+    end
+    return -H
+end
+
+function autoregressive_log_prob(model::NGramModel, code::Vector; N=length(model))
+    ell = Matrix{Float64}(undef, model.vocab_size, length(code))
+    V = nonspecial_vocab_size(model)
+    for i in 1:length(code)
+        cgram = condgram(code, i, N)
+        for (j, token) in enumerate(token_ids(model))
+            if (j - 1) in model.special_tokens
+                ell[j, i] = -Inf
+            else
+                c, m = gram_odds(model, (cgram..., token))
+                @assert (c + 1) <= (m + V)
+                ell[j, i] = log1p(c) - log_add(m, V)
+            end
+        end
+    end
+    return ell
+end
+
+"""
+    ℓ = fb_log_probability(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
+
+Compute `ln P(x_i,j | x_{i-2}, x_{i-1}, x_{i+1}, x_{i+2})` for the given code `code` where
+`i` is the index of the token in `code` and `j` is the index of the token in the vocabulary.
+`N` is the n-gram order of the model, (i.e. `N=3` spans `x_{i-2}, x_{i-1}, x_{i+1}, x_{i+2}`)
+
+Will marginalize over tokens with id `mask` in `code`. That is is `x_{i-2}` is masked,
+then computes `P(x_i | x_{i-1}, x_{i+1}, x_{i+2})` instead.
+"""
 function fb_log_probability(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     fc, fm, fmasked = forward_odds(m, code; mask, N)
     bc, bm, bmasked = backward_odds(m, code; mask, N)
@@ -169,6 +220,9 @@ function log_smoothed_counts(counts::Integer, nmasked::Int, vocab_size::Int)
         return ln_mask + log1p(exp(ln_counts - ln_mask))
     end
 end
+
+""" Computes `log(x + y)` in a numerically stable way"""
+log_add(x::Real, y::Real) = log_smoothed_counts(x, 1, y)
 
 function forward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
@@ -246,30 +300,6 @@ function masked_match(x::NTuple{N, Int}, y::NTuple{N, Int}; mask::Int) where {N}
     return true
 end
 
-function ngram_perf()
-    rows = []
-    stats_dir = joinpath(@__DIR__, "..", "stats")
-    for file in find(stats_dir, r".*\.bson")
-        data = BSON.load(file)
-        file = relpath(file, stats_dir)
-        tokenizer = joinpath(splitpath(file)[1:end-1])
-        dataset = first(splitext(basename(file)))
-        haskey(data, :ngram_log_odds) || continue
-        push!(rows, (;
-            tokenizer,
-            dataset,
-            vocab_size = data[:tokenizer][:vocab_size],
-            samples = data[:samples],
-            out_of_vocab = data[:out_of_vocab],
-            unigram_log_odds = data[:ngram_log_odds][1],
-            bigram_log_odds = data[:ngram_log_odds][2],
-            trigram_log_odds = data[:ngram_log_odds][3],
-            quadgram_log_odds = data[:ngram_log_odds][4],
-            pentagram_log_odds = data[:ngram_log_odds][5],
-        ))
-    end
-    return DataFrame(rows)
-end
 
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference
@@ -346,7 +376,6 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             end
             unk_a_flag = unk_a
             unk_b_flag = unk_b
-            continue
         elseif ac == bc
             # Tokens are aligned, emit alignment entry
             mark = (; i, j, unk_a_flag, unk_b_flag, n=length(I))
@@ -376,7 +405,14 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             unk_b_flag = mark.unk_b_flag
             I = I[1:mark.n]
             J = J[1:mark.n]
-            mark = (; i, j, unk_a_flag, unk_b_flag, n=length(I))
+            new_mark = (; i, j, unk_a_flag, unk_b_flag, n=length(I))
+
+            # Check that progress was made
+            if new_mark != mark
+                mark = new_mark
+            else
+                error("Failed to align unknown tokens")
+            end
         end
     end
     return sparse(I, J, trues(length(I)), length(a), length(b))

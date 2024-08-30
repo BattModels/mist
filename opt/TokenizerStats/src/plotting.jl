@@ -43,7 +43,7 @@ function tokenizer_label(tok; vocab_size=false)
     return name
 end
 
-@recipe(TokenUsage, stats) do scene
+@recipe(TokenUsage, usage, vocab_size) do scene
     Attributes(
         smoothing = 1,
     )
@@ -62,10 +62,9 @@ function collate_token_usage(ids::AbstractVector{T}, counts::Dict{T, <:Integer};
 end
 
 function Makie.plot!(plt::TokenUsage)
-    stats = plt.stats[]
-    vocab_size = Int(stats["tokenizer"]["vocab_size"])
+    vocab_size = plt.vocab_size[]
     ids = 0:vocab_size-1
-    usage = collate_token_usage(ids, stats["token_usage"]; smoothing=plt[:smoothing][])
+    usage = collate_token_usage(ids, plt.usage[]; smoothing=plt[:smoothing][])
     usage = usage ./ sum(usage)
 
     # Sort tokens by usage

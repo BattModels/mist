@@ -6,7 +6,7 @@ using PythonCall: Py, pyimport, pyconvert, @pyconst
 using ArgParse: ArgParseSettings, parse_args, @add_arg_table!
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
 using LinearAlgebra: normalize
-using StatsBase: StatsBase, Histogram, fit, AbstractWeights, nobs, mean, std
+using StatsBase: StatsBase, Histogram, fit, AbstractWeights, Weights, nobs, mean, std
 using MPI: MPI
 using BSON: BSON
 using JSON: JSON
@@ -72,8 +72,10 @@ end
 
 include("ngrams.jl")
 include("collect.jl")
-include("plotting.jl")
 include("finetune.jl")
 include("cli.jl")
+
+include("analysis.jl")
+include("plotting.jl")
 
 end

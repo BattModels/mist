@@ -7,11 +7,14 @@
 end
 
 @testitem "log_smoothed_counts" begin
-    using TokenizerStats: log_smoothed_counts
+    using TokenizerStats: log_smoothed_counts, log_add
     @test log_smoothed_counts(1, 5, 256000) ≈ log(1 + BigInt(256000)^5) atol=1e-8
     @test log_smoothed_counts(5_000_000, 1, 256000) ≈ log(5_000_000 + BigInt(256000)^1) atol=1e-8
     @test log_smoothed_counts(0, 8, 256000) ≈ log(BigInt(256000)^8) atol=1e-8
     @test log_smoothed_counts(0, 0, 256000) == 0
+    @test log_add(23424, 25132934) ≈ log(BigInt(23424) + BigInt(25132934)) atol=1e-8
+    @test log_add(0, 25132934) ≈ log(BigInt(25132934)) atol=1e-8
+    @test log_add(12342, 0) ≈ log(BigInt(12342)) atol=1e-8
 end
 
 @testsetup module NGramModelSetup
@@ -95,7 +98,7 @@ end
 end
 
 @testitem "fb_log_probability" setup=[NGramModelSetup] begin
-    using TokenizerStats: NGramModel, fb_log_probability
+    using TokenizerStats: NGramModel, fb_log_probability, cross_entropy
     function check(model, code)
         @testset "$N-gram" for N in 1:length(model)
             ℓ = fb_log_probability(model, code; N)
@@ -105,6 +108,7 @@ end
             @test size(ℓ, 2) == length(code)
             marginal = sum(exp, ℓ; dims=1, init=BigFloat(0))
             @test all(isapprox(1; atol=1e-6), marginal)
+            @test cross_entropy(ℓ, code) > 0
         end
     end
     @testset "without special tokens" begin
@@ -142,14 +146,16 @@ end
 end
 
 @testitem "autoregressive_kld" setup=[NGramModelSetup] begin
-    using TokenizerStats: NGramModel, autoregressive_kld
+    using TokenizerStats: NGramModel, autoregressive_kld, autoregressive_log_prob, cross_entropy
     m = NGramModel(randngram(), 9)
     code = rand(1:8, 32)
     loss = zeros(length(m))
     for N in 1:length(m)
         loss[N] = autoregressive_kld(m, code; N)
+        ℓ = autoregressive_log_prob(m, code; N)
+        @test loss[N] ≈ cross_entropy(ℓ, code) rtol=1e-4
     end
-    @test all(<(0), loss)
+    @test all(>(0), loss)
 end
 
 @testitem "unk token information loss" setup=[NGramModelSetup] begin
@@ -182,7 +188,10 @@ end
         @test out == align_unknown(b, a)'
         return out
     end
-
+    @testset "edge cases" begin
+        @test align_unknown(String[], String[]) == sparse(Int[], Int[], Bool[], 0, 0)
+        @test align_unknown(["hello"], ["hello"]) == sparse(Int[1], Int[1], Bool[true], 1, 1)
+    end
     @testset "single-char" begin
         check_commutative(["c", "a", "t"], ["c", "a", "t"])
         @test sparse([1, 2], [1, 2], ones(Int, 2), 3, 3) == check_commutative(["c", "a", "[UNK]"], ["c", "a", "t"])
@@ -201,5 +210,8 @@ end
         smi = ["C", "<unk>", "<unk>", "2", "c"]
         out = check_commutative(ref, smi)
         @test out == sparse([1, 9, 10], [1, 4, 5], trues(3), length(ref), length(smi))
+    end
+    @testset "mismatched" begin
+        @test_throws ErrorException align_unknown(["hello", "world"], ["hello", "foo"])
     end
 end
