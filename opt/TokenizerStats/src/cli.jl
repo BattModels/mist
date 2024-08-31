@@ -31,7 +31,7 @@ function main(args::Vector{String})
         "--output"
             help = "Output stats directory"
             arg_type = String
-            default = joinpath(@__DIR__, "..", "stats")
+            default = abspath(joinpath(@__DIR__, "..", "stats"))
         "usage"
             help = "Tabule token usage statistics"
             action = :command
@@ -92,7 +92,6 @@ function main(args::Vector{String})
     args_cmd = args[args["%COMMAND%"]]
 
     # Run command
-    args["output"] = realpath(args["output"])
     if args["%COMMAND%"] == "distortion"
         tokenizer = args_cmd["tokenizer"]
         tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
