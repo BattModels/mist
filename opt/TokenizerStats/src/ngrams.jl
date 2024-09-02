@@ -181,29 +181,15 @@ function fb_log_probability(m::NGramModel, code::Vector; mask::Int=-100, N=lengt
     fc, fm, fmasked = forward_odds(m, code; mask, N)
     bc, bm, bmasked = backward_odds(m, code; mask, N)
 
-    # Total up forward/ backwards odds
-    counts = fc .+ bc
-    marginal = fm .+ bm
-    masked = fmasked .+ bmasked
-    @assert all(vec(sum(counts; dims=1)) .== marginal)
-
-    # Add smoothed counts
-    ell = Matrix{Float64}(undef, m.vocab_size, length(code))
+    # Compute forward and backward probabilities
     V = nonspecial_vocab_size(m)
-    for i in 1:length(code)
-        n_masked = masked[i]
-        denom = log_smoothed_counts(marginal[i], n_masked + 1, V)
-        for j in axes(ell, 1)
-            if (j - 1) in m.special_tokens
-                @assert counts[j, i] == 0
-                ell[j, i] = -Inf
-            else
-                num = log_smoothed_counts(counts[j, i], n_masked, V)
-                ell[j,i] = num - denom
-            end
-        end
-    end
-    return ell
+    f_prob = @. log1p(fc) - log_smoothed_counts(fm, fmasked, V)'
+    b_prob = @. log1p(bc) - log_smoothed_counts(bm, bmasked, V)'
+
+    # Compute joint probability
+    ℓ = f_prob .+ b_prob
+    marginal = log.(sum(exp, ℓ; dims=1))
+    return ℓ .- marginal
 end
 
 """
