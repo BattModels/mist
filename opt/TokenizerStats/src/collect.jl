@@ -59,6 +59,7 @@ function rank_usage_stats(datamodule, split; rank, size)
     unk_token_id = pyconvert(Int, tokenizer.unk_token_id)
     local_stats = tracked_stats()
     start_time = time()
+    @info "rank $rank: started processing $split"
     for (idx, example) in enumerate(ds)
         input_ids = pyconvert(Vector{Int}, example["input_ids"])
         is_oov = unk_token_id in input_ids
@@ -80,6 +81,48 @@ function rank_usage_stats(datamodule, split; rank, size)
     )
 end
 
+function srun_usage_stats(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="", splits=["train"])
+    size = parse(Int, ENV["SLURM_NTASKS"])
+    rank = parse(Int, ENV["PMIX_RANK"])
+
+    # Load Dataset and Tokenizer
+    tokenizer = datamodule.tokenizer
+    tokenizer_info = (;
+        name=tokenizer_name,
+        vocab_size=pyconvert(Int, length(tokenizer)),
+        unk_token_id=pyconvert(Union{Int, Nothing}, tokenizer.unk_token_id),
+    )
+    stats = Dict{Symbol, Any}()
+    splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
+    for split in splits
+        rank_stats = rank_usage_stats(datamodule, split; rank, size)
+        tokenizer_stats = leader_reduce(merge!, local_stats)
+        if rank == 0 || true
+            @info "Saving results for $split on rank $rank"
+            stats[Symbol(split)] = (;
+                samples=nobs(tokenizer_stats),
+                map(value, tokenizer_stats.stats)...
+            )
+        end
+    end
+
+    # Save stats
+    if rank == 0 || true
+        splits = join(splits, "_")
+        out_file = out_file * "_split_$(splits)_rank_$rank.bson"
+        @info "Saving stats on rank $rank to $out_file"
+        mkpath(dirname(out_file))
+        stats[:tokenizer] = tokenizer_info
+        rm(out_file; force=true)
+        BSON.bson(out_file; stats...)
+        chmod(out_file, 0o444)
+    end
+
+    MPI.Barrier(comm)
+    MPI.Finalize()
+    return 0
+end
+
 function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="", splits=["train"])
     # Setup mpi
     MPI.Init()
@@ -98,9 +141,8 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     stats = Dict{Symbol, Any}()
     splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
     for split in splits
-        @show rank_stats = rank_usage_stats(datamodule, split; rank, size)
-        # tokenizer_stats = leader_reduce(merge!, local_stats)
-        tokenizer_stats = rank_stats
+        rank_stats = rank_usage_stats(datamodule, split; rank, size)
+        tokenizer_stats = leader_reduce(merge!, local_stats)
         if rank == 0 || true
             @info "Saving results for $split on rank $rank"
             stats[Symbol(split)] = (;
@@ -112,7 +154,6 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
 
     # Save stats
     if rank == 0 || true
-        out_file = out_file * "_split_$(join(splits, "_"))_rank_$rank.bson"
         @info "Saving stats on rank $rank to $out_file"
         mkpath(dirname(out_file))
         stats[:tokenizer] = tokenizer_info

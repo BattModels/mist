@@ -50,6 +50,9 @@ function main(args::Vector{String})
         "--splits"
             help = "Which splits to compute stats for (comman separated)"
             default = "train"
+        "--mode"
+            help = "Which mode to use for distributed computation"
+            default = "mpi"
     end
     common_args!(s["distortion"])
     @add_arg_table! s["distortion"] begin
@@ -131,7 +134,17 @@ function main(args::Vector{String})
         tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
         dm, dataset = get_dataset(args_cmd["dataset"], tokenizer)
         out_file = joinpath(args["output"], tokenizer_name, dataset * ".bson")
-        tabulate_dataset(dm, out_file; tokenizer_name, splits=split(args_cmd["splits"], ","))
+        splits = split(args_cmd["splits"], ",")
+
+        # Distribute computation
+        if args_cmd["mode"] == "mpi"
+            tabulate_dataset(dm, out_file; tokenizer_name, splits)
+        elseif args_cmd["mode"] == "srun"
+            @info "Using srun mode"
+            srun_usage_stats(dm, out_file; tokenizer_name, splits)
+        else
+            error("Unknown mode $(args_cmd["mode"])")
+        end
     end
 
     return 0
