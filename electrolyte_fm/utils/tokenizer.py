@@ -40,7 +40,10 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
                 "9c8e4a2b90399a42403481db5d40a806c310e69e",
                 "rxnfp/models/transformers/bert_ft_10k_25s/vocab.txt",
             )
-            return regex_smiles_tokenizer(vocab_from_words(vocab_file), regex)
+            vocab = vocab_from_words(vocab_file)
+            assert "[unused11]" not in vocab.keys() and 11 not in vocab.values()
+            vocab["[unused11]"] = 11 # Fill in gap in vocab
+            return regex_smiles_tokenizer(vocab, regex)
 
         elif name == "rxn4chemistry/rxn_yields":
             # Using the latest release at time of analysis (6/22/2024)

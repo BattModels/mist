@@ -53,16 +53,18 @@ function NGramModel(ngrams::Union{Tuple, Vector}, vocab_size::Int; special_token
     return NGramModel{N,G}(total, vocab_size, ngrams, special_tokens)
 end
 
-function load_ngram_model(file::String)
+function load_ngram_model(file::String, split=:train)
     ref = BSON.load(file)
     name = ref[:tokenizer][:name]
+    name = startswith(name, "smirk-gpe") ? "./" * name : name
     tok = load_tokenizer(name)
     vocab_size = pyconvert(Int, length(tok))
-    ngram = NGramModel(tok, ref[:ngrams])
+    ngram = NGramModel(tok, ref[split][:ngrams])
     info =(;
         name=ref[:tokenizer][:name],
         unk_token_id=ref[:tokenizer][:unk_token_id],
         vocab_size,
+        split,
         sha256=bytes2hex(SHA.sha256(read(file)))
     )
     return ngram, tok, info
@@ -73,7 +75,7 @@ function ngram_counts(dist::AbstractDict{<:Union{Int, NTuple}, Int}, vocab_size:
     K = NTuple{n, Int}
     grams = keytype(dist) <: NTuple ? keys(dist) : Iterators.map(tuple, keys(dist))
     for gram in grams
-        @assert all(t -> 0 <= t < vocab_size, gram) "Expected all counts to be ∈ [0, vocab_size)"
+        @assert all(t -> 0 <= t < vocab_size, gram) "Expected all token ids to be ∈ [0, $vocab_size), got $gram"
     end
     return Dict{K, Int}(zip(grams, values(dist)))
 end
@@ -302,7 +304,8 @@ function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding
 
     # Compute information_loss from unknown tokens
     masked = map(!, vec(any(A; dims=2)))
-    @assert any(masked) == true "expected at least one token to be masked"
+    @info "masked: $masked"
+    @assert any(masked) == true "expected at least one token to be masked, eval: $smi_tokens, ref: $ref_tokens, smi: $(join(ref_tokens, "")))"
     ref_code = pyconvert(Vector{Int}, ref_tok(encoding["smiles"])["input_ids"])
     ref_code = rm_special_tokens(ref_tok, ref_code, length(masked))
     @assert length(masked) == length(ref_code)
@@ -386,7 +389,7 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             if unk_a_flag
                 j = _advance_idx(b[j.idx], j)
             end
-        else
+        elseif !isnothing(mark)
             if mark.unk_a_flag
                 i = mark.i
             end
@@ -403,8 +406,10 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             if new_mark != mark
                 mark = new_mark
             else
-                error("Failed to align unknown tokens")
+                error("Failed to align unknown tokens: $a, $b")
             end
+        else
+            error("Failed to align: $a, $b")
         end
     end
     return sparse(I, J, trues(length(I)), length(a), length(b))

@@ -63,6 +63,10 @@ function main(args::Vector{String})
             help = "Path to previously generated *.bson"
             arg_type = String
             required = true
+        "tokenizer"
+            help = "Tokenizer to use, must match the ngram model"
+            arg_type = String
+            required = true
         "dataset"
             help = "Path to the dataset to process, or name of a MolNet Dataset"
             arg_type = String
@@ -102,10 +106,16 @@ function main(args::Vector{String})
         avg_information_loss(dm, args_cmd["reference"], out_file)
 
     elseif args["%COMMAND%"] == "loss"
-        tokenizer = BSON.load(args_cmd["ngram"])[:tokenizer][:name]
+        # Load the tokenizer
+        tokenizer = args_cmd["tokenizer"]
+        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
+        @assert BSON.load(args_cmd["ngram"])[:tokenizer][:name] == tokenizer_name "ngram model must use the same tokenizer"
+
+        # Setup dataset
         dm, dataset = get_dataset(args_cmd["dataset"], tokenizer)
         ngram_name = first(splitext(basename(args_cmd["ngram"])))
-        out_file = joinpath(args["output"], tokenizer, dataset,  ngram_name * "_model_loss.bson")
+
+        out_file = joinpath(args["output"], tokenizer_name, dataset,  ngram_name * "_model_loss.bson")
         model_loss(dm, args_cmd["ngram"], out_file)
 
     elseif args["%COMMAND%"] == "merge"
