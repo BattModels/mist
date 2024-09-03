@@ -186,6 +186,7 @@ end
         out = align_unknown(a, b)
         a == b && @test out == I
         @test out == align_unknown(b, a)'
+        @test size(out) == (length(a), length(b))
         return out
     end
     @testset "edge cases" begin
@@ -213,5 +214,39 @@ end
     end
     @testset "mismatched" begin
         @test_throws ErrorException align_unknown(["hello", "world"], ["hello", "foo"])
+    end
+    @testset "no unknowns" begin
+        using TokenizerStats: load_tokenizer
+        using PythonCall: pyconvert
+
+        tok = load_tokenizer("ibm/MoLFormer-XL-both-10pct-oov")
+        ref = "Clc1c(Cl)c(Cl)c(c(Cl)c1Cl)c2c(Cl)c(Cl)c(Cl)c(Cl)c2Cl"
+        smi = pyconvert(Vector{String}, tok.tokenize(ref))
+        ref = string.(collect(ref))
+        out = check_commutative(smi, ref)
+
+        masked = map(!, vec(any(out; dims=2)))
+        @test any(masked)
+    end
+end
+
+@testitem "Rm Special Tokens" begin
+    using TokenizerStats: load_tokenizer, rm_special_tokens
+    using PythonCall: pyconvert
+
+    tok = load_tokenizer("sagawa/ReactionT5-yield-prediction")
+    ref = "CCCO"
+    smi = pyconvert(Vector{String}, tok.tokenize(ref))
+    smi = rm_special_tokens(tok, smi)
+    @test join(smi) == "CCCO"
+
+    @testset "alignment failure" begin
+        using TokenizerStats: align_unknown
+        ref = "C[N+]1(CCc2cc(c(c(c2[C@H]1Cc3cc(c(c(c3)OC)OC)OC)OC)OC)OC)CCCOC(=O)CCC(=O)OCCC[N+]4(CCc5cc(c(c(c5[C@@H]4Cc6cc(c(c(c6)OC)OC)OC)OC)OC)OC)C"
+        smi = pyconvert(Vector{String}, tok.tokenize(ref))
+        smi = rm_special_tokens(tok, smi)
+        ref = string.(collect(ref))
+        out = align_unknown(smi, string.(collect(ref)))
+        @test out == align_unknown(string.(collect(ref)), smi)'
     end
 end

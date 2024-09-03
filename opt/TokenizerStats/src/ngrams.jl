@@ -300,6 +300,8 @@ function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding
     # Align both tokenizations
     smi_tokens = pyconvert(Vector{String}, tok.tokenize(encoding["smiles"]))
     ref_tokens = pyconvert(Vector{String}, ref_tok.tokenize(encoding["smiles"]))
+    smi_tokens = rm_special_tokens(tok, smi_tokens)
+    ref_tok = rm_special_tokens(ref_tok, ref_tokens)
     A = align_unknown(ref_tokens, smi_tokens)
 
     # Compute information_loss from unknown tokens
@@ -321,6 +323,13 @@ function rm_special_tokens(tok::Py, code::Vector{Int}, n::Int)
     special_tokens = pyconvert(Vector{Int}, tok.all_special_ids)
     special_tokens = setdiff(special_tokens, unk_token_id)
     return filter(∉(special_tokens), code)
+end
+
+function rm_special_tokens(tok::Py, tokens::Vector{String})
+    if pyconvert(Bool, tok.__class__.__name__.startswith("T5Tokenizer"))
+        tokens = replace.(tokens, "▁" => "")
+    end
+    return tokens
 end
 
 function _advance_idx(token::String, index::NamedTuple)
