@@ -5,7 +5,7 @@ authors = ["Alexius Wadell <awadell@umich.edu>"]
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
 mendeleev = "^0.16"
-electrolyte_fm = { path = "../../", develop=true, extras = ["tokenizers"] }
+electrolyte_fm = {path = "../..", extras = ["tokenizers"], develop = true}
 selfies = "^2.1.2"
 jsonnet = "^0.20.0"
 

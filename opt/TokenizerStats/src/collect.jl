@@ -224,9 +224,10 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
 
     @info "rank $rank: started processing"
     ds = setup_dm_mpi(datamodule, "val"; rank, size)
+    smi_column = pyconvert(String, datamodule.smi_column)
     start_time = time()
     for (idx, encoding) in enumerate(ds)
-        info_loss = unk_information_loss(ngram, ref_tok, tokenizer, encoding)
+        info_loss = unk_information_loss(ngram, ref_tok, tokenizer, encoding; smi_column)
         fit!(stats, tuple(info_loss))
         if idx % 10 == 0 && rank == 0
             elapsed = time() - start_time

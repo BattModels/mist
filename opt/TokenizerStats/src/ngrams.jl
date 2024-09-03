@@ -292,23 +292,22 @@ end
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference
 """
-function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram))
+function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
     unk_token_id = pyconvert(Int, tok.unk_token_id)
     code = pyconvert(Vector{Int}, encoding["input_ids"])
     (unk_token_id ∉ code) && return zeros(length(N))
 
     # Align both tokenizations
-    smi_tokens = pyconvert(Vector{String}, tok.tokenize(encoding["smiles"]))
-    ref_tokens = pyconvert(Vector{String}, ref_tok.tokenize(encoding["smiles"]))
+    smi_tokens = pyconvert(Vector{String}, tok.tokenize(encoding[smi_column]))
+    ref_tokens = pyconvert(Vector{String}, ref_tok.tokenize(encoding[smi_column]))
     smi_tokens = rm_special_tokens(tok, smi_tokens)
     ref_tok = rm_special_tokens(ref_tok, ref_tokens)
     A = align_unknown(ref_tokens, smi_tokens)
 
     # Compute information_loss from unknown tokens
     masked = map(!, vec(any(A; dims=2)))
-    @info "masked: $masked"
-    @assert any(masked) == true "expected at least one token to be masked, eval: $smi_tokens, ref: $ref_tokens, smi: $(join(ref_tokens, "")))"
-    ref_code = pyconvert(Vector{Int}, ref_tok(encoding["smiles"])["input_ids"])
+    @assert any(masked) == true lazy"expected at least one token to be masked, eval: $smi_tokens, ref: $ref_tokens"
+    ref_code = pyconvert(Vector{Int}, ref_tok(encoding[smi_column])["input_ids"])
     ref_code = rm_special_tokens(ref_tok, ref_code, length(masked))
     @assert length(masked) == length(ref_code)
     return map(n -> first(information_loss(ngram, ref_code, masked; N=n)), N)

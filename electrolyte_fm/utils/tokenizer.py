@@ -42,7 +42,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
             )
             vocab = vocab_from_words(vocab_file)
             assert "[unused11]" not in vocab.keys() and 11 not in vocab.values()
-            vocab["[unused11]"] = 11 # Fill in gap in vocab
+            vocab["[unused11]"] = 11  # Fill in gap in vocab
             return regex_smiles_tokenizer(vocab, regex)
 
         elif name == "rxn4chemistry/rxn_yields":
@@ -140,6 +140,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         from transformers import AutoTokenizer
         from tokenizers import Regex
         from tokenizers.pre_tokenizers import Split
+        from tokenizers.normalizers import Strip
 
         tok_tf = AutoTokenizer.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
@@ -149,6 +150,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         config = json.loads(tok_tf.backend_tokenizer.to_str())
         regex = config["pre_tokenizer"]["pretokenizers"][-1]["pattern"]["Regex"]
         tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
+        tok_tf.backend_tokenizer.normalizer = Strip()
         return tok_tf
 
     elif (
