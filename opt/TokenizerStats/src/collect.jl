@@ -298,3 +298,32 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
     MPI.Finalize()
     return nothing
 end
+
+merge_usage_stats(dir::String, glob::Regex=r".*_split_\w+_rank_\d+\.bson") = merge_usage_stats(find(dir, glob))
+merge_usage_stats(files::Vector{String}) = mapreduce(BSON.load, _merge_rank_usage_stats, files)
+
+function _merge_rank_usage_stats(a::Dict, b::Dict)
+    @assert a[:tokenizer] == b[:tokenizer] "All files must use the same tokenizer"
+    for k in [:train, :val, :test]
+        if !haskey(a, k) && haskey(b, k)
+            a[k] = b[k] # b has a key, but not a, so just copy
+
+        elseif haskey(a, k) && haskey(b, k)
+            # Both have a key, so merge
+            a[k] = _merge_usage_stats(a[k], b[k])
+        end
+    end
+    return a
+end
+
+function _merge_usage_stats(a::NamedTuple, b::NamedTuple)
+    @assert Set(keys(a)) == Set(keys(b)) == Set([:samples, keys(tracked_stats())...])
+    samples = a.samples + b.samples
+    nunique = mergewith(+, a.nunique, b.nunique)
+    fertility = mergewith(+, a.fertility, b.fertility)
+    out_of_vocab = a.out_of_vocab + b.out_of_vocab
+    ngrams = map(mergewith(+), a.ngrams, b.ngrams)
+    out = (; samples, nunique, fertility, out_of_vocab, ngrams)
+    @assert Set(keys(out)) == Set([:samples, keys(tracked_stats())...])
+    return out
+end
