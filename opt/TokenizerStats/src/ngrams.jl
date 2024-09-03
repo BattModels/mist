@@ -301,12 +301,14 @@ function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding
     smi_tokens = pyconvert(Vector{String}, tok.tokenize(encoding[smi_column]))
     ref_tokens = pyconvert(Vector{String}, ref_tok.tokenize(encoding[smi_column]))
     smi_tokens = rm_special_tokens(tok, smi_tokens)
-    ref_tok = rm_special_tokens(ref_tok, ref_tokens)
+    ref_tokens = rm_special_tokens(ref_tok, ref_tokens)
     A = align_unknown(ref_tokens, smi_tokens)
 
-    # Compute information_loss from unknown tokens
+    # Mask out unknown tokens
     masked = map(!, vec(any(A; dims=2)))
-    @assert any(masked) == true lazy"expected at least one token to be masked, eval: $smi_tokens, ref: $ref_tokens"
+    !(any(masked)) && return zeros(length(N)) # Unexpected, but possible if unk is from whitespace
+
+    # Compute information_loss from unknown tokens
     ref_code = pyconvert(Vector{Int}, ref_tok(encoding[smi_column])["input_ids"])
     ref_code = rm_special_tokens(ref_tok, ref_code, length(masked))
     @assert length(masked) == length(ref_code)
@@ -326,7 +328,8 @@ end
 
 function rm_special_tokens(tok::Py, tokens::Vector{String})
     if pyconvert(Bool, tok.__class__.__name__.startswith("T5Tokenizer"))
-        tokens = replace.(tokens, "▁" => "")
+        tokens = filter(!isempty, replace.(tokens, "▁" => ""))
+        @assert !isempty(tokens)
     end
     return tokens
 end
