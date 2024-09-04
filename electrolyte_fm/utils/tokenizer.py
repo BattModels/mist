@@ -211,6 +211,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         }
         alphabet |= set(string.ascii_letters)
         alphabet |= set(string.digits)
+        alphabet = list(alphabet)
+        alphabet.sort()
 
         tok = Tokenizer(WordLevel({c: id for id, c in enumerate(alphabet)}, "[UNK]"))
         tok.normalizer = Strip()
