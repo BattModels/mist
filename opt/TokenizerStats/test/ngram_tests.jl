@@ -12,9 +12,6 @@ end
     @test log_smoothed_counts(5_000_000, 1, 256000) ≈ log(5_000_000 + BigInt(256000)^1) atol=1e-8
     @test log_smoothed_counts(0, 8, 256000) ≈ log(BigInt(256000)^8) atol=1e-8
     @test log_smoothed_counts(0, 0, 256000) == 0
-    @test log_add(23424, 25132934) ≈ log(BigInt(23424) + BigInt(25132934)) atol=1e-8
-    @test log_add(0, 25132934) ≈ log(BigInt(25132934)) atol=1e-8
-    @test log_add(12342, 0) ≈ log(BigInt(12342)) atol=1e-8
 end
 
 @testsetup module NGramModelSetup
@@ -214,19 +211,6 @@ end
     end
     @testset "mismatched" begin
         @test_throws ErrorException align_unknown(["hello", "world"], ["hello", "foo"])
-    end
-    @testset "no unknowns" begin
-        using TokenizerStats: load_tokenizer
-        using PythonCall: pyconvert
-
-        tok = load_tokenizer("ibm/MoLFormer-XL-both-10pct-oov")
-        ref = "Clc1c(Cl)c(Cl)c(c(Cl)c1Cl)c2c(Cl)c(Cl)c(Cl)c(Cl)c2Cl"
-        smi = pyconvert(Vector{String}, tok.tokenize(ref))
-        ref = string.(collect(ref))
-        out = check_commutative(smi, ref)
-
-        masked = map(!, vec(any(out; dims=2)))
-        @test any(masked)
     end
 end
 

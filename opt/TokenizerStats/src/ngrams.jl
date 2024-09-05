@@ -131,7 +131,7 @@ function autoregressive_kld(model::NGramModel, code::Vector{Int}; N=length(model
     V = nonspecial_vocab_size(model)
     for i in 1:length(code)
         c, m = gram_odds(model, ngram(code, i, N))
-        loss += log1p(c) - log_add(m, V)
+        loss += log1p(c) - log(m + V)
     end
     return -loss
 end
@@ -162,7 +162,7 @@ function autoregressive_log_prob(model::NGramModel, code::Vector; N=length(model
             else
                 c, m = gram_odds(model, (cgram..., token))
                 @assert (c + 1) <= (m + V)
-                ell[j, i] = log1p(c) - log_add(m, V)
+                ell[j, i] = log1p(c) - log(m + V)
             end
         end
     end
@@ -185,12 +185,12 @@ function fb_log_probability(m::NGramModel, code::Vector; mask::Int=-100, N=lengt
 
     # Compute forward and backward probabilities
     V = nonspecial_vocab_size(m)
-    f_prob = @. log1p(fc) - log_smoothed_counts(fm, fmasked, V)'
-    b_prob = @. log1p(bc) - log_smoothed_counts(bm, bmasked, V)'
+    f_prob = @. log_smoothed_counts(fc, fmasked', V) - log_smoothed_counts(fm, fmasked .+ 1, V)'
+    b_prob = @. log_smoothed_counts(bc, bmasked', V) - log_smoothed_counts(bm, bmasked .+ 1, V)'
 
     # Compute joint probability
     ℓ = f_prob .+ b_prob
-    marginal = log.(sum(exp, ℓ; dims=1))
+    marginal = logsumexp(ℓ; dims=1)
     return ℓ .- marginal
 end
 
@@ -203,14 +203,11 @@ function log_smoothed_counts(counts::Integer, nmasked::Int, vocab_size::Int)
     if counts == 0
         return ln_mask
     elseif ln_counts > ln_mask
-        return ln_counts + log1p(exp(ln_mask - ln_counts))
+        return ln_counts + log1pexp(ln_mask - ln_counts)
     else
-        return ln_mask + log1p(exp(ln_counts - ln_mask))
+        return ln_mask + log1pexp(ln_counts - ln_mask)
     end
 end
-
-""" Computes `log(x + y)` in a numerically stable way"""
-log_add(x::Real, y::Real) = log_smoothed_counts(x, 1, y)
 
 function forward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
