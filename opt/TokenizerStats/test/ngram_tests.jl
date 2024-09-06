@@ -7,7 +7,7 @@
 end
 
 @testitem "log_smoothed_counts" begin
-    using TokenizerStats: log_smoothed_counts, log_add
+    using TokenizerStats: log_smoothed_counts
     @test log_smoothed_counts(1, 5, 256000) ≈ log(1 + BigInt(256000)^5) atol=1e-8
     @test log_smoothed_counts(5_000_000, 1, 256000) ≈ log(5_000_000 + BigInt(256000)^1) atol=1e-8
     @test log_smoothed_counts(0, 8, 256000) ≈ log(BigInt(256000)^8) atol=1e-8
@@ -234,3 +234,25 @@ end
         @test out == align_unknown(string.(collect(ref)), smi)'
     end
 end
+
+@testitem "strip" begin
+    using TokenizerStats: lstrip, rstrip
+    @testset "left" begin
+        @test lstrip((1, 2, 3, 4), -100) == (1, 2, 3, 4)
+        @test lstrip((-100, 2, 3, 4), -100) == (2, 3, 4)
+        @test lstrip((-100, 2, -100, 4), -100) == (2, -100, 4)
+        @test lstrip((-100, -100, -100, 4), -100) == (4,)
+        @test lstrip((-100, -100, -100, -100), -100) == tuple()
+        @test lstrip(tuple(), -100) == tuple()
+    end
+    @testset "right" begin
+        @test rstrip((1, 2, 3, 4), -100) == (1, 2, 3, 4)
+        @test rstrip((1, 2, 3, -100), -100) == (1, 2, 3)
+        @test rstrip((1, -100, 3, 4), -100) == (1, -100, 3, 4)
+        @test rstrip((1, -100, -100, -100), -100) == (1,)
+        @test rstrip((-100, -100, -100, -100), -100) == tuple()
+        @test rstrip(tuple(), -100) == tuple()
+    end
+end
+
+

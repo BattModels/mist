@@ -215,12 +215,15 @@ function forward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     n_masked = Vector{Int}(undef, length(code))
     Threads.@threads for i in 1:length(code)
         cgram = condgram(code, i, N)
+        cgram = lstrip(cgram, mask)
         n_masked[i] = count(==(mask), cgram)
+        token_marginal = UInt64(0)
         for (j, token) in enumerate(token_ids(m))
             c = masked_counts(m, (cgram..., token), mask)
             counts[j,i] = c
-            marginal[i] += c
+            token_marginal += c
         end
+        marginal[i] = token_marginal
     end
     return counts, marginal, n_masked
 end
@@ -232,14 +235,41 @@ function backward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     n_masked = Vector{Int}(undef, length(code))
     Threads.@threads for (i, ri) in collect(enumerate(range(length(code), 1; step=-1)))
         cgram = reverse(condgram(code, i, N))
+        cgram = rstrip(cgram, mask)
         n_masked[ri] = count(==(mask), cgram)
+        token_marginal = UInt64(0)
         for (j, token) in enumerate(token_ids(m))
             c = masked_counts(m, (token, cgram...), mask)
             counts[j,ri] = c
-            marginal[ri] += c
+            token_marginal += c
         end
+        marginal[ri] = token_marginal
     end
     return counts, marginal, n_masked
+end
+
+"""
+    gram = lstrip(gram, mask)
+
+Remove mask tokesn from the left or right side of the gram
+"""
+function Base.lstrip(gram::NTuple{N, <:Integer}, mask::Integer) where {N}
+    for i in 1:N
+        gram[i] == mask || return gram[i:end]
+    end
+    return tuple()
+end
+
+"""
+    gram = rstrip(gram, mask)
+
+Remove mask tokesn from the left or right side of the gram
+"""
+function Base.rstrip(gram::NTuple{N, <:Integer}, mask::Integer) where {N}
+    for i in range(N, 1; step=-1)
+        gram[i] == mask || return gram[1:i]
+    end
+    return tuple()
 end
 
 
