@@ -220,6 +220,7 @@ for subset in MOLNET_DATASET.keys():
 
 TOKENIZERS = {
     "smiles": [
+        "character",
         "smirk",
         "ibm/MoLFormer-XL-both-10pct-oov",
         "SmilesPE/SPE_ChEMBL",
@@ -233,9 +234,9 @@ TOKENIZERS = {
         "rxn4chemistry/rxn_yields",
         "rxn4chemistry/rxnfp",
         "ChangwenXu98/TransPolymer",
-        "../../smirk-gpe-50k-mb-ss",
-        "../../smirk-gpe-50k-nmb-ss",
-        "../../smirk-gpe-small-50k-mb-ss",
+        "./smirk-gpe-50k-mb-ss",
+        "./smirk-gpe-50k-nmb-ss",
+        "./smirk-gpe-small-50k-mb-ss",
         "google/gemma-7b",
         "Xenova/gpt-4o",
         "meta-llama/Meta-Llama-3.1-8B",
@@ -294,6 +295,7 @@ def tabulate_tokenizer(
                         oov_samples.add(smi)
                 nobs += 1
             LOG.info("%s - %s: finished %d", name, ds_name, nobs)
+            break
 
         out[ds_name] = {
             "nobs": nobs,

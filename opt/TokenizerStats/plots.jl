@@ -1,4 +1,4 @@
-using TokenizerStats: TokenizerStats, tokenizer_label, moments!, hist_nbins, find, tokenusage!
+using TokenizerStats: TokenizerStats, tokenizer_label, moments!, hist_nbins, find, tokenusage!, classify_tokenizer
 using PythonCall
 using GLMakie
 using CairoMakie
@@ -9,15 +9,18 @@ using BSON
 using DataFrames
 using CategoricalArrays: categorical, levelcode, levels
 using OnlineStats: OrderedDict
+using GLM
+using Format
 
 GLMakie.activate!()
 
 const GIT_ROOT = strip(read(`git rev-parse --show-toplevel`, String))
 
 TOKENIZERS = OrderedDict(
-        "smirk" => "smirk (ours)",
+        "smirk" => "smirk",
         "character" => "Character",
-        "smirk-gpe-50k-mb-ss" => "smirk-gpe-50k-mb-ss",
+        "smirk-gpe-50k-nmb-ss" => "smirk-gpe",
+        "smirk-gpe-50k-mb-ss" => "smirk-gpe, merge-brackets",
         "seyonec/ChemBERTa-zinc-base-v1" => "ChemBERTa v1",
         "ChangwenXu98/TransPolymer" => "TransPolymer",
         "ibm/MoLFormer-XL-both-10pct-oov" => "MoLFormer",
@@ -37,6 +40,13 @@ TOKENIZERS = OrderedDict(
         "google/gemma-7b" => "Gemma",
 )
 
+const CLASS_MARKER = Dict(
+    :atomic => :x,
+    :nlp => :diamond,
+    :nlp_based => :cross,
+    :ours => :star5,
+)
+
 function theme()
     Theme(
         rowgap = 5,
@@ -54,10 +64,10 @@ function theme()
         ),
         palette=(;
             color=cgrad(:seaborn_muted, 10),
-            linestyle = [:solid, :dash],
+            linestyle = [:solid, :dot, :dashdot],
         ),
         Lines = (;
-            cycle = [:color, :linestyle],
+            cycle = Cycle([:color, :linestyle], covary = true),
         ),
         Axis = (;
             titlesize = 6,
@@ -122,6 +132,7 @@ function all_figures()
 
         # N-Gram Analysis
         savefig("ngram_fits", figure_ngram_fits())
+        savefig("ngram_pretrain_on_molnet", figure_ngram_fits(dataset="molnet"))
         savefig("ngram_unk_log_odds", figure_ngram_info_loss())
         savefig("kl_v_info_loss", figure_kl_v_info_loss())
 
@@ -160,29 +171,56 @@ function collect_results(glob=r"stats-.*\.json")
 end
 
 function figure_token_usage()
-    f = Figure(; size=72 .* (4.5, 3))
+    f = Figure(;
+        size=72 .* (4.5, 3),
+        figure_padding=(1, 1, 1, 5),
+    )
     l = 1e-5
     ax = Axis(f[1,1];
-        limits=((0, 1), (0, 37)),
-        xlabel="Token Usage Rank [%]",
+        limits=((1, 2500), (0, 25)),
+        xlabel="Token Rank",
         ylabel="Information Content [nats]",
-        xtickformat="{:.0%}",
-        xscale=sqrt,
+        xscale=log10,
+        xminorticksvisible=true,
+        xminorticks=IntervalsBetween(5),
+        xminorgridvisible=true,
     )
 
     results = collect_results(r"realspace_v4_dev\.bson")
-    for (tok_name, plt_name) in TOKENIZERS
+    rows = []
+    for tok_name in keys(TOKENIZERS)
         if tok_name in keys(results)
             stats = BSON.load(results[tok_name])
-            usage = stats[:ngrams][1]
+            usage = stats[:train][:ngrams][1]
             usage = Dict{Int, Int}(only(k) => v for (k, v) in pairs(usage))
             vocab_size = stats[:tokenizer][:vocab_size]
-            tokenusage!(ax, usage, vocab_size; label=plt_name, smoothing=0)
+            c_token = TokenizerStats.collate_token_usage(usage, vocab_size; smoothing=0)
+            p_token = c_token ./ sum(c_token)
+
+            sort!(p_token, rev=true)
+            efficiency = sum(p -> -p * log(p)/log(vocab_size), filter(>(0), p_token))
+            H = sum(p -> p > 0 ? -p * log(p) : 0, p_token; init=0.0)
+            plt_name = TOKENIZERS[tok_name]
+            push!(rows, (; tok_name, plt_name, usage, H, efficiency, vocab_size))
         end
     end
+    df =DataFrame(rows)
+    sort!(df, [:H, :efficiency, :vocab_size]; rev=true)
+    display(select(df, Not(:usage)))
 
-    axislegend(ax, position=:rt, nbanks=1)
-    colgap!(f.layout, 1)
+    linestyles = [:dot, :dashdot, :solid]
+    for (idx, row) in enumerate(eachrow(df))
+        tokenusage!(ax, row.usage, row.vocab_size;
+            smoothing=0,
+            label=row.plt_name * format(" ({:.2f}, {:.1%})", row.H, row.efficiency),
+            linestyle=linestyles[idx % length(linestyles) + 1],
+            linewidth=0.75,
+        )
+    end
+
+
+    Legend(f[1,2], ax; tellheight=true, tellwidth=true, patchsize = (10, 6), valign=:top)
+    colgap!(f.layout, 2)
     resize_to_layout!(f)
     return f
 end
@@ -214,58 +252,56 @@ function figure_vocab_entropy(results::Dict)
 end
 
 function figure_fertility()
-    f = Figure(size=72 .* (4, 3.25))
+    @info "Plotting Cross Entropy Loss vs. Fertility"
+    f = Figure(size=72 .* (3.42, 2.75))
     ax = Axis(f[1,1];
         limits=((0, 75), nothing),
-        ylabel="Unigram KL-Divergence",
+        ylabel="Cross Entropy Loss",
         xlabel="Tokenizer Fertility",
     )
-    usage_stats = collect_results(r"realspace_v4_dev\.bson")
+    usage_stats = TokenizerStats.usage_stats()
     loss_stats = TokenizerStats.model_loss_stats()
     plt_tokenizers = filter(x -> x != "character", collect(keys(TOKENIZERS)))
-    @info plt_tokenizers
 
-    # Average Loss over MoleculeNet for unigrams on the validation set
-    subset!(loss_stats,
-        :ngram => ByRow(==(1)),
-        :split => ByRow(x -> string(x) == "val"),
+    # Select the best n-gram model for each tokenizer
+    val_loss = subset(loss_stats,
+        :split => ByRow(==(:val)),
+        :dataset => ByRow(==("realspace_v4_dev")),
         :tokenizer => ByRow(x -> x in plt_tokenizers),
     )
-    @assert nrow(loss_stats) > 1
-    @warn "using median loss, replace with weighted-mean"
-    loss_stats = combine(groupby(loss_stats, :tokenizer)) do gdf
-        # μ, σ = mean_and_std(gdf.avg_model_loss, Weights(gdf.samples))
-        μ = median(gdf.avg_model_loss)
-        (; loss = μ)
-    end
-    @info loss_stats
-    loss_stats = Dict(zip(loss_stats.tokenizer, loss_stats.loss))
-
-    markers = [:x, :+]
-    for (idx, tokenizer) in enumerate(plt_tokenizers)
-        tokenizer ∉ keys(loss_stats) && continue
-        tokenizer ∉ keys(usage_stats) && continue
-        stats = BSON.load(usage_stats[tokenizer])
-        fertility_counts = :val ∈ keys(stats) ? stats[:val][:fertility] : stats[:fertility]
-        μ, σ = mean_and_std(collect(keys(fertility_counts)), Weights(collect(values(fertility_counts))))
-        loss = -loss_stats[tokenizer]
-        @info tokenizer loss μ σ
-
-        # pretty print token count
-        token_count = stats[:tokenizer][:vocab_size]
-        if token_count % 1000 == 0
-            token_count = "$(fld(token_count, 1000))k"
-        else
-            token_count = "$(token_count)"
-        end
-
-        scatter!(ax, [μ], [loss];
-            label=TOKENIZERS[tokenizer] * " ($token_count)",
-            marker=@show markers[idx % length(markers) + 1]
-        )
+    best_models = combine(groupby(val_loss, :tokenizer)) do gdf
+        sort!(gdf, :avg_model_loss; rev=false)
+        return gdf[1, :]
     end
 
-    axislegend(ax, position=:lt, orientation=:vertical)
+    fertility = subset(usage_stats,
+        :split => ByRow(==(:train)),
+        :dataset => ByRow(==("realspace_v4_dev")),
+    )
+    select!(fertility, [:tokenizer, :avg_fertility, :std_fertility])
+
+    df = leftjoin(best_models, fertility, on=[:tokenizer])
+    df.class = classify_tokenizer.(df.tokenizer)
+    sort!(df, [:class, :avg_model_loss])
+    dropmissing!(df)
+    display(df)
+
+    # Regression modle
+    ols = lm(@formula(avg_model_loss ~ avg_fertility + 1), df)
+    display(ols)
+
+    # Plot results
+    ablines!(ax, coef(ols)[1], coef(ols)[2]; label="Linear Least Squares Fit", color=:red, linewidth=0.5)
+    for row in eachrow(df)
+        name = row.tokenizer
+        label = haskey(TOKENIZERS, name) ? TOKENIZERS[name] : name
+        marker = CLASS_MARKER[classify_tokenizer(name)]
+        scatter!(ax, row.avg_fertility, row.avg_model_loss; label, marker)
+    end
+
+    Legend(f[1,2], ax; tellheight=true, tellwidth=true, valign=:top)
+    # axislegend(ax, position=:lb, fontsize=8)
+    resize_to_layout!(f)
 
     return f
 end
@@ -367,10 +403,12 @@ function figure_oov_rate(filename=joinpath(@__DIR__, "stats-atomic.json"))
     return f
 end
 
-function figure_ngram_fits()
-    df = TokenizerStats.ngram_perf()
+function figure_ngram_fits(; dataset="realspace_v4_dev")
+    df = TokenizerStats.model_loss_stats()
     plt_toks = [
         "smirk",
+        "smirk-gpe-50k-nmb-ss",
+        "character",
         "ibm/MoLFormer-XL-both-10pct-oov",
         "devalab/molgpt-moses",
         "rxn4chemistry/rxn_yields",
@@ -378,44 +416,56 @@ function figure_ngram_fits()
         "SmilesPE/SPE_ChEMBL",
         "MolecularAI/Chemformer",
         "seyonec/ChemBERTa-zinc-base-v1",
+        "ChangwenXu98/TransPolymer",
         "meta-llama/Meta-Llama-3.1-8B",
         "Xenova/gpt-4o",
         "google/gemma-7b",
-        "character",
     ]
-    df = subset(df,
-        :dataset => ByRow(==("realspace_v4_dev")),
-        :tokenizer => ByRow(x -> x in plt_toks)
+    subset!(df,
+        :tokenizer => ByRow(x -> x in plt_toks),
+        :split => ByRow(==(:val)),
     )
-    pos = Int[]
-    group = Int[]
-    log_prob = Float64[]
+    if dataset == "realspace_v4_dev"
+        df = subset(df,
+            :dataset => ByRow(==("realspace_v4_dev")),
+        )
+    elseif dataset == "molnet"
+        df = subset(df,
+            :dataset => ByRow(!=("realspace_v4_dev")),
+        )
+        df = combine(groupby(df, [:tokenizer, :ngram])) do gdf
+            return (;
+                avg_model_loss = mean(gdf.avg_model_loss, Weights(gdf.samples)),
+            )
+        end
+    else
+        error("unknown dataset $dataset")
+    end
+
     df.tokenizer = categorical(df.tokenizer; levels=plt_toks)
+    return plot_ngram_fits(df)
+end
 
-    ngrams = levels(df.ngram)
-    tokenizer = levels(df.tokenizer)
-
+function plot_ngram_fits(df::DataFrame)
     f = Figure(; size=72 .* (7, 2))
+    tokenizer = levels(df.tokenizer)
     ax = Axis(f[1,1];
-        limits=(nothing, (1, nothing)), xlabel="n-gram size",
-        ylabel="KL-Divergence [nats]",
+        limits=(nothing, (0, nothing)),
+        ylabel="Cross Entropy Loss [nats]",
         xticks = (1:length(tokenizer), map(n -> TOKENIZERS[n], tokenizer)),
-        yticks = [1, 10, 100],
         xticklabelrotation = 0.4,
         xticksvisible=false,
-        yscale=log10,
         xgridvisible=false,
-        xminorgridvisible=false,
-        yminorticks = IntervalsBetween(10),
-        yminorticksvisible=true,
-        yminorgridvisible=true,
     )
-    h = barplot!(ax, levelcode.(df.tokenizer), -1 .* df.log_odds;
+    @info sort(df[!, [:tokenizer, :ngram, :avg_model_loss]], :avg_model_loss)
+    h = barplot!(ax, levelcode.(df.tokenizer), df.avg_model_loss;
         dodge=df.ngram,
         color=df.ngram,
         colormap=:Set2_5,
+        fillto=1,
     )
 
+    ngrams = levels(df.ngram)
     ds_elements = map(1:length(ngrams)) do gdx
         PolyElement(polycolor=gdx,
             colormap=h.colormap,
@@ -448,7 +498,7 @@ function figure_ngram_prediction(smi; direction=:forward)
     tok_log_prob!(f[1,2], cb, path("ibm/MoLFormer-XL-both-10pct-oov")..., smi; direction)
     tok_log_prob!(f[1,3], cb, path("seyonec/ChemBERTa-zinc-base-v1")..., smi; direction)
     tok_log_prob!(f[2,1], cb, path("devalab/molgpt-moses")..., smi; direction)
-    tok_log_prob!(f[2,2], cb, path("rxn4chemistry/rxn_yields")..., smi; direction)
+    tok_log_prob!(f[2,2], cb, path("rxn4chemistry/rxnfp")..., smi; direction)
     tok_log_prob!(f[2,3], cb, path("MolecularAI/Chemformer")..., smi; direction)
     tok_log_prob!(f[3,1], cb, path("meta-llama/Meta-Llama-3.1-8B")..., smi; direction)
     tok_log_prob!(f[3,2], cb, path("Xenova/gpt-4o")..., smi; direction)
@@ -506,31 +556,33 @@ function tok_log_prob!(f, cb, file, name, smi, max_vocab=200; direction=:forward
 end
 
 function figure_ngram_info_loss()
-    f = Figure(size=72 .* (4.5, 3))
-    cb = Colorbar(f[1:2, 4];
+    f = Figure(size=72 .* (4.5, 1.7))
+    cb = Colorbar(f[1, 4];
         label="Log Odds Ratio",
         colormap=:vik,
-        colorrange=(-17, 17),
+        colorrange=(-40, 40),
         tellheight=true,
     )
 
     smi = "C(=Cc1ccccc1)C1=[O+][Cu-3]2([O+]=C(C=Cc3ccccc3)CC(c3ccccc3)=[O+]2)[O+]=C(c2ccccc2)C1"
+    rsmi, token_color = rich_smi(smi, "[O+]" => :turquoise, "[Cu-3]" => :magenta)
+    @info token_color
 
     # Load model
     ref_file = joinpath(@__DIR__, "stats", "character", "realspace_v4_dev.bson")
     ngram, ref_tok, ref_info = TokenizerStats.load_ngram_model(ref_file)
     ref_code = pyconvert(Vector{Int}, ref_tok(smi)["input_ids"])
-    kwargs = (; ngram, ref_tok, ref_code)
+    kwargs = (; ngram, ref_tok, ref_code, token_color)
 
     tok_info_loss!(f[1,1], cb, "smirk", smi; kwargs...)
-    tok_info_loss!(f[1,2], cb, "ibm/MoLFormer-XL-both-10pct-oov", smi; kwargs...)
-    tok_info_loss!(f[1,3], cb, "SmilesPE/SPE_ChEMBL", smi; kwargs...)
-    tok_info_loss!(f[2,1], cb, "MolecularAI/Chemformer", smi; kwargs...)
-    tok_info_loss!(f[2,2], cb, "devalab/molgpt-moses", smi; kwargs...)
-    tok_info_loss!(f[2,3], cb, "rxn4chemistry/rxn_yields", smi; kwargs...)
+    # tok_info_loss!(f[1,2], cb, "ibm/MoLFormer-XL-both-10pct-oov", smi; kwargs...)
+    tok_info_loss!(f[1,2], cb, "SmilesPE/SPE_ChEMBL", smi; kwargs...)
+    # tok_info_loss!(f[2,1], cb, "MolecularAI/Chemformer", smi; kwargs...)
+    tok_info_loss!(f[1,3], cb, "devalab/molgpt-moses", smi; kwargs...)
+    # tok_info_loss!(f[2,3], cb, "rxn4chemistry/rxn_yields", smi; kwargs...)
 
     # Format plot
-    Label(f[0, :], smi, fontsize=6)
+    Label(f[0, :], rsmi, fontsize=6)
     Label(f[end+1, :], "Predicted Tokens", fontsize=8)
     resize_to_layout!(f)
     colgap!(f.layout, 3)
@@ -539,7 +591,36 @@ function figure_ngram_info_loss()
     return f
 end
 
-function box_token!(ax, token_id::Int, code_pos::Int; kwargs...)
+function rich_smi(smi::String, colors::Pair...; colormap=:viridis)
+    out = []
+    colors = Dict(colors)
+    idx = firstindex(smi)
+    matches = findall(r"\[.*?\]", smi)
+    cmap = cgrad(colormap, length(matches))
+    token_color = Vector(undef, length(smi))
+    for m in matches
+        if idx != prevind(smi, first(m))
+            r = idx:prevind(smi, first(m))
+            token_color[r] .= :black
+            push!(out, rich(smi[r]))
+        end
+
+        # Get color for segment
+        segment = get(colors, smi[m], cmap[length(colors)+1] )
+        colors[smi[m]] = segment
+        token_color[m] .= segment
+        push!(out, rich(smi[m]; color=segment, font=:bold))
+        idx = nextind(smi, last(m))
+    end
+
+    if idx != lastindex(smi)
+        push!(out, rich(smi[idx:end]))
+        token_color[idx:end] .= :black
+    end
+    return rich(out...), token_color
+end
+
+function box_token!(ax, token_id::Int, code_pos::Int; offset=0.0, kwargs...)
     token_id += 1
     point = [
         (token_id, code_pos),
@@ -548,11 +629,11 @@ function box_token!(ax, token_id::Int, code_pos::Int; kwargs...)
         (token_id + 1, code_pos),
         (token_id, code_pos),
     ]
-    point = map(x -> (x[1] - 0.5, x[2] - 0.5), point)
-    lines!(ax, point; color=:red, linewidth=0.2, kwargs...)
+    point = map(x -> (x[1] - offset, x[2] - offset), point)
+    lines!(ax, point; color=:red, linewidth=0.1, kwargs...)
 end
 
-function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_code)
+function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_code, token_color=missing)
 
     # Load model
     name = Dict(TOKENIZERS)[tok]
@@ -601,10 +682,11 @@ function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_cod
         lowclip=cb.lowclip,
     )
 
-    # # Highlight the correct token
-    # for (code_pos, token_id) in enumerate(ref_code)
-    #     box_token!(ax, token_id, code_pos; linewidth=0.5, color=:black)
-    # end
+    # Highlight the correct token
+    for (code_pos, token_id) in enumerate(ref_code)
+        color = ismissing(token_color) ? :black : token_color[code_pos]
+        box_token!(ax, token_id, code_pos; linewidth=0.5, color)
+    end
 
     return nothing
 end
@@ -631,10 +713,13 @@ function figure_kl_v_info_loss()
     model_loss = TokenizerStats.model_loss_stats()
     info_loss = TokenizerStats.avg_molnet_info_loss()
 
+    subset!(model_loss,
+        :dataset => ByRow(!=("realspace_v4_dev")),
+        :split => ByRow(==(:val)),
+    )
     model_loss = combine(groupby(model_loss, [:tokenizer, :split, :ngram])) do gdf
         return (;
-            avg_model_loss = median(gdf.avg_model_loss),
-            max_model_loss = maximum(gdf.max_model_loss),
+            avg_model_loss = mean(gdf.avg_model_loss, Weights(gdf.samples)),
             vocab_size = first(gdf.vocab_size),
             samples = sum(gdf.samples),
         )
@@ -643,25 +728,31 @@ function figure_kl_v_info_loss()
     select!(info_loss, Not([:samples, :vocab_size]))
     df = leftjoin(model_loss, info_loss, on=[:tokenizer, :split, :ngram])
     plt_tokenizers = [
+        "smirk-gpe-50k-nmb-ss" => :star8,
         "smirk" => :star5,
         "ibm/MoLFormer-XL-both-10pct-oov" => :diamond,
         "devalab/molgpt-moses" => :rect,
+        "devalab/molgpt-guacamol" => :hexagon,
         "rxn4chemistry/rxn_yields" => :cross,
+        "rxn4chemistry/rxnfp" => :x,
         "MolecularAI/Chemformer" => :utriangle,
-        "SmilesPE/SPE_ChEMBL" => :x,
+        "SmilesPE/SPE_ChEMBL" => :rect,
     ]
+    dropmissing!(df)
     subset!(df,
-        :tokenizer => ByRow(x -> x in first.(plt_tokenizers)),
+        :avg_info_loss => ByRow(>(0)),
         :ngram => ByRow(>(1)),
         :split => ByRow(==(:val)),
     )
+    @info "Tokens with no info_loss" unique(df.tokenizer)
+    subset!(df, :tokenizer => ByRow(x -> x in first.(plt_tokenizers)))
     df.tokenizer = categorical(df.tokenizer)
-
     display(df[!, [:tokenizer, :ngram, :avg_model_loss, :avg_info_loss]])
 
     f = Figure(; size=72 .* (4.5, 3))
     ax = Axis(f[1,1];
-        xlabel="KL-Divergence [nats]",
+        limits=((90, 180), nothing),
+        xlabel="Cross Entropy Loss [nats]",
         ylabel="Entropy of Unknowns [nats]",
         yticks=[0, 0.05, 0.25, 1, 4],
         yscale=Asinh(0.05),
@@ -670,7 +761,7 @@ function figure_kl_v_info_loss()
         yminorgridvisible=true,
         xgridvisible=false,
     )
-    h = scatter!(ax, -df.avg_model_loss, df.avg_info_loss;
+    h = scatter!(ax, df.avg_model_loss, df.avg_info_loss;
         colormap=:Set2_5,
         colorrange=(1, 5),
         color=df.ngram,
@@ -695,12 +786,9 @@ function figure_kl_v_info_loss()
         ["n-gram", "Tokenizer"];
         tellheight=false,
         tellwidth=false,
-        nbanks=2,
-        halign=:right,
-        valign=:top,
+        halign=:left,
+        valign=:bottom,
     )
-
-
 
     return f
 end

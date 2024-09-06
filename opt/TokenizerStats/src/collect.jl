@@ -299,7 +299,12 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
     return nothing
 end
 
-merge_usage_stats(dir::String, glob::Regex=r".*_split_\w+_rank_\d+\.bson") = merge_usage_stats(find(dir, glob))
+function merge_usage_stats(dir::String; split="train", glob::Regex=Regex(".*_split_$(split)_rank_\\d+\\.bson"))
+    files = find(dir, glob)[1:10]
+    @assert length(files) > 0 "No files found for $glob in $dir"
+    @info "Merging usage stats for $split" files
+    return merge_usage_stats(files)
+end
 merge_usage_stats(files::Vector{String}) = mapreduce(BSON.load, _merge_rank_usage_stats, files)
 
 function _merge_rank_usage_stats(a::Dict, b::Dict)
@@ -322,8 +327,18 @@ function _merge_usage_stats(a::NamedTuple, b::NamedTuple)
     nunique = mergewith(+, a.nunique, b.nunique)
     fertility = mergewith(+, a.fertility, b.fertility)
     out_of_vocab = a.out_of_vocab + b.out_of_vocab
-    ngrams = map(mergewith(+), a.ngrams, b.ngrams)
+    ngrams = map(a.ngrams, b.ngrams) do a, b
+        mergewith(+, compact_ngrams(a), compact_ngrams(b))
+    end
     out = (; samples, nunique, fertility, out_of_vocab, ngrams)
     @assert Set(keys(out)) == Set([:samples, keys(tracked_stats())...])
     return out
+end
+
+function compact_ngrams(ngrams::AbstractDict)
+    keytype(ngrams) == UInt16 && valuetype(ngrams) == Float32 && return ngrams
+    map(collect(pairs(ngrams))) do (k, v)
+        k = UInt16.(k)
+        k => Float32(v)
+    end |> Dict
 end

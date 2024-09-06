@@ -46,6 +46,8 @@ end
 @recipe(TokenUsage, usage, vocab_size) do scene
     Attributes(
         smoothing = 1,
+        linestyle = :solid,
+        linewidth = 1.0,
     )
 end
 
@@ -53,6 +55,7 @@ function collate_token_usage(ids::AbstractVector{<:Integer}, counts::Dict{<:Abst
     counts = Dict(( parse(Int, k) => v for (k, v) in pairs(counts) ))
     return collate_token_usage(ids, counts; smoothing)
 end
+collate_token_usage(counts::Dict, vocab_size::Integer; kwargs...) = collate_token_usage(0:vocab_size-1, counts; kwargs...)
 function collate_token_usage(ids::AbstractVector{T}, counts::Dict{T, <:Integer}; smoothing) where {T}
     usage =  Vector{Int}(undef, length(ids))
     for (idx, token_id) in enumerate(ids)
@@ -66,14 +69,11 @@ function Makie.plot!(plt::TokenUsage)
     ids = 0:vocab_size-1
     usage = collate_token_usage(ids, plt.usage[]; smoothing=plt[:smoothing][])
     usage = usage ./ sum(usage)
+    sort!(usage; rev=true)
+    I = -log.(usage)
+    # filter!(isfinite, I)
 
-    # Sort tokens by usage
-    p = sortperm(usage; rev=true)
-    usage = usage[p]
-    ids = ids[p]
-    token_information = -log2.(usage)
-
-    x = range(0, 1; length=length(usage))
-    stairs!(plt, x, token_information)
+    x = range(0, 1; length=length(I)) |> reverse
+    stairs!(plt, I; linewidth=plt[:linewidth][], linestyle=plt[:linestyle][])
 end
 
