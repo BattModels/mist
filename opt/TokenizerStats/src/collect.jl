@@ -95,8 +95,7 @@ function srun_usage_stats(datamodule::Py, out_file::AbstractString; tokenizer_na
     stats = Dict{Symbol, Any}()
     splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
     for split in splits
-        rank_stats = rank_usage_stats(datamodule, split; rank, size)
-        tokenizer_stats = leader_reduce(merge!, local_stats)
+        tokenizer_stats = rank_usage_stats(datamodule, split; rank, size)
         if rank == 0 || true
             @info "Saving results for $split on rank $rank"
             stats[Symbol(split)] = (;
@@ -118,8 +117,6 @@ function srun_usage_stats(datamodule::Py, out_file::AbstractString; tokenizer_na
         chmod(out_file, 0o444)
     end
 
-    MPI.Barrier(comm)
-    MPI.Finalize()
     return 0
 end
 
@@ -139,11 +136,11 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
         unk_token_id=pyconvert(Union{Int, Nothing}, tokenizer.unk_token_id),
     )
     stats = Dict{Symbol, Any}()
-    splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
+    splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
     for split in splits
         rank_stats = rank_usage_stats(datamodule, split; rank, size)
-        tokenizer_stats = leader_reduce(merge!, local_stats)
-        if rank == 0 || true
+        tokenizer_stats = leader_reduce(merge!, rank_stats)
+        if rank == 0
             @info "Saving results for $split on rank $rank"
             stats[Symbol(split)] = (;
                 samples=nobs(tokenizer_stats),
@@ -153,7 +150,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     end
 
     # Save stats
-    if rank == 0 || true
+    if rank == 0
         @info "Saving stats on rank $rank to $out_file"
         mkpath(dirname(out_file))
         stats[:tokenizer] = tokenizer_info
@@ -299,13 +296,8 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
     return nothing
 end
 
-function merge_usage_stats(dir::String; split="train", glob::Regex=Regex(".*_split_$(split)_rank_\\d+\\.bson"))
-    files = find(dir, glob)[1:10]
-    @assert length(files) > 0 "No files found for $glob in $dir"
-    @info "Merging usage stats for $split" files
-    return merge_usage_stats(files)
-end
 merge_usage_stats(files::Vector{String}) = mapreduce(BSON.load, _merge_rank_usage_stats, files)
+merge_usage_stats(dir::String, glob::Regex=r".*_split_\w+_rank_\d+\.bson") = merge_usage_stats(find(dir, glob))
 
 function _merge_rank_usage_stats(a::Dict, b::Dict)
     @assert a[:tokenizer] == b[:tokenizer] "All files must use the same tokenizer"
