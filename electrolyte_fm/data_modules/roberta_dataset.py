@@ -73,7 +73,7 @@ class RobertaDataSet(pl.LightningDataModule):
         ds = self.__load_dataset()
 
         # Get Canonical SMILES encodings before tokenizing
-        if self.canononical:
+        if self.canonical:
             from ..utils.tokenizer import rdkit_canonical
 
             ds = ds.map(
