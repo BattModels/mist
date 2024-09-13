@@ -22,7 +22,7 @@ pydoe2 = "^1.3"
 jsonnet = "^0.20.0"
 scikit-learn= "^1.5.1"
 rdkit = "^2024.3.5"
-smirk = {git = "https://github.com/BattModels/smirk.git", rev = "cb2f371e843c85312eb0b3b8fb566855227f531d"}
+smirk = {git = "git@github.com:BattModels/smirk.git", rev = "8061286a219420571d606d98083dd900aaa21d02" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8"

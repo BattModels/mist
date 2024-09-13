@@ -2771,9 +2771,9 @@ test = ["pytest"]
 
 [package.source]
 type = "git"
-url = "https://github.com/BattModels/smirk.git"
-reference = "cb2f371e843c85312eb0b3b8fb566855227f531d"
-resolved_reference = "cb2f371e843c85312eb0b3b8fb566855227f531d"
+url = "git@github.com:BattModels/smirk.git"
+reference = "HEAD"
+resolved_reference = "8061286a219420571d606d98083dd900aaa21d02"
 
 [[package]]
 name = "smmap"
@@ -3573,4 +3573,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "f1fd5e36aa5dcaedaacba09f45cc75028fa6333e21c5b6b2fa026c08b58edfef"
+content-hash = "f46598fbdbe885837b8892786fec102fd01cc5d93c48fe1afe3599396cf91054"
