@@ -14,5 +14,4 @@ jobs:
           python-version: 3.11.8
           cache: 'poetry'
       - run: poetry install
-      - run: poetry run python -m pip install ./smirk  # Explicitly install smirk to ensure it get's built
       - run: source activate && pytest
