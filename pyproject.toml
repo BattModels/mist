@@ -39,6 +39,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+pythonpath = [".", "test"]
 addopts = "--color yes"
 
 [tool.ruff.lint]
