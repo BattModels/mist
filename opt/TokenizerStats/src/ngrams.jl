@@ -54,7 +54,17 @@ function NGramModel(ngrams::Union{Tuple, Vector}, vocab_size::Int; special_token
 end
 
 function load_ngram_model(file::String, split=:train)
-    ref = BSON.load(file)
+    # Open token stats file
+    suffix = last(splitext(file))
+    if suffix == ".bson"
+        ref = BSON.load(file)
+    elseif suffix == ".jld"
+        ref = deserialize(file)
+    else
+        error("unknown filetype: $file")
+    end
+
+    # Extract tokenizer info
     name = ref[:tokenizer][:name]
     name = startswith(name, "smirk-gpe") ? "./" * name : name
     tok = load_tokenizer(name)

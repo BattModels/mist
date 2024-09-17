@@ -207,6 +207,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
             ")",
             "[",
             "]",
+            "*",
             "[UNK]",
         }
         alphabet |= set(string.ascii_letters)

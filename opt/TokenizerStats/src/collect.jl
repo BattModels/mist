@@ -297,7 +297,10 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
 end
 
 merge_usage_stats(files::Vector{String}) = mapreduce(BSON.load, _merge_rank_usage_stats, files)
-merge_usage_stats(dir::String, glob::Regex=r".*_split_\w+_rank_\d+\.bson") = merge_usage_stats(find(dir, glob))
+function merge_usage_stats(dir::String; split::AbstractString="train", glob::Regex=Regex(".*_split_$(split)_rank_\\d+\\.bson"))
+    files = find(dir, glob)
+    return merge_usage_stats(files)
+end
 
 function _merge_rank_usage_stats(a::Dict, b::Dict)
     @assert a[:tokenizer] == b[:tokenizer] "All files must use the same tokenizer"
@@ -319,8 +322,12 @@ function _merge_usage_stats(a::NamedTuple, b::NamedTuple)
     nunique = mergewith(+, a.nunique, b.nunique)
     fertility = mergewith(+, a.fertility, b.fertility)
     out_of_vocab = a.out_of_vocab + b.out_of_vocab
-    ngrams = map(a.ngrams, b.ngrams) do a, b
-        mergewith(+, compact_ngrams(a), compact_ngrams(b))
+    ngrams = map(1:5) do n
+        ang = a.ngrams[n]
+        bng = b.ngrams[n]
+        @assert keytype(ang) <: NTuple{n}
+        @assert keytype(bng) <: NTuple{n}
+        mergewith(+, compact_ngrams(ang), compact_ngrams(bng))
     end
     out = (; samples, nunique, fertility, out_of_vocab, ngrams)
     @assert Set(keys(out)) == Set([:samples, keys(tracked_stats())...])
