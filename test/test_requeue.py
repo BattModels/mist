@@ -14,8 +14,6 @@ import train
 from electrolyte_fm.utils.callbacks import Requeue
 from train import cli_main
 
-from .test_dataset import fake_dataset
-
 
 def test_requeue():
     with TemporaryDirectory() as root_dir:
@@ -96,7 +94,7 @@ class BoringBatchDataModule(BoringDataModule):
         super().__init__()
 
 
-def test_signal(fake_dataset):
+def test_signal():
     with TemporaryDirectory() as root_dir:
         config = {
             "data": {"class_path": "test.test_requeue.BoringBatchDataModule"},
