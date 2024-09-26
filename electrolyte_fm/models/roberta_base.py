@@ -7,6 +7,7 @@ from transformers import RobertaConfig, RobertaForMaskedLM
 from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
 from ..utils.metrics import TokenCounter
 
+
 class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
     """
     PyTorch Lightning module for RoBERTa model MLM pre-training.
@@ -24,7 +25,7 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         layer_norm_eps: float = 1e-12,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
-        enable_token_counter: bool = True
+        enable_token_counter: bool = True,
     ) -> None:
         super().__init__()
         self.optimizer = optimizer
@@ -97,10 +98,7 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
             loss = 0 * loss
 
         if self.token_counter:
-            self.token_counter.update(
-                batch['attention_mask'],
-                batch['labels']
-            )
+            self.token_counter.update(batch["attention_mask"], batch["labels"])
             self.log_dict(
                 self.token_counter.compute(),
                 on_step=True,
