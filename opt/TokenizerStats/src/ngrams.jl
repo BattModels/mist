@@ -80,7 +80,7 @@ function load_ngram_model(file::String, split=:train)
     return ngram, tok, info
 end
 
-function ngram_counts(dist::AbstractDict{<:Union{Int, NTuple}, Int}, vocab_size::Int)
+function ngram_counts(dist::AbstractDict{<:Union{<:Integer, NTuple}, <:Union{Integer, Float32}}, vocab_size::Int)
     n = length(first(keys(dist)))
     K = NTuple{n, Int}
     grams = keytype(dist) <: NTuple ? keys(dist) : Iterators.map(tuple, keys(dist))
@@ -108,21 +108,21 @@ end
 The observed `c` and marginal `m` counts for the n-gram `gram`.
 No smoothing is applied
 """
-function gram_odds(model::NGramModel, gram::NTuple{N, Int}) where {N}
+function gram_odds(model::NGramModel, gram::NTuple{N, <:Integer}) where {N}
     @assert 1 <= N <= length(model)
     counts = get(model.ngrams[N], gram, 0)
     marginal = N == 1 ? model.total : get(model.ngrams[N-1], condgram(gram), 0)
     return counts, marginal
 end
 
-function log_probability(model::NGramModel, gram::NTuple{N, Int}) where {N}
+function log_probability(model::NGramModel, gram::NTuple{N, <:Integer}) where {N}
     c, n = gram_odds(model, gram)
     ln_c = any(∈(model.special_tokens), gram) ? log(c) : log1p(c)
     ln_n = log_smoothed_counts(n, 1, nonspecial_vocab_size(model))
     return ln_c - ln_n
 end
 
-function log_odds(model::NGramModel, gram::NTuple{N, Int}) where {N}
+function log_odds(model::NGramModel, gram::NTuple{N, <:Integer}) where {N}
     c, n = gram_odds(model, gram)
     ln_c = any(∈(model.special_tokens), gram) ? log(c) : log1p(c)
     return ln_c - log_smoothed_counts(n - c, 1, nonspecial_vocab_size(model))
@@ -133,7 +133,7 @@ end
 
 Computes the KL-Divergence loss (cross-entropy) using an `N`-gram model for `code`.
 """
-function autoregressive_kld(model::NGramModel, code::Vector{Int}; N=length(model))
+function autoregressive_kld(model::NGramModel, code::Vector{<:Integer}; N=length(model))
     @assert !any(∈(model.special_tokens), code)
     counts = 0
     marginal = 0
@@ -152,7 +152,7 @@ end
 Computes the cross entropy of the code `code` given the log-probabilities `ℓ`.
 Will ignore tokens with id `ignore_id` in `code`
 """
-function cross_entropy(ℓ::AbstractMatrix, code::Vector{Int}; ignore_id=-100)
+function cross_entropy(ℓ::AbstractMatrix, code::Vector{<:Integer}; ignore_id=-100)
     H = 0.0
     for i in axes(ℓ, 2)
         code[i] == ignore_id && continue
@@ -189,7 +189,7 @@ Compute `ln P(x_i,j | x_{i-2}, x_{i-1}, x_{i+1}, x_{i+2})` for the given code `c
 Will marginalize over tokens with id `mask` in `code`. That is is `x_{i-2}` is masked,
 then computes `P(x_i | x_{i-1}, x_{i+1}, x_{i+2})` instead.
 """
-function fb_log_probability(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
+function fb_log_probability(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
     fc, fm, fmasked = forward_odds(m, code; mask, N)
     bc, bm, bmasked = backward_odds(m, code; mask, N)
 
@@ -207,7 +207,7 @@ end
 """
 Computes `log(counts + vocab_size^nmasked)` in a numerically stable way
 """
-function log_smoothed_counts(counts::Integer, nmasked::Int, vocab_size::Int)
+function log_smoothed_counts(counts::Real, nmasked::Integer, vocab_size::Integer)
     ln_mask = nmasked * log(vocab_size)
     ln_counts = log(counts)
     if counts == 0
@@ -219,15 +219,17 @@ function log_smoothed_counts(counts::Integer, nmasked::Int, vocab_size::Int)
     end
 end
 
-function forward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
-    counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
+function forward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
+    ctype = valtype(m.ngrams[N])
+    ctype = ctype isa Integer ? UInt64 : Float32
+    counts = Matrix{ctype}(undef, m.vocab_size, length(code))
     marginal = zeros(Int, length(code))
     n_masked = Vector{Int}(undef, length(code))
     Threads.@threads for i in 1:length(code)
         cgram = condgram(code, i, N)
         cgram = lstrip(cgram, mask)
         n_masked[i] = count(==(mask), cgram)
-        token_marginal = UInt64(0)
+        token_marginal = zero(ctype)
         for (j, token) in enumerate(token_ids(m))
             c = masked_counts(m, (cgram..., token), mask)
             counts[j,i] = c
@@ -238,16 +240,18 @@ function forward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
     return counts, marginal, n_masked
 end
 
-function backward_odds(m::NGramModel, code::Vector; mask::Int=-100, N=length(m))
+function backward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
     code = reverse(code)
-    counts = Matrix{UInt64}(undef, m.vocab_size, length(code))
+    ctype = valtype(m.ngrams[N])
+    ctype = ctype isa Integer ? UInt64 : Float32
+    counts = Matrix{ctype}(undef, m.vocab_size, length(code))
     marginal = zeros(Int, length(code))
     n_masked = Vector{Int}(undef, length(code))
     Threads.@threads for (i, ri) in collect(enumerate(range(length(code), 1; step=-1)))
         cgram = reverse(condgram(code, i, N))
         cgram = rstrip(cgram, mask)
         n_masked[ri] = count(==(mask), cgram)
-        token_marginal = UInt64(0)
+        token_marginal = zero(ctype)
         for (j, token) in enumerate(token_ids(m))
             c = masked_counts(m, (token, cgram...), mask)
             counts[j,ri] = c
@@ -287,7 +291,7 @@ end
 Computes the Information Loss (KL-Divergence) from masking out tokens in an input code for a
 given n-gram model
 """
-function information_loss(m::NGramModel, code::Vector{Int}, mask::Union{BitVector, Vector{Bool}}; N=length(m))
+function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector, Vector{Bool}}; N=length(m))
     @assert length(code) == length(mask)
     loss = 0.0
     mask_value = -100
@@ -302,7 +306,7 @@ function information_loss(m::NGramModel, code::Vector{Int}, mask::Union{BitVecto
     return loss, P, Q
 end
 
-function masked_counts(m::NGramModel, gram::NTuple{N, Int}, mask::Int) where {N}
+function masked_counts(m::NGramModel, gram::NTuple{N, <:Integer}, mask::Integer) where {N}
     N == 0 && return 0
     mask ∉ gram && return first(gram_odds(m, gram))
     counts = 0
@@ -314,7 +318,7 @@ function masked_counts(m::NGramModel, gram::NTuple{N, Int}, mask::Int) where {N}
     return counts
 end
 
-function masked_match(x::NTuple{N, Int}, y::NTuple{N, Int}; mask::Int) where {N}
+function masked_match(x::NTuple{N, Int}, y::NTuple{N, <:Integer}; mask::Integer) where {N}
     for (a, b) in zip(x, y)
         if a == mask || b == mask
             continue
@@ -352,7 +356,7 @@ function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding
     return map(n -> first(information_loss(ngram, ref_code, masked; N=n)), N)
 end
 
-function rm_special_tokens(tok::Py, code::Vector{Int}, n::Int)
+function rm_special_tokens(tok::Py, code::Vector{<:Integer}, n::Integer)
     # If the code is already of length n, return it
     length(code) == n  && return code
 

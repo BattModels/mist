@@ -13,6 +13,7 @@ using JSON: JSON
 using SHA: SHA
 using SparseArrays: sparse
 using LogExpFunctions: logsumexp, log1pexp
+using Serialization: serialize, deserialize
 
 function find(dir, pattern)
     found = String[]

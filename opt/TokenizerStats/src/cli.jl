@@ -112,7 +112,9 @@ function main(args::Vector{String})
         # Load the tokenizer
         tokenizer = args_cmd["tokenizer"]
         tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        @assert BSON.load(args_cmd["ngram"])[:tokenizer][:name] == tokenizer_name "ngram model must use the same tokenizer"
+        if endswith(args_cmd["ngram"], ".bson")
+            @assert BSON.load(args_cmd["ngram"])[:tokenizer][:name] == tokenizer_name "ngram model must use the same tokenizer"
+        end
 
         # Setup dataset
         dm, dataset = get_dataset(args_cmd["dataset"], tokenizer)

@@ -31,7 +31,7 @@ TOKENIZERS = [
     "character",
     "smirk",
     "ibm/MoLFormer-XL-both-10pct-oov",
-    # "SmilesPE/SPE_ChEMBL",
+    "SmilesPE/SPE_ChEMBL",
     "devalab/molgpt-moses",
     "devalab/molgpt-guacamol",
     "MolecularAI/Chemformer",
@@ -69,7 +69,7 @@ def sbatch(
     test=False,
 ) -> Optional[str]:
     if output is not None and Path(output).exists():
-        logging.info("skipping job for %s", output)
+        # logging.info("skipping job for %s", output)
         return None
 
     # Add dependencies
@@ -117,6 +117,9 @@ def sub_realspace(tok):
     out = STATS_DIR.joinpath(tok_name, "realspace_v4_dev2.bson")
     if tok_name == "SmilesPE/SPE_ChEMBL":
         out = out.with_suffix(".jld")
+    alt = STATS_DIR.joinpath(tok_name, "realspace_v4_dev.bson")
+    if alt.exists():
+        out = alt
     args = {
         "cpus-per-task": 1,
         "time": "8:0:0",
@@ -130,9 +133,9 @@ def sub_realspace(tok):
 
 def special_case(tok_name, args: dict) -> dict:
     if tok_name == "SmilesPE/SPE_ChEMBL":
-        args["mem-per-cpu"] = "4G"
-        args["partition"] = "venkvis-largemem"
-        args["cpus-per-task"] = 3
+        args["mem-per-cpu"] = "32G"
+        args["partition"] = "venkvis-largemem,venkvis-cpu"
+        args["cpus-per-task"] = 1
 
     return args
 
@@ -156,6 +159,7 @@ for tok in TOKENIZERS:
         STATS_DIR.joinpath(tok, "realspace_v4_dev2", f"{ngram_name}_model_loss.bson"),
         deps=[realspace_file],
     )
+    continue
 
     # Compute realspace model loss
     for ds in MOLNET_DATASETS:
@@ -198,14 +202,15 @@ for tok in TOKENIZERS:
         )
 
 for tok in TOKENIZERS:
+    tok_name = Path(tok).name if Path(tok).is_dir() else tok
     for ds in MOLNET_DATASETS:
         # Compute Info loss
         for ref in REF_INFO_LOSS:
             if tok == ref:
                 continue
             ref_file = STATS_DIR.joinpath(ref, "realspace_v4_dev2.bson")
-            asgs = {
-                "ntasks": 24,
+            args = {
+                "ntasks": 8,
                 "cpus-per-task": 2,
                 "time": "0:30:0",
                 "cmd": "submit_tok_stats.sh",
