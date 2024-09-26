@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from datetime import timedelta
 
 import _jsonnet as jsonnet  # Unused, but otherwise we get glibc errors on delta 🫠
@@ -19,10 +20,11 @@ from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 class MyLightningCLI(LightningCLI):
     def before_fit(self):
-        if logger := self.trainer.logger:
+        if self.trainer.logger is not None and hasattr(
+            self.trainer.logger, "log_hyperparams"
+        ):
             job_config = json.loads(os.environ.get("JOB_CONFIG", "{}"))
-
-            logger.log_hyperparams(
+            self.trainer.logger.log_hyperparams(
                 {
                     "job_config": job_config,
                     "n_gpus_per_node": self.trainer.num_devices,
@@ -105,6 +107,7 @@ def cli_main(args=None):
             project="mist",
             save_code=True,
             id=os.environ.get("WANDB_ID", None),
+            resume=os.environ.get("WANBD_RESUME", "allow"),
         )
 
     torch.set_num_threads(8)
@@ -128,4 +131,8 @@ def cli_main(args=None):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s] {%(name)s} %(levelname)s - %(message)s",
+    )
     cli_main()

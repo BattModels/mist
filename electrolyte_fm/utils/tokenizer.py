@@ -154,8 +154,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         return tok_tf
 
     elif (
-        Path(name).is_dir()
-        and Path(name).parent.parent.joinpath("config.json").exists()
+        Path(name).exists()
+        and Path(name).parent.parent.joinpath("config.json").is_file()
     ):
         # Reload Tokenizer from Checkpoint
         from ..utils.ckpt import get_ckpt_tokenizer
@@ -163,25 +163,6 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tokenizer = get_ckpt_tokenizer(name)
         print(f"Loading {tokenizer} for {name}")
         return load_tokenizer(tokenizer, **kwargs)
-
-    elif name == "ibm/MoLFormer-XL-both-10pct-oov":
-        # By default "ibm/MoLFormer-XL-both-10pct" strips out unknown tokens
-        # during the pre-tokenization step, this reverts that to ensure
-        # unknown tokens are emitted
-        import json
-        from transformers import AutoTokenizer
-        from tokenizers import Regex
-        from tokenizers.pre_tokenizers import Split
-
-        tok_tf = AutoTokenizer.from_pretrained(
-            "ibm/MoLFormer-XL-both-10pct",
-            trust_remote_code=True,
-            **kwargs,
-        )
-        config = json.loads(tok_tf.backend_tokenizer.to_str())
-        regex = config["pre_tokenizer"]["pretokenizers"][-1]["pattern"]["Regex"]
-        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
-        return tok_tf
 
     elif name == "character":
         import string
@@ -221,7 +202,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tok.decoder = ByteLevel()
         tok_tf = PreTrainedTokenizerFast(tokenizer_object=tok)
         ensure_special_tokens(tok_tf)
-        return tok_tf
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
 
     else:
         # Fall back to a HuggingFace Tokenizer
@@ -239,8 +220,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
             **kwargs,
         )
         ensure_special_tokens(tok_tf)
-        return tok_tf
-
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
 
 def ensure_special_tokens(tok: PreTrainedTokenizerBase):
     tok.add_special_tokens(

@@ -142,8 +142,7 @@ class MolNetDataModule(pl.LightningDataModule):
         )
 
         # Save training dataset for target transformations
-        self.target_dataset = ds["train"].select_columns(
-            ["target", "target_mask"])
+        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
         # Tokenize smiles
         ds = ds.map(
@@ -164,10 +163,8 @@ class MolNetDataModule(pl.LightningDataModule):
         self.train_dataset: Dataset = maybe_shard_dataset(
             self.trainer, ds["train"].shuffle(seed=42)
         )
-        self.val_dataset: Dataset = maybe_shard_dataset(
-            self.trainer, ds["validation"])
-        self.test_dataset: Dataset = maybe_shard_dataset(
-            self.trainer, ds["test"])
+        self.val_dataset: Dataset = maybe_shard_dataset(self.trainer, ds["validation"])
+        self.test_dataset: Dataset = maybe_shard_dataset(self.trainer, ds["test"])
         self.token_collator = DataCollatorWithPadding(
             tokenizer=self.tokenizer, padding="longest"
         )

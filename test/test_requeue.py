@@ -14,8 +14,6 @@ import train
 from electrolyte_fm.utils.callbacks import Requeue
 from train import cli_main
 
-from .test_dataset import fake_dataset
-
 
 def test_requeue():
     with TemporaryDirectory() as root_dir:
@@ -71,7 +69,6 @@ def test_cli():
             },
             "trainer": {
                 "devices": 1,
-                "accelerator": "cpu",
                 "callbacks": [
                     {"class_path": "electrolyte_fm.utils.callbacks.Requeue"},
                 ],
@@ -97,7 +94,7 @@ class BoringBatchDataModule(BoringDataModule):
         super().__init__()
 
 
-def test_signal(fake_dataset):
+def test_signal():
     with TemporaryDirectory() as root_dir:
         config = {
             "data": {"class_path": "test.test_requeue.BoringBatchDataModule"},
@@ -105,7 +102,6 @@ def test_signal(fake_dataset):
             "trainer": {
                 "devices": 1,
                 "strategy": "auto",
-                "accelerator": "cpu",
                 "enable_progress_bar": True,
                 "enable_model_summary": False,
                 "default_root_dir": root_dir,
@@ -125,5 +121,8 @@ def test_signal(fake_dataset):
             capture_output=True,
             check=False,  # Likely to error during requing
         )
-        assert "Registered handler for SIGUSR1" in p.stderr
-        assert "Requeuing using" in p.stderr
+        assert (
+            "electrolyte_fm.utils.callbacks.requeue:Registered handler for SIGUSR1"
+            in p.stderr
+        )
+        assert "electrolyte_fm.utils.callbacks.requeue:Requeuing using" in p.stderr

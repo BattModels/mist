@@ -86,7 +86,7 @@ class SaveConfigWithCkpts(Callback):
                 logger.log_hyperparams({"cli": self.config.as_dict()})
 
     @staticmethod
-    def log_dir(trainer: Trainer):
+    def log_dir(trainer: Trainer) -> Path:
         log_dir = trainer.log_dir or trainer.default_root_dir
         logger = trainer.logger
         if logger is not None and isinstance(logger, WandbLogger):
@@ -108,8 +108,7 @@ class SaveConfigWithCkpts(Callback):
                     config["lightning_module"],
                     class_path=config.get("class_path", None),
                 )
-                _, data_config = norm_class_config(config["datamodule"])
-                model_config["vocab_size"] = data_config["vocab_size"]
+                model_config["vocab_size"] = config["datamodule"]["vocab_size"]
 
             else:
                 cls_name, model_config = norm_class_config(config)

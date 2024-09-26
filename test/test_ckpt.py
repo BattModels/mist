@@ -32,7 +32,7 @@ class MockedData(BoringDataModule):
         self.val_batch_size = batch_size
         # save_hyperparameters only saves args to the model
         self.hparams["vocab_size"] = self.vocab_size
-        self.save_hyperparameters()
+        self.save_hyperparameters(logger=False)
 
 
 @pytest.fixture()
@@ -42,14 +42,14 @@ def cli(tmp_path):
             "--model=test.test_ckpt.MockedModel",
             "--data=test.test_ckpt.MockedData",
             "--data.tokenizer=smirk",
-            "--trainer.strategy=ddp",
+            "--trainer.strategy=auto",
             "--trainer.accelerator=cpu",
             "--trainer.max_steps=5",
             "--trainer.enable_progress_bar=false",
             "--trainer.enable_model_summary=false",
+            "--trainer.enable_checkpointing=true",
             f"--trainer.default_root_dir={tmp_path}",
-            "--trainer.logger=WandbLogger",
-            f"--trainer.logger.init_args.save_dir={tmp_path}",  # needed to redirect wandb
+            "--trainer.logger=true",
         ]
     )
     cli.trainer.fit(cli.model, cli.datamodule)

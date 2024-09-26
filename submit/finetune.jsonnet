@@ -6,7 +6,7 @@ function(dataset='bace') {
   walltime: '1:0:0',
   nodes: 1,  // Multi-node is not currently supported. Config is only on leader node
   env: {
-   TOKENIZERS_PARALLELISM: true,
+    TOKENIZERS_PARALLELISM: true,
   },
   train: {
     tags: ['finetuning', dataset],

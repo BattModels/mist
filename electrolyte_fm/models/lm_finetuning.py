@@ -131,7 +131,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
     def on_fit_start(self):
         """Standardized training data"""
-        if not isinstance(self.transform, torch.nn.Identity):
+        if not isinstance(self.transform, IdentityTransform):
             state = None
             if self.global_rank == 0:
                 assert self.trainer.datamodule.target_dataset is not None
@@ -140,8 +140,6 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
             state = self.trainer.strategy.broadcast(state)
             self.transform.load_state_dict(state)
-        else:
-            self.transform = None
 
     # type: ignore[override]
     def forward(self, batch, transform=True, **kwargs):
