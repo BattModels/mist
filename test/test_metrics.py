@@ -12,6 +12,7 @@ from electrolyte_fm.utils.metrics import (
     masked_metric_update,
     OOVMetric,
     HotellingTwoSample,
+    TokenCounter,
     IGNORE_INDEX,
 )
 
@@ -301,3 +302,16 @@ def test_binary_stats():
     metric.update(preds, targets, input_ids)
     out = metric.compute()
     assert out["tp_oov"] + out["tn_oov"] + out["fp_oov"] + out["fn_oov"] == 32 * 8
+
+def test_token_counter():
+    metric = TokenCounter()
+    attention_mask = torch.zeros((32, 8))
+    attention_mask[0][1] = 1
+    attention_mask[0][2] = 1
+    attention_mask[1][3] = 1
+    labels = torch.full((32, 8), -100)
+    labels[0][1] = 97
+    metric.update(attention_mask, labels)
+    out = metric.compute()
+    assert out["masked_tokens"] == 1
+    assert out["total_tokens"] == 3
