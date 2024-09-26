@@ -95,6 +95,7 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         )
         if self.should_skip():
             loss = 0 * loss
+
         if self.token_counter:
             self.token_counter.update(
                 batch['attention_mask'],

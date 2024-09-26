@@ -303,6 +303,7 @@ def test_binary_stats():
     out = metric.compute()
     assert out["tp_oov"] + out["tn_oov"] + out["fp_oov"] + out["fn_oov"] == 32 * 8
 
+
 def test_token_counter():
     metric = TokenCounter()
     attention_mask = torch.zeros((32, 8))
