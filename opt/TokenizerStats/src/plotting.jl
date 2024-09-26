@@ -77,3 +77,18 @@ function Makie.plot!(plt::TokenUsage)
     stairs!(plt, I; linewidth=plt[:linewidth][], linestyle=plt[:linestyle][])
 end
 
+function findfont(name, style)
+    for folder in FreeTypeAbstraction.fontpaths()
+        for file in readdir(folder; join=true)
+            first(splitext(basename(file))) == name || continue
+            n_faces = FTFont(newface(file, -1)).num_faces
+            for face in range(0; length=n_faces)
+                font = FTFont(newface(file, face))
+                if font.style_name == style
+                    return font
+                end
+            end
+        end
+    end
+    return nothing
+end

@@ -13,15 +13,10 @@ end
 function usage_stats()
     rows = []
     stats_dir = joinpath(@__DIR__, "..", "stats")
-    files = Iterators.flatten((
-        find(stats_dir, r".*info_loss\.bson"),  # Realspace Results
-        find(stats_dir, r"[a-z0-9]\.bson"),     # MoleculeNet Results
-    ))
-    for file in files
+    for file in union(find(stats_dir, r"realspace_v4_dev2?\.bson"), find(stats_dir, r"[a-z0-9]+\.bson"))
         data = BSON.load(file)
         file = relpath(file, stats_dir)
         tokenizer = joinpath(splitpath(file)[1:end-1])
-        tokenizer = first(splitext(tokenizer))
         dataset = first(splitext(basename(file)))
         for split in [:train, :val, :test]
             split ∉ keys(data) && continue
@@ -37,6 +32,7 @@ function usage_stats()
                 out_of_vocab = data[split][:out_of_vocab],
                 avg_fertility = first(fertility),
                 std_fertility = last(fertility),
+                max_fertility = maximum(keys(data[split][:fertility])),
                 avg_nunique = first(nunique),
                 std_nunique = last(nunique),
             ))
@@ -56,7 +52,7 @@ end
 function info_loss_stats()
     rows = []
     stats_dir = joinpath(@__DIR__, "..", "stats")
-    for file in find(stats_dir, r".*info_loss\.bson")
+    for file in find(stats_dir, r".*_info_loss\.bson")
         data = BSON.load(file)
         file = relpath(file, stats_dir)
         tokenizer = joinpath(splitpath(file)[1:end-2])
@@ -66,6 +62,7 @@ function info_loss_stats()
             n_nonzero = data[:samples] - n_zero
             push!(rows, (;
                 tokenizer,
+                ref_tokenizer = data[:ref_tokenizer][:name],
                 dataset,
                 ngram,
                 split=:val,
@@ -90,12 +87,14 @@ function model_loss_stats()
         data = BSON.load(file)
         tokenizer = data[:ref_tokenizer][:name]
         dataset = basename(dirname(file))
+        training_data = match(r"(.*?)_model_loss\.bson", basename(file)).captures[1]
         for split in [:train, :val, :test]
             split ∉ keys(data) && continue
             split_data = data[split]
             for ngram in 1:5
                 push!(rows, (;
                     tokenizer,
+                    training_dataset = training_data,
                     dataset,
                     split,
                     ngram,
@@ -109,12 +108,14 @@ function model_loss_stats()
     end
     df = DataFrame(rows)
     replace!(df.dataset, "realspace_v4_dev2" => "realspace_v4_dev")
+    replace!(df.training_dataset, "realspace_v4_dev2" => "realspace_v4_dev")
     return df
 end
 
 function avg_molnet_info_loss()
     df = TokenizerStats.info_loss_stats()
-    return combine(groupby(df, [:tokenizer, :split, :ngram])) do gdf
+    subset!(df, :dataset => ByRow(!=("realspace_v4_dev")))
+    return combine(groupby(df, [:tokenizer, :ref_tokenizer, :split, :ngram])) do gdf
         # Information Loss Statistics
         avg_info_loss = mean(gdf.avg_info_loss, Weights(gdf.samples))
         nonzero = subset(gdf, :n_nonzero => ByRow(x -> x > 0))
@@ -209,6 +210,35 @@ function tokenizer_stats()
     return df
 end
 
+function tokenizer_jaccard(tokenizers::Vector{String})
+    tok_tokens = map(tokenizers) do tokenizer
+        name_or_path = startswith(tokenizer, "smirk-gpe") ? "./" * tokenizer : tokenizer
+        tok = load_tokenizer(name_or_path)
+        vocab_size = pyconvert(Int, length(tok))
+        pytokens = map(id -> tok.decode([id]), range(0; length=vocab_size))
+        tokens = pyconvert(Vector{String}, pytokens)
+        return tokenizer => tokens
+    end |> Dict
+    return tokenizer_jaccard(tok_tokens)
+end
+
+function tokenizer_jaccard(tok_vocab::Dict{String})
+    k = collect(keys(tok_vocab))
+    J = Matrix{Float64}(undef, length(k), length(k))
+    for i in 1:length(k)
+        J[i, i] = jaccard(tok_vocab[k[i]], tok_vocab[k[i]])
+        @assert J[i, i] == 1
+        for j in i+1:length(k)
+            J[i, j] = jaccard(tok_vocab[k[i]], tok_vocab[k[j]])
+            J[j, i] = J[i, j]
+        end
+    end
+    return J, k
+end
+
+jaccard(a::AbstractVector, b::AbstractVector) = jaccard(Set(a), Set(b))
+jaccard(a::AbstractSet, b::AbstractSet) = length(intersect(a, b)) / length(union(a, b))
+
 function has_element(smirk::Py, smiles::String; element::String="C")
     smiles = replace(smiles, "▁" => "")
     local tokens
@@ -241,7 +271,7 @@ end
 
 function top_k_tokens(; k=5)
     statsdir = joinpath(@__DIR__, "..", "stats")
-    results = find(statsdir, r"realspace_v4_dev\.bson")
+    results = find(statsdir, r"realspace_v4_dev2?\.bson")
     rows = []
     for file in results
         tokenizer = joinpath(splitpath(relpath(file, statsdir))[1:end-1])

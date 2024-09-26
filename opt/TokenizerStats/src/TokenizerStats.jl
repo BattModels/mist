@@ -14,6 +14,7 @@ using SHA: SHA
 using SparseArrays: sparse
 using LogExpFunctions: logsumexp, log1pexp
 using Serialization: serialize, deserialize
+using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
 
 function find(dir, pattern)
     found = String[]
