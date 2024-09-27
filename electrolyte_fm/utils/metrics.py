@@ -227,3 +227,31 @@ def masked_metric_update(
     """Update metrics, masking out targets as needed"""
     targets = targets.masked_fill(mask, IGNORE_INDEX)
     metrics.update(preds, targets, *args)
+
+
+class TokenCounter(Metric):
+    """Count number of tokens seen by model during training."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.add_state(
+            "masked_tokens", torch.tensor(0, dtype=torch.int), dist_reduce_fx="sum"
+        )
+        self.add_state(
+            "total_tokens", torch.tensor(0, dtype=torch.int), dist_reduce_fx="sum"
+        )
+
+    def update(
+        self,
+        attention_mask: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> None:
+        self.masked_tokens += torch.sum(labels != -100)
+        self.total_tokens += torch.sum(attention_mask)
+
+    def compute(self):
+        out = {
+            "masked_tokens": self.masked_tokens,
+            "total_tokens": self.total_tokens,
+        }
+        return out
