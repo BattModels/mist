@@ -5,9 +5,6 @@ RUN pip install poetry==1.8.3
 ENV POETRY_CACHE_DIR=/tmp/poetry_cache
 WORKDIR /mist
 
-COPY pyproject.toml poetry.lock ./
-COPY README.md ./
-
 # Configure SSH
 RUN mkdir -p -m 06000 ~/.ssh
 RUN apt-get install -y openssh-client
@@ -15,6 +12,10 @@ RUN mkdir -p -m 0600 ~/.ssh && \
     ssh-keyscan -H github.com >> ~/.ssh/known_hosts
 
 # Install env
+COPY pyproject.toml poetry.lock ./
+COPY README.md ./
 RUN --mount=type=ssh \
     poetry install --no-interaction --no-root --without dev && \
     rm -rf $POETRY_CACHE_DIR
+
+ENTRYPOINT ["poetry", "shell"]
