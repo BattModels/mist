@@ -86,9 +86,64 @@ function plot_best_lr(chains::AbstractArray{<:Real,3}, df=missing;
     return f
 end
 
+function plot_lamb_lr_scale(chains::ComponentArray{<:Real,3}, model;
+    p=0.025,
+    N=logrange(1e5, 1e10; length=100),
+    batch_size=logrange(1e3, 1e6; length=100),
+)
+
+    f = Figure()
+    ax = Axis(f[1, 1];
+        xlabel="Effective Batch Size",
+        ylabel="Model Size (Non-Embedding)",
+        xscale=log10,
+        yscale=log10,
+        limits=(extrema(batch_size), extrema(N)),
+    )
+    N = collect(N)
+    batch_size = collect(batch_size)
+    a = vec(chains[:, :, :a])
+    b = vec(chains[:, :, :b])
+    c = vec(chains[:, :, :c])
+    lamb_lr = Matrix{Float32}(undef, length(batch_size), length(N))
+    uq = similar(lamb_lr)
+    for (i, n) in enumerate(N)
+        for (j, bs) in enumerate(batch_size)
+            lr = @. exp(a + b *log(bs) + c * log(n))
+            lamb_lr[j, i] = median(lr)
+            uq[j, i] = std(lr) ./ lamb_lr[j, i]
+        end
+    end
+    h = contourf!(ax, batch_size, N, lamb_lr;
+        levels=10,
+        colormap=:viridis,
+        colorscale=log10,
+    )
+    contour!(ax, batch_size, N, uq; levels=5, color=:red, labels=true)
+    Colorbar(f[1, 2], h; label="Learning Rate")
+
+    lr_ideal = map(model.runs) do run
+        lr = @. exp(a + b *log(run.effective_batch_size) + c * log(run.model_size))
+        return median(lr)
+    end
+    ax = Axis(f[1, 3];
+        xscale=log10, yscale=log10,
+        limits=((1e-5, 1e-1), (1e-5, 1e-1)),
+        aspect=1,
+    )
+    scatter!(ax, [run.lr for run in model.runs], lr_ideal;
+        color=[run.loss for run in model.runs],
+        colorscale=log10,
+    )
+
+
+    return f
+
+end
+
 function plot_scaling(chains::AbstractArray{<:Real,3}, df;
-    N=logrange(1e5, 1e9; length=50),
-    C=logrange(1e10, 1e26; length=50)
+    N=logrange(1e5, 1e10; length=100),
+    C=logrange(1e10, 1e26; length=100)
 )
     f = Figure()
     N = collect(N)
@@ -116,8 +171,8 @@ function plot_scaling(chains::AbstractArray{<:Real,3}, df;
             loss_std[j, i] = std(log.(l))
         end
     end
-    loss_low = min(minimum(df.min_val_loss), minimum(loss))
-    loss_high = maximum(df.min_val_loss)
+    loss_low = min(minimum(df.loss), minimum(loss))
+    loss_high = maximum(df.loss)
     levels = logrange(loss_low, loss_high; length=20)
     h = contourf!(ax, C ./ pf_day, N, loss; levels, colorscale=log10)
     contour!(ax, C ./ pf_day, N, loss_std;
@@ -126,12 +181,12 @@ function plot_scaling(chains::AbstractArray{<:Real,3}, df;
         color=:red,
         label="std of ln(Estimated Loss)"
     )
-    cb = Colorbar(f[1, 2], h; label="Validation Loss")
+    cb = Colorbar(f[1, 2], h; label="Loss")
 
     # Add Empirical Loss
     model_flops = @. 6 * float(df.model_size) * float(df.data_size) / pf_day
     h = scatter!(ax, model_flops, df.model_size;
-        color=df[:, :min_val_loss],
+        color=df[:, :loss],
         colormap=cb.colormap,
         colorrange=cb.limits,
         colorscale=cb.scale,
@@ -139,7 +194,6 @@ function plot_scaling(chains::AbstractArray{<:Real,3}, df;
         strokecolor=:black,
         label="Emperical Data"
     )
-    Colorbar(f[1, 2], h; label="Validation Loss")
 
     # Add Compute Optimal Frontier
     n_opt = Matrix{Float32}(undef, 3, length(C))
@@ -224,7 +278,7 @@ end
 function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
     huber=nothing,
     N=logrange(1e3, 1e12; length=200),
-    C=logrange(1e8, 1e26; length=50)
+    C=logrange(1e8, 1e26; length=200)
 )
     loss_quantiles = Matrix{Float32}(undef, 3, length(C))
     for (i, c) in enumerate(C)
@@ -258,7 +312,7 @@ function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
 
     #  Add Training Data
     if !ismissing(df)
-        scatter!(ax, @.(6 * float(df.data_size) * float(df.model_size) / pf_day), df.min_val_loss;
+        scatter!(ax, @.(6 * float(df.data_size) * float(df.model_size) / pf_day), df.loss;
             marker=:x, color=:blue, label="Empirical",
         )
     end
@@ -315,6 +369,79 @@ function plot_penalty(model, chains::AbstractArray{<:Real,3}, deviance=logrange(
     scatter!(ax_aspect, model.args.aspect_ratio, aspect_eff; scatter_args...)
     x = collect(logrange(extrema(model.args.aspect_ratio)...; length=length(deviance)))
     penaltyband!(ax_aspect, aspect_ratio_p, aspect_ratio_0, x; color=:red)
+
+    return f
+end
+
+function plot_penalty(model::ShapedScaling, chains::ComponentArray{<:Real,3}; p=0.025)
+
+    # Add LR Penalty
+    θ = median(eachslice(chains; dims=(1,2)))
+    df = map(model.runs) do run
+        return (;
+            loss = run.loss,
+            expected_loss = expected_loss(model, θ, run),
+            lr = run.lr,
+            lr_model = exp(θ.lr.ideal.a + θ.lr.ideal.b * log(run.effective_batch_size) + θ.lr.ideal.c * log(run.model_size)),
+            ff_ratio = run.ff_ratio,
+            kv_size = run.kv_size,
+            aspect_ratio = run.aspect_ratio,
+            lr_penalty = lamb_penalty(run.lr, run.model_size, run.effective_batch_size; θ[:lr]...),
+            ff_penalty = harmonic_penalty(run.ff_ratio, θ[:ff_ratio]...),
+            kv_penalty = harmonic_penalty(run.kv_size, θ[:kv_size]...),
+            aspect_penalty = harmonic_penalty(run.aspect_ratio, θ[:aspect_ratio]...),
+            effective_batch_size = run.effective_batch_size,
+            model_size = run.model_size,
+        )
+    end |> DataFrame
+
+    # Plot Expected Loss vs. Measured Loss
+    f = Figure()
+    limit = (1e-2, 1)
+    ax = Axis(f[1, 1];
+        xlabel="Expected Loss",
+        ylabel="Measured Loss",
+        xscale=log10, yscale=log10,
+        limits=(limit, limit),
+        aspect=1.0
+    )
+    scatter!(ax, df.expected_loss, df.loss )
+    loss = collect(logrange(limit...; length=100))
+    lower = @. quantile(LogNormal(log(loss), θ[:sigma]), p)
+    upper = @. quantile(LogNormal(log(loss), θ[:sigma]), 1-p)
+    predictionband!(ax, loss, loss, lower, upper)
+
+    # LR Penalty
+    ax = Axis(f[1, 2];
+        xlabel="η/η₀",
+        xscale=log10,
+        limits=((1e-2, 1e2), nothing),
+        aspect=1,
+    )
+    scatter!(ax, @.(df.lr/df.lr_model), @. (df.loss - exp(log(df.expected_loss) - df.lr_penalty)))
+
+    # FF Ratio Penalty
+    ax = Axis(f[2, 1];
+        xlabel="Feed Forward Ratio",
+        limits=((0, 8), nothing),
+        aspect=1,
+    )
+    scatter!(ax, df.ff_ratio, @.(df.loss - exp(log(df.expected_loss) - df.ff_penalty)))
+
+    # FF Ratio Penalty
+    ax = Axis(f[2, 2];
+        xlabel="Aspect Ratio",
+        # limits=((0, 8), nothing),
+        aspect=1,
+    )
+    scatter!(ax, df.aspect_ratio, @.(df.loss - exp(log(df.expected_loss) - df.aspect_penalty)))
+
+
+    ax = Axis(f[1, 3]; xscale=log10, xlabel="Effective Batch Size")
+    scatter!(ax, df.effective_batch_size, @.(df.loss - exp(log(df.expected_loss) - df.lr_penalty)))
+
+    ax = Axis(f[2, 3]; xscale=log10, xlabel="Model Size")
+    scatter!(ax, df.model_size, @.(df.loss - exp(log(df.expected_loss) - df.lr_penalty)))
 
     return f
 end

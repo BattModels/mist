@@ -2,6 +2,7 @@ using BayesianScaling
 using JSON: JSON
 using DataFrames
 using DynamicHMC: mcmc_with_warmup, ProgressMeterReport, NoProgressReport
+using Dates: Dates, DateTime
 using HDF5: h5open
 using StatsBase: mean_and_std, mean
 using UUIDs: uuid4
@@ -12,58 +13,120 @@ using ADTypes: AutoForwardDiff
 
 @static isinteractive() ? using GLMakie : using CairoMakie
 
-function load_dataset(dir)
-    row = map(filter(f -> endswith(f, ".json"), readdir(dir; join=true))) do file
-        JSON.parsefile(file; null=missing)
+RUNS_DIR=abspath(joinpath(pathof(BayesianScaling), "..", "..", "..", "..", ".cache", "wandb-export"))
+
+function find(dir, pattern)
+    found = String[]
+    for (root, dirs, files) in walkdir(dir)
+        for file in files
+            path = joinpath(root, file)
+            if match(pattern, path) !== nothing
+                push!(found, path)
+            end
+        end
     end
-    df_cols = unique(Iterators.flatten(keys.(row)))
-    filter!(r -> keys(r) == Set(df_cols), row)
+    return found
+end
+
+function pretraining_runs(dir=RUNS_DIR)
+    row = []
+    for file in find(joinpath(dir, "pretraining"), r".*\.json")
+        run = JSON.parsefile(file; null=missing)
+        d_model=run["model"]["d_model"]
+        ff_ratio=run["model"]["d_ff"] / d_model
+        kv_size= Int(run["model"]["d_model"] // run["model"]["n_heads"])
+        aspect_ratio = d_model / run["model"]["n_layers"]
+        beta = run["optimizer"]["betas"]
+        beta1 = !ismissing(beta) ? beta[1] : missing
+        beta2 = !ismissing(beta) ? beta[2] : missing
+        push!(row, (;
+            id=run["id"],
+            state=run["state"],
+            user=run["user"],
+            cluster=run["cluster"],
+            commit=run["commit"],
+            created=DateTime(run["created"][1:23], Dates.ISODateTimeFormat),
+            model_size=run["model"]["model_size"],
+            d_model,
+            ff_ratio,
+            kv_size,
+            aspect_ratio,
+            optimizer=run["optimizer"]["class_path"],
+            tokenizer=run["data"]["tokenizer"],
+            max_steps=run["trainer"]["num_training_steps"],
+            step=run["trainer"]["step"],
+            tokens=run["trainer"]["tokens"],
+            masked_tokens=run["trainer"]["masked_tokens"],
+            effective_batch_size=run["trainer"]["effective_batch_size"],
+            lr=run["optimizer"]["lr"],
+            beta1,
+            beta2,
+            val_loss_best=run["metrics"]["val_loss_best"],
+            val_loss_last=run["metrics"]["val_loss_last"],
+        ))
+    end
     return DataFrame(row)
 end
 
-instantiate_model(dir::String) = instantiate_model(load_dataset(dir))
+function figure_training_campaign(dir=RUNS_DIR)
+    f = Figure()
+    ax = Axis(f[1,1];
+        xscale=log10,
+        yscale=log10,
+        xlabel="Compute [FLOP]",
+        ylabel="Validation Loss",
+    )
+    df = pretraining_runs(dir)
+    df = sort!(df, :created)
+    C = @. 6 * df.model_size * df.step * df.effective_batch_size
+    scatter!(ax, C, df.val_loss_best)
+    @info "Cummulative Compute Budget" sum(C; init=0.0)
+    ax_cum = Axis(f[1,2];
+        yscale=log10,
+        ylabel="Cummulative Compute Spend [FLOP]"
+    )
+    lines!(ax_cum, df.created, accumulate(+, C; init=0.0))
+    f
+end
 
-function clean_dataset(df::DataFrame)
-    df = DataFrames.select(df,
-        :id,
-        :lr,
-        :min_val_loss, :min_train_loss,
-        :steps,
-        :gas, :eff_batch_size, :macro_batch_size,
+function init_hoffman(df=pretraining_runs(), tokenizer="smirk")
+    df = select(df,
+        :model_size,
         :tokenizer,
-        :d_model, :d_ff, :n_layers, :n_heads,
-        :num_training_steps,
-        "val/loss_epoch",
+        :val_loss_best => :loss,
+        [:effective_batch_size, :step] => ByRow(*) => :data_size
     )
-    subset!(df, "val/loss_epoch" => ByRow(x -> gradient(x["step"], x["loss"]) < 1e-4); skipmissing=true)
-    subset!(df, "val/loss_epoch" => ByRow(x -> max_noise_level(x["loss"]) <= 10); skipmissing=true)
-    dropmissing!(df)
-
-    DataFrames.transform!(df,
-        [:d_model, :d_ff, :n_layers] => ByRow(BayesianScaling.non_embedding_size) => :model_size,
-        [:d_model, :n_layers] => ByRow(/) => :aspect_ratio,
-        [:d_ff, :d_model] => ByRow(/) => :ff_ratio,
-        [:d_model, :n_heads] => ByRow(/) => :kv_size,
-        [:num_training_steps, :eff_batch_size] => ByRow(*) => :data_size,
-        Symbol("val/loss_epoch") => ByRow(x -> minimum(x["loss"])) => :loss
+    df = subset(df,
+        :loss => ByRow(x -> 1e-4 < x < 1.0),
+        :tokenizer => ByRow(==(tokenizer)),
     )
-    subset!(df,
-        :min_val_loss => ByRow(x -> 1e-4 < x < 1.0),    # Exclude runs that didn't converge
-        :steps => ByRow(x -> 2000 <= x),                # Limit to runs that completed warming up
-    )
+    m = BayesianScaling.HoffmanScaling(df)
+    m = BayesianScaling.init_logdensity_model(m, :ForwardDiff)
+    return m, df
 end
 
-function init_hoffman(df::DataFrame)
-    df = clean_dataset(df)
-    df = DataFrames.subset!(df,
-        [:steps, :num_training_steps] => ByRow((x, y) -> x == y - 1), # Limit to runs that ran to completion
-        :tokenizer => ByRow(x -> x ∈ ["smirk",]);
+function init_shaped(df=pretraining_runs(), tokenizer="smirk")
+    df = select(df,
+        :model_size,
+        :tokenizer,
+        :val_loss_best => :loss,
+        [:effective_batch_size, :step] => ByRow(*) => :data_size,
+        :lr,
+        :effective_batch_size,
+        :ff_ratio, :aspect_ratio, :kv_size,
+        :optimizer,
     )
     dropmissing!(df)
-    model = BayesianScaling.HoffmanScaling(df)
-    model = BayesianScaling.init_logdensity_model(model, :ForwardDiff)
-    return model, df
+    df = subset(df,
+        :loss => ByRow(x -> 1e-4 < x < 1.0),
+        :tokenizer => ByRow(==(tokenizer)),
+        :optimizer => ByRow(==("deepspeed.ops.lamb.FusedLamb")),
+    )
+    m = BayesianScaling.ShapedScaling(df)
+    m = BayesianScaling.init_logdensity_model(m, :Enzyme)
+    return m, df
 end
+
 
 function init_training_progress(df::DataFrame)
     df = clean_dataset(df)

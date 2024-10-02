@@ -7,7 +7,7 @@ end
 function compute_optimal_loss(C; A, α, B, β, E)
     G = @. ((α * A) / (β * B))^(1 / (α + β))
     a = @. β / (α + β)
-    b = @.α / (α + β)
+    b = @. α / (α + β)
     d = @. C / 6
     return @. E + A * (G * d^a)^(-α) + B * (inv(G) * d^b)^(-β)
 end
@@ -82,15 +82,14 @@ end
 
 function model_priors(::Type{HoffmanScaling})
     return (;
-        A=LogNormal(log(500), 2),
-        B=LogNormal(log(500), 2),
+        A=LogNormal(log(500), 2.0),
+        B=LogNormal(log(500), 2.0),
         α=truncated(Normal(1, 0.5), 0, Inf),
         β=truncated(Normal(1, 0.5), 0, Inf),
         E=Exponential(1e-3),
-        sigma=LogNormal(-1, 2),
+        sigma=LogNormal(-1, 2.0),
     )
 end
-
 
 function HoffmanScaling(df::DataFrame)
     loss = hasproperty(df, :loss) ? df.loss : minimum.(df.val_loss_trace)
@@ -110,6 +109,88 @@ function lr_penalty(lr, N, θ)
     return lr_p * (log(lr) - lr_opt)^2
 end
 
+
+struct ShapedScaling{P, R}
+    priors::P
+    runs::Vector{R}
+end
+sample_priors(m::ShapedScaling) = ComponentVector(sample_priors(m.priors))
+transform_support(m::ShapedScaling) = transform_support(m.priors)
+
+function model_priors(::Type{ShapedScaling})
+    return (;
+        scaling = Base.structdiff(model_priors(HoffmanScaling), NamedTuple{(:sigma,)}),
+        lr = (;
+            ideal = (;
+                a = Normal(log(3.9e-5), 1),     # Reference log(LR)
+                b = Normal(0.5, 0.1),           # Scaling with effective batch size
+                c = Normal(0, 0.5),             # Scaling with model size
+            ),
+            penalty = (Exponential(1.0),),
+        ),
+        ff_ratio = (LogNormal(log(4), log(2)), Exponential(1.0)),
+        kv_size = (LogNormal(log(64), 1), Exponential(1.0)),
+        aspect_ratio = (LogNormal(log(64), 2), Exponential(1.0)),
+        sigma = Exponential(1.0),
+    )
+end
+
+function ShapedScaling(df::DataFrame)
+    cols = [:loss, :model_size, :data_size, :lr, :ff_ratio, :aspect_ratio, :kv_size, :effective_batch_size]
+    runs = map(NamedTuple, eachrow(df[!, cols]))
+    priors = model_priors(ShapedScaling)
+    return ShapedScaling(priors, runs)
+end
+
+function (m::ShapedScaling)(θ)
+    (; scaling, lr, ff_ratio, aspect_ratio, kv_size, sigma) = θ
+
+    # Priors
+    ℓ = logpdf_prior(m.priors.scaling, scaling)
+    ℓ += logpdf_prior(m.priors.lr, lr)
+    ℓ += logpdf_prior(m.priors.ff_ratio, ff_ratio)
+    ℓ += logpdf_prior(m.priors.aspect_ratio, aspect_ratio)
+    ℓ += logpdf_prior(m.priors.kv_size, kv_size)
+
+    # Likelihood
+    ℓ += sum(m.runs) do run
+        min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
+        min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
+        min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
+        min_loss += harmonic_penalty(run.kv_size, kv_size...)
+        min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
+        return loglikelihood(LogNormal(min_loss, sigma), run.loss)
+    end
+    return ℓ
+end
+
+function expected_loss(::ShapedScaling, θ, run::NamedTuple)
+    (; scaling, lr, ff_ratio, aspect_ratio, kv_size, sigma) = θ
+    min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
+    min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
+    min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
+    min_loss += harmonic_penalty(run.kv_size, kv_size...)
+    min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
+    return exp(min_loss)
+end
+
+geoharmonic_penalty(args...) = 1 + harmonic_penalty(args...)
+function harmonic_penalty(x, x0::T, penalty::T...) where {T <: Real}
+    δ = (T(x) - x0)^2
+    l = first(penalty) * δ
+    for p in Base.tail(penalty)
+        δ *= δ
+        l += p * δ
+    end
+    return l
+end
+
+function lamb_penalty(lr, model_size, effective_batch_size; ideal, penalty)
+    (; a, b, c) = ideal
+    log_lr_0 = a + b * log(effective_batch_size) + c * log(model_size)
+    return geoharmonic_penalty(log(lr), log_lr_0, penalty...)
+end
+
 struct TrainingProgress{M,N,P,X}
     scaling::M
     penalty::N
@@ -121,7 +202,6 @@ end
 sample_priors(m::TrainingProgress) = ComponentVector(sample_priors(model_priors(TrainingProgress)))
 transform_support(m::TrainingProgress) = transform_support(model_priors(TrainingProgress))
 function model_priors(::Type{TrainingProgress})
-    scaling = model_priors(HoffmanScaling)
     progress = (;
         batch_critical=LogNormal(log(500), 3),
         Sm=LogNormal(log(1), 2),

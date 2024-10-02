@@ -12,10 +12,18 @@ Compute the logdensity of the priors `priors` at `θ`, expects `θ` to define
 @generated function logpdf_prior(priors::NamedTuple{names}, θ) where {names}
     exprs = []
     for name in names
-        push!(exprs, :(logpdf(priors.$name, θ.$name)))
+        push!(exprs, :(logpdf_prior(priors.$name, θ.$name)))
     end
     return Expr(:call, +, exprs...)
 end
+
+function logpdf_prior(priors::Tuple{Vararg{<:Distribution}}, θ)
+    return sum(zip(priors, θ)) do (p, x)
+        logpdf_prior(p, x)
+    end
+end
+
+logpdf_prior(prior::Distribution, θ) = logpdf(prior, θ)
 
 """
     logpdf_prior_vec(priors::NamedTuple, θ::AbstractVector)
@@ -33,6 +41,7 @@ end
 
 sample_priors(m::BayesModel) = sample_priors(m.priors)
 sample_priors(m::NamedTuple) = NamedTuple{keys(m)}(map(sample_priors, values(m)))
+sample_priors(m::Tuple{Vararg{<:Distribution}}) = map(sample_priors, m)
 sample_priors(m::Distribution) = rand(m)
 
 function evaluate_model_prior(model, n=100)
@@ -62,6 +71,7 @@ function transform_support(d::UnivariateDistribution)
     return as(Real, lb, ub)
 end
 transform_support(p::NamedTuple) = as(map(transform_support, p))
+transform_support(p::Tuple{Vararg{<:Distribution}}) = as(map(transform_support, p))
 TransformVariables.as(t::NamedTuple) = as(map(TransformVariables.as, t))
 
 function init_logdensity_model(m, adtype=:Enzyme)
@@ -93,7 +103,11 @@ function transform!(y::AbstractVector, tt::TransformVariables.TransformTuple, x:
     for t in transformations
         d = TransformVariables.dimension(t)
         if d == 1
-            y[index] = TransformVariables.transform(t, x[index])
+            if t isa TransformVariables.ScalarTransform
+                y[index] = TransformVariables.transform(t, x[index])
+            else
+                y[index] = TransformVariables.transform(t, x[index:index]) |> first
+            end
         else
             si = range(index; length=d)
             ys = view(y, si)
@@ -107,7 +121,7 @@ end
 transform!(y::AbstractVector, t::TransformVariables.AbstractTransform, x::AbstractVector) = copyto!(y, TransformVariables.transform(t, x))
 
 # Construct a ComponentArray Axis for a TransformVariables's transform
-function ComponentArrays.Axis(tt::TransformVariables.TransformTuple)
+function ComponentArrays.Axis(tt::TransformVariables.TransformTuple{<:NamedTuple})
     ax_tt = []
     index = 1
     for (k, t) in pairs(tt.transformations)
@@ -141,7 +155,7 @@ end
 
 function sample_chains(model; nchains=15, draws=1_000)
     d = dimension(model)
-    nchains *= ceil(Int, sqrt(d))
+    # nchains *= ceil(Int, sqrt(d))
     raw_samples = Array{Float64}(undef, d, draws, nchains)
     for i in 1:nchains
         result = DynamicHMC.mcmc_with_warmup(Random.default_rng(), model, draws; reporter=DynamicHMC.ProgressMeterReport())
@@ -161,3 +175,7 @@ function sample_chains(model; nchains=15, draws=1_000)
     yr = ComponentArray(yr, FlatAxis(), FlatAxis(), ax)
     return y, yr
 end
+
+mapchains(f, op, chains::AbstractArray{<:Real,3}) = mapreduce(f, op, eachslice(chains, dims=(1,2)))
+
+

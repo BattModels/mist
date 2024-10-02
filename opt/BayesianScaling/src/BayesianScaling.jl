@@ -5,7 +5,7 @@ using DataFrames
 using Distributions: Distributions, Distribution, Normal, Uniform, LogNormal, MvLogNormal, MvNormal, Exponential, truncated, logpdf, loglikelihood, convolve
 using MLUtils: splitobs
 using JSON: JSON
-using Statistics: mean, std, median
+using Statistics: Statistics, mean, std, median
 using StatsBase: StatsBase, quantile, sample, mean_and_std, autocor, ecdf
 using Random: Random, shuffle!, AbstractRNG
 using Optimization: OptimizationProblem, OptimizationFunction, solve
@@ -20,6 +20,7 @@ using Distributions: UnivariateDistribution, support
 using TransformedLogDensities: TransformedLogDensity
 using TransformVariables: TransformVariables, as, as_real, as_positive_real, as_negative_real
 
+Statistics.middle(x::ComponentVector, y::ComponentVector) = @. (x+y)/2
 
 """ Petaflop-Day """
 const pf_day = 24 * 60 * 60 * 1e15
