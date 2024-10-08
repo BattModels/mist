@@ -50,11 +50,9 @@ class MolNetDataModule(pl.LightningDataModule):
 
         self.name = name
         assert name in _URLS, f"Unknown MoleculeDataset {name}"
+
         # Set smi_column
-        if "selfies" in tokenizer:
-            self.use_selfies = True
-        else:
-            self.use_selfies = False
+        self.use_selfies = "selfies" in tokenizer
 
         if smi_column is None and name == "bace":
             self.smi_column = "mol"
