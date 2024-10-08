@@ -166,6 +166,7 @@ class MolNetDataModule(pl.LightningDataModule):
         ds = ds.map(
             self.tokenizer,
             batched=True,
+            input_columns=self.smi_column,
             remove_columns=self.smi_column,
         )
 
