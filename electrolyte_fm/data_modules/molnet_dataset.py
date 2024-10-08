@@ -12,9 +12,12 @@ from transformers import DataCollatorWithPadding
 from datasets import Dataset, DatasetDict, load_dataset
 from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
-
+from selfies import encoder
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
+from datasets import disable_caching
+
+disable_caching()
 
 _URLS = {
     "qm8": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm8.csv",
@@ -51,16 +54,21 @@ class MolNetDataModule(pl.LightningDataModule):
 
         self.name = name
         assert name in _URLS, f"Unknown MoleculeDataset {name}"
-        self.tokenizer = load_tokenizer(tokenizer)
-        self.vocab_size = len(self.tokenizer)
-        self.split = split
-
         # Set smi_column
+        if "selfies" in tokenizer:
+            self.use_selfies = True
+        else:
+            self.use_selfies = False
+
         if smi_column is None and name == "bace":
             self.smi_column = "mol"
         else:
             self.smi_column = smi_column or "smiles"
+
         assert self.smi_column is not None
+        self.tokenizer = load_tokenizer(tokenizer)
+        self.vocab_size = len(self.tokenizer)
+        self.split = split
 
         self.target_columns = target_columns
         self.strip_unk_tokens = strip_unk_tokens
@@ -88,8 +96,8 @@ class MolNetDataModule(pl.LightningDataModule):
             data_files=[_URLS[self.name]],
             split="train",
             keep_in_memory=False,
-            save_infos=True,
-        )
+            save_infos=False,
+        )  # type: ignore
 
         if self.name == "qm8":
             # Rename qm8 columns to remove duplicates and include source theory
@@ -142,11 +150,19 @@ class MolNetDataModule(pl.LightningDataModule):
         # Save training dataset for target transformations
         self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
+        if self.use_selfies:
+            ds = ds.map(
+                lambda smi: {"selfies": selfies_encoder(smi[self.smi_column])},
+                batched=False,
+                remove_columns=self.smi_column,
+            ).filter(lambda x: x["selfies"] is not None)
+
+            self.smi_column = "selfies"
+
         # Tokenize smiles
         ds = ds.map(
-            self.tokenizer,
+            lambda batch: self.tokenizer(batch[self.smi_column]),
             batched=True,
-            input_columns=self.smi_column,
             remove_columns=self.smi_column,
         )
 
@@ -208,6 +224,14 @@ class MolNetDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
         )
+
+
+def selfies_encoder(smi):
+    try:
+        selfie = encoder(smi)
+    except Exception:
+        selfie = None
+    return selfie
 
 
 def collate_target(x, target_columns):
