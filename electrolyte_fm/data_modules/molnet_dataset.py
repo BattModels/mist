@@ -12,12 +12,8 @@ from transformers import DataCollatorWithPadding
 from datasets import Dataset, DatasetDict, load_dataset
 from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
-from selfies import encoder
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
-from datasets import disable_caching
-
-disable_caching()
 
 _URLS = {
     "qm8": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm8.csv",
@@ -96,7 +92,7 @@ class MolNetDataModule(pl.LightningDataModule):
             data_files=[_URLS[self.name]],
             split="train",
             keep_in_memory=False,
-            save_infos=False,
+            save_infos=True,
         )  # type: ignore
 
         if self.name == "qm8":
@@ -151,6 +147,15 @@ class MolNetDataModule(pl.LightningDataModule):
         self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
         if self.use_selfies:
+            from selfies import encoder
+
+            def selfies_encoder(smi):
+                try:
+                    selfie = encoder(smi)
+                except Exception:
+                    selfie = None
+                return selfie
+
             ds = ds.map(
                 lambda smi: {"selfies": selfies_encoder(smi[self.smi_column])},
                 batched=False,
@@ -161,7 +166,7 @@ class MolNetDataModule(pl.LightningDataModule):
 
         # Tokenize smiles
         ds = ds.map(
-            lambda batch: self.tokenizer(batch[self.smi_column]),
+            self.tokenizer,
             batched=True,
             remove_columns=self.smi_column,
         )
@@ -224,14 +229,6 @@ class MolNetDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
         )
-
-
-def selfies_encoder(smi):
-    try:
-        selfie = encoder(smi)
-    except Exception:
-        selfie = None
-    return selfie
 
 
 def collate_target(x, target_columns):
