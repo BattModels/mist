@@ -63,6 +63,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
         transform: Optional[str] = None,
+        tokenizer: Optional[str] = None,
     ) -> None:
         super().__init__()
 
@@ -119,7 +120,11 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         metrics = MetricCollection(
             {metric: get_metric(metric, task, output_size) for metric in metrics}
         )
-        unk_token_id = load_tokenizer(encoder_ckpt).unk_token_id
+
+        if tokenizer:
+            unk_token_id = load_tokenizer(tokenizer).unk_token_id
+        else:
+            unk_token_id = load_tokenizer(encoder_ckpt).unk_token_id
         self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
         self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
         self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
