@@ -19,8 +19,6 @@ from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
 
-torch.autograd.set_detect_anomaly(True)
-
 
 class Standardize(torch.nn.Module):
     def __init__(self, num_outputs: int, eps: float = 1e-8):
