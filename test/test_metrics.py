@@ -18,7 +18,7 @@ from electrolyte_fm.utils.metrics import (
 
 BINARY_METRICS = ["auroc", "avg-precision", "crosstab"]
 
-REGRESSION_METRICS = ["mae", "rmse", "r2"]
+REGRESSION_METRICS = ["mae", "rmse", "r2", "mape"]
 
 
 @pytest.mark.parametrize(
