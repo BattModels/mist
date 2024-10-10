@@ -10,7 +10,13 @@ from torchmetrics.classification import (
     Accuracy,
     BinaryStatScores,
 )
-from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
+from torchmetrics.regression import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    R2Score,
+    MeanAbsolutePercentageError,
+)
+
 
 """ Target Value to indicate missing data """
 IGNORE_INDEX = -100
@@ -196,6 +202,8 @@ def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> 
         )
     elif name == "mae" and task_type == "regression":
         return MeanAbsoluteError()
+    elif name == "mape" and task_type == "regression":
+        return MeanAbsolutePercentageError()
     elif name == "rmse" and task_type == "regression":
         return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
