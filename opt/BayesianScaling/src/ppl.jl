@@ -155,10 +155,10 @@ end
 
 function sample_chains(model; nchains=15, draws=1_000)
     d = dimension(model)
-    # nchains *= ceil(Int, sqrt(d))
+    nchains *= ceil(Int, sqrt(d))
     raw_samples = Array{Float64}(undef, d, draws, nchains)
-    for i in 1:nchains
-        result = DynamicHMC.mcmc_with_warmup(Random.default_rng(), model, draws; reporter=DynamicHMC.ProgressMeterReport())
+    Threads.@threads :dynamic for i in ProgressBar(1:nchains)
+        result = DynamicHMC.mcmc_with_warmup(Random.default_rng(), model, draws)
         raw_samples[:, :, i] .= result.posterior_matrix
     end
     rs = reshape(raw_samples, :, draws * nchains)

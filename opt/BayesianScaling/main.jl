@@ -1,8 +1,8 @@
 using BayesianScaling
+using BayesianScaling: find, pretraining_runs
 using JSON: JSON
 using DataFrames
 using DynamicHMC: mcmc_with_warmup, ProgressMeterReport, NoProgressReport
-using Dates: Dates, DateTime
 using HDF5: h5open
 using StatsBase: mean_and_std, mean
 using UUIDs: uuid4
@@ -11,62 +11,9 @@ using Enzyme
 using JLD2
 using ADTypes: AutoForwardDiff
 
-@static isinteractive() ? using GLMakie : using CairoMakie
+# @static isinteractive() ? using GLMakie : using CairoMakie
 
 RUNS_DIR=abspath(joinpath(pathof(BayesianScaling), "..", "..", "..", "..", ".cache", "wandb-export"))
-
-function find(dir, pattern)
-    found = String[]
-    for (root, dirs, files) in walkdir(dir)
-        for file in files
-            path = joinpath(root, file)
-            if match(pattern, path) !== nothing
-                push!(found, path)
-            end
-        end
-    end
-    return found
-end
-
-function pretraining_runs(dir=RUNS_DIR)
-    row = []
-    for file in find(joinpath(dir, "pretraining"), r".*\.json")
-        run = JSON.parsefile(file; null=missing)
-        d_model=run["model"]["d_model"]
-        ff_ratio=run["model"]["d_ff"] / d_model
-        kv_size= Int(run["model"]["d_model"] // run["model"]["n_heads"])
-        aspect_ratio = d_model / run["model"]["n_layers"]
-        beta = run["optimizer"]["betas"]
-        beta1 = !ismissing(beta) ? beta[1] : missing
-        beta2 = !ismissing(beta) ? beta[2] : missing
-        push!(row, (;
-            id=run["id"],
-            state=run["state"],
-            user=run["user"],
-            cluster=run["cluster"],
-            commit=run["commit"],
-            created=DateTime(run["created"][1:23], Dates.ISODateTimeFormat),
-            model_size=run["model"]["model_size"],
-            d_model,
-            ff_ratio,
-            kv_size,
-            aspect_ratio,
-            optimizer=run["optimizer"]["class_path"],
-            tokenizer=run["data"]["tokenizer"],
-            max_steps=run["trainer"]["num_training_steps"],
-            step=run["trainer"]["step"],
-            tokens=run["trainer"]["tokens"],
-            masked_tokens=run["trainer"]["masked_tokens"],
-            effective_batch_size=run["trainer"]["effective_batch_size"],
-            lr=run["optimizer"]["lr"],
-            beta1,
-            beta2,
-            val_loss_best=run["metrics"]["val_loss_best"],
-            val_loss_last=run["metrics"]["val_loss_last"],
-        ))
-    end
-    return DataFrame(row)
-end
 
 function figure_training_campaign(dir=RUNS_DIR)
     f = Figure()
@@ -95,6 +42,7 @@ function init_hoffman(df=pretraining_runs(), tokenizer="smirk")
         :tokenizer,
         :val_loss_best => :loss,
         [:effective_batch_size, :step] => ByRow(*) => :data_size
+        :tags => ByRow(tags -> "gas-sqrt-scaling" ∈ tags),
     )
     df = subset(df,
         :loss => ByRow(x -> 1e-4 < x < 1.0),
@@ -115,6 +63,7 @@ function init_shaped(df=pretraining_runs(), tokenizer="smirk")
         :effective_batch_size,
         :ff_ratio, :aspect_ratio, :kv_size,
         :optimizer,
+        :beta1, :beta2,
     )
     dropmissing!(df)
     df = subset(df,

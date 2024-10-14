@@ -128,6 +128,13 @@ function model_priors(::Type{ShapedScaling})
             ),
             penalty = (Exponential(1.0),),
         ),
+        beta = (;
+            ideal = (;
+                beta1 = truncated(LogNormal(log(0.87), 0.1), 0, 1),
+                beta2 = truncated(LogNormal(0.997, 0.1), 0, 1),
+            ),
+            penalty = (Exponential(1.0),),
+        ),
         ff_ratio = (LogNormal(log(4), log(2)), Exponential(1.0)),
         kv_size = (LogNormal(log(64), 1), Exponential(1.0)),
         aspect_ratio = (LogNormal(log(64), 2), Exponential(1.0)),
@@ -136,14 +143,14 @@ function model_priors(::Type{ShapedScaling})
 end
 
 function ShapedScaling(df::DataFrame)
-    cols = [:loss, :model_size, :data_size, :lr, :ff_ratio, :aspect_ratio, :kv_size, :effective_batch_size]
+    cols = [:loss, :model_size, :data_size, :lr, :ff_ratio, :aspect_ratio, :kv_size, :effective_batch_size, :beta1, :beta2]
     runs = map(NamedTuple, eachrow(df[!, cols]))
     priors = model_priors(ShapedScaling)
     return ShapedScaling(priors, runs)
 end
 
 function (m::ShapedScaling)(θ)
-    (; scaling, lr, ff_ratio, aspect_ratio, kv_size, sigma) = θ
+    (; scaling, lr, beta, ff_ratio, aspect_ratio, kv_size, sigma) = θ
 
     # Priors
     ℓ = logpdf_prior(m.priors.scaling, scaling)
@@ -156,6 +163,7 @@ function (m::ShapedScaling)(θ)
     ℓ += sum(m.runs) do run
         min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
         min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
+        min_loss += beta_penalty(run.beta1, run.beta2, run.effective_batch_size; beta...)
         min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
         min_loss += harmonic_penalty(run.kv_size, kv_size...)
         min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
@@ -168,11 +176,24 @@ function expected_loss(::ShapedScaling, θ, run::NamedTuple)
     (; scaling, lr, ff_ratio, aspect_ratio, kv_size, sigma) = θ
     min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
     min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
+    min_loss += beta_penalty(run.beta1, run.beta2, run.effective_batch_size; beta...)
     min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
     min_loss += harmonic_penalty(run.kv_size, kv_size...)
     min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
     return exp(min_loss)
 end
+
+function beta_penalty(beta1, beta2, eff_batch_size; ideal, penalty)
+    (; beta1, beta2) = ideal
+    κ = eff_batch_size / 1024
+    beta_clamp(x) = clamp(x, 0, 1)
+    β₁ = 1 - κ * (1 - beta1) |> beta_clamp
+    β₂ = 1 - κ * (1 - beta2) |> beta_clamp
+    p1 = geoharmonic_penalty(beta1, β₁, penalty...)
+    p2 = geoharmonic_penalty(beta2, β₂, penalty...)
+    return p1 + p2
+end
+
 
 geoharmonic_penalty(args...) = 1 + harmonic_penalty(args...)
 function harmonic_penalty(x, x0::T, penalty::T...) where {T <: Real}
@@ -184,11 +205,20 @@ function harmonic_penalty(x, x0::T, penalty::T...) where {T <: Real}
     end
     return l
 end
+function geometric_penalty(x, x0::T, penalty::T...) where {T <: Real}
+    δ = (log(T(x)) - log(x0))^2
+    l = first(penalty) * δ
+    for p in Base.tail(penalty)
+        δ *= δ
+        l += p * δ
+    end
+    return l
+end
 
 function lamb_penalty(lr, model_size, effective_batch_size; ideal, penalty)
     (; a, b, c) = ideal
-    log_lr_0 = a + b * log(effective_batch_size) + c * log(model_size)
-    return geoharmonic_penalty(log(lr), log_lr_0, penalty...)
+    lr_0 = a + b * log(effective_batch_size) + c * log(model_size) |> exp
+    return geometric_penalty(lr, lr_0, penalty...)
 end
 
 struct TrainingProgress{M,N,P,X}
