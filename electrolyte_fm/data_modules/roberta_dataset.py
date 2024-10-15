@@ -77,7 +77,7 @@ class RobertaDataSet(pl.LightningDataModule):
             mlm_probability=self.mlm_probability,
             mlm=True,
         )
-        ds = self.dataset
+        ds = maybe_shard_dataset(self.trainer, self.dataset)
 
         # Get Canonical SMILES encodings before tokenizing
         if self.canonical:
@@ -87,22 +87,18 @@ class RobertaDataSet(pl.LightningDataModule):
                 lambda smi: {"text": rdkit_canonical(smi["text"])}, batched=False
             ).filter(lambda x: x["text"] is not None)
 
+        # Tokenize
         ds = ds.map(
-            lambda batch: self.tokenizer(batch["text"]),
+            self.tokenizer,
             batched=True,
+            input_columns="text",
             remove_columns="text",
         )
 
         # Partition Datasets
-        self.train_dataset: IterableDataset = maybe_shard_dataset(
-            self.trainer, ds["train"]
-        )
-        self.val_dataset: IterableDataset = maybe_shard_dataset(
-            self.trainer, ds["validation"]
-        )
-        self.test_dataset: IterableDataset = maybe_shard_dataset(
-            self.trainer, ds["test"]
-        )
+        self.train_dataset: IterableDataset = ds["train"]
+        self.val_dataset: IterableDataset = ds["validation"]
+        self.test_dataset: IterableDataset = ds["test"]
 
     def train_dataloader(self):
         # Increment epoch to replicate shuffling
