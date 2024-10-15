@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytorch_lightning as pl
-from datasets import IterableDataset, IterableDatasetDict, load_dataset
+from datasets import IterableDataset, DatasetDict, IterableDatasetDict, load_dataset
 from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
 from transformers import DataCollatorForLanguageModeling
@@ -11,6 +11,8 @@ from ..utils.tokenizer import load_tokenizer
 
 def maybe_shard_dataset(trainer, ds):
     """Maybe shard a dataset across trainer ranks, if appropriate"""
+    if isinstance(ds, (DatasetDict, IterableDatasetDict)):
+        return ds.__class__({k: maybe_shard_dataset(trainer, v) for k, v in ds.items()})
     if trainer is None:
         return ds
     return split_dataset_by_node(ds, trainer.global_rank, trainer.world_size)
@@ -49,19 +51,25 @@ class RobertaDataSet(pl.LightningDataModule):
         self.save_hyperparameters(logger=False)
 
     def prepare_data(self):
-        self.__load_dataset()
+        self.dataset
 
-    def __load_dataset(self):
-        if not hasattr(self, "dataset"):
-            dataset = load_dataset(
-                str(self.path),
-                keep_in_memory=False,
-                streaming=True,
-            )
-            assert isinstance(dataset, IterableDatasetDict)
-            self.dataset = dataset
-
-        return self.dataset
+    @property
+    def dataset(self):
+        if hasattr(self, "_dataset"):
+            return self._dataset
+        self._dataset = load_dataset(
+            "text",
+            name=str(self.path.name),
+            data_files={
+                "train": str(self.path.joinpath("data/train/*.txt")),
+                "validation": str(self.path.joinpath("data/val/*.txt")),
+                "test": str(self.path.joinpath("data/test/*.txt")),
+            },
+            keep_in_memory=False,
+            streaming=True,
+            save_infos=True,
+        )
+        return self._dataset
 
     def setup(self, stage: str) -> None:
         self.data_collator = DataCollatorForLanguageModeling(
@@ -69,8 +77,7 @@ class RobertaDataSet(pl.LightningDataModule):
             mlm_probability=self.mlm_probability,
             mlm=True,
         )
-
-        ds = self.__load_dataset()
+        ds = self.dataset
 
         # Get Canonical SMILES encodings before tokenizing
         if self.canonical:
