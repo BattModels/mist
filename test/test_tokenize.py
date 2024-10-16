@@ -1,3 +1,4 @@
+import json
 from tempfile import TemporaryDirectory
 from itertools import chain
 
@@ -34,7 +35,13 @@ OTHER_SMILES_TOKENIZERS = [
 
 @pytest.fixture(scope="module", params=SMILE_TOKENIZER)
 def smile_tokenizer(request):
-    return load_tokenizer(request.param)
+    try:
+        return load_tokenizer(request.param)
+
+    except json.decoder.JSONDecodeError:
+        if request.param in ["SmilesPE/SPE_ChEMBL"]:
+            pytest.xfail("SPE tokenizer not available (flaky download)")
+        raise
 
 
 @pytest.mark.parametrize("name", chain(SMILE_TOKENIZER, OTHER_SMILES_TOKENIZERS))

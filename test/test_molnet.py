@@ -16,6 +16,7 @@ MOLNET_CONFIG = Path(__file__).parent.parent.joinpath(
 )
 
 
+@pytest.mark.xfail(strict=False, reason="downloads are flaky", raises=FileNotFoundError)
 def check_datamodule(dm: LightningDataModule, stage="fit", limit_batches=100):
     dm.prepare_data()
     dm.setup(stage)
