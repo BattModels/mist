@@ -1,4 +1,5 @@
 import json
+import urllib
 from tempfile import TemporaryDirectory
 from itertools import chain
 
@@ -32,21 +33,24 @@ OTHER_SMILES_TOKENIZERS = [
     "ibm/MoLFormer-XL-both-10pct-oov",
 ]
 
-
-@pytest.fixture(scope="module", params=SMILE_TOKENIZER)
-def smile_tokenizer(request):
+def flaky_load_tokenizer(name_or_path, *args, **kwargs):
     try:
-        return load_tokenizer(request.param)
+        return load_tokenizer(name_or_path, *args, **kwargs)
 
-    except json.decoder.JSONDecodeError:
-        if request.param in ["SmilesPE/SPE_ChEMBL"]:
+    except (json.decoder.JSONDecodeError, urllib.error.HTTPError):
+        if name_or_path in ["SmilesPE/SPE_ChEMBL"]:
             pytest.xfail("SPE tokenizer not available (flaky download)")
         raise
 
 
+@pytest.fixture(scope="module", params=SMILE_TOKENIZER)
+def smile_tokenizer(request):
+    return flaky_load_tokenizer(request.param)
+
+
 @pytest.mark.parametrize("name", chain(SMILE_TOKENIZER, OTHER_SMILES_TOKENIZERS))
 def test_well_behaved_tokenizer(name):
-    tokenizer = load_tokenizer(name)
+    tokenizer = flaky_load_tokenizer(name)
     code = tokenizer("CCO")
     assert tokenizer.unk_token_id is not None
     assert tokenizer.mask_token_id is not None
@@ -58,7 +62,7 @@ def test_well_behaved_tokenizer(name):
 @pytest.mark.parametrize("name", chain(SMILE_TOKENIZER, OTHER_SMILES_TOKENIZERS))
 def test_oov_tokens(name):
     """Check that the unknown token is emitted for OOV tokens"""
-    tok = load_tokenizer(name)
+    tok = flaky_load_tokenizer(name)
 
     def check_oov(tokenizer, smi):
         code = tokenizer(smi)["input_ids"]
@@ -148,6 +152,9 @@ def test_mlm_tokenizer(smile_tokenizer):
         assert collated_batch[k].size() == (len(STANDARD_SMILES), max_length)
 
 
+@pytest.mark.xfail(
+    strict=False, raises=urllib.error.HTTPError, reason="Flaky downloads"
+)
 def test_spe_setup():
     tokenizer = pretrained_spe_tokenizer()
 
