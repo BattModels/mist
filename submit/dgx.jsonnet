@@ -1,0 +1,22 @@
+{
+  nodes: 5,
+  gpus_per_node: 8,
+  container: '/lustre/fs0/awadell/sqsh-files/0535844560745234+mist+latest.sqsh',
+  train: {
+    data: {
+      init_args: {
+        path: '/lustre/fs0/awadell/realspace'
+      },
+    },
+    trainer: {
+      devices: $.gpus_per_node,
+      num_nodes: $.nodes,
+    },
+  },
+  env: {
+    JOBID: '$SLURM_JOB_ID',
+    PMIX_MCA_gds: 'hash',
+    NCCL_TOPO_FILE: '/cm/shared/etc/ndv4-topo.xml',
+    MELLANOC_VISIBLE_DEVICES: 'all'
+  },
+}
