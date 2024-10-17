@@ -25,6 +25,10 @@ class Requeue(Callback):
         elif which("qrerun"):
             self.scheduler = "pbs"
             default_requeue = signal.SIGTERM
+        else:
+            # Fall back to checkpointing progress on SIGTERM
+            default_requeue = signal.SIGTERM
+
         requeue_signal = requeue_signal or default_requeue
         self.signal = signal.Signals(requeue_signal)
         self.ckpt_path: Optional[Path] = None
@@ -51,6 +55,7 @@ class Requeue(Callback):
             self.requeue(ckpt_path)
 
     def requeue(self, ckpt_path: Path):
+        log.info("Requeuing using %s", self.scheduler)
         if self.scheduler == "slurm":
             self._requeue_slurm(ckpt_path)
         elif self.scheduler == "pbs":

@@ -5,7 +5,7 @@
   train: {
     data: {
       init_args: {
-        path: '/lustre/fs0/awadell/realspace'
+        path: '/lustre/fs0/awadell/realspace',
       },
     },
     trainer: {
@@ -17,6 +17,6 @@
     JOBID: '$SLURM_JOB_ID',
     PMIX_MCA_gds: 'hash',
     NCCL_TOPO_FILE: '/cm/shared/etc/ndv4-topo.xml',
-    MELLANOC_VISIBLE_DEVICES: 'all'
+    MELLANOC_VISIBLE_DEVICES: 'all',
   },
 }
