@@ -45,6 +45,7 @@ def test_datamodule(name):
 
 
 @pytest.mark.parametrize("name", MOLNET_URLS.keys())
+@pytest.mark.xfail(strict=False, reason="downloads are flaky", raises=FileNotFoundError)
 def test_prepare(name):
     task_config = json.loads(jsonnet.evaluate_file(str(MOLNET_CONFIG)))[name]
     dm = MolNetDataModule(
@@ -89,6 +90,7 @@ DATASET_SIZE = {
 @pytest.mark.parametrize(
     "dataset,split", product(DATASET_SIZE.keys(), ["scaffold", "random"])
 )
+@pytest.mark.xfail(strict=False, reason="downloads are flaky", raises=FileNotFoundError)
 def test_splits(dataset, split):
     config = json.loads(jsonnet.evaluate_file(str(MOLNET_CONFIG)))[dataset]
     dm = MolNetDataModule(

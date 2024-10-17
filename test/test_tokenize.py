@@ -33,6 +33,7 @@ OTHER_SMILES_TOKENIZERS = [
     "ibm/MoLFormer-XL-both-10pct-oov",
 ]
 
+
 def flaky_load_tokenizer(name_or_path, *args, **kwargs):
     try:
         return load_tokenizer(name_or_path, *args, **kwargs)
