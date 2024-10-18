@@ -240,6 +240,21 @@ def get_ckpt_tokenizer(path: str | Path) -> str:
         return config["data"]["init_args"]["tokenizer"]
 
 
+def get_hidden_size(name_or_path: str) -> int:
+    config_path = Path(name_or_path).parent.parent.joinpath("config.json")
+    if Path(config_path).is_file():
+        with open(config_path, "r") as fid:
+            config = json.load(fid)
+        return config["model"]["init_args"]["hidden_size"]
+
+    # Special Case models
+    elif name_or_path.startswith("ibm/MoLFormer-XL-both-10pct"):
+        return 768
+
+    else:
+        raise ValueError(f"Could not find hidden size for {name_or_path}")
+
+
 def norm_class_config(config: dict, class_path: Optional[str] = None) -> (str, dict):
     """Parse a dictionary of hparams for a class name and init args"""
     init_args = dict()

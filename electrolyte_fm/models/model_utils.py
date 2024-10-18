@@ -1,7 +1,8 @@
 from pathlib import Path
 
 import torch
-from pytorch_lightning.loggers import WandbLogger
+from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+from lightning.pytorch.loggers import WandbLogger
 from torchmetrics import MetricCollection
 
 from ..utils.ckpt import SaveConfigWithCkpts

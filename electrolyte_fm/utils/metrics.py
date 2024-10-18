@@ -1,7 +1,8 @@
 from typing import Any, Dict, Literal, Optional, Union
 
 import torch
-from torchmetrics import Metric
+from numpy import geomspace
+from torchmetrics import Metric, MetricCollection
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.classification import (
     AUROC,
@@ -16,6 +17,8 @@ from torchmetrics.regression import (
     R2Score,
 )
 from torchmetrics.wrappers import BootStrapper
+from torchmetrics.wrappers.abstract import WrapperMetric
+from torchmetrics.wrappers.classwise import ClasswiseWrapper
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 
 """ Target Value to indicate missing data """
