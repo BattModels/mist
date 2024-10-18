@@ -1,10 +1,10 @@
-from typing import Union, Dict, Optional, Any, Literal
+from dataclasses import dataclass
+from typing import Any, Dict, Literal, Optional, Union
 
 import torch
-from torchmetrics import Metric
+from numpy import geomspace
+from torchmetrics import Metric, MetricCollection
 from torchmetrics import MetricCollection as TmMetricCollection
-from torchmetrics.wrappers import BootStrapper
-from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 from torchmetrics.classification import (
     AUROC,
     AveragePrecision,
@@ -12,12 +12,15 @@ from torchmetrics.classification import (
 )
 from torchmetrics.regression import (
     MeanAbsoluteError,
-    MeanSquaredError,
-    R2Score,
     MeanAbsolutePercentageError,
+    MeanSquaredError,
     PearsonCorrCoef,
+    R2Score,
 )
-
+from torchmetrics.wrappers import BootStrapper
+from torchmetrics.wrappers.abstract import WrapperMetric
+from torchmetrics.wrappers.classwise import ClasswiseWrapper
+from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 
 """ Target Value to indicate missing data """
 IGNORE_INDEX = -100
@@ -415,3 +418,71 @@ def bootstrap_collection(metrics: MetricCollection, **kwargs) -> MetricCollectio
             mc[k] = BootStrapper(v, **kwargs)
 
     return MetricCollection(mc)
+
+
+class FeaturesUtilization(Metric):
+    """Base Metric for tracking feature utilization"""
+
+    def __init__(self, num_features: int, **kwargs):
+        super().__init__(**kwargs)
+        self.add_state(
+            "feature_counts",
+            torch.zeros(num_features, dtype=torch.int64),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "total_tokens",
+            torch.tensor(0, dtype=torch.int64),
+            dist_reduce_fx="sum",
+        )
+
+    def update(self, features: torch.Tensor) -> None:
+        assert features.ndim == 2
+        self.feature_counts = features.count_nonzero(0)
+        self.total_tokens += features.shape[0]
+
+
+class AliveFeatures(FeaturesUtilization):
+    higher_is_better = True
+
+    def compute(self):
+        return self.feature_counts.count_nonzero() / self.feature_counts.numel()
+
+
+@dataclass
+class Histogram:
+    """Dataclass for storing histogram data, to avoid flattening by MetricCollection"""
+
+    density: torch.Tensor
+    bin_edges: torch.Tensor
+
+    @property
+    def bin_centers(self):
+        return (self.bin_edges[:-1] + self.bin_edges[1:]) / 2
+
+
+class FeatureDensity(FeaturesUtilization):
+    def __init__(self, *args, log_density: bool = True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.log_density = log_density
+
+    def compute(self):
+        feature_density = self.feature_counts / self.total_tokens
+        nbins = int(max((2 * self.total_tokens).pow(1 / 3).ceil(), 10))
+        if self.log_density:
+            left_edge = float(feature_density[feature_density > 0].min())
+            right_edge = float(feature_density[feature_density > 0].max())
+            nbins = geomspace(min(left_edge, 1e-3), right_edge, num=nbins + 1)
+            nbins = torch.tensor(nbins, dtype=feature_density.dtype)
+
+        density, bin_edges = torch.histogram(
+            feature_density.to("cpu"), nbins, density=True
+        )
+        return Histogram(density, bin_edges)
+
+
+class MaxFeatureDensity(FeaturesUtilization):
+    higher_is_better = False
+
+    def compute(self):
+        return self.feature_counts.max() / self.total_tokens

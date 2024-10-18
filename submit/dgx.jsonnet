@@ -1,6 +1,6 @@
 {
-  nodes: 5,
-  gpus_per_node: 8,
+  nodes: 1,
+  gpus_per_node: 1,
   container: '/lustre/fs0/awadell/sqsh-files/0535844560745234+mist+latest.sqsh',
   train: {
     data: {
