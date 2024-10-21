@@ -1,4 +1,5 @@
 {
+  container: '/lustre/fs0/awadell/sqsh-files/0535844560745234+mist+08e9e89.sqsh',
   train: {
     tags: ['sae', 'debug'],
     model: {

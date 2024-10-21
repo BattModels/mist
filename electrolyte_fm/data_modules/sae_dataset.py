@@ -3,6 +3,8 @@ from math import floor
 from pathlib import Path
 from typing import Optional, Union
 
+import nvtx
+import torch
 import pytorch_lightning as pl
 import torch
 from datasets import Dataset, load_dataset
@@ -27,31 +29,43 @@ def extract_hidden_state(
     batch = batch.to(encoder.device)
 
     # Disable gradients
-    with torch.inference_mode():
-        enc = encoder(
-            batch["input_ids"],
-            attention_mask=batch["attention_mask"],
-            return_dict=True,
-            output_hidden_states=True,
-        )
+    with nvtx.annotate("encoder"):
+        with torch.inference_mode():
+            enc = encoder(
+                batch["input_ids"],
+                attention_mask=batch["attention_mask"],
+                return_dict=True,
+                output_hidden_states=True,
+            )
 
     if isinstance(layer, float):
         layer = floor(len(enc["hidden_states"]) * layer)
 
     # Flatten hidden states
-    hs = enc["hidden_states"][layer].to(device)
+    hidden_state = flatten_hidden_states(
+        enc["hidden_states"][layer],
+        attention_mask,
+        device=device,
+    )
+    return {"hidden_state": hidden_state}
+
+
+@nvtx.annotate()
+def flatten_hidden_states(hs, attention_mask, device="cpu"):
+    hs = hs.to(device)
     hidden_state = []
-    d_model = hs.shape[-1]
     assert attention_mask.shape[0] == hs.shape[0], "batch size mismatch"
     assert attention_mask.shape[1] == hs.shape[1], "seq. length mismatch"
     for bdx in range(hs.shape[0]):
         hs_molecule = hs[bdx][attention_mask[bdx] > 0]
-        assert hs_molecule.shape == (len(input_ids[bdx]), d_model)
         hidden_state.append(hs_molecule)
 
-    return {"hidden_state": hidden_state}
+    return hidden_state
 
 
+@nvtx.annotate()
+def collate_hidden_states(hidden_states):
+    return {"hidden_state": torch.cat(hidden_states, dim=0)}
 
 
 class HiddenStateDataModule(pl.LightningDataModule):
@@ -63,6 +77,8 @@ class HiddenStateDataModule(pl.LightningDataModule):
         tokenizer: Optional[str] = None,
         batch_size: int = 64,
         val_batch_size: Optional[int] = None,
+        num_workers: int = 1,
+        prefetch_factor: int = 4,
         encoder_batch_size: Optional[int] = None,
         encoder_device: str = "cuda",
         return_molecule: bool = False,
@@ -86,7 +102,6 @@ class HiddenStateDataModule(pl.LightningDataModule):
         self.hparams["tokenizer"] = tokenizer
         self.save_hyperparameters(logger=False, ignore=["encoder_device"])
         self.data_collator = DataCollatorWithPadding(self.tokenizer, "longest")
-
 
     def prepare_data(self):
         self.dataset
@@ -118,7 +133,10 @@ class HiddenStateDataModule(pl.LightningDataModule):
             input_columns="text",
             remove_columns="text",
         )
-        tok_columns = ["input_ids", "attention_mask", ]
+        tok_columns = [
+            "input_ids",
+            "attention_mask",
+        ]
         ds = ds.select_columns(tok_columns)
 
         # Extract per molecule hidden states
@@ -134,14 +152,14 @@ class HiddenStateDataModule(pl.LightningDataModule):
             input_columns=tok_columns,
         )
         ds = ds.map(
-            lambda x: {"hidden_state": torch.cat(x, dim=0)},
+            collate_hidden_states,
             batched=True,
             input_columns=["hidden_state"],
             remove_columns=tok_columns,
         )
 
         self.train_dataset: Dataset = ds["train"].shuffle(
-            buffer_size=10 * self.encoder_batch_size
+            buffer_size=10 * self.batch_size
         )
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
@@ -149,6 +167,9 @@ class HiddenStateDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         return DataLoader(
             self.train_dataset,
+            num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
+            multiprocessing_context="spawn",
             collate_fn=self.collate_fn,
             batch_size=self.batch_size,
             pin_memory=True,
@@ -157,6 +178,8 @@ class HiddenStateDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             self.val_dataset,
+            num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
             collate_fn=self.collate_fn,
             batch_size=self.val_batch_size,
             pin_memory=True,
@@ -165,16 +188,22 @@ class HiddenStateDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return DataLoader(
             self.test_dataset,
+            num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
             collate_fn=self.collate_fn,
             batch_size=self.val_batch_size,
         )
 
     @classmethod
+    @nvtx.annotate()
     def collate_fn(cls, batch):
         return torch.stack([x["hidden_state"] for x in batch]).detach()
 
+
 class FeatureTaggerDataModule(HiddenStateDataModule):
-    def __init__(self, name_or_path: str, path: str, features: dict[str, re.Pattern], **kwargs):
+    def __init__(
+        self, name_or_path: str, path: str, features: dict[str, re.Pattern], **kwargs
+    ):
         kwargs["return_molecule"] = True
         self.features = features
         super().__init__(name_or_path, path, **kwargs)
@@ -215,7 +244,7 @@ class FeatureTaggerDataModule(HiddenStateDataModule):
 
         # Tag features
         self.train_dataset: Dataset = ds["train"].shuffle(
-            buffer_size=10 * self.encoder_batch_size
+            buffer_size=2 * self.encoder_batch_size
         )
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
@@ -223,7 +252,7 @@ class FeatureTaggerDataModule(HiddenStateDataModule):
         self.train_dataset
 
 
-def tag_features(obs:dict, features:dict):
+def tag_features(obs: dict, features: dict):
     token_overlap = torch.zeros(len(features), len(obs["input_ids"]), dtype=torch.bool)
     offsets_mapping = obs["offsets_mapping"]
     for fdx, (name, pattern) in features.items():
@@ -235,11 +264,3 @@ def tag_features(obs:dict, features:dict):
                 token_overlap[idx, fdx] = True
 
     return {"features": token_overlap.T.detach()}
-
-
-
-
-
-
-
-         
