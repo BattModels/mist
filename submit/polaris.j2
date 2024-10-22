@@ -46,6 +46,14 @@ source ${PBS_O_WORKDIR}/activate
 echo "$(df -h /local/scratch)"
 export TMPDIR=/local/scratch
 
+{%- if job_queue is defined %}
+cat $PBS_NODEFILE
+unset MASTER_ADDR
+unset MASTER_PORT
+unset WORLD_SIZE
+python submit/sweep.py {{ job_queue }}
+
+{% else %}
 {% if deepspeed is defined %}
 # Write out deepspeed config
 cat > $TMPDIR/deepspeed.json<<EOF
@@ -66,3 +74,5 @@ nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
     python3 train.py fit
+
+{%- endif %}
