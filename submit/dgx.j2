@@ -2,9 +2,14 @@
 {%- from "./utils.j2" import cliopts, export_env, export_job_config %}
 #SBATCH --job-name {{ name or "mist" }}
 #SBATCH --partition {{ partition or "defq" }}
+{%- if job_queue is defined %}
+#SBATCH --ntasks {{ nodes * job_queue.tasks * gpus_per_node }}
+#SBATCH --gpus {{ nodes * job_queue.tasks * gpus_per_node }}
+{%- else %}
 #SBATCH --nodes {{ nodes or 1 }}
 #SBATCH --ntasks-per-node {{ gpus_per_node or 8 }}
 #SBATCH --gpus-per-node {{ gpus_per_node or 8 }}
+{%- endif %}
 #SBATCH --time {{ walltime or "4:0:0" }}
 #SBATCH --cpus-per-task 12
 #SBATCH --mem-per-cpu 200G
@@ -23,6 +28,10 @@ cd $(git rev-parse --show-toplevel)
 # Set env variables
 {{- export_env( env ) }}
 
+{%- if job_queue is defined %}
+submit/sweep.py scheduler --num-workers {{ job_queue.tasks }} {{ job_queue.queue }}
+
+{%- else -%}
 {% if deepspeed is defined %}
 # Write out deepspeed config
 cat > $TMPDIR/deepspeed.json<<EOF
@@ -64,3 +73,4 @@ nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
     /mist/.venv/bin/python ${PWD}/train.py
+{%- endif %}

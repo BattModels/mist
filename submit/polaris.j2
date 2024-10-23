@@ -1,7 +1,11 @@
 #!/bin/sh
 {%- from "./utils.j2" import cliopts, export_env, export_job_config %}
 #PBS -N {{ jobname or "MIST" }}
+{%- if job_queue is defined %}
+#PBS -l select={{ nodes * job_queue.tasks }}:system=polaris
+{%- else %}
 #PBS -l select={{ nodes or 1 }}:system=polaris
+{%- endif %}
 #PBS -l place=scatter
 #PBS -l filesystems=eagle:home
 #PBS -l walltime={{ walltime or "00:20:00" }}
@@ -51,7 +55,7 @@ cat $PBS_NODEFILE
 unset MASTER_ADDR
 unset MASTER_PORT
 unset WORLD_SIZE
-python submit/sweep.py {{ job_queue }}
+python submit/sweep.py scheduler --num-workers {{ job_queue.tasks }} {{ job_queue.queue }}
 
 {% else %}
 {% if deepspeed is defined %}
