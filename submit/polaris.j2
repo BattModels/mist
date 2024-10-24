@@ -13,6 +13,10 @@
 #PBS -r y
 #PBS -q {{ queue or "debug" }}
 #PBS -A {{ account or "FoundEnergy" }}
+{%- if email is defined %}
+#PBS -M {{ email }}
+#PBS -m abe
+{%- endif %}
 set -x
 cd ${PBS_O_WORKDIR}
 
