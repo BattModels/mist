@@ -68,7 +68,7 @@ class JobConfig:
 
     def __post_init__(self):
         config = json.loads(self.config)
-        self.gpus_per_node = config["gpus_per_node"]
+        self.gpus_per_node = config.get("gpus_per_node", 4)
         self.nodes = config["nodes"]
 
 
@@ -116,18 +116,11 @@ def qsub(job: JobConfig, nodes: list[str]):
     assert len(nodes) == job.nodes
 
     tmpdir = Path(os.environ.get("TMPDIR", "/tmp"))
-    worker_dir = tmpdir.joinpath(uuid4())
+    worker_dir = tmpdir.joinpath(str(uuid4()))
     worker_dir.mkdir()
     with open(worker_dir.joinpath("hostfile"), "w") as fid:
         for node in nodes:
             fid.write(node + "\n")
-
-    with open(worker_dir.joinpath("lightning.json"), "w") as fid:
-        fid.write(job.config)
-
-    # Copy worker_dir to node
-    for node in nodes:
-        subprocess.run(["-r", worker_dir, node + ":" + worker_dir], "scp")
 
     # Launch the worker
     args = [
@@ -138,11 +131,17 @@ def qsub(job: JobConfig, nodes: list[str]):
         "submit/set_node_rank",
         sys.executable,
         "train.py",
-        "fit",
-        f"--config={worker_dir.joinpath('lightning.json')}",
     ]
+    env = os.environ.copy()
+    config = json.loads(job.config)
+    fit_config = {"fit": config["train"]}
+    env["PL_CONFIG"] = json.dumps(fit_config)
     logging.info("mpiexec: %s", args)
-    return subprocess.Popen(args, executable=which("mpiexec"))
+    return subprocess.Popen(
+        args,
+        executable=which("mpiexec"),
+        env=env,
+    )
 
 
 def init_slurm(sweep_path: str, num_workers):
@@ -167,8 +166,11 @@ def init_pbs(num_workers: int):
         for node in fid:
             node = node.strip()
             logging.info("starting worker on %s", node)
-            wkr = Worker(node, lambda job: qsub(job.config, [node]))
-            workers.append(wkr)
+
+            def worker_launch(job: JobConfig, nodes=[node]):
+                return qsub(job, nodes)
+
+            workers.append(Worker(node, worker_launch))
 
     assert len(workers) == num_workers
 
@@ -198,7 +200,6 @@ def scheduler(sweep: str, num_workers: int):
             if job is None:
                 job = queue.get()
                 logging.info("launching job %s on worker %s", job.lineno, worker.name)
-                print(worker.launch)
                 slots[worker] = worker.launch(job)
                 queue.task_done()
 
