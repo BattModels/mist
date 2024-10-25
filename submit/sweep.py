@@ -244,8 +244,11 @@ def srun(job: JobConfig, worker_id: int):
 
 
 def qsub(job: JobConfig, nodes: list[str]):
-    np = len(nodes) * job.gpus_per_node
-    assert len(nodes) == job.nodes
+    gpus_per_node = job.config.get("gpus_per_node", 4)
+    np = len(nodes) * gpus_per_node
+    assert (
+        len(nodes) == job.nodes
+    ), f"Expected node counts to match got {len(nodes)} and {job.nodes}"
 
     tmpdir = Path(os.environ.get("TMPDIR", "/tmp"))
     worker_dir = tmpdir.joinpath(str(uuid4()))
@@ -257,7 +260,7 @@ def qsub(job: JobConfig, nodes: list[str]):
     # Launch the worker
     args = [
         f"--np={np:d}",
-        f"--ppn={job.gpus_per_node:d}",
+        f"--ppn={gpus_per_node:d}",
         f"--hostfile={worker_dir.joinpath('hostfile')}",
         "--cpu-bind=numa",
         __file__,
