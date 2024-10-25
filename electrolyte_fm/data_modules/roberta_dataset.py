@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pytorch_lightning as pl
@@ -149,7 +150,13 @@ class RobertaDataSet(pl.LightningDataModule):
         return state
 
     def load_state_dict(self, state: dict):
-        assert self.path == Path(state["path"])
+        if self.path != Path(state["path"]):
+            logging.warn(
+                "mis-matched paths when resuming dataloader: %s vs. %s",
+                self.path,
+                state["path"],
+            )
+        # assert self.path == Path(state["path"])
         assert self.vocab_size == state["vocab_size"]
         for dl in ["train_dataset", "val_dataset", "test_dataset"]:
             if dl in state and hasattr(self, dl):
