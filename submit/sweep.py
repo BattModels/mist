@@ -8,14 +8,12 @@ import os
 import subprocess
 import sys
 import sqlite3
+import re
 from rich.console import Console
 from rich.table import Table
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from queue import Queue
 from shutil import which
-from socket import getfqdn
-from tempfile import NamedTemporaryFile
 from time import sleep
 from typing import Any, Callable, Optional
 from uuid import uuid4
@@ -86,6 +84,21 @@ class Worker:
 
     def __hash__(self):
         return hash(self.name)
+
+
+def fixup_ckpts(dir: Path) -> Path:
+    ckpt = None
+    step = None
+    regex = re.compile(r"epoch=(\d+)-step=(\d+).ckpt")
+    for file in Path(dir).iterdir():
+        if m := regex.match(file.name):
+            ckpt_step = int(m.group(2))
+            if not file.joinpath("checkpoint").is_dir():
+                continue
+            if step is None or ckpt_step > step:
+                ckpt = file
+
+    return ckpt
 
 
 class SweepDB:
@@ -365,7 +378,7 @@ def scheduler(sweep: str, num_workers: int, run_dir: str = "mist"):
             else:
                 logging.info("Worker %s is busy", worker.name)
 
-        sleep(5)
+        sleep(30)
 
     logging.info("queue complete, shutting down")
 
@@ -376,9 +389,11 @@ def create_sweep_job(
     """
         config = create_sweep_job(base_config, jobs, num_workers = None)
 
-    Returns a job config that when rendered will launch a multi-node sweep of the given jobs.
+    Returns a job config that when rendered will launch a multi-node sweep of
+    the given jobs.
 
-    base_config: The base config to use for the sweep. All jobs must have the same number of nodes and gpus per node.
+    base_config: The base config to use for the sweep. All jobs must have
+                 the same number of nodes and gpus per node.
     jobs: A list of job configs to run in the sweep.
     num_workers: The number of workers (nodes) to simultaneously run jobs
 
@@ -432,8 +447,11 @@ def create_sweep_from_tags(
             job_config = Path(run_dir, run.id, "job_config.json")
             if job_config.is_file():
                 config = json.loads(job_config.read_text())
-                print(config)
-                logging.warn("Using job_config from %s for %s", job_config, run.id)
+                logging.warn(
+                    "Using job_config from %s for %s",
+                    job_config,
+                    run.id,
+                )
 
         if not config:
             logging.error("Missing job_config for run %s, skipping", run.id)
@@ -461,9 +479,12 @@ if __name__ == "__main__":
     sweep_parser = subparsers.add_parser("scheduler")
     sweep_parser.add_argument("sweep", type=str)
     sweep_parser.add_argument("-n", "--num-workers", type=int)
-    sweep_parser.set_defaults(func=lambda args: scheduler(args.sweep, args.num_workers))
+    sweep_parser.add_argument("--run-dir", type=str, default="./mist")
+    sweep_parser.set_defaults(
+        func=lambda args: scheduler(args.sweep, args.num_workers, run_dir=args.run_dir)
+    )
 
-    queue_status_parser = subparsers.add_parser("queue-status")
+    queue_status_parser = subparsers.add_parser("status")
     queue_status_parser.add_argument("sweep", type=str)
     queue_status_parser.set_defaults(func=lambda args: SweepDB(args.sweep).status())
 
