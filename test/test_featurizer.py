@@ -1,6 +1,17 @@
-import pytest
-from electrolyte_fm.data_modules.feature_tagger import REGEX_FEATURES
+import re
+from random import choice
+from itertools import chain
 
+import pytest
+import torch
+
+from electrolyte_fm.data_modules.feature_tagger import (
+    ELEMENT_FEATURES,
+    ELEMENT_SYMBOLS,
+    REGEX_FEATURES,
+    RegexFeature,
+    ElementFeature,
+)
 
 REGEX_TESTS = [
     {
@@ -23,9 +34,10 @@ REGEX_TESTS = [
         "positive": ["[C@]", "[C@@]", "[C@H]", "[C@H-]"],
         "negative": ["C", "O", "c", "[Rb]"],
     },
-    {"feature": "aromatic_atom", 
-     "positive": ["[te+2]", "b", "c", "o", "p", "se", "as"],
-     "negative": ["C", "O", "[Rb]"],
+    {
+        "feature": "aromatic_bracket_atom",
+        "positive": ["[te+2]", "[b]", "[c@@]"],
+        "negative": ["C", "O", "[Rb]", "[Sn]", "[Cn]"],
     },
 ]
 
@@ -35,8 +47,9 @@ REGEX_TESTS = [
     ((x["feature"], x["negative"]) for x in REGEX_TESTS if "negative" in x),
 )
 def test_regex_negatives(feature: str, negatives: list[str]):
+    f = re.compile(REGEX_FEATURES[feature])
     for neg in negatives:
-        assert REGEX_FEATURES[feature].match(neg) is None, f"{feature} should not match {neg}"
+        assert f.match(neg) is None, f"{feature} should not match {neg}"
 
 
 @pytest.mark.parametrize(
@@ -44,5 +57,65 @@ def test_regex_negatives(feature: str, negatives: list[str]):
     ((x["feature"], x["positive"]) for x in REGEX_TESTS if "positive" in x),
 )
 def test_regex_negatives(feature: str, positives: list[str]):
+    f = re.compile(REGEX_FEATURES[feature])
     for pos in positives:
-        assert REGEX_FEATURES[feature].match(pos) is not None, f"{feature} should match {pos}"
+        assert f.match(pos) is not None, f"{feature} should match {pos}"
+
+
+def generate_examples():
+    for x in REGEX_TESTS:
+        yield RegexFeature, x["feature"], x["positive"], x["negative"]
+
+    elements = set(ELEMENT_SYMBOLS)
+    for name, positive in ELEMENT_FEATURES.items():
+        pos_examples = [f"[{e}]" for e in positive]
+        neg_examples = [f"[{e}]" for e in elements - set(positive)]
+        yield ElementFeature, name, pos_examples, neg_examples
+
+
+@pytest.mark.parametrize(
+    "cls,feature,positive,negative",
+    generate_examples(),
+)
+def test_positive_feature(cls, feature, positive, negative):
+    f = cls.from_named(feature)
+    for pos in positive:
+        active = f.featurize(pos)
+        assert active.any(), "{} should match {}".format(feature, pos)
+
+
+@pytest.mark.parametrize(
+    "cls,feature,positive,negative",
+    generate_examples(),
+)
+def test_negative_feature(cls, feature, positive, negative):
+    f = cls.from_named(feature)
+    for neg in negative:
+        active = f.featurize(neg)
+        assert not active.any(), "{} should not match {}".format(feature, neg)
+
+
+@pytest.mark.parametrize("cls,feature,positive,negative", generate_examples())
+def test_alignment(cls, feature, positive, negative):
+    f = cls.from_named(feature)
+    pos = choice(positive)
+    neg = choice(negative)
+    active = f.featurize(pos)
+    inactive = f.featurize(neg)
+    assert active.any() and not inactive.any()
+    check_active(pos + neg, torch.cat([active, inactive]), f.featurize(pos + neg))
+    check_active(pos + pos, torch.cat([active, active]), f.featurize(pos + pos))
+    check_active(
+        neg + pos + neg,
+        torch.cat([inactive, active, inactive]),
+        f.featurize(neg + pos + neg),
+    )
+
+
+def check_active(smi, expected, actual):
+    print(f"smi: {smi}")
+    print(f"expected: {expected}")
+    print(f"actual:   {actual}")
+    assert isinstance(actual, torch.BoolTensor)
+    assert isinstance(expected, torch.BoolTensor)
+    assert all(actual == expected)
