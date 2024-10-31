@@ -1,7 +1,8 @@
 import re
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 from typing import Iterable, Optional
 import itertools
+from rdkit import Chem
 
 import smirk
 import torch
@@ -125,18 +126,24 @@ ELEMENT_FEATURES = {
 }
 
 # Daylight Examples Marked (Daylight): https://daylight.com/dayhtml_tutorials/languages/smarts/smarts_examples.html
+# rdkit.Chem.Lipinski from: https://github.com/rdkit/rdkit/blob/master/rdkit/Chem/Lipinski.py
 SMARTS_FEATURES = {
     "ketone": "[#6][CX3](=O)[#6]",  # Daylight
-    "aldehyde": "[CX3H1](=O)[#6]",  # Daylight
+    "aldehyde": "[$([CX3H2](=O)),$([CX3H1](=O)[#6])]",  # Daylight, plus branch for Formaldehyde
     "carboxylic_acid": "[CX3](=O)[OX2H1]",  # Daylight
-    "amid": "[NX3][CX3](=[OX1])[#6]",  # Daylight
+    "amid": "[$([NX3][CX3](=[OX1])[#6]),$(NC=O)]",  # Daylight, plus branch for Formamide
     "hydroxyl": "[OX2H]",  # Daylight
-    "phenol": "[OX2H][cX3]:[c]",  # Daylight
-    "rotatable_bond": "[!$(*#*)&!D1]-!@[!$(*#*)&!D1]",  # Daylight
+    "phenol": "[OH]c1ccccc1",
+    "rotatable_bond": "[!$(*#*)&!D1]-&!@[!$(*#*)&!D1]",  # rdkit.Chem.Lipinski
+    "carboxyl_group": "[CX3]=[OX1]",  # Daylight
+    "h_donor": "[$([N;!H0;v3]),$([N;!H0;+1;v4]),$([O,S;H1;+0]),$([n;H1;+0])]",  # rdkit.Chem.Lipinski
+    "h_acceptor": "[$([O,S;H1;v2]-[!$(*=[O,N,P,S])]),$([O,S;H0;v2]),$([O,S;-]),$([N;v3;!$(N-*=!@[O,N,P,S])]),$([nH0,o,s;+0])]",  # rdkit.Chem.Lipinski
+    "NH_or_OH_lipinski": "[#8H1,#7H1,#7H2,#7H3]",  # rdkit.Chem.Lipinski
+    "NO_lipinski": "[#7H1,#7H2,#7H3]",  # rdkit.Chem.Lipinski
 }
 
 
-class Feature:
+class Feature(ABC):
     requires_smirk = False
 
     def __init__(self, name: str, tokenizer: Optional[str] = None):
@@ -149,21 +156,18 @@ class Feature:
     def featurize(self, smi: str, encoding: Optional[dict] = None) -> torch.BoolTensor:
         encoding = encoding or self.tokenzier(smi, return_offsets_mapping=True)
         assert "offset_mapping" in encoding
-
-        kwargs = {}
-        if self.requires_smirk:
-            smirk_encoding = self.smirk_tokenizer(
-                smi,
-                return_offsets_mapping=True,
-                add_special_tokens=False,
-            )
-            kwargs["smirk_encoding"] = smirk_encoding
-
+        kwargs = self.preprocess(smi)
         return self._featurize(smi, encoding, **kwargs)
 
     @abstractmethod
     def _featurize(self, smi: str, encoding: dict, **kwargs) -> torch.BoolTensor:
         """Identify tokens in the input SMILES encoding expressing the feature"""
+
+    def preprocess(self, smi: str) -> dict:
+        """Shared preprocessing steps for all features to be provided to `self._featurize`
+        Will be called once per feature class
+        """
+        return {}
 
     @classmethod
     @abstractmethod
@@ -196,7 +200,9 @@ class Feature:
     def onehot(self, indices: list[int], n: int) -> torch.BoolTensor:
         """Convert a list of indices to a one-hot encoding"""
         active = torch.zeros(n, dtype=torch.bool)
-        active[indices] = True
+        if len(indices) > 0:
+            print(indices)
+            active[indices] = True
         return active
 
 
@@ -223,8 +229,6 @@ class RegexFeature(Feature):
 
 
 class ElementFeature(Feature):
-    requires_smirk = True
-
     def __init__(self, name: str, elements: list[str], **kwargs):
         super().__init__(name, **kwargs)
         self.elements = list(set(elements))
@@ -239,9 +243,79 @@ class ElementFeature(Feature):
     def from_named(cls, name: str, **kwargs) -> "ElementFeature":
         return cls(name, ELEMENT_FEATURES[name], **kwargs)
 
+    def preprocess(self, smi: str) -> dict:
+        return {
+            "smirk_encoding": self.smirk_tokenizer(smi, return_offsets_mapping=True)
+        }
+
     def _featurize(
         self, smi: str, encoding: dict, smirk_encoding: dict
     ) -> torch.BoolTensor:
         enc = torch.tensor(smirk_encoding["input_ids"])
         active = enc.eq(self.element_ids).any(dim=0)
         return self.align_embeddings(active, encoding, smirk_encoding)
+
+
+class RdkitFeature(Feature):
+    atomwise = re.compile(r"\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p")
+
+    def preprocess(self, smi: str) -> dict:
+        mol = Chem.MolFromSmiles(smi, sanitize=False)
+        s_flags = Chem.SanitizeFlags.SANITIZE_NONE
+        s_flags |= Chem.SanitizeFlags.SANITIZE_SETAROMATICITY
+        s_flags |= Chem.SanitizeFlags.SANITIZE_SETHYBRIDIZATION
+        s_flags |= Chem.SanitizeFlags.SANITIZE_SETCONJUGATION
+        s_flags |= Chem.SANITIZE_PROPERTIES
+        Chem.SanitizeMol(mol, s_flags)
+        atom_spans = [m.span() for m in self.atomwise.finditer(smi)]
+
+        # Validate rdkit -> smi mapping
+        for idx, atom in enumerate(mol.GetAtoms()):
+            smi_atom = smi[atom_spans[idx][0] : atom_spans[idx][1]]
+            smi_atom_mol = Chem.MolFromSmiles(smi_atom, sanitize=False)
+            Chem.SanitizeMol(smi_atom_mol, s_flags)
+
+            assert atom.GetSymbol() == smi_atom_mol.GetAtomWithIdx(0).GetSymbol()
+
+            # atom_smi = atom.GetSmarts()
+            # smi_atom_rdkit = Chem.MolToSmiles(smi_atom_mol)
+            # assert (
+            #     atom_smi == Chem.MolToSmiles(smi_atom_mol)
+            # ), f"Expected {atom_smi} and {smi_atom_rdkit} to match. Input atom: {smi_atom}"
+
+        return {"rdkit_molecule": mol, "atom_spans": atom_spans}
+
+    def align_atoms(
+        self,
+        atom_idx: int,
+        encoding: dict,
+        atom_spans: list[tuple[int, int]],
+    ) -> Iterable[int]:
+        """Map atom indices to token indices"""
+        span = atom_spans[atom_idx]
+        return self.align_tokens(encoding, span)
+
+
+class SMARTSFeature(RdkitFeature):
+    def __init__(self, name: str, smarts: str, **kwargs):
+        super().__init__(name, **kwargs)
+        self.smarts = Chem.MolFromSmarts(smarts)
+
+    @classmethod
+    def from_named(cls, name: str, **kwargs):
+        return cls(name, SMARTS_FEATURES[name], **kwargs)
+
+    def _featurize(
+        self,
+        smi: str,
+        encoding: dict,
+        atom_spans: list[tuple[int, int]],
+        rdkit_molecule: Chem.Mol,
+    ) -> torch.BoolTensor:
+        # TODO: Handle Bonds
+        matches = rdkit_molecule.GetSubstructMatches(self.smarts)
+        atom_indices = set(flatten(*matches))
+        active: list[int] = []
+        for idx in atom_indices:
+            active.extend(self.align_atoms(idx, encoding, atom_spans))
+        return self.onehot(active, len(encoding["input_ids"]))
