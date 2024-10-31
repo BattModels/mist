@@ -11,6 +11,7 @@ from electrolyte_fm.data_modules.feature_tagger import (
     REGEX_FEATURES,
     RegexFeature,
     ElementFeature,
+    SMARTSFeature,
 )
 
 REGEX_TESTS = [
@@ -38,6 +39,53 @@ REGEX_TESTS = [
         "feature": "aromatic_bracket_atom",
         "positive": ["[te+2]", "[b]", "[c@@]"],
         "negative": ["C", "O", "[Rb]", "[Sn]", "[Cn]"],
+    },
+]
+
+SMARTS_TESTS = [
+    {
+        "feature": "ketone",
+        "positive": ["CC(=O)C", "C[C@@H]1CCCCCCCCCCCCC(=O)C1"],
+        "negative": ["C=O", "OCC"],
+    },
+    {
+        "feature": "aldehyde",
+        "positive": ["C=O", "O=CC", "CC=O"],
+        "negative": ["CC(=O)C", "OCC(O)CO"],
+    },
+    {
+        "feature": "carboxylic_acid",
+        "positive": ["O=CO", "CC(=O)O", "C(=O)O", "O=C(O)C"],
+        "negative": ["CC(=O)C", "OCC"],
+    },
+    {
+        "feature": "amid",
+        "positive": ["O=CN", "CC(=O)N", "C(=O)NC", "O=C(N)C"],
+        "negative": ["CC(=O)C", "OCC"],
+    },
+    {
+        "feature": "hydroxyl",
+        "positive": ["CO", "CCO", "C(O)C"],
+        "negative": ["CC(=O)C", "C=O"],
+    },
+    {
+        "feature": "phenol",
+        "positive": [
+            "c1ccc(cc1)O",
+            "Oc1ccccc1",
+            "Oc0ccccc0Cc0cc(C1)c(O)c(c0)Cc0c(O)ccc(c0)Cc0ccc(O)c(c0)Cc0c(O)ccc(c0)Cc0c(O)ccc(c0)Cc0c(O)c(C2)cc(c0)Cc0c(O)ccc(c0)Cc(c0O)cc2cc0Cc0cc(Cc2ccc(O)cc2)c(O)c(c0)Cc0c(O)ccc(c0)C1",
+        ],
+        "negative": [
+            "CC(=O)C",
+            "C=O",
+            "c1ccccc1-c2ccccc2",
+            "c1ccc(cc1)C[C@@H](C(=O)O)N",
+        ],
+    },
+    {
+        "feature": "rotatable_bond",
+        "positive": ["CC-CC", "c1ccccc1-c2ccccc2"],
+        "negative": ["CC(=O)C", "C=O", "c1ccccc1"],
     },
 ]
 
@@ -72,6 +120,9 @@ def generate_examples():
         neg_examples = [f"[{e}]" for e in elements - set(positive)]
         yield ElementFeature, name, pos_examples, neg_examples
 
+    for x in SMARTS_TESTS:
+        yield SMARTSFeature, x["feature"], x["positive"], x["negative"]
+
 
 @pytest.mark.parametrize(
     "cls,feature,positive,negative",
@@ -81,7 +132,7 @@ def test_positive_feature(cls, feature, positive, negative):
     f = cls.from_named(feature)
     for pos in positive:
         active = f.featurize(pos)
-        assert active.any(), "{} should match {}".format(feature, pos)
+        assert active.any(), "{} should match {}: {}".format(feature, pos, active)
 
 
 @pytest.mark.parametrize(
@@ -92,10 +143,15 @@ def test_negative_feature(cls, feature, positive, negative):
     f = cls.from_named(feature)
     for neg in negative:
         active = f.featurize(neg)
-        assert not active.any(), "{} should not match {}".format(feature, neg)
+        assert not active.any(), "{} should not match {}: {}".format(
+            feature, neg, active
+        )
 
 
-@pytest.mark.parametrize("cls,feature,positive,negative", generate_examples())
+@pytest.mark.parametrize(
+    "cls,feature,positive,negative",
+    [e for e in generate_examples() if e[0] != SMARTSFeature],
+)
 def test_alignment(cls, feature, positive, negative):
     f = cls.from_named(feature)
     pos = choice(positive)
