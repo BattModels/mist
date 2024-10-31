@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH -p venkvis-cpu
+#SBATCH -p cpuq
 #SBATCH --cpus-per-task 1
-#SBATCH --ntasks 48
+#SBATCH --ntasks 16
 #SBATCH --mem-per-cpu 1800M
 set -x
 my_job_header

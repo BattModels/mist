@@ -1,27 +1,31 @@
+import concurrent.futures
 import json
 import logging
-from pathlib import Path
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
-from itertools import islice, chain
-from typing import Optional, Any
+from itertools import chain, islice
+from pathlib import Path
+from typing import Any, Optional
 
 import selfies
+from build_vocab import (
+    ALIPHATIC_ORGANIC,
+    AROMATIC_ORGANIC,
+    AROMATIC_SYMBOLS,
+    BONDS,
+    CHIRAL,
+    ELEMENT_SYMBOLS,
+)
 from datasets import load_dataset
 from mendeleev import element
 
 from electrolyte_fm.utils.tokenizer import PreTrainedTokenizerBase, load_tokenizer
-from opt.build_vocab import (
-    ALIPHATIC_ORGANIC,
-    AROMATIC_ORGANIC,
-    AROMATIC_SYMBOLS,
-    CHIRAL,
-    ELEMENT_SYMBOLS,
-    BONDS,
-)
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(process)d]: %(message)s",
+)
 LOG = logging.getLogger(__name__)
 
 
@@ -218,34 +222,8 @@ for subset in MOLNET_DATASET.keys():
     name = f"MoleculeNet/{subset}"
     ATOM_DATASETS[name] = lambda subset=subset: molecularnet(subset)
 
-TOKENIZERS = {
-    "smiles": [
-        "character",
-        "smirk",
-        "ibm/MoLFormer-XL-both-10pct-oov",
-        "SmilesPE/SPE_ChEMBL",
-        "devalab/molgpt-moses",
-        "devalab/molgpt-guacamol",
-        "MolecularAI/Chemformer",
-        "MolecularAI/Chemformer-downstream",
-        "seyonec/ChemBERTa-zinc-base-v1",
-        "sagawa/ReactionT5-product-prediction",
-        "sagawa/ReactionT5-yield-prediction",
-        "rxn4chemistry/rxn_yields",
-        "rxn4chemistry/rxnfp",
-        "ChangwenXu98/TransPolymer",
-        "./smirk-gpe-50k-mb-ss",
-        "./smirk-gpe-50k-nmb-ss",
-        "./smirk-gpe-small-50k-mb-ss",
-        "google/gemma-7b",
-        "Xenova/gpt-4o",
-        "meta-llama/Meta-Llama-3.1-8B",
-        "meta-llama/Meta-Llama-3-8B",
-    ],
-    "selfies": [
-        "HUBioDataLab/SELFormer",
-    ],
-}
+
+TOKENIZERS = json.loads(Path("tokenizers.json").read_text())
 
 
 def build_atom_generator(name):
@@ -260,19 +238,31 @@ def safe_selfies(iter):
         try:
             yield selfies.encoder(str(smi), strict=False)
         except selfies.exceptions.EncoderError:
-            LOG.warn("failed to encode %s as a SELFIES", smi)
+            LOG.debug("failed to encode %s as a SELFIES", smi)
+            yield None
+
+
+def filter_and_count_nones(iterator):
+    nones = 0
+    filtered_iterator = (item for item in iterator if item is not None)
+    for item in iterator:
+        if item is None:
+            nones += 1
+    return filtered_iterator, nones
 
 
 def tabulate_tokenizer(
     tok: PreTrainedTokenizerBase,
     datasets: dict[str, Any],
     encoding: str = "smiles",
+    name: str = "",
 ) -> dict:
     out = dict()
     for ds_name, iter in datasets.items():
         unk_token_id = tok.unk_token_id
         nobs = 0
         n_oov = 0
+        n_failed_encode = 0
         oov_samples = set()
 
         # Encode molecules
@@ -280,11 +270,12 @@ def tabulate_tokenizer(
             ds = (str(x) for x in iter())
         elif encoding == "selfies":
             ds = safe_selfies(iter())
-        else:
-            raise ValueError(f"Unknown encoding {encoding}")
 
         for batch in batched(ds, 1000):
-            batch_input_ids = tok(batch)["input_ids"]
+            batch, failed_encode = filter_and_count_nones(batch)
+            n_failed_encode += failed_encode
+
+            batch_input_ids = tok(list(batch))["input_ids"]
             # Tests are in test/test_tokenizer.py::test_oov_tokens
             # to ensure that unk_token_id is correctly emitted by
             # tokenizers
@@ -294,28 +285,41 @@ def tabulate_tokenizer(
                     if len(oov_samples) < 20:
                         oov_samples.add(smi)
                 nobs += 1
-            LOG.info("%s - %s: finished %d", name, ds_name, nobs)
-            break
 
         out[ds_name] = {
             "nobs": nobs,
             "oov": n_oov,
             "oov_samples": list(oov_samples),
+            "failed_encode": n_failed_encode,
         }
         LOG.info("%s - %s: %d/%d", name, ds_name, n_oov, nobs)
     return out
 
 
+def process_tokenizer(tokenizer: dict):
+    tok = load_tokenizer(tokenizer["name_or_path"])
+    LOG.info("processing %s", tokenizer["name"])
+    return tokenizer["name"], tabulate_tokenizer(
+        tok, ATOM_DATASETS, tokenizer["encoding"], name=tokenizer["name"]
+    )
+
+
 if __name__ == "__main__":
-    out = defaultdict(lambda: defaultdict(dict))
-    for encoding, tokenizers in TOKENIZERS.items():
-        if encoding != "selfies":
-            pass
-            # continue
-        for name in tokenizers:
-            LOG.info("processing %s", name)
-            tok = load_tokenizer(name)
-            out[name] = tabulate_tokenizer(tok, ATOM_DATASETS, encoding)
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = {
+            executor.submit(process_tokenizer, tokenizer): tokenizer["name"]
+            for tokenizer in TOKENIZERS
+        }
+        out = defaultdict(lambda: defaultdict(dict))
+
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                _, result = future.result()
+                out[name] = result
+            except Exception as e:
+                LOG.error("Error processing %s: %s", name, e)
+                raise
 
     with open("stats-atomic.json", "w") as fid:
         json.dump(out, fid)

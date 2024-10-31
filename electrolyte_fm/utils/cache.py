@@ -43,6 +43,7 @@ def cached_github_archive(repo, commit, file):
 
 
 def cached_download(url: str, path: Path) -> Path:
+    path = Path(path)
     cache = Path(__file__).parent.parent.parent.joinpath(".cache")
     cached_file = cache.joinpath(path)
     cached_file.parent.mkdir(exist_ok=True, parents=True)

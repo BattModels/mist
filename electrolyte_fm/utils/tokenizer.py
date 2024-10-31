@@ -153,6 +153,37 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tok_tf.backend_tokenizer.normalizer = Strip()
         return tok_tf
 
+    elif name == "ibm/materials.smi-ted-light":
+        from .cache import cached_github_archive
+
+        # https://huggingface.co/ibm/materials.smi-ted/blob/752e5015d4a22e0ce6ffa259673dccb23ee5a936/smi-ted/inference/smi_ted_large/load.py#L1
+        regex = "(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+        vocab_file = cached_github_archive(
+            "ibm/materials-smi",
+            "0b965c92eac8c64c1e33b910b58b74da3a3d688b",
+            "models/smi_ted/finetune/smi_ted_light/bert_vocab_curated.txt",
+        )
+        return regex_smiles_tokenizer(vocab_from_words(vocab_file), regex)
+
+    elif name.startswith("lbnlp/MatBERT"):
+        from transformers import BertTokenizerFast
+        from .cache import cached_download
+
+        if name.endswith("uncased"):
+            vocab = cached_download(
+                "https://cedergroup-share.s3-us-west-2.amazonaws.com/public/MatBERT/model_2Mpapers_uncased_30522_wd/vocab.txt"
+                "lbnlp/MatBERT/vocab_uncased.txt",
+            )
+        else:
+            vocab = cached_download(
+                "https://cedergroup-share.s3-us-west-2.amazonaws.com/public/MatBERT/model_2Mpapers_cased_30522_wd/vocab.txt",
+                "lbnlp/MatBERT/vocab_cased.txt",
+            )
+
+        tok = BertTokenizerFast.from_pretrained(vocab, do_lower_case=False)
+        ensure_special_tokens(tok)
+        return tok
+
     elif (
         Path(name).exists()
         and Path(name).parent.parent.joinpath("config.json").is_file()
@@ -202,11 +233,13 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tok.decoder = ByteLevel()
         tok_tf = PreTrainedTokenizerFast(tokenizer_object=tok)
         ensure_special_tokens(tok_tf)
-        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
+        return tok_tf
 
     else:
         # Fall back to a HuggingFace Tokenizer
         from transformers import AutoTokenizer
+        from tokenizers import Regex
+        from tokenizers.pre_tokenizers import Split
 
         from smirk import SmirkTokenizerFast
 
@@ -220,7 +253,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
             **kwargs,
         )
         ensure_special_tokens(tok_tf)
-        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(regex), "isolated")
+        return tok_tf
+
 
 def ensure_special_tokens(tok: PreTrainedTokenizerBase):
     tok.add_special_tokens(

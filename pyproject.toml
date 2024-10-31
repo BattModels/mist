@@ -6,7 +6,7 @@ authors = ["Your Name <you@example.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.10,<4"
 torch = {version = "~2.3"}
 torchmetrics = "^1.4.0"
 lightning = "~2.3"
@@ -28,9 +28,10 @@ smirk = {git = "git@github.com:BattModels/smirk.git", rev = "8061286a219420571d6
 smilespe = { version = "==0.0.3", optional = true }
 # Needed to avoid 4.3.2 (https://github.com/piskvorky/gensim/issues/3541)
 gensim = {version = "^4.3.3", optional = true }
+apetokenizer = { git = "https://github.com/mikemayuare/apetokenizer.git", rev = "8b070d6278503bcf8ad2eedc1756ac34f4bbd981", optional = true }
 
 [tool.poetry.extras]
-tokenizers = ["rdkit", "smilespe", "gensim"]
+tokenizers = ["rdkit", "smilespe", "gensim", "apetokenizer"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8"

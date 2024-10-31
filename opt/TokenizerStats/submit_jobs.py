@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import logging
 import subprocess
+import json
 from pathlib import Path
 from typing import Optional
 from random import randint
@@ -9,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 
 STATS_DIR = Path(__file__).joinpath("..", "stats").resolve()
 
-REALSPACE = "/nfs/turbo/coe-venkvis/mist/realspace_v4_dev"
+REALSPACE = "/lustre/fs0/awadell/realspace_v4_dev"
 
 MOLNET_DATASETS = [
     "qm8",
@@ -27,32 +28,13 @@ MOLNET_DATASETS = [
     "clintox",
 ]
 
-TOKENIZERS = [
-    "smirk",
-    "character",
-    "ibm/MoLFormer-XL-both-10pct-oov",
-    "SmilesPE/SPE_ChEMBL",
-    "devalab/molgpt-moses",
-    "devalab/molgpt-guacamol",
-    "MolecularAI/Chemformer",
-    "MolecularAI/Chemformer-downstream",
-    "seyonec/ChemBERTa-zinc-base-v1",
-    "sagawa/ReactionT5-product-prediction",
-    "sagawa/ReactionT5-yield-prediction",
-    "rxn4chemistry/rxn_yields",
-    "rxn4chemistry/rxnfp",
-    "ChangwenXu98/TransPolymer",
-    "../../smirk-gpe-50k-mb-ss",
-    "../../smirk-gpe-50k-nmb-ss",
-    "../../smirk-gpe-small-50k-mb-ss",
-    "google/gemma-7b",
-    "Xenova/gpt-4o",
-    "meta-llama/Meta-Llama-3.1-8B",
-    "meta-llama/Meta-Llama-3-8B",
-]
+KNOWN_TOKENIZERS = json.loads(Path("tokenizers.json").read_text())
+
+TOKENIZERS = [x["name_or_path"] for x in KNOWN_TOKENIZERS if x["encoding"] == "smile"]
 
 REF_INFO_LOSS = [
     "character",
+    "smirk",
     "meta-llama/Meta-Llama-3.1-8B",
     "google/gemma-7b",
     "Xenova/gpt-4o",

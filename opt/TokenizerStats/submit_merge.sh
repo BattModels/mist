@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -p venkvis-largemem
+#SBATCH -p cpuq
 #SBATCH -c 32
 #SBATCH --mem 126G
 #SBATCH --time 6:0:0
