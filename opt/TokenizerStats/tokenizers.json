@@ -5,6 +5,11 @@
     "encoding": "smiles"
   },
   {
+    "name": "smirk-selfies",
+    "name_or_path": "smirk-selfies",
+    "encoding": "selfies"
+  },
+  {
     "name": "character",
     "name_or_path": "character",
     "encoding": "smiles"
@@ -127,6 +132,26 @@
   {
     "name": "MatBERT-Cased",
     "name_or_path": "lbnlp/MatBERT-cased",
+    "encoding": "smiles"
+  },
+  {
+    "name": "Galactica",
+    "name_or_path": "facebook/galactica-6.7b",
+    "encoding": "smiles"
+  },
+  {
+    "name": "SELFormer",
+    "name_or_path": "HUBioDataLab/SELFormer",
+    "encoding": "selfies"
+  },
+  {
+    "name": "ChemGPT",
+    "name_or_path": "ncfrey/ChemGPT-4.7M",
+    "encoding": "smiles"
+  },
+  {
+    "name": "nach0",
+    "name_or_path": "insilicomedicine/nach0_base",
     "encoding": "smiles"
   }
 ]

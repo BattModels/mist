@@ -1,4 +1,5 @@
 import concurrent.futures
+import itertools
 import json
 import logging
 from collections import defaultdict
@@ -122,6 +123,7 @@ def include_isotopes(base=None):
 
 def include_chirality(base=None, chirality=CHIRAL):
     """Add chiral variants to a base atomic iterator"""
+    chirality = list(chirality)
     for atom in base or elements():
         atom.chiral = None
         yield deepcopy(atom)
@@ -203,6 +205,17 @@ def molecularnet(subset):
             yield from batch["mol"]
 
 
+def chiral_extended():
+    return itertools.chain(
+        deepcopy(CHIRAL),
+        ["@TH1", "@TH2"],
+        ["@AL1", "@AL2"],
+        ["@SP1", "@SP2", "@SP3"],
+        (f"@TB{d}" for d in range(1, 21)),
+        (f"@OH{d}" for d in range(1, 31)),
+    )
+
+
 ATOM_DATASETS = {
     "elements": elements,
     "rings": rings,
@@ -210,11 +223,19 @@ ATOM_DATASETS = {
     "fullerenes": fullerene,
     "isotopes": lambda: include_isotopes(elements()),
     "chiral_elements": lambda: include_chirality(elements()),
+    "extended_chiral_elements": lambda: include_chirality(
+        elements(),
+        chirality=chiral_extended(),
+    ),
     "chiral_isotopes": lambda: include_chirality(include_isotopes()),
     "charged_elements": lambda: include_charge(elements()),
     "charged_isotops": lambda: include_isotopes(include_charge(elements())),
     "charged_chiral_isotopes": lambda: include_chirality(
         include_isotopes(include_charge(elements()))
+    ),
+    "extended_charged_chiral_isotopes": lambda: include_chirality(
+        include_isotopes(include_charge(elements())),
+        chirality=chiral_extended(),
     ),
 }
 
@@ -223,7 +244,9 @@ for subset in MOLNET_DATASET.keys():
     ATOM_DATASETS[name] = lambda subset=subset: molecularnet(subset)
 
 
-TOKENIZERS = json.loads(Path("tokenizers.json").read_text())
+TOKENIZERS = json.loads(
+    Path(__file__).parent.parent.joinpath("tokenizers.json").read_text()
+)
 
 
 def build_atom_generator(name):
@@ -244,10 +267,12 @@ def safe_selfies(iter):
 
 def filter_and_count_nones(iterator):
     nones = 0
-    filtered_iterator = (item for item in iterator if item is not None)
+    filtered_iterator = []
     for item in iterator:
         if item is None:
             nones += 1
+        else:
+            filtered_iterator.append(item)
     return filtered_iterator, nones
 
 
@@ -275,7 +300,7 @@ def tabulate_tokenizer(
             batch, failed_encode = filter_and_count_nones(batch)
             n_failed_encode += failed_encode
 
-            batch_input_ids = tok(list(batch))["input_ids"]
+            batch_input_ids = tok(batch)["input_ids"]
             # Tests are in test/test_tokenizer.py::test_oov_tokens
             # to ensure that unk_token_id is correctly emitted by
             # tokenizers
@@ -299,7 +324,7 @@ def tabulate_tokenizer(
 def process_tokenizer(tokenizer: dict):
     tok = load_tokenizer(tokenizer["name_or_path"])
     LOG.info("processing %s", tokenizer["name"])
-    return tokenizer["name"], tabulate_tokenizer(
+    return tokenizer["name_or_path"], tabulate_tokenizer(
         tok, ATOM_DATASETS, tokenizer["encoding"], name=tokenizer["name"]
     )
 
@@ -319,7 +344,6 @@ if __name__ == "__main__":
                 out[name] = result
             except Exception as e:
                 LOG.error("Error processing %s: %s", name, e)
-                raise
 
     with open("stats-atomic.json", "w") as fid:
         json.dump(out, fid)
