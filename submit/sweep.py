@@ -204,9 +204,12 @@ class SweepDB:
         con.close()
         return status
 
-    def set_ckpt_path(self, job_id: str, path: Path):
+    def set_ckpt_path(self, job_id: str, path: Optional[Path]):
         job = self.get_job(job_id)
-        job.config["train"]["ckpt_path"] = str(path)
+        if path is None:
+            job.config["train"].pop("ckpt_path", None)
+        else:
+            job.config["train"]["ckpt_path"] = str(path)
         logging.info("Setting checkpoint path for %s to %s", job_id, path)
         con = self._connect()
         cur = con.cursor()
@@ -323,6 +326,26 @@ def init_pbs(num_workers: int):
 
     return workers
 
+def validate_ckpt(ckpt_path: Optional[Path | str]) -> Optional[Path]:
+    """ Check if the checkpoint path is valid or return None """
+    if ckpt_path is None:
+        return None
+    ckpt_path = Path(ckpt_path)
+
+    if ckpt_path.is_symlink():
+        if not ckpt_path.exists():
+            logging.warning("Removing broken symlink %s", ckpt_path)
+            ckpt_path.unlink(missing_ok=True)
+            return None
+        else:
+            # Validate the symlink target, but keep the symlink
+            if validate_ckpt(ckpt_path.resolve()) is not None:
+                return ckpt_path
+            return None
+
+    if ckpt_path.exists():
+        return ckpt_path
+    return None
 
 def scheduler(sweep: str, num_workers: int, run_dir: str = "mist"):
     logging.info("populating queue with jobs from %s", sweep)
@@ -337,8 +360,18 @@ def scheduler(sweep: str, num_workers: int, run_dir: str = "mist"):
         if job["status"] not in ["queued", "failed"]:
             logging.info("marking job %s as %s -> queued", job["id"], job["status"])
             queue.update_job_status(job["id"], "queued")
-            ckpt_path = Path(run_dir, job["id"], "checkpoints", "last.ckpt")
-            if ckpt_path.exists():
+
+            # Validate the ckpt_path from the job config
+            ckpt_path = job["config"].get("train", {}).get("ckpt_path", None)
+            valid_ckpt_path = validate_ckpt(ckpt_path)
+            if valid_ckpt_path is not None:
+                logging.debug("using ckpt_path from job config for %s: %s", job["id"], str(ckpt_path))
+
+            elif ckpt_path is not None:
+                logging.warning("job %s ckpt_path %s is not valid -> removing", job["id"], str(ckpt_path))
+                queue.set_ckpt_path(job["id"], None)
+
+            elif ckpt_path := validate_ckpt(Path(run_dir, job["id"], "checkpoints", "last.ckpt")):
                 logging.debug("setting ckpt path for %s to %s", job["id"], ckpt_path)
                 queue.set_ckpt_path(job["id"], ckpt_path)
 
