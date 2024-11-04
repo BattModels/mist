@@ -326,8 +326,9 @@ def init_pbs(num_workers: int):
 
     return workers
 
+
 def validate_ckpt(ckpt_path: Optional[Path | str]) -> Optional[Path]:
-    """ Check if the checkpoint path is valid or return None """
+    """Check if the checkpoint path is valid or return None"""
     if ckpt_path is None:
         return None
     ckpt_path = Path(ckpt_path)
@@ -347,6 +348,7 @@ def validate_ckpt(ckpt_path: Optional[Path | str]) -> Optional[Path]:
         return ckpt_path
     return None
 
+
 def scheduler(sweep: str, num_workers: int, run_dir: str = "mist"):
     logging.info("populating queue with jobs from %s", sweep)
     queue = SweepDB(sweep)
@@ -365,13 +367,23 @@ def scheduler(sweep: str, num_workers: int, run_dir: str = "mist"):
             ckpt_path = job["config"].get("train", {}).get("ckpt_path", None)
             valid_ckpt_path = validate_ckpt(ckpt_path)
             if valid_ckpt_path is not None:
-                logging.debug("using ckpt_path from job config for %s: %s", job["id"], str(ckpt_path))
+                logging.debug(
+                    "using ckpt_path from job config for %s: %s",
+                    job["id"],
+                    str(ckpt_path),
+                )
 
             elif ckpt_path is not None:
-                logging.warning("job %s ckpt_path %s is not valid -> removing", job["id"], str(ckpt_path))
+                logging.warning(
+                    "job %s ckpt_path %s is not valid -> removing",
+                    job["id"],
+                    str(ckpt_path),
+                )
                 queue.set_ckpt_path(job["id"], None)
 
-            elif ckpt_path := validate_ckpt(Path(run_dir, job["id"], "checkpoints", "last.ckpt")):
+            elif ckpt_path := validate_ckpt(
+                Path(run_dir, job["id"], "checkpoints", "last.ckpt")
+            ):
                 logging.debug("setting ckpt path for %s to %s", job["id"], ckpt_path)
                 queue.set_ckpt_path(job["id"], ckpt_path)
 
