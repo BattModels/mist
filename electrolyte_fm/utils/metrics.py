@@ -243,10 +243,16 @@ class TokenCounter(Metric):
     def __init__(self) -> None:
         super().__init__()
         self.add_state(
-            "masked_tokens", torch.tensor(0, dtype=torch.int), dist_reduce_fx="sum"
+            "masked_tokens",
+            torch.tensor(0, dtype=torch.int64),
+            dist_reduce_fx="sum",
+            persistent=True,
         )
         self.add_state(
-            "total_tokens", torch.tensor(0, dtype=torch.int), dist_reduce_fx="sum"
+            "total_tokens",
+            torch.tensor(0, dtype=torch.int64),
+            dist_reduce_fx="sum",
+            persistent=True,
         )
 
     def update(
