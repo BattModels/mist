@@ -90,7 +90,6 @@ def test_oov_tokens(name):
         assert tok.unk_token_id not in tok("ZZ[Zz]")["input_ids"]
         pytest.xfail("character-level tokenizer")
 
-    # check_oov(tok, "⚛️")
     check_oov(tok, "Zz")
     check_oov(tok, "[Zz]")
     check_oov(tok, "[Zz&3]")
