@@ -5,6 +5,7 @@ from pytorch_lightning.loggers import WandbLogger
 from transformers import RobertaConfig, RobertaForMaskedLM
 
 from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
+from ..utils.metrics import TokenCounter
 
 
 class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
@@ -24,13 +25,16 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         layer_norm_eps: float = 1e-12,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
+        enable_token_counter: bool = True,
     ) -> None:
         super().__init__()
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.vocab_size = vocab_size
+        self.token_counter = None
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
-
+        if enable_token_counter:
+            self.token_counter = TokenCounter()
         self.config = RobertaConfig(
             vocab_size=vocab_size,
             intermediate_size=intermediate_size,
@@ -91,9 +95,17 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
             sync_dist=True,
         )
         if self.should_skip():
-            outputs["loss"] *= 0
+            loss = 0 * loss
 
-        return outputs
+        if self.token_counter:
+            self.token_counter.update(batch["attention_mask"], batch["labels"])
+            self.log_dict(
+                self.token_counter.compute(),
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
+        return loss
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         outputs = self(batch)

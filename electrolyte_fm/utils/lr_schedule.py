@@ -15,6 +15,7 @@ def _get_cosine_relative_decay_with_warmup(
 ):
     if current_step < num_warmup_steps:
         return float(current_step) / float(max(1, num_warmup_steps))
+    current_step = min(current_step, num_training_steps)
     progress = float(current_step - num_warmup_steps) / float(
         max(1, num_training_steps - num_warmup_steps)
     )

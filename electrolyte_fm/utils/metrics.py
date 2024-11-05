@@ -10,7 +10,13 @@ from torchmetrics.classification import (
     Accuracy,
     BinaryStatScores,
 )
-from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
+from torchmetrics.regression import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    R2Score,
+    MeanAbsolutePercentageError,
+)
+
 
 """ Target Value to indicate missing data """
 IGNORE_INDEX = -100
@@ -71,7 +77,7 @@ class HotellingTwoSample(Metric):
             oov = torch.cat(self.residual_oov)
         else:
             oov = self.residual_oov
-        if isinstance(self.residual_non_oov):
+        if isinstance(self.residual_non_oov, list):
             non_oov = torch.cat(self.residual_non_oov)
         else:
             non_oov = self.residual_non_oov
@@ -196,6 +202,8 @@ def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> 
         )
     elif name == "mae" and task_type == "regression":
         return MeanAbsoluteError()
+    elif name == "mape" and task_type == "regression":
+        return MeanAbsolutePercentageError()
     elif name == "rmse" and task_type == "regression":
         return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
@@ -227,3 +235,37 @@ def masked_metric_update(
     """Update metrics, masking out targets as needed"""
     targets = targets.masked_fill(mask, IGNORE_INDEX)
     metrics.update(preds, targets, *args)
+
+
+class TokenCounter(Metric):
+    """Count number of tokens seen by model during training."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.add_state(
+            "masked_tokens",
+            torch.tensor(0, dtype=torch.int64),
+            dist_reduce_fx="sum",
+            persistent=True,
+        )
+        self.add_state(
+            "total_tokens",
+            torch.tensor(0, dtype=torch.int64),
+            dist_reduce_fx="sum",
+            persistent=True,
+        )
+
+    def update(
+        self,
+        attention_mask: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> None:
+        self.masked_tokens += torch.sum(labels != -100)
+        self.total_tokens += attention_mask.count_nonzero()
+
+    def compute(self):
+        out = {
+            "masked_tokens": self.masked_tokens,
+            "total_tokens": self.total_tokens,
+        }
+        return out

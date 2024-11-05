@@ -12,7 +12,6 @@ from transformers import DataCollatorWithPadding
 from datasets import Dataset, DatasetDict, load_dataset
 from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
-
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
 
@@ -52,17 +51,20 @@ class MolNetDataModule(pl.LightningDataModule):
 
         self.name = name
         assert name in _URLS, f"Unknown MoleculeDataset {name}"
-        self.tokenizer = load_tokenizer(tokenizer)
-        self.vocab_size = len(self.tokenizer)
-        self.split = split
         self.include_smiles = include_smiles
 
         # Set smi_column
+        self.use_selfies = "selfies" in tokenizer
+
         if smi_column is None and name == "bace":
             self.smi_column = "mol"
         else:
             self.smi_column = smi_column or "smiles"
+
         assert self.smi_column is not None
+        self.tokenizer = load_tokenizer(tokenizer)
+        self.vocab_size = len(self.tokenizer)
+        self.split = split
 
         self.target_columns = target_columns
         self.strip_unk_tokens = strip_unk_tokens
@@ -91,7 +93,7 @@ class MolNetDataModule(pl.LightningDataModule):
             split="train",
             keep_in_memory=False,
             save_infos=True,
-        )
+        )  # type: ignore
 
         if self.name == "qm8":
             # Rename qm8 columns to remove duplicates and include source theory
@@ -143,6 +145,24 @@ class MolNetDataModule(pl.LightningDataModule):
 
         # Save training dataset for target transformations
         self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+
+        if self.use_selfies:
+            from selfies import encoder
+
+            def selfies_encoder(smi):
+                try:
+                    selfie = encoder(smi)
+                except Exception:
+                    selfie = None
+                return selfie
+
+            ds = ds.map(
+                lambda smi: {"selfies": selfies_encoder(smi[self.smi_column])},
+                batched=False,
+                remove_columns=self.smi_column,
+            ).filter(lambda x: x["selfies"] is not None)
+
+            self.smi_column = "selfies"
 
         # Tokenize smiles
         ds = ds.map(
