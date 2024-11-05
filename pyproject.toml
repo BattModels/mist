@@ -6,7 +6,7 @@ authors = ["Your Name <you@example.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
+python = ">=3.10,<3.14"
 torch = {version = "~2.3"}
 torchmetrics = "^1.4.0"
 lightning = "~2.3"
@@ -25,14 +25,18 @@ selfies= "^2.1.0"
 rdkit = "^2024.3.5"
 smirk = {git = "git@github.com:BattModels/smirk.git", rev = "8061286a219420571d606d98083dd900aaa21d02" }
 
+# Dependencies to support additional tokenizers
+smilespe = { version = "==0.0.3", optional = true }
+gensim = {version = "^4.3.3", optional = true } # Needed to avoid 4.3.2 (https://github.com/piskvorky/gensim/issues/3541)
+apetokenizer = { git = "https://github.com/mikemayuare/apetokenizer.git", rev = "8b070d6278503bcf8ad2eedc1756ac34f4bbd981", optional = true }
+
+[tool.poetry.extras]
+tokenizers = ["rdkit", "smilespe", "gensim", "apetokenizer"]
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8"
 pre-commit = "^3.7"
 ruff = "^0.5.4"
-
-[tool.poetry.group.tokenizers.dependencies]
-# Optional Dependencies for third-party tokenizers
-smilespe = "0.0.3"
 
 [build-system]
 requires = ["poetry-core"]

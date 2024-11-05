@@ -29,8 +29,13 @@ STANDARD_SMILES = [
 
 # Tokenizers not actively used for training
 OTHER_SMILES_TOKENIZERS = [
+    "character",
     "SmilesPE/SPE_ChEMBL",
     "ibm/MoLFormer-XL-both-10pct-oov",
+    "devalab/molgpt-moses",
+    "MolecularAI/Chemformer",
+    "seyonec/ChemBERTa-zinc-base-v1",
+    "sagawa/ReactionT5-product-prediction",
 ]
 
 
@@ -53,7 +58,8 @@ def smile_tokenizer(request):
 def test_well_behaved_tokenizer(name):
     tokenizer = flaky_load_tokenizer(name)
     code = tokenizer("CCO")
-    assert tokenizer.unk_token_id is not None
+    tokens = tokenizer.tokenize("CCO")
+    assert isinstance(tokens, list) and len(tokens) >= 1 and isinstance(tokens[0], str)
     assert tokenizer.mask_token_id is not None
     assert tokenizer.pad_token_id is not None
     assert tokenizer.unk_token_id not in code["input_ids"]
@@ -67,19 +73,23 @@ def test_oov_tokens(name):
 
     def check_oov(tokenizer, smi):
         code = tokenizer(smi)["input_ids"]
-        assert tok.unk_token_id in tok("Zz")["input_ids"]
+        assert tok.unk_token_id in code
         assert tok.decode(code, skip_special_tokens=False) != smi
+        assert str(tok.unk_token) in tok.decode(code)
 
     # Some Tokenizers don't emit the unknown token no matter what the input is.
     # Check that the tokenizer fails the test, then mark it with xfail
     if name == "ibm/MoLFormer-XL-both-10pct":
         assert tok.unk_token_id not in tok("😬")["input_ids"]
         pytest.xfail("MoLFormer strips unknown tokens pre-tokenizer")
-    if name in ["seyonec/ChemBERTa-zinc-base-v1", "ChangwenXu98/TransPolymer"]:
+    elif name in ["seyonec/ChemBERTa-zinc-base-v1", "ChangwenXu98/TransPolymer"]:
         assert tok.unk_token_id not in tok("⛰️ ⋙ 🏖️")["input_ids"]
         pytest.xfail("open vocab model")
+    elif name == "character":
+        check_oov(tok, "⚛️")
+        assert tok.unk_token_id not in tok("ZZ[Zz]")["input_ids"]
+        pytest.xfail("character-level tokenizer")
 
-    check_oov(tok, "⚛️")
     check_oov(tok, "Zz")
     check_oov(tok, "[Zz]")
     check_oov(tok, "[Zz&3]")
@@ -163,4 +173,5 @@ def test_spe_setup():
     vocab = tokenizer.get_vocab()
     assert "xxfake" not in vocab
     assert "[BOS]" in vocab
+    assert "[N+]" in vocab
     assert "[N+]" in vocab

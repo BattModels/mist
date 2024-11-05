@@ -46,7 +46,6 @@ class RobertaDataSet(pl.LightningDataModule):
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
         self.canonical = canonical
-        self.hparams["tokenizer"] = tokenizer
         self.hparams["vocab_size"] = self.vocab_size
         self.save_hyperparameters(logger=False)
 

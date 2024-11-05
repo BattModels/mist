@@ -18,7 +18,7 @@
         lr_schedule: {
           class_path: 'electrolyte_fm.utils.lr_schedule.RelativeCosineWarmup',
           init_args: {
-            num_training_steps: 50000,
+            num_training_steps: $.train.trainer.max_steps,
             num_warmup_steps: 'beta2',
           },
         },
@@ -34,7 +34,7 @@
       },
     },
     trainer: {
-      max_steps: $.train.model.init_args.lr_schedule.init_args.num_training_steps,
+      max_steps: 50000,
       val_check_interval: 100,
       limit_val_batches: 12,
       precision: 'bf16-true',
