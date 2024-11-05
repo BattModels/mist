@@ -45,7 +45,7 @@ class MolNetDataModule(pl.LightningDataModule):
         target_columns: list[str] = ["Class"],
         strip_unk_tokens: bool = False,
         val_batch_size: Optional[int] = None,
-        include_smiles=True,
+        include_smiles=False,
     ):
         super().__init__()
 
