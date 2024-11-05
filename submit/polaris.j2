@@ -59,7 +59,7 @@ cat $PBS_NODEFILE
 unset MASTER_ADDR
 unset MASTER_PORT
 unset WORLD_SIZE
-python submit/sweep.py scheduler --num-workers {{ job_queue.tasks }} {{ job_queue.queue }}
+python submit/fog.py scheduler --num-workers {{ job_queue.tasks }} {{ job_queue.queue }}
 
 {% else %}
 {% if deepspeed is defined %}
