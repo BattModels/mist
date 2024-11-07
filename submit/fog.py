@@ -417,8 +417,11 @@ def scheduler(sweep: str, num_workers: int, run_dir: str = "mist"):
                     queue.update_job_status(job.id, "finished")
                 else:
                     queue.update_job_status(job.id, "failed-exit-code")
-                    raise RuntimeError(
-                        f"Job on worker {worker.name} failed with code {proc.returncode}"
+                    logging.error(
+                        "Job (%s) on worker %s failed with code %s",
+                        job.id,
+                        worker.name,
+                        proc.returncode,
                     )
             else:
                 logging.info("Worker %s is busy", worker.name)
