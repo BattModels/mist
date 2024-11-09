@@ -1,18 +1,24 @@
-from electrolyte_fm.models.model_utils import DeepSpeedMixin
-from electrolyte_fm.utils.tokenizer import load_tokenizer
-from transformers import PreTrainedTokenizerFast
-from electrolyte_fm.models import LMFinetuning
-from torch.nn import Module
+import os
+from typing import List, Optional, Union
+
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem import AllChem, Draw, MolFromSmiles, rdmolops
 from selfies import encoder as sf_encoder
 from smirk import SmirkTokenizerFast
 from torch import tensor
-from typing import Union, Optional, List
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
-import numpy as np
-import os
-from rdkit import Chem
-from rdkit.Chem import AllChem, Draw, rdmolops, MolFromSmiles
+from torch.nn import Module
+from transformers import PreTrainedTokenizerFast
+
+from electrolyte_fm.models import LMFinetuning
+from electrolyte_fm.models.model_utils import DeepSpeedMixin
+from electrolyte_fm.utils.tokenizer import load_tokenizer
+
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec
+except ModuleNotFoundError:
+    print("Attention Map analysis requires plotting depency matplotlib.")
 
 
 def _non_element_tokens():
