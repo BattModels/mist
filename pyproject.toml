@@ -38,6 +38,10 @@ pytest = "^8"
 pre-commit = "^3.7"
 ruff = "^0.5.4"
 
+[tool.poetry.group.plotting.dependencies]
+# Optional Dependency for plotting
+matplotlib = "~3.9"
+
 [tool.poetry.group.tokenizers.dependencies]
 # Optional Dependencies for third-party tokenizers
 smilespe = "0.0.3"
