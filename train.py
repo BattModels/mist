@@ -49,6 +49,9 @@ class MyLightningCLI(LightningCLI):
         parser.link_arguments(
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
         )
+        parser.link_arguments(
+            "data.target_columns", "model.init_args.target_columns", apply_on="instantiate"
+        )
 
     def _add_instantiators(self) -> None:
         self.config_dump = json.loads(
@@ -75,7 +78,7 @@ def cli_main(args=None):
     monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
-        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
+        SpikeDetection(atol=0.3, warmup=800, finite_only=False),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
@@ -92,7 +95,7 @@ def cli_main(args=None):
             mode="max",
             save_top_k=2,
             save_last=False,
-            train_time_interval=timedelta(minutes=30),
+            train_time_interval=timedelta(minutes=20),
             auto_insert_metric_name=False,
         ),
         LearningRateMonitor("step"),
@@ -116,8 +119,8 @@ def cli_main(args=None):
         trainer_defaults={
             "callbacks": callbacks,
             "logger": logger,
-            "precision": "16-mixed",
-            "strategy": "deepspeed",
+            "precision": "full",
+            "strategy": "deepspeed_stage_2",
             "use_distributed_sampler": False,  # Handled by DataModule (Needed as Iterable)
         },
         save_config_callback=SaveConfigWithCkpts,
