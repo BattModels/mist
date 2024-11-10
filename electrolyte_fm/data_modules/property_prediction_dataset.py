@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
 from .molnet_dataset import MolNetDataModule
+from .utils import MolEncoding
 
 
 class PropertyPredictionDataModule(MolNetDataModule):
@@ -27,6 +28,7 @@ class PropertyPredictionDataModule(MolNetDataModule):
         target_columns: list[str] = ["Class"],
         strip_unk_tokens: bool = False,
         val_batch_size: Optional[int] = None,
+        encoding: str = "smiles",
     ):
         super().__init__()
 
@@ -38,6 +40,7 @@ class PropertyPredictionDataModule(MolNetDataModule):
         self.smi_column = smi_column
         self.target_columns = target_columns
         self.strip_unk_tokens = strip_unk_tokens
+        self.encoding = MolEncoding(encoding)
 
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size or batch_size
