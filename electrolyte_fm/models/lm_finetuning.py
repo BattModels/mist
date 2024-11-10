@@ -4,9 +4,11 @@ from typing import List, Optional
 
 import pytorch_lightning as pl
 import torch
+from torch.masked import MaskedTensor
 from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
 from torchmetrics import MetricCollection
 from sklearn.preprocessing import PowerTransformer as _PowerTransformer
+from datasets import IterableDataset
 
 from ..utils.metrics import (
     OOVMetric,
@@ -35,10 +37,24 @@ class Standardize(torch.nn.Module):
         return (x - self.mean) / self.std
 
     def fit(self, ds) -> dict:
-        target = torch.stack([torch.tensor(x) for x in ds["target"]])
-        print(f"target: {target.shape}")
-        self.mean = target.mean(0).to(self.mean)
-        self.std = target.std(0).to(self.std) + self.eps
+        if isinstance(ds, IterableDataset):
+            target = []
+            mask = []
+            for x in ds:
+                target.append(x["target"])
+                mask.append(x["target_mask"])
+
+            target = torch.stack(target)
+            mask = torch.stack(mask)
+
+        else:
+            target = torch.stack([torch.tensor(x) for x in ds["target"]])
+            mask = torch.stack([torch.tensor(x) for x in ds["target_mask"]])
+
+        # Use masked tensor to compute normalization parameters
+        target = MaskedTensor(target, ~mask)
+        self.mean = target.mean(0).get_data().to(self.mean)
+        self.std = target.std(0).get_data().to(self.std) + self.eps
         return self.state_dict()
 
 
