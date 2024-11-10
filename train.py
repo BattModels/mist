@@ -119,8 +119,8 @@ def cli_main(args=None):
         trainer_defaults={
             "callbacks": callbacks,
             "logger": logger,
-            "precision": "full",
-            "strategy": "deepspeed_stage_2",
+            "precision": "16-mixed",
+            "strategy": "deepspeed",
             "use_distributed_sampler": False,  # Handled by DataModule (Needed as Iterable)
         },
         save_config_callback=SaveConfigWithCkpts,
