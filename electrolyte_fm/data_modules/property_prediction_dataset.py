@@ -46,11 +46,6 @@ class PropertyPredictionDataModule(MolNetDataModule):
         self.hparams["vocab_size"] = self.vocab_size
         self.save_hyperparameters(logger=False)
 
-        # # Inject methods from MolNetDataModule
-        # self.data_collator = MolNetDataModule.data_collator
-        # self.setup = MolNetDataModule.setup
-        #
-
     @property
     def dataset(self):
         if hasattr(self, "__dataset"):

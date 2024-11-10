@@ -45,13 +45,11 @@ class MolNetDataModule(pl.LightningDataModule):
         target_columns: list[str] = ["Class"],
         strip_unk_tokens: bool = False,
         val_batch_size: Optional[int] = None,
-        include_smiles=False,
     ):
         super().__init__()
 
         self.name = name
         assert name in _URLS, f"Unknown MoleculeDataset {name}"
-        self.include_smiles = include_smiles
 
         # Set smi_column
         self.use_selfies = "selfies" in tokenizer
@@ -169,16 +167,8 @@ class MolNetDataModule(pl.LightningDataModule):
             self.tokenizer,
             batched=True,
             input_columns=self.smi_column,
-            fn_kwargs={
-                "return_offsets_mapping": self.tokenizer.is_fast and self.include_smiles
-            },
+            remove_columns=self.smi_column,
         )
-
-        # Optionally include a smiles column
-        if self.include_smiles:
-            ds.remove_columns(self.smi_column)
-        else:
-            ds.rename_column(self.smi_column, "smiles")
 
         self.train_dataset: Dataset = maybe_shard_dataset(
             self.trainer, ds["train"].shuffle(seed=42)
@@ -311,11 +301,11 @@ def scaffold_split(ds: Dataset, smi_column):
     )
 
 
-def strip_unk_tokens(batch: dict, unk_token_id: int) -> dict:
+def strip_unk_tokens(encoding: dict, unk_token_id: int) -> dict:
     """Remove unknown tokens from input"""
-    is_oov = [id == unk_token_id for id in batch["input_ids"]]
+    is_oov = [id == unk_token_id for id in encoding["input_ids"]]
     out = {}
-    for k, v in batch.items():
+    for k, v in encoding.items():
         assert len(v) == len(is_oov)
         out[k] = [x for x, oov in zip(v, is_oov) if not oov]
     out["is_oov"] = any(is_oov)

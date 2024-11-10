@@ -11,7 +11,6 @@ from transformers import (
 )
 
 import smirk
-from electrolyte_fm.tokenize.spe import PreTrainedSPETokenizer, pretrained_spe_tokenizer
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 SMILE_TOKENIZER = [
@@ -47,6 +46,9 @@ def flaky_load_tokenizer(name_or_path, *args, **kwargs):
         if name_or_path in ["SmilesPE/SPE_ChEMBL"]:
             pytest.xfail("SPE tokenizer not available (flaky download)")
         raise
+
+    except ImportError:
+        pytest.xfail(f"Dependency not installed for {name_or_path}")
 
 
 @pytest.fixture(scope="module", params=SMILE_TOKENIZER)
@@ -133,8 +135,6 @@ def test_standard_smiles(smile_tokenizer):
 
 
 def test_compounds_smiles(smile_tokenizer):
-    if isinstance(smile_tokenizer, PreTrainedSPETokenizer):
-        pytest.xfail("Out of vocab for SPETokenizer")
     check_encoding(
         smile_tokenizer,
         [
@@ -167,6 +167,14 @@ def test_mlm_tokenizer(smile_tokenizer):
     strict=False, raises=urllib.error.HTTPError, reason="Flaky downloads"
 )
 def test_spe_setup():
+    try:
+        from electrolyte_fm.tokenize.spe import (
+            PreTrainedSPETokenizer,
+            pretrained_spe_tokenizer,
+        )
+    except ImportError:
+        pytest.skip("SmilesPE not installed")
+
     tokenizer = pretrained_spe_tokenizer()
 
     assert isinstance(tokenizer, PreTrainedTokenizerBase)

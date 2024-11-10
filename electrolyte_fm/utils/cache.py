@@ -51,7 +51,7 @@ def cached_download(url: str, path: Path) -> Path:
         import urllib
 
         with urllib.request.urlopen(url) as fid:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            cached_file.parent.mkdir(parents=True, exist_ok=True)
             with open(cached_file, "wb") as out:
                 out.write(fid.read())
 
