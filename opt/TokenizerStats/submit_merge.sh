@@ -1,8 +1,10 @@
 #!/bin/bash
-#SBATCH -p cpuq
+#SBATCH -p venkvis-cpu
 #SBATCH -c 32
 #SBATCH --mem 126G
 #SBATCH --time 6:0:0
+#SBATCH --export=NONE
+
 set -x
 my_job_header
 
@@ -14,7 +16,6 @@ module purge
 module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
 source ./activate
 export TOKENIZERS_PARALLELISM=false
-julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 
 # Copy files to /tmp
 mkdir -p /tmp/SmilesPE

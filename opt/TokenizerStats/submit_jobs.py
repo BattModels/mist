@@ -223,10 +223,6 @@ MOLNET_DATASETS = [
     "clintox",
 ]
 
-KNOWN_TOKENIZERS = json.loads(Path("tokenizers.json").read_text())
-
-TOKENIZERS = [x["name_or_path"] for x in KNOWN_TOKENIZERS if x["encoding"] == "smile"]
-
 REF_INFO_LOSS = [
     "character",
     "smirk",
@@ -236,99 +232,178 @@ REF_INFO_LOSS = [
 ]
 
 
-def sbatch(args: list, output: Optional[str] = None, test=True) -> Optional[int]:
-    args = [str(x) for x in args]
-    if output is not None and Path(output).exists():
-        logging.info("skipping job for %s", output)
-        return None
-    logging.info("submit sbatch: %s => %s", args, output)
-    if test:
-        return randint(0, 100)
+def usage(dataset, tokenizer, ds_name=None, slurm={}, encoding="smiles"):
+    ds_name = ds_name or dataset
+    output = STATS_DIR.joinpath(tokenizer, ds_name, "usage.bson")
+    if tokenizer == "SmilesPE/SPE_ChEMBL":
+        slurm["--mem-per-cpu"] = "8G"
+        slurm["--partition"] = "venkvis-largemem"
 
-    out = subprocess.run(
-        ["/usr/bin/sbatch", *args],
-        text=True,
-        capture_output=True,
+    return Process(
+        [
+            "submit_tok_stats.sh",
+            "usage",
+            "--splits=all",
+            "--encoding",
+            encoding,
+            f"--output={output}",
+            str(dataset),
+            tokenizer,
+        ],
+        output=output,
+        slurm=slurm,
+        meta={"dataset": dataset, "tokenizer": tokenizer, "task": "usage"},
     )
-    if out.returncode != 0:
-        raise RuntimeError(f"sbatch failed: {out.stderr}")
-
-    return int(out.stdout.split(" ")[-1])
 
 
-def sub_realspace(tok):
-    tok_name = Path(tok).name if Path(tok).is_dir() else tok
-    out = STATS_DIR.joinpath(tok_name, "realspace_v4_dev.bson")
-    args = [
-        "--cpus-per-task=1",
-        "--time=1-0:0:0",
-        "--ntasks=32",  # Needs to divide datasets evenly (big perf. hit otherwise)
-        "submit_tok_stats.sh",
-        "usage",
-        "--splits=all",
-        REALSPACE,
-        tok,
-    ]
-    args = special_case(tok_name, args)
+def ngram_loss(dataset, tokenizer, slurm={}, encoding="smiles"):
+    input = STATS_DIR.joinpath(tokenizer, "realspace", "usage.bson")
+    output = STATS_DIR.joinpath(tokenizer, dataset, "model_loss.bson")
+    if tokenizer == "SmilesPE/SPE_ChEMBL":
+        slurm["--mem-per-cpu"] = "8G"
+        slurm["--partition"] = "venkvis-largemem"
 
-    # id = sbatch(args, out)
-    id = None
-    return tok_name, id, out
-
-
-def special_case(tok_name, args):
-    if tok_name == "SmilesPE/SPE_ChEMBL":
-        args.insert(0, "--mem-per-cpu=4G")
-        args.insert(0, "--partition=venkvis-largemem")
-    return args
-
-
-for tok in TOKENIZERS:
-    # Submit realspace_v4_dev job
-    tok_name, id, realspace_file = sub_realspace(tok)
-    ngram_name = realspace_file.with_suffix("").name
-
-    # Compute realspace model loss
-    for ds in MOLNET_DATASETS:
-        args = [
-            "--ntasks=1",
-            "--time=4:0:0",
-            "--cpus-per-task=1",
+    return Process(
+        [
             "submit_tok_stats.sh",
             "loss",
-            realspace_file,
-            ds,
-        ]
-        if id:
-            args.insert(0, f"-d=afterok:{id}")
-        args = special_case(tok_name, args)
-        if realspace_file.exists():
-            sbatch(args, STATS_DIR.joinpath(tok, ds, f"{ngram_name}_model_loss.bson"))
+            "--encoding",
+            encoding,
+            "--output",
+            output,
+            "--model",
+            input,
+            dataset,
+            tokenizer,
+        ],
+        inputs=input,
+        output=output,
+        slurm=slurm,
+        meta={"dataset": dataset, "tokenizer": tokenizer, "task": "model_loss"},
+    )
 
-        # Process molnets datsets too
-        args = ["--ntasks=1", "--time=1:0:0", "submit_tok_stats.sh", "usage", ds, tok]
-        args = special_case(tok_name, args)
-        sbatch(args, STATS_DIR.joinpath(tok_name, f"{ds}.bson"))
 
-        # Compute Info loss
-        for ref in REF_INFO_LOSS:
-            ref_file = STATS_DIR.joinpath(ref, "realspace_v4_dev.bson")
-            if not ref_file.exists():
-                continue
+def ngram_info_loss(dataset, tokenizer, ref, slurm={}, encoding="smiles"):
+    ref_name = ref.replace("/", "--")
+    ref_usage = STATS_DIR.joinpath(ref, "realspace", "usage.bson")
+    output = STATS_DIR.joinpath(tokenizer, dataset, f"{ref_name}_info_loss.bson")
+    if tokenizer == "SmilesPE/SPE_ChEMBL":
+        slurm["--mem-per-cpu"] = "8G"
+        slurm["--partition"] = "venkvis-largemem"
 
-            args = [
-                "--ntasks=48",
-                "--cpus-per-task=1",
-                "--time=1-0:0:0",
-                "submit_tok_stats.sh",
-                "distortion",
-                f"--reference={ref_file}",
-                ds,
-                tok,
-            ]
-            args = special_case(tok_name, args)
-            if tok != ref:
-                ref_name = ref.replace("/", "--")
-                sbatch(
-                    args, STATS_DIR.joinpath(tok_name, ds, f"{ref_name}_info_loss.bson")
+    return Process(
+        [
+            "submit_tok_stats.sh",
+            "distortion",
+            "--encoding",
+            encoding,
+            "--output",
+            output,
+            "--reference",
+            ref_usage,
+            dataset,
+            tokenizer,
+        ],
+        inputs=ref_usage,
+        output=output,
+        slurm=slurm,
+        meta={"dataset": dataset, "tokenizer": tokenizer, "task": "info_loss"},
+    )
+
+
+def set_logging_level(verbosity):
+    # Map verbosity count to logging levels
+    levels = [logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG]
+    level = levels[min(verbosity, len(levels) - 1)]  # Cap to the highest level
+    logging.basicConfig(level=level)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", "-n", action="store_true")
+    parser.add_argument("-v", "--verbose", action="count", default=0)
+    parser.add_argument(
+        "--realspace", type=str, default="/nfs/turbo/coe-venkvis/mist/realspace_v4_dev2"
+    )
+    args = parser.parse_args()
+    set_logging_level(args.verbose)
+
+    tokenizers = json.loads(Path("tokenizers.json").read_text())
+    wk = Workflow()
+    for tok in tokenizers:
+        tok_name = tok["name_or_path"]
+        # Tabulate OOVs
+        output = STATS_DIR.joinpath(tok_name, "oov.json")
+        p = wk.add_process(
+            ["submit_oov.sh", "--output", output, tok_name], output=output
+        )
+
+        # Tokenize RealSpace
+        wk.add_process(
+            usage(
+                args.realspace,
+                tok_name,
+                ds_name="realspace",
+                encoding=tok["encoding"],
+                slurm={"ntasks": 32, "time": "1-0:0:0"},
+            )
+        )
+        src = STATS_DIR.joinpath(tok_name, "realspace_v4_dev.bson")
+        if src.exists():
+            STATS_DIR.joinpath(tok_name, "realspace").mkdir(exist_ok=True)
+            shutil.move(src, STATS_DIR.joinpath(tok_name, "realspace", "usage.bson"))
+
+        # Tokenize MoleculeNet
+        for ds in MOLNET_DATASETS:
+            wk.add_process(
+                usage(
+                    ds,
+                    tok_name,
+                    encoding=tok["encoding"],
+                    slurm={"ntasks": 1, "time": "1:0:0"},
                 )
+            )
+            wk.add_process(
+                ngram_loss(
+                    ds,
+                    tok_name,
+                    encoding=tok["encoding"],
+                    slurm={"ntasks": 1, "time": "2:0:0"},
+                )
+            )
+            src = STATS_DIR.joinpath(tok_name, f"{ds}.bson")
+            if src.exists():
+                shutil.move(src, STATS_DIR.joinpath(tok_name, ds, "usage.bson"))
+
+            for ref in REF_INFO_LOSS:
+                wk.add_process(
+                    ngram_info_loss(
+                        ds,
+                        tok_name,
+                        ref,
+                        encoding=tok["encoding"],
+                        slurm={"ntasks": 24, "time": "4:0:0"},
+                    )
+                )
+
+        wk.add_process(
+            usage(
+                "tmQM",
+                tok_name,
+                encoding=tok["encoding"],
+                slurm={"ntasks": 4, "time": "1:0:0"},
+            )
+        )
+        for ref in REF_INFO_LOSS:
+            wk.add_process(
+                ngram_info_loss(
+                    "tmQM",
+                    tok_name,
+                    ref,
+                    encoding=tok["encoding"],
+                    slurm={"ntasks": 48, "time": "4:0:0"},
+                )
+            )
+
+    wk.show()
+    wk.run(dry_run=args.dry_run)
