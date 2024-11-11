@@ -171,16 +171,18 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
         if name.endswith("uncased"):
             vocab = cached_download(
-                "https://cedergroup-share.s3-us-west-2.amazonaws.com/public/MatBERT/model_2Mpapers_uncased_30522_wd/vocab.txt"
+                "https://cedergroup-share.s3-us-west-2.amazonaws.com/public/MatBERT/model_2Mpapers_uncased_30522_wd/vocab.txt",
                 "lbnlp/MatBERT/vocab_uncased.txt",
             )
+            do_lower_case = True
         else:
             vocab = cached_download(
                 "https://cedergroup-share.s3-us-west-2.amazonaws.com/public/MatBERT/model_2Mpapers_cased_30522_wd/vocab.txt",
                 "lbnlp/MatBERT/vocab_cased.txt",
             )
+            do_lower_case = False
 
-        tok = BertTokenizerFast.from_pretrained(vocab, do_lower_case=False)
+        tok = BertTokenizerFast(vocab, do_lower_case=do_lower_case)
         ensure_special_tokens(tok)
         return tok
 

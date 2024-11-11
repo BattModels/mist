@@ -1,16 +1,16 @@
 @testitem "SlidingWindow" begin
     using TokenizerStats: SlidingWindow
     sw = SlidingWindow(collect(1:5), 2)
-    @test eltype(sw) == NTuple{2, Int}
+    @test eltype(sw) == NTuple{2,Int}
     @test length(sw) == 4
-    @test collect(sw) == [(1, 2), (2,3), (3,4), (4,5)]
+    @test collect(sw) == [(1, 2), (2, 3), (3, 4), (4, 5)]
 end
 
 @testitem "log_smoothed_counts" begin
     using TokenizerStats: log_smoothed_counts
-    @test log_smoothed_counts(1, 5, 256000) ≈ log(1 + BigInt(256000)^5) atol=1e-8
-    @test log_smoothed_counts(5_000_000, 1, 256000) ≈ log(5_000_000 + BigInt(256000)^1) atol=1e-8
-    @test log_smoothed_counts(0, 8, 256000) ≈ log(BigInt(256000)^8) atol=1e-8
+    @test log_smoothed_counts(1, 5, 256000) ≈ log(1 + BigInt(256000)^5) atol = 1e-8
+    @test log_smoothed_counts(5_000_000, 1, 256000) ≈ log(5_000_000 + BigInt(256000)^1) atol = 1e-8
+    @test log_smoothed_counts(0, 8, 256000) ≈ log(BigInt(256000)^8) atol = 1e-8
     @test log_smoothed_counts(0, 0, 256000) == 0
 end
 
@@ -22,7 +22,7 @@ export randngram
 
 # Build random n-gram counts
 function randngram(N=3; vocab_size=9)
-    stats = map(n -> CountMap(NTuple{n, Int}), 1:N)
+    stats = map(n -> CountMap(NTuple{n,Int}), 1:N)
     corpus = rand(range(0; length=vocab_size), 8, 32)
     for i in axes(corpus, 2)
         for (n, s) in enumerate(stats)
@@ -33,7 +33,7 @@ function randngram(N=3; vocab_size=9)
 end
 end
 
-@testitem "Construction" setup=[NGramModelSetup] begin
+@testitem "Construction" setup = [NGramModelSetup] begin
     using TokenizerStats: NGramModel, token_ids, gram_odds
     N = 4
     @testset "with special_tokens" begin
@@ -68,7 +68,7 @@ end
     @test ngram(collect(1:4), 3, 3) == (1, 2, 3)
 end
 
-@testitem "gram_odds" setup=[NGramModelSetup] begin
+@testitem "gram_odds" setup = [NGramModelSetup] begin
     using TokenizerStats: NGramModel, gram_odds, token_ids, nonspecial_vocab_size, log_probability
     function check_odds(model)
         @testset "$N-gram" for N in 1:length(model)
@@ -80,7 +80,7 @@ end
                 @test d == model.total
                 c += n
             end
-            @test logprob ≈ 1 atol=1e-6
+            @test logprob ≈ 1 atol = 1e-6
             @test c == model.total
         end
     end
@@ -94,7 +94,7 @@ end
     end
 end
 
-@testitem "fb_log_probability" setup=[NGramModelSetup] begin
+@testitem "fb_log_probability" setup = [NGramModelSetup] begin
     using TokenizerStats: NGramModel, fb_log_probability, cross_entropy
     function check(model, code)
         @testset "$N-gram" for N in 1:length(model)
@@ -123,7 +123,7 @@ end
     end
 end
 
-@testitem "info loss" setup=[NGramModelSetup] begin
+@testitem "info loss" setup = [NGramModelSetup] begin
     using TokenizerStats: NGramModel, information_loss
     m = NGramModel(randngram(), 9)
     code = rand(1:8, 32)
@@ -142,7 +142,7 @@ end
     end
 end
 
-@testitem "autoregressive_kld" setup=[NGramModelSetup] begin
+@testitem "autoregressive_kld" setup = [NGramModelSetup] begin
     using TokenizerStats: NGramModel, autoregressive_kld, autoregressive_log_prob, cross_entropy
     m = NGramModel(randngram(), 9)
     code = rand(1:8, 32)
@@ -150,12 +150,12 @@ end
     for N in 1:length(m)
         loss[N] = autoregressive_kld(m, code; N)
         ℓ = autoregressive_log_prob(m, code; N)
-        @test loss[N] ≈ cross_entropy(ℓ, code) rtol=1e-4
+        @test loss[N] ≈ cross_entropy(ℓ, code) rtol = 1e-4
     end
     @test all(>(0), loss)
 end
 
-@testitem "unk token information loss" setup=[NGramModelSetup] begin
+@testitem "unk token information loss" setup = [NGramModelSetup] begin
     using PythonCall: pyconvert
     using TokenizerStats: NGramModel, load_tokenizer, unk_information_loss
 
@@ -195,7 +195,7 @@ end
         @test sparse([1, 2], [1, 2], ones(Int, 2), 3, 3) == check_commutative(["c", "a", "[UNK]"], ["c", "a", "t"])
         @test sparse([2, 3], [2, 3], ones(Int, 2), 3, 3) == check_commutative(["<unk>", "a", "t"], ["c", "a", "t"])
         out = check_commutative(["b", "a", "t", "t", "e", "r"], ["b", "a", "<unk>", "t", "e", "r"])
-        @test sparse([1, 2, 4, 5, 6], [1, 2, 4, 5, 6], ones(Int, 5), 6, 6) ==  out
+        @test sparse([1, 2, 4, 5, 6], [1, 2, 4, 5, 6], ones(Int, 5), 6, 6) == out
     end
     @testset "multi-char" begin
         check_commutative(["C", "Co", "C"], ["C", "Co", "C"])
@@ -254,5 +254,3 @@ end
         @test rstrip(tuple(), -100) == tuple()
     end
 end
-
-

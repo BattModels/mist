@@ -1,21 +1,21 @@
-struct SlidingWindow{N, T}
+struct SlidingWindow{N,T}
     data::Vector{T}
 end
 
-SlidingWindow(data::Vector{T}, n::Int) where {T} = SlidingWindow{n, T}(data)
+SlidingWindow(data::Vector{T}, n::Int) where {T} = SlidingWindow{n,T}(data)
 
 function Base.iterate(sw::SlidingWindow{N}, state=1) where {N}
     if state + N - 1 > length(sw.data)
         return nothing
     end
-    window = view(sw.data, state:state + N - 1)
+    window = view(sw.data, state:state+N-1)
     return (tuple(window...), state + 1)
 end
 
 Base.length(sw::SlidingWindow{N}) where {N} = length(sw.data) - N + 1
-Base.eltype(sw::SlidingWindow{N, T}) where {N, T} = NTuple{N, T}
+Base.eltype(sw::SlidingWindow{N,T}) where {N,T} = NTuple{N,T}
 
-struct NGramModel{N, G}
+struct NGramModel{N,G}
     total::Int
     vocab_size::Int
     ngrams::G
@@ -32,12 +32,12 @@ nonspecial_vocab_size(m::NGramModel) = length(token_ids(m)) - length(m.special_t
 
 nonspecial_vocab(m::NGramModel) = filter(∉(m.special_tokens), token_ids(m))
 
-function NGramModel(tokenizer::Py, ngrams::Union{Tuple, Vector})
+function NGramModel(tokenizer::Py, ngrams::Union{Tuple,Vector})
     vocab_size = pyconvert(Int, length(tokenizer))
     special_tokens = pyconvert(Vector{Int}, tokenizer.all_special_ids)
 
     # Don't remove in-use special tokens
-    unk_token_id = pyconvert(Union{Nothing, Int}, tokenizer.unk_token_id)
+    unk_token_id = pyconvert(Union{Nothing,Int}, tokenizer.unk_token_id)
     used_special = pyconvert(Vector{Int}, tokenizer("")["input_ids"])
     !isnothing(unk_token_id) && setdiff!(special_tokens, unk_token_id)
     setdiff!(special_tokens, used_special)
@@ -45,7 +45,7 @@ function NGramModel(tokenizer::Py, ngrams::Union{Tuple, Vector})
     return NGramModel(ngrams, vocab_size; special_tokens)
 end
 
-function NGramModel(ngrams::Union{Tuple, Vector}, vocab_size::Int; special_tokens::Vector{Int}=Int[])
+function NGramModel(ngrams::Union{Tuple,Vector}, vocab_size::Int; special_tokens::Vector{Int}=Int[])
     total = sum(values(first(ngrams)); init=0)
     ngrams = ntuple(i -> ngram_counts(ngrams[i], vocab_size), length(ngrams))
     N = length(ngrams)
@@ -70,7 +70,7 @@ function load_ngram_model(file::String, split=:train)
     tok = load_tokenizer(name)
     vocab_size = pyconvert(Int, length(tok))
     ngram = NGramModel(tok, ref[split][:ngrams])
-    info =(;
+    info = (;
         name=ref[:tokenizer][:name],
         unk_token_id=ref[:tokenizer][:unk_token_id],
         vocab_size,
@@ -80,20 +80,20 @@ function load_ngram_model(file::String, split=:train)
     return ngram, tok, info
 end
 
-function ngram_counts(dist::AbstractDict{<:Union{<:Integer, NTuple}, <:Union{Integer, Float32}}, vocab_size::Int)
+function ngram_counts(dist::AbstractDict{<:Union{<:Integer,NTuple},<:Union{Integer,Float32}}, vocab_size::Int)
     n = length(first(keys(dist)))
-    K = NTuple{n, Int}
+    K = NTuple{n,Int}
     grams = keytype(dist) <: NTuple ? keys(dist) : Iterators.map(tuple, keys(dist))
     for gram in grams
         @assert all(t -> 0 <= t < vocab_size, gram) "Expected all token ids to be ∈ [0, $vocab_size), got $gram"
     end
-    return Dict{K, Int}(zip(grams, values(dist)))
+    return Dict{K,Int}(zip(grams, values(dist)))
 end
 
 
 """ Return the conditional n-gram `(..., x_i-1)` for the given n-gram `(..., x_i)`"""
-condgram(gram::NTuple{N, Int}) where {N} = reverse(Base.tail(reverse(gram)))
-condgram(code::Vector{Int}, edx::Int, length::Int) = ngram(code, edx-1, length-1)
+condgram(gram::NTuple{N,Int}) where {N} = reverse(Base.tail(reverse(gram)))
+condgram(code::Vector{Int}, edx::Int, length::Int) = ngram(code, edx - 1, length - 1)
 
 """ Return the n-gram starting at `edx` of at most `length` """
 ngram(code::Vector{Int}, edx::Int, length::Int) = ngram(code, range(; stop=edx, length))
@@ -108,21 +108,21 @@ end
 The observed `c` and marginal `m` counts for the n-gram `gram`.
 No smoothing is applied
 """
-function gram_odds(model::NGramModel, gram::NTuple{N, <:Integer}) where {N}
+function gram_odds(model::NGramModel, gram::NTuple{N,<:Integer}) where {N}
     @assert 1 <= N <= length(model)
     counts = get(model.ngrams[N], gram, 0)
     marginal = N == 1 ? model.total : get(model.ngrams[N-1], condgram(gram), 0)
     return counts, marginal
 end
 
-function log_probability(model::NGramModel, gram::NTuple{N, <:Integer}) where {N}
+function log_probability(model::NGramModel, gram::NTuple{N,<:Integer}) where {N}
     c, n = gram_odds(model, gram)
     ln_c = any(∈(model.special_tokens), gram) ? log(c) : log1p(c)
     ln_n = log_smoothed_counts(n, 1, nonspecial_vocab_size(model))
     return ln_c - ln_n
 end
 
-function log_odds(model::NGramModel, gram::NTuple{N, <:Integer}) where {N}
+function log_odds(model::NGramModel, gram::NTuple{N,<:Integer}) where {N}
     c, n = gram_odds(model, gram)
     ln_c = any(∈(model.special_tokens), gram) ? log(c) : log1p(c)
     return ln_c - log_smoothed_counts(n - c, 1, nonspecial_vocab_size(model))
@@ -156,7 +156,7 @@ function cross_entropy(ℓ::AbstractMatrix, code::Vector{<:Integer}; ignore_id=-
     H = 0.0
     for i in axes(ℓ, 2)
         code[i] == ignore_id && continue
-        H += ℓ[code[i] + 1, i]
+        H += ℓ[code[i]+1, i]
     end
     return -H
 end
@@ -232,7 +232,7 @@ function forward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(
         token_marginal = zero(ctype)
         for (j, token) in enumerate(token_ids(m))
             c = masked_counts(m, (cgram..., token), mask)
-            counts[j,i] = c
+            counts[j, i] = c
             token_marginal += c
         end
         marginal[i] = token_marginal
@@ -254,7 +254,7 @@ function backward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length
         token_marginal = zero(ctype)
         for (j, token) in enumerate(token_ids(m))
             c = masked_counts(m, (token, cgram...), mask)
-            counts[j,ri] = c
+            counts[j, ri] = c
             token_marginal += c
         end
         marginal[ri] = token_marginal
@@ -267,7 +267,7 @@ end
 
 Remove mask tokesn from the left or right side of the gram
 """
-function Base.lstrip(gram::NTuple{N, <:Integer}, mask::Integer) where {N}
+function Base.lstrip(gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     for i in 1:N
         gram[i] == mask || return gram[i:end]
     end
@@ -279,7 +279,7 @@ end
 
 Remove mask tokesn from the left or right side of the gram
 """
-function Base.rstrip(gram::NTuple{N, <:Integer}, mask::Integer) where {N}
+function Base.rstrip(gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     for i in range(N, 1; step=-1)
         gram[i] == mask || return gram[1:i]
     end
@@ -291,7 +291,7 @@ end
 Computes the Information Loss (KL-Divergence) from masking out tokens in an input code for a
 given n-gram model
 """
-function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector, Vector{Bool}}; N=length(m))
+function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
     @assert length(code) == length(mask)
     loss = 0.0
     mask_value = -100
@@ -300,13 +300,13 @@ function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{Bi
     P = fb_log_probability(m, code; N)
     Q = fb_log_probability(m, masked_code; N)
     for idx in eachindex(P)
-        !isfinite(P[idx])  && continue
+        !isfinite(P[idx]) && continue
         loss += exp(P[idx]) * (P[idx] - Q[idx])
     end
     return loss, P, Q
 end
 
-function masked_counts(m::NGramModel, gram::NTuple{N, <:Integer}, mask::Integer) where {N}
+function masked_counts(m::NGramModel, gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     N == 0 && return 0
     mask ∉ gram && return first(gram_odds(m, gram))
     counts = 0
@@ -318,11 +318,11 @@ function masked_counts(m::NGramModel, gram::NTuple{N, <:Integer}, mask::Integer)
     return counts
 end
 
-function masked_match(x::NTuple{N, Int}, y::NTuple{N, <:Integer}; mask::Integer) where {N}
+function masked_match(x::NTuple{N,Int}, y::NTuple{N,<:Integer}; mask::Integer) where {N}
     for (a, b) in zip(x, y)
         if a == mask || b == mask
             continue
-        elseif  a != b
+        elseif a != b
             return false
         end
     end
@@ -333,7 +333,7 @@ end
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference
 """
-function  unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
+function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
     unk_token_id = pyconvert(Int, tok.unk_token_id)
     code = pyconvert(Vector{Int}, encoding["input_ids"])
     (unk_token_id ∉ code) && return zeros(length(N))
@@ -358,7 +358,7 @@ end
 
 function rm_special_tokens(tok::Py, code::Vector{<:Integer}, n::Integer)
     # If the code is already of length n, return it
-    length(code) == n  && return code
+    length(code) == n && return code
 
     # Remove special tokens from the code
     unk_token_id = pyconvert(Int, tok.unk_token_id)
@@ -396,8 +396,8 @@ from unknown tokens. i.e. normalizations must be applied to both.
 function align_unknown(a::Vector{String}, b::Vector{String})
     replace!(a, "<unk>" => "[UNK]")
     replace!(b, "<unk>" => "[UNK]")
-    i = (; idx = firstindex(a), char = 1)
-    j = (; idx = firstindex(b), char = 1)
+    i = (; idx=firstindex(a), char=1)
+    j = (; idx=firstindex(b), char=1)
     I = Int[]
     J = Int[]
     is_unknown(x) = x == "[UNK]"
@@ -414,12 +414,12 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             # token stream, will keep skipping chars until steams are
             # realigned
             if unk_a
-                i = (; idx=i.idx+1, char=1)
+                i = (; idx=i.idx + 1, char=1)
                 j = _advance_idx(b[j.idx], j)
             end
             if unk_b
                 i = _advance_idx(a[i.idx], i)
-                j = (; idx=j.idx+1, char=1)
+                j = (; idx=j.idx + 1, char=1)
             end
             unk_a_flag = unk_a
             unk_b_flag = unk_b
@@ -466,4 +466,3 @@ function align_unknown(a::Vector{String}, b::Vector{String})
     end
     return sparse(I, J, trues(length(I)), length(a), length(b))
 end
-
