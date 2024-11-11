@@ -120,7 +120,13 @@ class tmQMDataModule(pl.LightningDataModule):
 
     def collate_fn(self, batch):
         # Collate tokens
-        token_inputs = ["input_ids", "attention_mask"]
+        token_inputs = [
+            "input_ids",
+            "attention_mask",
+            "special_tokens_mask",
+            "token_type_ids",
+        ]
+        token_inputs = [k for k in token_inputs if k in batch[0]]
         token_inputs = [{k: x[k] for k in token_inputs} for x in batch]
         output = self.token_collator(token_inputs)
 
