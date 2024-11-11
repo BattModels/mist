@@ -166,12 +166,13 @@ class Workflow:
             if file not in outputs:
                 continue
 
-            if file.exists():
-                continue
-
+            # Check for an active job and clean up marker files
             if job_id := self.active_jobs(file):
                 logging.info("found active job for %s", file)
                 jobs[file] = job_id
+                continue
+
+            if file.exists():
                 continue
 
             # Get the process that writes to this file
@@ -335,7 +336,9 @@ if __name__ == "__main__":
         # Tabulate OOVs
         output = STATS_DIR.joinpath(tok_name, "oov.json")
         p = wk.add_process(
-            ["submit_oov.sh", "--output", output, tok_name], output=output
+            ["submit_oov.sh", "--output", output, tok_name],
+            output=output,
+            slurm={"mem-per-cpu": "1G", "time": "0:30:0"},
         )
 
         # Tokenize RealSpace

@@ -27,7 +27,7 @@ function get_dataset(name_or_path, tokenizer, encoding)
         dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
         dataset_name = "tmQM"
     else
-        dm = TokenizerStats.molnet(name_or_path; tokenizer)
+        dm = TokenizerStats.molnet(name_or_path; tokenizer, encoding)
         dataset_name = name_or_path
     end
     return dm, dataset_name
