@@ -77,7 +77,7 @@ class HotellingTwoSample(Metric):
             oov = torch.cat(self.residual_oov)
         else:
             oov = self.residual_oov
-        if isinstance(self.residual_non_oov):
+        if isinstance(self.residual_non_oov, list):
             non_oov = torch.cat(self.residual_non_oov)
         else:
             non_oov = self.residual_non_oov
@@ -243,10 +243,16 @@ class TokenCounter(Metric):
     def __init__(self) -> None:
         super().__init__()
         self.add_state(
-            "masked_tokens", torch.tensor(0, dtype=torch.int), dist_reduce_fx="sum"
+            "masked_tokens",
+            torch.tensor(0, dtype=torch.int64),
+            dist_reduce_fx="sum",
+            persistent=True,
         )
         self.add_state(
-            "total_tokens", torch.tensor(0, dtype=torch.int), dist_reduce_fx="sum"
+            "total_tokens",
+            torch.tensor(0, dtype=torch.int64),
+            dist_reduce_fx="sum",
+            persistent=True,
         )
 
     def update(
@@ -255,7 +261,7 @@ class TokenCounter(Metric):
         labels: torch.Tensor,
     ) -> None:
         self.masked_tokens += torch.sum(labels != -100)
-        self.total_tokens += torch.sum(attention_mask)
+        self.total_tokens += attention_mask.count_nonzero()
 
     def compute(self):
         out = {

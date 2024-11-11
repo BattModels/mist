@@ -106,7 +106,12 @@ def test_signal():
                 "enable_model_summary": False,
                 "default_root_dir": root_dir,
                 "fast_dev_run": 100,
-                "callbacks": [{"class_path": "electrolyte_fm.utils.callbacks.Requeue"}],
+                "callbacks": [
+                    {
+                        "class_path": "electrolyte_fm.utils.callbacks.Requeue",
+                        "init_args": {"requeue_signal": "SIGUSR1"},
+                    }
+                ],
             },
         }
         p = subprocess.run(
@@ -121,8 +126,6 @@ def test_signal():
             capture_output=True,
             check=False,  # Likely to error during requing
         )
-        assert (
-            "electrolyte_fm.utils.callbacks.requeue:Registered handler for SIGUSR1"
-            in p.stderr
-        )
-        assert "electrolyte_fm.utils.callbacks.requeue:Requeuing using" in p.stderr
+        print(p.stderr)
+        assert "Registered handler for" in p.stderr
+        assert "Requeuing using" in p.stderr

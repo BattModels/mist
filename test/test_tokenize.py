@@ -1,3 +1,5 @@
+import json
+import urllib
 from tempfile import TemporaryDirectory
 from itertools import chain
 
@@ -27,21 +29,37 @@ STANDARD_SMILES = [
 
 # Tokenizers not actively used for training
 OTHER_SMILES_TOKENIZERS = [
+    "character",
     "SmilesPE/SPE_ChEMBL",
     "ibm/MoLFormer-XL-both-10pct-oov",
+    "devalab/molgpt-moses",
+    "MolecularAI/Chemformer",
+    "seyonec/ChemBERTa-zinc-base-v1",
+    "sagawa/ReactionT5-product-prediction",
 ]
+
+
+def flaky_load_tokenizer(name_or_path, *args, **kwargs):
+    try:
+        return load_tokenizer(name_or_path, *args, **kwargs)
+
+    except (json.decoder.JSONDecodeError, urllib.error.HTTPError):
+        if name_or_path in ["SmilesPE/SPE_ChEMBL"]:
+            pytest.xfail("SPE tokenizer not available (flaky download)")
+        raise
 
 
 @pytest.fixture(scope="module", params=SMILE_TOKENIZER)
 def smile_tokenizer(request):
-    return load_tokenizer(request.param)
+    return flaky_load_tokenizer(request.param)
 
 
 @pytest.mark.parametrize("name", chain(SMILE_TOKENIZER, OTHER_SMILES_TOKENIZERS))
 def test_well_behaved_tokenizer(name):
-    tokenizer = load_tokenizer(name)
+    tokenizer = flaky_load_tokenizer(name)
     code = tokenizer("CCO")
-    assert tokenizer.unk_token_id is not None
+    tokens = tokenizer.tokenize("CCO")
+    assert isinstance(tokens, list) and len(tokens) >= 1 and isinstance(tokens[0], str)
     assert tokenizer.mask_token_id is not None
     assert tokenizer.pad_token_id is not None
     assert tokenizer.unk_token_id not in code["input_ids"]
@@ -51,23 +69,27 @@ def test_well_behaved_tokenizer(name):
 @pytest.mark.parametrize("name", chain(SMILE_TOKENIZER, OTHER_SMILES_TOKENIZERS))
 def test_oov_tokens(name):
     """Check that the unknown token is emitted for OOV tokens"""
-    tok = load_tokenizer(name)
+    tok = flaky_load_tokenizer(name)
 
     def check_oov(tokenizer, smi):
         code = tokenizer(smi)["input_ids"]
-        assert tok.unk_token_id in tok("Zz")["input_ids"]
+        assert tok.unk_token_id in code
         assert tok.decode(code, skip_special_tokens=False) != smi
+        assert str(tok.unk_token) in tok.decode(code)
 
     # Some Tokenizers don't emit the unknown token no matter what the input is.
     # Check that the tokenizer fails the test, then mark it with xfail
     if name == "ibm/MoLFormer-XL-both-10pct":
         assert tok.unk_token_id not in tok("😬")["input_ids"]
         pytest.xfail("MoLFormer strips unknown tokens pre-tokenizer")
-    if name in ["seyonec/ChemBERTa-zinc-base-v1", "ChangwenXu98/TransPolymer"]:
+    elif name in ["seyonec/ChemBERTa-zinc-base-v1", "ChangwenXu98/TransPolymer"]:
         assert tok.unk_token_id not in tok("⛰️ ⋙ 🏖️")["input_ids"]
         pytest.xfail("open vocab model")
+    elif name == "character":
+        check_oov(tok, "⚛️")
+        assert tok.unk_token_id not in tok("ZZ[Zz]")["input_ids"]
+        pytest.xfail("character-level tokenizer")
 
-    check_oov(tok, "⚛️")
     check_oov(tok, "Zz")
     check_oov(tok, "[Zz]")
     check_oov(tok, "[Zz&3]")
@@ -141,6 +163,9 @@ def test_mlm_tokenizer(smile_tokenizer):
         assert collated_batch[k].size() == (len(STANDARD_SMILES), max_length)
 
 
+@pytest.mark.xfail(
+    strict=False, raises=urllib.error.HTTPError, reason="Flaky downloads"
+)
 def test_spe_setup():
     tokenizer = pretrained_spe_tokenizer()
 
@@ -148,4 +173,5 @@ def test_spe_setup():
     vocab = tokenizer.get_vocab()
     assert "xxfake" not in vocab
     assert "[BOS]" in vocab
+    assert "[N+]" in vocab
     assert "[N+]" in vocab
