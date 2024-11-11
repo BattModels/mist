@@ -186,6 +186,25 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         ensure_special_tokens(tok)
         return tok
 
+    elif name in ["mikemayuare/SELFYAPE", "mikemayuare/SMILYAPE"]:
+        from apetokenizer.ape_tokenizer import APETokenizer
+        from .cache import cached_download
+
+        # Download vocab from HuggingFace
+        version = {
+            "mikemayuare/SMILYAPE": "72d036ca2592c429d8326ba860da00f2673e287e",
+            "mikemayuare/SELFYAPE": "406a3c298e9acdfc9aa4f7c75e401df9d9d926d1",
+        }
+        vocab_file = cached_download(
+            f"https://huggingface.co/{name}/resolve/{version[name]}/tokenizer.json",
+            name + "/tokenizer.json",
+        )
+
+        tok = APETokenizer()
+        tok.load_vocabulary(vocab_file)
+        ensure_special_tokens(tok)
+        return tok
+
     elif (
         Path(name).exists()
         and Path(name).parent.parent.joinpath("config.json").is_file()
