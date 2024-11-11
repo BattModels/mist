@@ -15,6 +15,7 @@ Manifest.toml
 *.ckpt/
 *.ckpt
 mist/
+mist
 
 # NSight
 *.nsys-rep
