@@ -30,6 +30,7 @@ class tmQMDataModule(pl.LightningDataModule):
         target_columns: Optional[list[str]] = None,
         encoding: str | MolEncoding = "smiles",
         include_encoding: bool = False,
+        smi_column: str = "smiles",
     ):
         super().__init__()
 
@@ -39,6 +40,7 @@ class tmQMDataModule(pl.LightningDataModule):
 
         self.target_columns = target_columns
         self.encoding = MolEncoding(encoding)
+        self.smi_column = smi_column
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size if val_batch_size else batch_size
         self.num_workers = num_workers
@@ -68,10 +70,10 @@ class tmQMDataModule(pl.LightningDataModule):
             self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
         # Transcode
-        ds = encode_molecules(ds, "smiles", encoding=self.encoding)
+        ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
 
         # Tokenize
-        ds = ds.map(self.tokenizer, batched=True, input_columns="smiles")
+        ds = ds.map(self.tokenizer, batched=True, input_columns=self.smi_column)
         self.train_dataset = ds["train"]
         self.val_dataset = ds["validation"]
         self.test_dataset = ds["test"]

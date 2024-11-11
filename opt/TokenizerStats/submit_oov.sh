@@ -15,5 +15,7 @@ cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 module purge
 module --ignore_cache load python/3.11.5
 source ./activate
+env
+
 python src/atomic_oov.py $@
 

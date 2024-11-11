@@ -394,6 +394,14 @@ if __name__ == "__main__":
                 slurm={"ntasks": 4, "time": "1:0:0"},
             )
         )
+        wk.add_process(
+            ngram_loss(
+                "tmQM",
+                tok_name,
+                encoding=tok["encoding"],
+                slurm={"ntasks": 1, "time": "2:0:0"},
+            )
+        )
         for ref in REF_INFO_LOSS:
             wk.add_process(
                 ngram_info_loss(
