@@ -38,7 +38,7 @@ end
 function molnet(name::AbstractString; tokenizer="smirk", encoding::String="smiles")
     data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
     target_columns = String[]
-    dm = data_modules.MolNetDataModule(name; tokenizer, encoding, target_columns)
+    dm = data_modules.MolNetDataModule(name; tokenizer, encoding, target_columns, include_encoding=true)
     dm.prepare_data()
     dm.setup("fit")
     return dm
@@ -46,7 +46,7 @@ end
 
 function tmqm(path::AbstractString; tokenizer="tmQM", encoding::String="smiles")
     data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
-    dm = data_modules.tmQMDataModule(path, tokenizer; encoding)
+    dm = data_modules.tmQMDataModule(path, tokenizer; encoding, include_encoding=true)
     dm.prepare_data()
     dm.setup("fit")
     return dm

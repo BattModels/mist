@@ -68,12 +68,18 @@ class tmQMDataModule(pl.LightningDataModule):
                 collate_target, batched=False, fn_kwargs={"target_columns": targets}
             )
             self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+            ds = ds.select_columns([self.smi_column, "target", "target_mask"])
+        else:
+            ds = ds.select_columns([self.smi_column])
 
         # Transcode
         ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
 
         # Tokenize
         ds = ds.map(self.tokenizer, batched=True, input_columns=self.smi_column)
+        if not self.include_encoding:
+            ds = ds.remove_columns(self.smi_column)
+
         self.train_dataset = ds["train"]
         self.val_dataset = ds["validation"]
         self.test_dataset = ds["test"]

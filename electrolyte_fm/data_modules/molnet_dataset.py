@@ -143,17 +143,19 @@ class MolNetDataModule(pl.LightningDataModule):
         ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
 
         # Remove extraneous columns and tokenize smiles
-        targets = self.target_columns
-        ds = ds.map(
-            collate_target,
-            batched=False,
-            fn_kwargs={"target_columns": targets},
-            remove_columns=targets,
-        )
+        if targets := self.target_columns:
+            ds = ds.map(
+                collate_target,
+                batched=False,
+                fn_kwargs={"target_columns": targets},
+                remove_columns=targets,
+            )
 
-        # Save training dataset for target transformations
-        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
-        ds = ds.select_columns([self.smi_column, "target", "target_mask"])
+            # Save training dataset for target transformations
+            self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+            ds = ds.select_columns([self.smi_column, "target", "target_mask"])
+        else:
+            ds = ds.select_columns([self.smi_column])
 
         # Tokenize
         ds = ds.map(self.tokenizer, batched=True, input_columns=self.smi_column)
@@ -169,10 +171,11 @@ class MolNetDataModule(pl.LightningDataModule):
         token_inpus = ["input_ids", "attention_mask"]
         token_inpus = [{k: v for k, v in x.items() if k in token_inpus} for x in batch]
         output = self.token_collator(batch)
-        output["target"] = torch.stack([torch.tensor(x["target"]) for x in batch])
-        output["target_mask"] = torch.stack(
-            [torch.tensor(x["target_mask"]) for x in batch]
-        )
+        if self.target_columns:
+            output["target"] = torch.stack([torch.tensor(x["target"]) for x in batch])
+            output["target_mask"] = torch.stack(
+                [torch.tensor(x["target_mask"]) for x in batch]
+            )
 
         return output
 
