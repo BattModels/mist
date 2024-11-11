@@ -75,7 +75,6 @@ def cli_main(args=None):
     monitor = "val/loss_epoch"
     callbacks = [
         ThroughputMonitor(),
-        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
