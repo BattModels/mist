@@ -40,6 +40,7 @@ class tmQMDataModule(pl.LightningDataModule):
 
         self.target_columns = target_columns
         self.encoding = MolEncoding(encoding)
+        self.include_encoding = True
         self.smi_column = smi_column
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size if val_batch_size else batch_size
