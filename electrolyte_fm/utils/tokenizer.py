@@ -203,6 +203,10 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         tok = APETokenizer()
         tok.load_vocabulary(vocab_file)
         ensure_special_tokens(tok)
+
+        # Set unk_token_id (Not set by APETokenizer)
+        tok.unk_token_id = tok.convert_tokens_to_ids(tok.unk_token)
+
         return tok
 
     elif (
