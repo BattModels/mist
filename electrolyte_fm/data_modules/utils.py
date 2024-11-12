@@ -9,6 +9,7 @@ class MolEncoding(Enum):
     SMILES = "smiles"
     SELFIES = "selfies"
     CANONICAL_SMILES = "smiles-canonical"
+    KEUKLE_SMILES = "smiles-keukle"
 
 
 def encode_molecules(
@@ -34,6 +35,9 @@ def encode_molecules(
 
     elif encoding == MolEncoding.CANONICAL_SMILES:
         return encode_canonical_smiles(ds, input_column, output_column, **kwargs)
+
+    elif encoding == MolEncoding.KEUKLE_SMILES:
+        return encode_keukle(ds, input_column, output_column, **kwargs)
 
     else:
         raise RuntimeError(f"Unknown encoding: {encoding}")
@@ -85,3 +89,23 @@ def _maybe_encode_canonical_smiles(
         return Chem.CanonSmiles(smi)
     except Exception:
         return None if filter_failures else smi
+
+
+def encode_keukle(ds, input_column: str, output_column: str, **kwargs):
+    """Encode SMILES to keukle form, if possible, filtering out encoding failures"""
+
+    def _maybe_encode_keukle(smi: str) -> Optional[str]:
+        try:
+            mol = Chem.MolFromSmiles(smi)
+            return Chem.MolToSmiles(mol, kekuleSmiles=True, canonical=False)
+        except Exception:
+            return None
+
+    ds = ds.map(
+        lambda x: {output_column: _maybe_encode_keukle(x)},
+        input_columns=input_column,
+        batched=False,
+        **kwargs,
+    )
+    ds = ds.filter(lambda x: x[output_column] is not None, batched=False, **kwargs)
+    return ds
