@@ -288,9 +288,11 @@ def ngram_info_loss(dataset, tokenizer, ref, slurm={}, encoding="smiles"):
     ref_name = ref.replace("/", "--")
     ref_usage = STATS_DIR.joinpath(ref, "realspace", "usage.bson")
     output = STATS_DIR.joinpath(tokenizer, dataset, f"{ref_name}_info_loss.bson")
+    slurm["mem-per-cpu"] = slurm.get("mem-per-cpu", "3G")
+    slurm["partition"] = slurm.get("partition", "venkvis-largemem")
     if tokenizer == "SmilesPE/SPE_ChEMBL":
-        slurm["--mem-per-cpu"] = "8G"
-        slurm["--partition"] = "venkvis-largemem"
+        slurm["mem-per-cpu"] = "8G"
+        slurm["partition"] = "venkvis-largemem"
 
     return Process(
         [
@@ -325,6 +327,11 @@ if __name__ == "__main__":
     parser.add_argument("-v", "--verbose", action="count", default=0)
     parser.add_argument(
         "--realspace", type=str, default="/nfs/turbo/coe-venkvis/mist/realspace_v4_dev2"
+    )
+    parser.add_argument(
+        "--tmqm",
+        type=str,
+        default=Path(__file__).parent.parent.joinpath("tmQM", "data"),
     )
     args = parser.parse_args()
     set_logging_level(args.verbose)
@@ -379,19 +386,22 @@ if __name__ == "__main__":
                 shutil.move(src, STATS_DIR.joinpath(tok_name, ds, "usage.bson"))
 
             for ref in REF_INFO_LOSS:
+                if tok["encoding"] == "selfies":
+                    continue
+
                 wk.add_process(
                     ngram_info_loss(
                         ds,
                         tok_name,
                         ref,
                         encoding=tok["encoding"],
-                        slurm={"ntasks": 24, "time": "4:0:0"},
+                        slurm={"ntasks": 48, "time": "4:0:0"},
                     )
                 )
 
         wk.add_process(
             usage(
-                "tmQM",
+                args.tmqm,
                 tok_name,
                 encoding=tok["encoding"],
                 slurm={"ntasks": 4, "time": "1:0:0"},
@@ -399,16 +409,19 @@ if __name__ == "__main__":
         )
         wk.add_process(
             ngram_loss(
-                "tmQM",
+                args.tmqm,
                 tok_name,
                 encoding=tok["encoding"],
                 slurm={"ntasks": 1, "time": "2:0:0"},
             )
         )
         for ref in REF_INFO_LOSS:
+            if tok["encoding"] == "selfies":
+                continue
+
             wk.add_process(
                 ngram_info_loss(
-                    "tmQM",
+                    args.tmqm,
                     tok_name,
                     ref,
                     encoding=tok["encoding"],

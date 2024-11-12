@@ -21,11 +21,13 @@ end
 
 function get_dataset(name_or_path, tokenizer, encoding)
     if isdir(name_or_path)
-        dm = TokenizerStats.pretrain(name_or_path; tokenizer, encoding)
-        dataset_name = basename(name_or_path)
-    elseif name_or_path == "tmQM"
-        dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
-        dataset_name = "tmQM"
+        if "tmQM" in splitpath(name_or_path)
+            dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
+            dataset_name = "tmQM"
+        else
+            dm = TokenizerStats.pretrain(name_or_path; tokenizer, encoding)
+            dataset_name = basename(name_or_path)
+        end
     else
         dm = TokenizerStats.molnet(name_or_path; tokenizer, encoding)
         dataset_name = name_or_path
