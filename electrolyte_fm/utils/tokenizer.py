@@ -207,6 +207,12 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         # Set unk_token_id (Not set by APETokenizer)
         tok.unk_token_id = tok.convert_tokens_to_ids(tok.unk_token)
 
+        # Bind tokenize method
+        def tokenize(self, text: str) -> list[str]:
+            return self.convert_ids_to_tokens(self.encode(text))
+
+        tok.tokenize = tokenize.__get__(tok)
+
         return tok
 
     elif (
