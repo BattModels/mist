@@ -14,7 +14,7 @@ from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
-from .utils import MolEncoding, encode_molecules
+from .utils import MolEncoding, encode_molecules, is_fast
 
 
 _URLS = {
@@ -158,7 +158,11 @@ class MolNetDataModule(pl.LightningDataModule):
             ds = ds.select_columns([self.smi_column])
 
         # Tokenize
-        ds = ds.map(self.tokenizer, batched=True, input_columns=self.smi_column)
+        ds = ds.map(
+            self.tokenizer,
+            batched=is_fast(self.tokenizer),
+            input_columns=self.smi_column,
+        )
         if not self.include_encoding:
             ds = ds.remove_columns(self.smi_column)
 

@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from transformers import DataCollatorForLanguageModeling
 
 from ..utils.tokenizer import load_tokenizer
-from .utils import MolEncoding, encode_molecules
+from .utils import MolEncoding, encode_molecules, is_fast
 
 
 def maybe_shard_dataset(trainer, ds):
@@ -95,7 +95,7 @@ class RobertaDataSet(pl.LightningDataModule):
         # Tokenize
         ds = ds.map(
             self.tokenizer,
-            batched=True,
+            batched=is_fast(self.tokenizer),
             input_columns="text",
             remove_columns="text",
         )

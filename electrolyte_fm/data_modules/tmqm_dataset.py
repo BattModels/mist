@@ -14,7 +14,7 @@ from transformers import DataCollatorWithPadding
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
 from .molnet_dataset import collate_target
-from .utils import MolEncoding, encode_molecules
+from .utils import MolEncoding, encode_molecules, is_fast
 
 
 class tmQMDataModule(pl.LightningDataModule):
@@ -77,7 +77,11 @@ class tmQMDataModule(pl.LightningDataModule):
         ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
 
         # Tokenize
-        ds = ds.map(self.tokenizer, batched=True, input_columns=self.smi_column)
+        ds = ds.map(
+            self.tokenizer,
+            batched=is_fast(self.tokenizer),
+            input_columns=self.smi_column,
+        )
         if not self.include_encoding:
             ds = ds.remove_columns(self.smi_column)
 

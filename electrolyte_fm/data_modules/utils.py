@@ -3,6 +3,13 @@ from typing import Optional
 from rdkit import Chem
 
 
+def is_fast(tokenizer):
+    """Helper for check if something is a fast tokenizer"""
+    if hasattr(tokenizer, "is_fast"):
+        return tokenizer.is_fast
+    return False
+
+
 class MolEncoding(Enum):
     """Enumeration of supported molecule encodings"""
 
