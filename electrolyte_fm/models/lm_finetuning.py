@@ -211,6 +211,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             output_size=output_size,
             dropout=dropout,
         )
+        self.task = task
         if task == "binary":
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
         elif task == "regression":
@@ -297,6 +298,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["target_mask"],
             batch["input_ids"],
             batch.get("is_oov", None),
+            int_cast=self.task == "binary",
         )
         return loss
 
@@ -324,6 +326,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["target_mask"],
             batch["input_ids"],
             batch.get("is_oov", None),
+            int_cast=self.task == "binary",
         )
         return loss
 
@@ -351,6 +354,7 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             batch["target_mask"],
             batch["input_ids"],
             batch.get("is_oov", None),
+            int_cast=self.task == "binary",
         )
         return loss
 

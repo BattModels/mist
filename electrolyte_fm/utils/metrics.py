@@ -231,9 +231,12 @@ def masked_metric_update(
     targets: Union[torch.IntTensor, torch.FloatTensor],
     mask: torch.BoolTensor,
     *args,
+    int_cast: bool = False,
 ):
     """Update metrics, masking out targets as needed"""
     targets = targets.masked_fill(mask, IGNORE_INDEX)
+    if int_cast:
+        targets = targets.int()
     metrics.update(preds, targets, *args)
 
 
