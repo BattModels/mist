@@ -165,6 +165,25 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         )
         return regex_smiles_tokenizer(vocab_from_words(vocab_file), regex)
 
+    elif name == "ibm/materials.selfies-ted":
+        from transformers import AutoTokenizer
+        from tokenizers import Regex
+        from tokenizers.pre_tokenizers import Split
+        from tokenizers.normalizers import Strip
+
+        tok_tf = AutoTokenizer.from_pretrained(
+            name,
+            trust_remote_code=True,
+            revision="9d70548517a368f9c1aff0f5140d74b593bc2b38",
+        )
+        # By default, there's not normalizer
+        tok_tf.backend_tokenizer.normalizer = Strip()
+
+        # By default, splits on whitespace, so providing raw selfies strings results in nothing being tokenized
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(r"\[[^\]]+]"), "isolated")
+
+        return tok_tf
+
     elif name.startswith("lbnlp/MatBERT"):
         from transformers import BertTokenizerFast
         from .cache import cached_download
