@@ -21,3 +21,8 @@ class RoBERTaPreLayerNorm(RoBERTa):
 
     def configure_model(self):
         self.model = RobertaPreLayerNormForMaskedLM(config=self.config)
+
+    def get_encoder(self):
+        if not hasattr(self, "model"):
+            self.configure_model()
+        return self.model.roberta_prelayernorm
