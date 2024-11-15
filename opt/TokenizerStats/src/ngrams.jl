@@ -53,7 +53,7 @@ function NGramModel(ngrams::Union{Tuple,Vector}, vocab_size::Int; special_tokens
     return NGramModel{N,G}(total, vocab_size, ngrams, special_tokens)
 end
 
-function load_ngram_model(file::String, split=:train)
+@annotate function load_ngram_model(file::String, split=:train)
     # Open token stats file
     suffix = last(splitext(file))
     if suffix == ".bson"
@@ -189,7 +189,7 @@ Compute `ln P(x_i,j | x_{i-2}, x_{i-1}, x_{i+1}, x_{i+2})` for the given code `c
 Will marginalize over tokens with id `mask` in `code`. That is is `x_{i-2}` is masked,
 then computes `P(x_i | x_{i-1}, x_{i+1}, x_{i+2})` instead.
 """
-function fb_log_probability(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
+@annotate function fb_log_probability(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
     fc, fm, fmasked = forward_odds(m, code; mask, N)
     bc, bm, bmasked = backward_odds(m, code; mask, N)
 
@@ -219,7 +219,7 @@ function log_smoothed_counts(counts::Real, nmasked::Integer, vocab_size::Integer
     end
 end
 
-function forward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
+@annotate function forward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
     ctype = valtype(m.ngrams[N])
     ctype = ctype isa Integer ? UInt64 : Float32
     counts = Matrix{ctype}(undef, m.vocab_size, length(code))
@@ -240,7 +240,7 @@ function forward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(
     return counts, marginal, n_masked
 end
 
-function backward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
+@annotate function backward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
     code = reverse(code)
     ctype = valtype(m.ngrams[N])
     ctype = ctype isa Integer ? UInt64 : Float32
@@ -265,7 +265,7 @@ end
 """
     gram = lstrip(gram, mask)
 
-Remove mask tokesn from the left or right side of the gram
+Remove mask tokens from the left or right side of the gram
 """
 function Base.lstrip(gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     for i in 1:N
@@ -277,7 +277,7 @@ end
 """
     gram = rstrip(gram, mask)
 
-Remove mask tokesn from the left or right side of the gram
+Remove mask tokens from the left or right side of the gram
 """
 function Base.rstrip(gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     for i in range(N, 1; step=-1)
@@ -291,7 +291,7 @@ end
 Computes the Information Loss (KL-Divergence) from masking out tokens in an input code for a
 given n-gram model
 """
-function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
+@annotate function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
     @assert length(code) == length(mask)
     loss = 0.0
     mask_value = -100
@@ -306,7 +306,7 @@ function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{Bi
     return loss, P, Q
 end
 
-function masked_counts(m::NGramModel, gram::NTuple{N,<:Integer}, mask::Integer) where {N}
+@annotate function masked_counts(m::NGramModel, gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     N == 0 && return 0
     mask ∉ gram && return first(gram_odds(m, gram))
     counts = 0
@@ -333,7 +333,7 @@ end
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference
 """
-function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
+@annotate function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
     unk_token_id = pyconvert(Int, tok.unk_token_id)
     code = pyconvert(Vector{Int}, encoding["input_ids"])
     (unk_token_id ∉ code) && return zeros(length(N))
@@ -393,7 +393,7 @@ Computes the alignment `A` between two tokenizations of the same input string.
 The two tokenizations must be decode to the same string, barring deletions
 from unknown tokens. i.e. normalizations must be applied to both.
 """
-function align_unknown(a::Vector{String}, b::Vector{String})
+@annotate function align_unknown(a::Vector{String}, b::Vector{String})
     replace!(a, "<unk>" => "[UNK]")
     replace!(b, "<unk>" => "[UNK]")
     i = (; idx=firstindex(a), char=1)

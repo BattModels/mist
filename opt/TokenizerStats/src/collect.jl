@@ -6,7 +6,7 @@ function tracked_stats()
     return (;
         fertility=CountMap(Int),
         nunique=CountMap(Int),
-        ngrams=ntuple(i -> CountMap(NTuple{i, Int}), 5),
+        ngrams=ntuple(i -> CountMap(NTuple{i,Int}), 5),
         out_of_vocab=Counter(Int),
     )
 end
@@ -90,9 +90,9 @@ function srun_usage_stats(datamodule::Py, out_file::AbstractString; tokenizer_na
     tokenizer_info = (;
         name=tokenizer_name,
         vocab_size=pyconvert(Int, length(tokenizer)),
-        unk_token_id=pyconvert(Union{Int, Nothing}, tokenizer.unk_token_id),
+        unk_token_id=pyconvert(Union{Int,Nothing}, tokenizer.unk_token_id),
     )
-    stats = Dict{Symbol, Any}()
+    stats = Dict{Symbol,Any}()
     splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
     for split in splits
         tokenizer_stats = rank_usage_stats(datamodule, split; rank, size)
@@ -133,9 +133,9 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     tokenizer_info = (;
         name=tokenizer_name,
         vocab_size=pyconvert(Int, length(tokenizer)),
-        unk_token_id=pyconvert(Union{Int, Nothing}, tokenizer.unk_token_id),
+        unk_token_id=pyconvert(Union{Int,Nothing}, tokenizer.unk_token_id),
     )
-    stats = Dict{Symbol, Any}()
+    stats = Dict{Symbol,Any}()
     splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
     for split in splits
         rank_stats = rank_usage_stats(datamodule, split; rank, size)
@@ -178,10 +178,10 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
 
     # Init Fit Stats
     tok = datamodule.tokenizer
-    fit_stats = Dict{Symbol, Any}(
+    fit_stats = Dict{Symbol,Any}(
         :tokenizer => (;
             vocab_size=pyconvert(Int, length(tok)),
-            unk_token_id=pyconvert(Union{Int, Nothing}, tok.unk_token_id),
+            unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
         ),
         :ref_tokenizer => ref_info,
     )
@@ -237,7 +237,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
 
 end
 
-function avg_information_loss(datamodule::Py, ref_file::String, output::String)
+@annotate function avg_information_loss(datamodule::Py, ref_file::String, output::String)
     # Init MPI
     MPI.Init()
     comm = MPI.COMM_WORLD
@@ -262,6 +262,8 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
 
     @info "rank $rank: started processing"
     ds = setup_dm_mpi(datamodule, "val"; rank, size)
+    ds = Iterators.take(ds, 10)
+
     smi_column = pyconvert(String, datamodule.smi_column)
     start_time = time()
     for (idx, encoding) in enumerate(ds)
@@ -279,7 +281,7 @@ function avg_information_loss(datamodule::Py, ref_file::String, output::String)
         stats = (;
             tokenizer=(;
                 vocab_size=pyconvert(Int, length(tok)),
-                unk_token_id=pyconvert(Union{Int, Nothing}, tok.unk_token_id),
+                unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
             ),
             ref_tokenizer=ref_info,
             samples=nobs(stats),
