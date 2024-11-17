@@ -46,10 +46,6 @@ matplotlib = "~3.9"
 # Optional Dependencies for third-party tokenizers
 smilespe = "0.0.3"
 
-[tool.poetry.group.plotting.dependencies]
-# Optional Dependency for plotting
-matplotlib = "~3.9"
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
