@@ -215,7 +215,10 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
 
         # Additional Metrics
         metrics = MetricCollection(
-            {metric: get_metric(metric, task, output_size, target_columns) for metric in metrics}
+            {
+                metric: get_metric(metric, task, output_size, target_columns)
+                for metric in metrics
+            }
         )
 
         if tokenizer:

@@ -316,6 +316,7 @@ def vocab_from_words(file: str, add_unk_token=True, unk_token: str = "[UNK]"):
 def rdkit_canonical(smi: str) -> str:
     """Canonicalize a SMILES encoding using rdkit"""
     from rdkit import Chem
+
     try:
         return Chem.CanonSmiles(smi)
     except Exception:
@@ -327,6 +328,8 @@ def rdkit_kekulize(smi: str) -> str:
     from rdkit import Chem
 
     try:
-        return Chem.MolToSmiles(Chem.MolFromSmiles(smi), kekuleSmiles=True, canonical=False)
+        return Chem.MolToSmiles(
+            Chem.MolFromSmiles(smi), kekuleSmiles=True, canonical=False
+        )
     except Exception:
         return None

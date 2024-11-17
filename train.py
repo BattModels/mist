@@ -50,7 +50,9 @@ class MyLightningCLI(LightningCLI):
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
         )
         parser.link_arguments(
-            "data.target_columns", "model.init_args.target_columns", apply_on="instantiate"
+            "data.target_columns",
+            "model.init_args.target_columns",
+            apply_on="instantiate",
         )
 
     def _add_instantiators(self) -> None:
