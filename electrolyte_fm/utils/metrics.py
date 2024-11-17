@@ -80,6 +80,11 @@ class MeanAbsoluteError(Metric):
         out = dict(zip(self.target_labels, out))
         out["mean"] = self.sum_abs_error.mean() / self.total
         return out
+    
+    def keys(self):
+        keys_ = ["mean", ]
+        keys_.extend(self.target_labels)
+        return keys_
 
 
 class SafeR2Score(R2Score):
