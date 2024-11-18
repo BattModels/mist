@@ -22,7 +22,7 @@ struct NGramModel{N,G}
     special_tokens::Vector{Int}
 end
 
-Base.length(m::NGramModel{N}) where {N} = N
+Base.length(::NGramModel{N}) where {N} = N
 
 """ Iterator of all token ids (including special) for the model"""
 token_ids(m::NGramModel) = range(0; length=m.vocab_size)
@@ -222,20 +222,15 @@ end
 @annotate function forward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
     ctype = valtype(m.ngrams[N])
     ctype = ctype isa Integer ? UInt64 : Float32
-    counts = Matrix{ctype}(undef, m.vocab_size, length(code))
-    marginal = zeros(Int, length(code))
+    counts = zeros(ctype, m.vocab_size, length(code))
+    marginal = zeros(ctype, length(code))
     n_masked = Vector{Int}(undef, length(code))
-    Threads.@threads for i in 1:length(code)
+    for i in 1:length(code)
         cgram = condgram(code, i, N)
         cgram = lstrip(cgram, mask)
         n_masked[i] = count(==(mask), cgram)
-        token_marginal = zero(ctype)
-        for (j, token) in enumerate(token_ids(m))
-            c = masked_counts(m, (cgram..., token), mask)
-            counts[j, i] = c
-            token_marginal += c
-        end
-        marginal[i] = token_marginal
+        masked_dist!(counts[:, i], m, cgram, mask; forward=true)
+        marginal[i] = sum(counts[:, i])
     end
     return counts, marginal, n_masked
 end
@@ -244,20 +239,15 @@ end
     code = reverse(code)
     ctype = valtype(m.ngrams[N])
     ctype = ctype isa Integer ? UInt64 : Float32
-    counts = Matrix{ctype}(undef, m.vocab_size, length(code))
+    counts = zeros(ctype, m.vocab_size, length(code))
     marginal = zeros(Int, length(code))
     n_masked = Vector{Int}(undef, length(code))
-    Threads.@threads for (i, ri) in collect(enumerate(range(length(code), 1; step=-1)))
+    for (i, ri) in collect(enumerate(range(length(code), 1; step=-1)))
         cgram = reverse(condgram(code, i, N))
         cgram = rstrip(cgram, mask)
         n_masked[ri] = count(==(mask), cgram)
-        token_marginal = zero(ctype)
-        for (j, token) in enumerate(token_ids(m))
-            c = masked_counts(m, (token, cgram...), mask)
-            counts[j, ri] = c
-            token_marginal += c
-        end
-        marginal[ri] = token_marginal
+        masked_dist!(counts[:, ri], m, cgram, mask; forward=false)
+        marginal[ri] = sum(counts[:, ri])
     end
     return counts, marginal, n_masked
 end
@@ -306,6 +296,32 @@ given n-gram model
     return loss, P, Q
 end
 
+function masked_dist!(dist::Vector, m::NGramModel, context::NTuple{N,Int}, mask::Int; forward::Bool=true) where {N}
+    @assert N <= length(m) - 1
+    if N == 0
+        fill!(dist, 0)
+    elseif mask ∉ context
+        # No mask, just use the gram odds
+        for (j, token) in enumerate(token_ids(m))
+            dist[j] = first(gram_odds(m, (context..., token)))
+        end
+    else
+        # Masked gram, use the conditional gram odds
+        for (candidate, c) in m.ngrams[N+1]
+            # Flip tokens if computing backward
+            if forward
+                matched = masked_match(context, candidate; mask)
+            else
+                matched = masked_match(reverse(context), reverse(candidate); mask)
+            end
+            if matched
+                dist[last(candidate)+1] += c
+            end
+        end
+    end
+    return dist
+end
+
 @annotate function masked_counts(m::NGramModel, gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     N == 0 && return 0
     mask ∉ gram && return first(gram_odds(m, gram))
@@ -318,7 +334,7 @@ end
     return counts
 end
 
-function masked_match(x::NTuple{N,Int}, y::NTuple{N,<:Integer}; mask::Integer) where {N}
+function masked_match(x::NTuple{Nx,Int}, y::NTuple{Ny,<:Integer}; mask::Integer) where {Nx,Ny}
     for (a, b) in zip(x, y)
         if a == mask || b == mask
             continue
@@ -328,7 +344,6 @@ function masked_match(x::NTuple{N,Int}, y::NTuple{N,<:Integer}; mask::Integer) w
     end
     return true
 end
-
 
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference

@@ -94,6 +94,54 @@ end
     end
 end
 
+@testitem "masked counts" setup = [NGramModelSetup] begin
+    using TokenizerStats: masked_counts, masked_dist!, NGramModel, gram_odds
+
+    vocab_size = 5
+    m = NGramModel(randngram(3; vocab_size), vocab_size)
+    dist = zeros(Int, vocab_size)
+    mask = -100
+
+    @testset "empty gram" begin
+        fill!(dist, 0)
+        masked_dist!(dist, m, tuple(), mask)
+        @test all(==(0), dist)
+    end
+    @testset "no mask" begin
+        fill!(dist, 0)
+        masked_dist!(dist, m, (1, 2), mask)
+        for (i, c) in enumerate(dist)
+            @test c == first(gram_odds(m, (1, 2, i - 1)))
+        end
+    end
+    @testset "mask" begin
+        fill!(dist, 0)
+        masked_dist!(dist, m, (1, mask), mask)
+        for (i, c) in enumerate(dist)
+            @test c == masked_counts(m, (1, mask, i - 1), mask)
+        end
+    end
+    @testset "backward" begin
+        fill!(dist, 0)
+        masked_dist!(dist, m, (1, mask), mask; forward=false)
+        for (i, c) in enumerate(dist)
+            @test c == masked_counts(m, (i - 1, 1, mask), mask)
+        end
+    end
+end
+
+@testitem "masked match" begin
+    using TokenizerStats: masked_match
+    mask = -100
+    @test masked_match((1, 2, 3), (1, 2, 3); mask) == true
+    @test masked_match((1, 3, 3), (1, 2, 3); mask) == false
+    @test masked_match((1, 2, 3), (1, 2); mask) == true
+    @test masked_match((2, 3), (1, 2); mask) == false
+    @test masked_match((1, mask, 3), (1, 5, 3); mask) == true
+    @test masked_match((1, mask, 3), (1, mask, 3); mask) == true
+    @test masked_match((1, mask, 5), (1, mask, 3); mask) == false
+end
+
 @testitem "fb_log_probability" setup = [NGramModelSetup] begin
     using TokenizerStats: NGramModel, fb_log_probability, cross_entropy
     function check(model, code)
