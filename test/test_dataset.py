@@ -1,10 +1,17 @@
-import pytest
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from pytorch_lightning import Trainer, LightningDataModule
-from electrolyte_fm.data_modules import RobertaDataSet, PropertyPredictionDataModule
+
+import pytest
+from datasets import Dataset
+from pytorch_lightning import LightningDataModule, Trainer
+
+from electrolyte_fm.data_modules import (
+    PropertyPredictionDataModule,
+    RobertaDataSet,
+)
 from electrolyte_fm.data_modules.molnet_dataset import strip_unk_tokens
+from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 
@@ -47,15 +54,23 @@ def fake_dataset():
         yield dir
 
 
-def test_dataset(fake_dataset):
-    dm = RobertaDataSet(fake_dataset, "smirk")
+@pytest.mark.parametrize("encoding", ["smiles", "selfies", "smiles-canonical"])
+def test_realspace_dataset(fake_dataset, encoding):
+    dm = RobertaDataSet(fake_dataset, "smirk", encoding=encoding)
     check_datamodule(dm)
 
 
 def test_canonical_dataset(fake_dataset):
     dm = RobertaDataSet(fake_dataset, "smirk", canonical=True)
-    assert dm.canonical
-    check_datamodule(dm)
+    assert dm.encoding == MolEncoding.CANONICAL_SMILES
+
+
+@pytest.mark.parametrize("encoding", [e.value for e in MolEncoding])
+def test_encoding(encoding):
+    ds = Dataset.from_dict(
+        {"text": ["CC(=O)O", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "CCCC"]}
+    )
+    encode_molecules(ds, "text", encoding=MolEncoding(encoding))
 
 
 def test_strip_unknown_tokens():

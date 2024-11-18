@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 
 import pytorch_lightning as pl
 from datasets import IterableDataset, DatasetDict, IterableDatasetDict, load_dataset
@@ -7,6 +8,7 @@ from torch.utils.data import DataLoader
 from transformers import DataCollatorForLanguageModeling
 
 from ..utils.tokenizer import load_tokenizer
+from .utils import MolEncoding, encode_molecules
 
 
 def maybe_shard_dataset(trainer, ds):
@@ -29,7 +31,8 @@ class RobertaDataSet(pl.LightningDataModule):
         num_workers=0,
         prefetch_factor=None,
         persistent_workers=False,
-        canonical=False,
+        canonical: Optional[bool] = None,  # Deprecated: Use encoding instead
+        encoding: str | MolEncoding = "smiles",
     ):
         super().__init__()
 
@@ -39,13 +42,21 @@ class RobertaDataSet(pl.LightningDataModule):
         self.path: Path = Path(path)
         assert self.path.is_dir() or self.path.is_file()
 
+        # Handle canonical
+        if canonical is not None:
+            print("WARNING: canonical is deprecated, use encoding instead")
+            if MolEncoding(encoding) == MolEncoding.SMILES:
+                encoding = MolEncoding.CANONICAL_SMILES
+            else:
+                raise ValueError(f"Canonical encoding not supported for {encoding}")
+
         self.mlm_probability = mlm_probability
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size if val_batch_size else batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
-        self.canonical = canonical
+        self.encoding = MolEncoding(encoding)
         self.hparams["vocab_size"] = self.vocab_size
         self.save_hyperparameters(logger=False)
 
@@ -78,13 +89,8 @@ class RobertaDataSet(pl.LightningDataModule):
         )
         ds = maybe_shard_dataset(self.trainer, self.dataset)
 
-        # Get Canonical SMILES encodings before tokenizing
-        if self.canonical:
-            from ..utils.tokenizer import rdkit_canonical
-
-            ds = ds.map(
-                lambda smi: {"text": rdkit_canonical(smi["text"])}, batched=False
-            ).filter(lambda x: x["text"] is not None)
+        # Transcode
+        ds = encode_molecules(ds, "text", encoding=self.encoding)
 
         # Tokenize
         ds = ds.map(

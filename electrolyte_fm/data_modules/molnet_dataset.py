@@ -14,6 +14,8 @@ from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DataLoader
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
+from .utils import MolEncoding, encode_molecules
+
 
 _URLS = {
     "qm8": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm8.csv",
@@ -43,16 +45,22 @@ class MolNetDataModule(pl.LightningDataModule):
         prefetch_factor: int = 4,
         smi_column: Optional[str] = None,
         target_columns: list[str] = ["Class"],
-        strip_unk_tokens: bool = False,
         val_batch_size: Optional[int] = None,
+        encoding: Optional[str | MolEncoding] = None,
+        include_encoding: bool = False,
     ):
         super().__init__()
 
         self.name = name
         assert name in _URLS, f"Unknown MoleculeDataset {name}"
+        self.include_encoding = include_encoding
 
-        # Set smi_column
-        self.use_selfies = "selfies" in tokenizer
+        # Set encoding
+        if "selfies" in tokenizer:
+            encoding = encoding or "selfies"
+        else:
+            encoding = encoding or "smiles"
+        self.encoding = MolEncoding(encoding)
 
         if smi_column is None and name == "bace":
             self.smi_column = "mol"
@@ -131,71 +139,41 @@ class MolNetDataModule(pl.LightningDataModule):
     def setup(self, stage: str) -> None:
         # Load datasets, checking for splits
         ds = self.dataset
+        ds = maybe_shard_dataset(self.trainer, ds)
+        ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
 
         # Remove extraneous columns and tokenize smiles
-        ds = ds.select_columns([self.smi_column, *self.target_columns])
+        targets = self.target_columns
         ds = ds.map(
             collate_target,
             batched=False,
-            remove_columns=self.target_columns,
-            fn_kwargs={"target_columns": self.target_columns},
+            fn_kwargs={"target_columns": targets},
+            remove_columns=targets,
         )
 
         # Save training dataset for target transformations
         self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
-
-        if self.use_selfies:
-            from selfies import encoder
-
-            def selfies_encoder(smi):
-                try:
-                    selfie = encoder(smi)
-                except Exception:
-                    selfie = None
-                return selfie
-
-            ds = ds.map(
-                lambda smi: {"selfies": selfies_encoder(smi[self.smi_column])},
-                batched=False,
-                remove_columns=self.smi_column,
-            ).filter(lambda x: x["selfies"] is not None)
-
-            self.smi_column = "selfies"
-
-        # Tokenize smiles
-        ds = ds.map(
-            self.tokenizer,
-            batched=True,
-            input_columns=self.smi_column,
-            remove_columns=self.smi_column,
-        )
-
-        self.train_dataset: Dataset = maybe_shard_dataset(
-            self.trainer, ds["train"].shuffle(seed=42)
-        )
-        self.val_dataset: Dataset = maybe_shard_dataset(self.trainer, ds["validation"])
-        self.test_dataset: Dataset = maybe_shard_dataset(self.trainer, ds["test"])
-        self.token_collator = DataCollatorWithPadding(
-            tokenizer=self.tokenizer, padding="longest"
-        )
-
-    def data_collator(self, batch):
-        targets = [torch.tensor(x.pop("target")) for x in batch]
-        mask = [torch.tensor(x.pop("target_mask"), dtype=bool) for x in batch]
-
-        # Remove unknown tokens
-        unk_token_id = self.tokenizer.unk_token_id
-        if self.strip_unk_tokens:
-            batch = [strip_unk_tokens(obs, unk_token_id) for obs in batch]
-            is_oov = [x.pop("is_oov") for x in batch]
-        else:
-            is_oov = [unk_token_id in obs["input_ids"] for obs in batch]
+        ds = ds.select_columns([self.smi_column, "target", "target_mask"])
 
         # Tokenize
+        ds = ds.map(self.tokenizer, batched=True, input_columns=self.smi_column)
+        if not self.include_encoding:
+            ds = ds.remove_columns(self.smi_column)
+
+        self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
+        self.val_dataset: Dataset = ds["validation"]
+        self.test_dataset: Dataset = ds["test"]
+        self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
+
+    def data_collator(self, batch):
+        token_inpus = ["input_ids", "attention_mask"]
+        token_inpus = [{k: v for k, v in x.items() if k in token_inpus} for x in batch]
         output = self.token_collator(batch)
-        output["target"] = torch.stack(targets)
-        output["target_mask"] = torch.stack(mask)
-        output["is_oov"] = torch.tensor(is_oov)
+        output["target"] = torch.stack([torch.tensor(x["target"]) for x in batch])
+        output["target_mask"] = torch.stack(
+            [torch.tensor(x["target_mask"]) for x in batch]
+        )
+
         return output
 
     def train_dataloader(self):
