@@ -3,7 +3,7 @@ from typing import Any, Dict, Literal, Optional, Union
 
 import torch
 from numpy import geomspace
-from torchmetrics import Metric, MetricCollection
+from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.classification import (
     AUROC,
@@ -17,9 +17,10 @@ from torchmetrics.regression import (
     PearsonCorrCoef,
     R2Score,
 )
+from torchmetrics.regression.pearson import (
+    _final_aggregation as final_pearson_aggregation,
+)
 from torchmetrics.wrappers import BootStrapper
-from torchmetrics.wrappers.abstract import WrapperMetric
-from torchmetrics.wrappers.classwise import ClasswiseWrapper
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 
 """ Target Value to indicate missing data """
@@ -445,7 +446,15 @@ class FeaturesUtilization(Metric):
 class AliveFeatures(FeaturesUtilization):
     higher_is_better = True
 
+    def __init__(self, *args, threshold: Optional[int] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.threshold = threshold
+
     def compute(self):
+        if self.threshold:
+            min_freq = 1 / self.threshold
+            return (self.feature_counts >= min_freq).sum() / self.feature_counts.numel()
+
         return self.feature_counts.count_nonzero() / self.feature_counts.numel()
 
 
@@ -486,3 +495,33 @@ class MaxFeatureDensity(FeaturesUtilization):
 
     def compute(self):
         return self.feature_counts.max() / self.total_tokens
+
+
+class FeatureCorrelation(PearsonCorrCoef):
+    def compute(self):
+        if (self.num_outputs == 1 and self.mean_x.numel() > 1) or (
+            self.num_outputs > 1 and self.mean_x.ndim > 1
+        ):
+            mean_x, mean_y, var_x, var_y, corr_xy, n_total = final_pearson_aggregation(
+                self.mean_x,
+                self.mean_y,
+                self.var_x,
+                self.var_y,
+                self.corr_xy,
+                self.n_total,
+            )
+        else:
+            mean_x = self.mean_x
+            mean_y = self.mean_y
+            var_x = self.var_x
+            var_y = self.var_y
+            # corr_xy = self.corr_xy
+            n_total = self.n_total
+
+        return {
+            "avg_active": mean_x,
+            "avg_inactive": mean_y,
+            "var_active": var_x,
+            "var_inactive": var_y,
+            "n_total": n_total,
+        }

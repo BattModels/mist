@@ -84,7 +84,10 @@ SMARTS_TESTS = [
     },
     {
         "feature": "rotatable_bond",
-        "positive": ["CC-CC", "c1ccccc1-c2ccccc2"],
+        "positive": [
+            "CC-CC",
+            "c1ccccc1-c2ccccc2",
+        ],
         "negative": ["CC(=O)C", "C=O", "c1ccccc1"],
     },
 ]
