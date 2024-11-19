@@ -12,7 +12,7 @@ using BSON: BSON
 using JSON: JSON
 using SHA: SHA
 using SparseArrays: sparse
-using LogExpFunctions: logsumexp, log1pexp
+using LogExpFunctions: logsumexp, log1pexp, xexpy
 using Serialization: serialize, deserialize
 using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
 
