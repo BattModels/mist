@@ -14,6 +14,7 @@ from transformers import DataCollatorWithPadding, PreTrainedModel
 from ..models.model_utils import load_encoder
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
+from .utils import MolEncoding, encode_molecules
 
 
 def extract_hidden_state(
@@ -82,7 +83,7 @@ class HiddenStateDataModule(pl.LightningDataModule):
         encoder_batch_size: Optional[int] = None,
         encoder_device: str = "cuda",
         return_molecule: bool = False,
-        canonical=False,
+        encoding: Optional[str | MolEncoding] = "smiles",
     ):
         super().__init__()
 
@@ -94,11 +95,14 @@ class HiddenStateDataModule(pl.LightningDataModule):
         self.vocab_size = len(self.tokenizer)
         self.path: Path = Path(path)
         self.return_molecule = return_molecule
+        self.encoding = MolEncoding(encoding)
         assert self.path.is_dir() or self.path.is_file()
 
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size or batch_size
         self.encoder_batch_size = encoder_batch_size or batch_size
+        self.num_workers = num_workers
+        self.prefetch_factor = prefetch_factor
         self.hparams["tokenizer"] = tokenizer
         self.save_hyperparameters(logger=False, ignore=["encoder_device"])
         self.data_collator = DataCollatorWithPadding(self.tokenizer, "longest")
@@ -127,6 +131,7 @@ class HiddenStateDataModule(pl.LightningDataModule):
     def setup(self, stage: str) -> None:
         self.encoder = load_encoder(self.name_or_path).to(self.encoder_device)
         ds = maybe_shard_dataset(self.trainer, self.dataset)
+        ds = encode_molecules(ds, "text", encoding=self.encoding)
         ds = ds.map(
             self.tokenizer,
             batched=True,

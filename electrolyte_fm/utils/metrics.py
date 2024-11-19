@@ -2,7 +2,7 @@ from typing import Any, Dict, Literal, Optional, Union
 
 import torch
 from numpy import geomspace
-from torchmetrics import Metric, MetricCollection
+from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.classification import (
     AUROC,
@@ -16,9 +16,10 @@ from torchmetrics.regression import (
     PearsonCorrCoef,
     R2Score,
 )
+from torchmetrics.regression.pearson import (
+    _final_aggregation as final_pearson_aggregation,
+)
 from torchmetrics.wrappers import BootStrapper
-from torchmetrics.wrappers.abstract import WrapperMetric
-from torchmetrics.wrappers.classwise import ClasswiseWrapper
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 
 """ Target Value to indicate missing data """
@@ -441,8 +442,12 @@ class OrthoProcrustes(Metric):
         self.add_state("distance", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
+    def __init__(self, *args, threshold: Optional[int] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.threshold = threshold
+
     def compute(self):
-        return self.distance / self.total
+       return self.distance / self.total
 
     def update(self, preds: torch.Tensor, targets: torch.Tensor):
         dists = self.procrustes_disparity(preds, targets)

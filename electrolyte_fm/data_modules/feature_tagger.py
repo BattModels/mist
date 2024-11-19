@@ -31,14 +31,6 @@ ELEMENT_SYMBOLS = [
 
 BOND_TYPES = ["-", "=", "#", ":", "$", "/", "\\"]
 
-REGEX_FEATURES = {
-    "chiral_tags": r"@{1,2}(?:[A-Z]{2}\d{1,2})?",
-    "bracked_atom": r"\[[^]]+]",
-    "charged_atom": r"\[[^\]]+?[+-]{1,2}\d{0,2}]",
-    "chiral_center": r"\[[^\]]+?@[^\]]*?]",
-    "aromatic_bracket_atom": r"\[[a-z]{1,2}[^\]]*?]",
-}
-
 ELEMENT_GROUPS = [
     ["Li", "Na", "K", "Rb", "Cs", "Fr"],  # Alkali Metals (Group 1)
     ["Be", "Mg", "Ca", "Sr", "Ba", "Ra"],  # Alkaline Earth Metals (Group 2)
@@ -97,6 +89,14 @@ F_BLOCK = [
     ],
 ]
 
+REGEX_FEATURES = {
+    "chiral_tags": r"@{1,2}(?:[A-Z]{2}\d{1,2})?",
+    "bracked_atom": r"\[[^]]+]",
+    "charged_atom": r"\[[^\]]+?[+-]{1,2}\d{0,2}]",
+    "chiral_center": r"\[[^\]]+?@[^\]]*?]",
+    "aromatic_bracket_atom": r"\[[a-z]{1,2}[^\]]*?]",
+}
+
 ELEMENT_FEATURES = {
     "alkali_metals": ELEMENT_GROUPS[0],
     "alkaline_earth_metals": ELEMENT_GROUPS[1],
@@ -144,8 +144,6 @@ SMARTS_FEATURES = {
 
 
 class Feature(ABC):
-    requires_smirk = False
-
     def __init__(self, name: str, tokenizer: Optional[str] = None):
         self.name = name
         self.tokenzier = tokenizer or smirk.SmirkTokenizerFast()
@@ -187,7 +185,6 @@ class Feature(ABC):
 
             # Spans don't include the end index
             elif not (end <= t[0] or t[1] <= start):
-                print(f"token: {t}, span: {start}, {end}")
                 yield i
 
     def align_embeddings(
@@ -195,15 +192,87 @@ class Feature(ABC):
     ) -> torch.BoolTensor:
         if embedding == other:
             return active
+        return active
         raise NotImplementedError()
 
     def onehot(self, indices: list[int], n: int) -> torch.BoolTensor:
         """Convert a list of indices to a one-hot encoding"""
         active = torch.zeros(n, dtype=torch.bool)
         if len(indices) > 0:
-            print(indices)
             active[indices] = True
         return active
+
+
+class FeatureCollection(Feature):
+    def __init__(self, features: dict[str, Feature], **kwargs):
+        super().__init__("FeatureCollection", **kwargs)
+        self.features = features
+        preprocess_steps = {}
+        for f in features.values():
+            preprocess_steps[f.__class__] = f
+        self.preprocess = list(preprocess_steps.values())
+
+    @property
+    def names(self):
+        return list(self.features.keys())
+
+    def __call__(self, smi: str) -> dict:
+        return {"proxy_activations": self.featurize(smi)}
+
+    def featurize(
+        self, smi: str, encoding: Optional[dict] = None, return_dict: bool = False
+    ) -> torch.BoolTensor:
+        encoding = encoding or self.tokenzier(smi, return_offsets_mapping=True)
+        kwargs = {}
+        for f in self.preprocess:
+            kwargs.update(f.preprocess(smi))
+
+        act = []
+        for idx, f in enumerate(self.features.values()):
+            act.append(f._featurize(smi, encoding, **kwargs))
+
+        if return_dict:
+            return {name: act for name, act in zip(self.features.keys(), act)}
+
+        return torch.stack(act, dim=0)
+
+    def _featurize(self, smi: str, encoding: dict, **kwargs) -> torch.BoolTensor:
+        raise RuntimeError(f"{self} should be called using featurize")
+
+    @classmethod
+    def from_named(cls, feature_names: str | list[str] = "all", **kwargs):
+        if isinstance(feature_names, str):
+            feature_names = [feature_names]
+
+        features = []
+        for name in feature_names:
+            if name == "all":
+                for k in ELEMENT_FEATURES.keys():
+                    features.append(ElementFeature.from_named(k, **kwargs))
+                for k in REGEX_FEATURES.keys():
+                    features.append(RegexFeature.from_named(k, **kwargs))
+                for k in SMARTS_FEATURES.keys():
+                    features.append(SMARTSFeature.from_named(k, **kwargs))
+
+            elif name in ELEMENT_FEATURES.keys():
+                features.append(ElementFeature.from_named(name, **kwargs))
+
+            elif name in REGEX_FEATURES.keys():
+                features.append(RegexFeature.from_named(name, **kwargs))
+
+            elif name in SMARTS_FEATURES.keys():
+                features.append(SMARTSFeature.from_named(name, **kwargs))
+
+            else:
+                raise ValueError(f"Unknown named feature: {name}")
+
+        feature_map = {}
+        for f in features:
+            if f.name in feature_map.keys():
+                raise ValueError(f"Duplicate feature name: {f.name}")
+            feature_map[f.name] = f
+
+        return cls(feature_map, **kwargs)
 
 
 class RegexFeature(Feature):
@@ -249,7 +318,7 @@ class ElementFeature(Feature):
         }
 
     def _featurize(
-        self, smi: str, encoding: dict, smirk_encoding: dict
+        self, smi: str, encoding: dict, smirk_encoding: dict, **kwargs
     ) -> torch.BoolTensor:
         enc = torch.tensor(smirk_encoding["input_ids"])
         active = enc.eq(self.element_ids).any(dim=0)
@@ -311,6 +380,7 @@ class SMARTSFeature(RdkitFeature):
         encoding: dict,
         atom_spans: list[tuple[int, int]],
         rdkit_molecule: Chem.Mol,
+        **kwargs,
     ) -> torch.BoolTensor:
         # TODO: Handle Bonds
         matches = rdkit_molecule.GetSubstructMatches(self.smarts)

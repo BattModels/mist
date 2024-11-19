@@ -80,6 +80,7 @@ class GatedSAE(nn.Module):
 
         return {
             "loss": loss_sparsity + loss_aux + loss_recon,
+            "loss_reconstruction": loss_recon,
             "features": features,
         }
 
@@ -102,8 +103,13 @@ class TiedBiasSAE(nn.Module):
         f = F.relu(self.encoder(x - self.decoder.bias))
         x_hat = self.decoder(f)
         f_act = f * self.decoder.weight.norm(p=2, dim=0)
-        loss = F.mse_loss(x_hat, x) + l1_coef * f_act.abs().sum()
-        return {"loss": loss, "features": f}
+        loss_reconstruction = F.mse_loss(x_hat, x)
+        loss_sparsity = l1_coef * f_act.abs().sum()
+        return {
+            "loss": loss_reconstruction + loss_sparsity,
+            "loss_reconstruction": loss_reconstruction,
+            "features": f,
+        }
 
 
 class SAE(pl.LightningModule):
@@ -137,11 +143,14 @@ class SAE(pl.LightningModule):
         metrics = MetricCollection(
             {
                 "alive_features": AliveFeatures(self.num_features),
+                "alive_features_1k": AliveFeatures(self.num_features, threshold=1_000),
+                "alive_features_10k": AliveFeatures(
+                    self.num_features, threshold=10_000
+                ),
                 "max_feature_density": MaxFeatureDensity(self.num_features),
                 "feature_density": FeatureDensity(self.num_features),
             }
         )
-        print(metrics)
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
@@ -167,6 +176,7 @@ class SAE(pl.LightningModule):
         self.log_dict(
             {
                 f"{stage}/loss": out["loss"],
+                f"{stage}/loss_reconstruction": out["loss_reconstruction"],
                 f"{stage}/avg_l0_loss": avg_l0_norm(out["features"]),
             },
             sync_dist=True,
@@ -204,9 +214,7 @@ class SAE(pl.LightningModule):
         ):
             self.logger.log_table(
                 stage + "/feature_density",
-                data=list(
-                    zip(feature_density.bin_centers, feature_density.density)
-                ),
+                data=list(zip(feature_density.bin_centers, feature_density.density)),
                 columns=["bin_center", "density"],
             )
 
