@@ -13,7 +13,7 @@ function Base.iterate(sw::SlidingWindow{N}, state=1) where {N}
 end
 
 Base.length(sw::SlidingWindow{N}) where {N} = length(sw.data) - N + 1
-Base.eltype(sw::SlidingWindow{N,T}) where {N,T} = NTuple{N,T}
+Base.eltype(::SlidingWindow{N,T}) where {N,T} = NTuple{N,T}
 
 struct NGramModel{N,G}
     total::Int
@@ -53,7 +53,7 @@ function NGramModel(ngrams::Union{Tuple,Vector}, vocab_size::Int; special_tokens
     return NGramModel{N,G}(total, vocab_size, ngrams, special_tokens)
 end
 
-@annotate function load_ngram_model(file::String, split=:train)
+function load_ngram_model(file::String, split=:train)
     # Open token stats file
     suffix = last(splitext(file))
     if suffix == ".bson"
@@ -93,14 +93,32 @@ end
 
 """ Return the conditional n-gram `(..., x_i-1)` for the given n-gram `(..., x_i)`"""
 condgram(gram::NTuple{N,Int}) where {N} = reverse(Base.tail(reverse(gram)))
-condgram(code::Vector{Int}, edx::Int, length::Int) = ngram(code, edx - 1, length - 1)
+condgram(code::AbstractVector{<:Integer}, edx::Int, length::Int) = ngram(code, edx - 1, length - 1)
+
+""" Return the backward conditional n-gram `(x_i+1, ...)` for the given n-gram `(x_i, ...)`"""
+condgram_backward(gram::NTuple{N,Int}) where {N} = Base.tail(gram)
+condgram_backward(code::AbstractVector{<:Integer}, edx::Int, length::Int) = ngram(code, range(; start=edx + 1, length=length - 1))
 
 """ Return the n-gram starting at `edx` of at most `length` """
-ngram(code::Vector{Int}, edx::Int, length::Int) = ngram(code, range(; stop=edx, length))
-function ngram(code::Vector{Int}, indices::UnitRange)
+ngram(code::AbstractVector{<:Integer}, edx::Int, length::Int) = ngram(code, range(; stop=edx, length))
+function ngram(code::AbstractVector{<:Integer}, indices::UnitRange)
     indices = filter(in(eachindex(code)), indices)
     return ntuple(i -> code[indices[i]], length(indices))
 end
+
+struct MaskedCode{T,C<:AbstractVector{T},M<:AbstractVector{Bool}} <: AbstractVector{T}
+    code::C
+    mask::M
+    mask_value::T
+end
+MaskedCode(code::Vector{T}, mask::Union{BitVector,Vector{Bool}}, mask_value::T) where {T} = MaskedCode{T}(code, BitVector(mask), mask_value)
+MaskedCode{T}(code::C, mask::M, mask_value) where {T,C<:AbstractVector{T},M<:AbstractVector{Bool}} = MaskedCode{T,C,M}(code, mask, mask_value)
+
+Base.getindex(mc::MaskedCode, i::Int) = mc.mask[i] ? mc.mask_value : mc.code[i]
+Base.eltype(::MaskedCode{T}) where {T} = T
+Base.length(mc::MaskedCode) = length(mc.code)
+Base.view(mc::MaskedCode{T}, indices...) where {T} = MaskedCode(view(mc.code, indices...), view(mc.mask, indices...), mc.mask_value)
+Base.size(mc::MaskedCode) = size(mc.code)
 
 """
     c, m = gram_odds(m::NGramModel, gram::NTuple{N, Int})
@@ -161,6 +179,29 @@ function cross_entropy(ℓ::AbstractMatrix, code::Vector{<:Integer}; ignore_id=-
     return -H
 end
 
+"""
+    H = cross_entropy_log(P::AbstractVector, Q::AbstractVector)
+
+Computes the cross-entropy (sum(p * log(q/p))) between `exp(P)` and `exp(Q)` 
+(P & Q are log-probabilities) using Kahan-Babuska-Neumaier summation
+"""
+function cross_entropy_log(P::AbstractVector, Q::AbstractVector)
+    H = zero(eltype(P))
+    c = zero(H)
+    @assert length(P) == length(Q)
+    for (p, q) in zip(P, Q)
+        i = xexpy(p - q, p)
+        t = H + i
+        if abs(H) >= abs(i)
+            c += (H - t) + i
+        else
+            c += (i - t) + H
+        end
+        H = t
+    end
+    return H + c
+end
+
 function autoregressive_log_prob(model::NGramModel, code::Vector; N=length(model))
     ell = Matrix{Float64}(undef, model.vocab_size, length(code))
     V = nonspecial_vocab_size(model)
@@ -189,7 +230,7 @@ Compute `ln P(x_i,j | x_{i-2}, x_{i-1}, x_{i+1}, x_{i+2})` for the given code `c
 Will marginalize over tokens with id `mask` in `code`. That is is `x_{i-2}` is masked,
 then computes `P(x_i | x_{i-1}, x_{i+1}, x_{i+2})` instead.
 """
-@annotate function fb_log_probability(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
+function fb_log_probability(m::NGramModel, code::AbstractVector{<:Integer}; mask::Integer=-100, N=length(m))
     fc, fm, fmasked = forward_odds(m, code; mask, N)
     bc, bm, bmasked = backward_odds(m, code; mask, N)
 
@@ -198,10 +239,54 @@ then computes `P(x_i | x_{i-1}, x_{i+1}, x_{i+2})` instead.
     f_prob = @. log_smoothed_counts(fc, fmasked', V) - log_smoothed_counts(fm, fmasked .+ 1, V)'
     b_prob = @. log_smoothed_counts(bc, bmasked', V) - log_smoothed_counts(bm, bmasked .+ 1, V)'
 
+    # If forward/backward collapses to the unigram distribution, don't double count 
+    for idx in eachindex(code)
+        f_collapse = isempty(condgram(code, idx, N))
+        b_collapse = isempty(condgram_backward(code, idx, N))
+        if f_collapse && b_collapse
+            # fill_unigram_dist!(f_prob[:, idx], m)
+        elseif f_collapse
+            f_prob[:, idx] .= b_prob[:, idx]
+        elseif !b_collapse
+            @. f_prob[:, idx] = f_prob[:, idx] + b_prob[:, idx]
+        end
+    end
+
+
     # Compute joint probability
-    ℓ = f_prob .+ b_prob
-    marginal = logsumexp(ℓ; dims=1)
-    return ℓ .- marginal
+    marginal = logsumexp(f_prob; dims=1)
+    return f_prob .- marginal
+end
+
+function fb_log_probability!(Pf::Vector{Float64}, m::NGramModel, code::AbstractVector{<:Integer}; idx::Integer=1, N::Integer, mask::Integer=-100)
+    fgram = condgram(code, idx, N)
+    bgram = condgram_backward(code, idx, N)
+
+    # Count matching n-grams
+    Pb = similar(Pf)
+    forward_counts!(Pf, m, fgram; mask)
+    backward_counts!(Pb, m, bgram; mask)
+
+    # Smooth forward/backward distributions
+    V = nonspecial_vocab_size(m)
+    fmasked = count(==(mask), fgram)
+    fmarginal = sum(Pf)
+    @. Pf = log_smoothed_counts(Pf, fmasked, V) - log_smoothed_counts(fmarginal, fmasked + 1, V)
+    bmasked = count(==(mask), bgram)
+    bmarginal = log_smoothed_counts(sum(Pb), bmasked + 1, V)
+    @. Pb = log_smoothed_counts(Pb, bmasked, V) - bmarginal
+
+    # Compute Joint probability
+    if isempty(fgram)
+        Pf .= Pb
+    elseif !isempty(bgram)
+        @. Pf = Pf + Pb
+    end
+
+    marginal = logsumexp(Pf)
+    Pf .-= marginal
+
+    return nothing
 end
 
 """
@@ -219,43 +304,91 @@ function log_smoothed_counts(counts::Real, nmasked::Integer, vocab_size::Integer
     end
 end
 
-@annotate function forward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
+function forward_odds(m::NGramModel, code::AbstractVector; mask::Integer=-100, N=length(m))
     ctype = valtype(m.ngrams[N])
     ctype = ctype isa Integer ? UInt64 : Float32
-    counts = zeros(ctype, m.vocab_size, length(code))
-    marginal = zeros(ctype, length(code))
+    counts = Matrix{ctype}(undef, m.vocab_size, length(code))
+    marginal = zeros(Int, length(code))
     n_masked = Vector{Int}(undef, length(code))
-    for i in 1:length(code)
+    Threads.@threads for i in 1:length(code)
         cgram = condgram(code, i, N)
-        cgram = lstrip(cgram, mask)
+        # cgram = lstrip(cgram, mask)
         n_masked[i] = count(==(mask), cgram)
-        masked_dist!(counts[:, i], m, cgram, mask; forward=true)
-        marginal[i] = sum(counts[:, i])
+        token_marginal = zero(ctype)
+        for (j, token) in enumerate(token_ids(m))
+            c = masked_counts(m, (cgram..., token), mask)
+            counts[j, i] = c
+            token_marginal += c
+        end
+        marginal[i] = token_marginal
     end
     return counts, marginal, n_masked
 end
 
-@annotate function backward_odds(m::NGramModel, code::Vector; mask::Integer=-100, N=length(m))
+function forward_counts!(P::Vector{T}, m::NGramModel, cgram::NTuple{N,Int}; mask::Integer=-100) where {T,N}
+    if isempty(cgram)
+        fill_unigram_dist!(P, m)
+        return P
+    end
+    fill!(P, 0)
+
+    int_max = T isa AbstractFloat ? maxintfloat(T) : typemax(T)
+    @assert 0 < N < length(m)
+    for (canidate, count) in m.ngrams[N+1]
+        if masked_match(cgram, canidate; mask)
+            i = last(canidate) + 1
+            P[i] += count
+            @assert P[i] < int_max
+        end
+    end
+    return P
+end
+
+function backward_odds(m::NGramModel, code::AbstractVector; mask::Integer=-100, N=length(m))
     code = reverse(code)
     ctype = valtype(m.ngrams[N])
     ctype = ctype isa Integer ? UInt64 : Float32
-    counts = zeros(ctype, m.vocab_size, length(code))
+    counts = Matrix{ctype}(undef, m.vocab_size, length(code))
     marginal = zeros(Int, length(code))
     n_masked = Vector{Int}(undef, length(code))
-    for (i, ri) in collect(enumerate(range(length(code), 1; step=-1)))
+    Threads.@threads for (i, ri) in collect(enumerate(range(length(code), 1; step=-1)))
         cgram = reverse(condgram(code, i, N))
-        cgram = rstrip(cgram, mask)
+        # cgram = rstrip(cgram, mask)
         n_masked[ri] = count(==(mask), cgram)
-        masked_dist!(counts[:, ri], m, cgram, mask; forward=false)
-        marginal[ri] = sum(counts[:, ri])
+        token_marginal = zero(ctype)
+        for (j, token) in enumerate(token_ids(m))
+            c = masked_counts(m, (token, cgram...), mask)
+            counts[j, ri] = c
+            token_marginal += c
+        end
+        marginal[ri] = token_marginal
     end
     return counts, marginal, n_masked
+end
+
+function backward_counts!(P::Vector{T}, m::NGramModel, cgram::NTuple{N,Int}; mask::Integer=-100) where {T,N}
+    if isempty(cgram)
+        fill_unigram_dist!(P, m)
+        return P
+    end
+    fill!(P, 0)
+
+    int_max = T isa AbstractFloat ? maxintfloat(T) : typemax(T)
+    @assert 0 < N < length(m)
+    for (canidate, count) in m.ngrams[N+1]
+        if masked_match(reverse(cgram), reverse(canidate); mask)
+            i = first(canidate) + 1
+            P[i] += count
+            @assert P[i] < int_max
+        end
+    end
+    return P
 end
 
 """
     gram = lstrip(gram, mask)
 
-Remove mask tokens from the left or right side of the gram
+Remove mask tokesn from the left or right side of the gram
 """
 function Base.lstrip(gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     for i in 1:N
@@ -267,7 +400,7 @@ end
 """
     gram = rstrip(gram, mask)
 
-Remove mask tokens from the left or right side of the gram
+Remove mask tokesn from the left or right side of the gram
 """
 function Base.rstrip(gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     for i in range(N, 1; step=-1)
@@ -281,48 +414,71 @@ end
 Computes the Information Loss (KL-Divergence) from masking out tokens in an input code for a
 given n-gram model
 """
-@annotate function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
-    @assert length(code) == length(mask)
+function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
+    @assert 0 < N <= length(m)
     loss = 0.0
-    mask_value = -100
-    masked_code = copy(code)
-    masked_code[mask] .= mask_value
-    P = fb_log_probability(m, code; N)
-    Q = fb_log_probability(m, masked_code; N)
-    for idx in eachindex(P)
-        !isfinite(P[idx]) && continue
-        loss += exp(P[idx]) * (P[idx] - Q[idx])
+    ctype = valtype(m.ngrams[N]) isa Integer ? UInt64 : Float64
+    P = Vector{ctype}(undef, m.vocab_size)
+    Q = similar(P)
+    code = MaskedCode(code, mask, -100)
+    for idx in eachindex(code)
+        # If nothing is masked, the information
+        # loss is zero
+        sdx = max(idx - N + 1, firstindex(code))
+        edx = min(idx + N - 1, lastindex(code))
+        !any(mask[sdx:edx]) && continue
+
+        # Compute P and Q distributions
+        fb_log_dist!(P, m, code.code, idx, N)
+        fb_log_probability!(Q, m, code; N, idx, mask=code.mask_value)
+
+        # Update information loss
+        loss += cross_entropy_log(P, Q)
     end
-    return loss, P, Q
+    return loss
 end
 
-function masked_dist!(dist::Vector, m::NGramModel, context::NTuple{N,Int}, mask::Int; forward::Bool=true) where {N}
-    @assert N <= length(m) - 1
-    if N == 0
-        fill!(dist, 0)
-    elseif mask ∉ context
-        # No mask, just use the gram odds
-        for (j, token) in enumerate(token_ids(m))
-            dist[j] = first(gram_odds(m, (context..., token)))
-        end
-    else
-        # Masked gram, use the conditional gram odds
-        for (candidate, c) in m.ngrams[N+1]
-            # Flip tokens if computing backward
-            if forward
-                matched = masked_match(context, candidate; mask)
-            else
-                matched = masked_match(reverse(context), reverse(candidate); mask)
-            end
-            if matched
-                dist[last(candidate)+1] += c
-            end
-        end
+function fill_unigram_dist!(P::AbstractVector, m::NGramModel)
+    for (i, id) in enumerate(token_ids(m))
+        P[i] = first(gram_odds(m, (id,)))
     end
-    return dist
+    return P
 end
 
-@annotate function masked_counts(m::NGramModel, gram::NTuple{N,<:Integer}, mask::Integer) where {N}
+function fb_log_dist!(Pf::Vector{Float64}, m::NGramModel, code::AbstractVector{<:Integer}, idx::Integer, N::Integer)
+    Pb = similar(Pf)
+    fgram = condgram(code, idx, N)
+    bgram = condgram_backward(code, idx, N)
+    V = nonspecial_vocab_size(m)
+    for (idx, id) in enumerate(token_ids(m))
+        fc = first(gram_odds(m, (fgram..., id)))
+        Pf[idx] = fc
+        bc = first(gram_odds(m, (id, bgram...)))
+        Pb[idx] = bc
+    end
+
+    # Smooth distribution
+    V = nonspecial_vocab_size(m)
+    mf = sum(Pf)
+    @. Pf = log_smoothed_counts(Pf, 0, V) - log_smoothed_counts(mf, 1, V)
+    mb = sum(Pb)
+    @. Pb = log_smoothed_counts(Pb, 0, V) - log_smoothed_counts(mb, 1, V)
+
+    # Compute Joint probability
+    if isempty(fgram)
+        Pf .= Pb
+    elseif !isempty(bgram)
+        @. Pf = Pf + Pb
+    end
+
+    # Marginalize probability
+    marginal = logsumexp(Pf)
+    Pf .-= marginal
+
+    return Pf
+end
+
+function masked_counts(m::NGramModel, gram::NTuple{N,<:Integer}, mask::Integer) where {N}
     N == 0 && return 0
     mask ∉ gram && return first(gram_odds(m, gram))
     counts = 0
@@ -334,7 +490,7 @@ end
     return counts
 end
 
-function masked_match(x::NTuple{Nx,Int}, y::NTuple{Ny,<:Integer}; mask::Integer) where {Nx,Ny}
+function masked_match(x::NTuple{Nx,<:Integer}, y::NTuple{Ny,<:Integer}; mask::Integer) where {Nx,Ny}
     for (a, b) in zip(x, y)
         if a == mask || b == mask
             continue
@@ -345,10 +501,11 @@ function masked_match(x::NTuple{Nx,Int}, y::NTuple{Ny,<:Integer}; mask::Integer)
     return true
 end
 
+
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference
 """
-@annotate function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
+function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
     unk_token_id = pyconvert(Int, tok.unk_token_id)
     code = pyconvert(Vector{Int}, encoding["input_ids"])
     (unk_token_id ∉ code) && return zeros(length(N))
@@ -368,7 +525,7 @@ Compute the information_loss from unknown tokens using a character-tokenizer as 
     ref_code = pyconvert(Vector{Int}, ref_tok(encoding[smi_column])["input_ids"])
     ref_code = rm_special_tokens(ref_tok, ref_code, length(masked))
     @assert length(masked) == length(ref_code)
-    return map(n -> first(information_loss(ngram, ref_code, masked; N=n)), N)
+    return map(n -> information_loss(ngram, ref_code, masked; N=n), N)
 end
 
 function rm_special_tokens(tok::Py, code::Vector{<:Integer}, n::Integer)
@@ -408,7 +565,7 @@ Computes the alignment `A` between two tokenizations of the same input string.
 The two tokenizations must be decode to the same string, barring deletions
 from unknown tokens. i.e. normalizations must be applied to both.
 """
-@annotate function align_unknown(a::Vector{String}, b::Vector{String})
+function align_unknown(a::Vector{String}, b::Vector{String})
     replace!(a, "<unk>" => "[UNK]")
     replace!(b, "<unk>" => "[UNK]")
     i = (; idx=firstindex(a), char=1)

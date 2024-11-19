@@ -58,14 +58,24 @@ end
 end
 
 @testitem "ngram/condgram" begin
-    using TokenizerStats: condgram, ngram
-    @test condgram((1, 2, 3)) == (1, 2)
-    @test condgram([1, 2, 3, 4], 3, 2) == (2,)
-    @test condgram([1, 2, 3, 4], 4, 2) == (3,)
-    @test condgram([1, 2, 3, 4], 4, 3) == (2, 3)
-    @test condgram([1, 2, 3, 4], 2, 3) == (1,)
-    @test ngram(collect(1:4), 2, 3) == (1, 2)
-    @test ngram(collect(1:4), 3, 3) == (1, 2, 3)
+    using TokenizerStats: condgram, condgram_backward, ngram
+    @testset "condgram" begin
+        @test condgram((1, 2, 3)) == (1, 2)
+        @test condgram([1, 2, 3, 4], 3, 2) == (2,)
+        @test condgram([1, 2, 3, 4], 4, 2) == (3,)
+        @test condgram([1, 2, 3, 4], 4, 3) == (2, 3)
+        @test condgram([1, 2, 3, 4], 2, 3) == (1,)
+    end
+    @testset "condgram_backward" begin
+        @test condgram_backward((1, 2, 3)) == (2, 3)
+        @test condgram_backward([1, 2, 3, 4], 3, 3) == (4,)
+        @test condgram_backward([1, 2, 3, 4], 4, 3) == tuple()
+        @test condgram_backward([1, 2, 3, 4], 1, 3) == (2, 3)
+    end
+    @testset "ngram" begin
+        @test ngram(collect(1:4), 2, 3) == (1, 2)
+        @test ngram(collect(1:4), 3, 3) == (1, 2, 3)
+    end
 end
 
 @testitem "gram_odds" setup = [NGramModelSetup] begin
@@ -91,42 +101,6 @@ end
     @testset "with special tokens" begin
         m = NGramModel(randngram(), 11; special_tokens=[9, 10])
         check_odds(m)
-    end
-end
-
-@testitem "masked counts" setup = [NGramModelSetup] begin
-    using TokenizerStats: masked_counts, masked_dist!, NGramModel, gram_odds
-
-    vocab_size = 5
-    m = NGramModel(randngram(3; vocab_size), vocab_size)
-    dist = zeros(Int, vocab_size)
-    mask = -100
-
-    @testset "empty gram" begin
-        fill!(dist, 0)
-        masked_dist!(dist, m, tuple(), mask)
-        @test all(==(0), dist)
-    end
-    @testset "no mask" begin
-        fill!(dist, 0)
-        masked_dist!(dist, m, (1, 2), mask)
-        for (i, c) in enumerate(dist)
-            @test c == first(gram_odds(m, (1, 2, i - 1)))
-        end
-    end
-    @testset "mask" begin
-        fill!(dist, 0)
-        masked_dist!(dist, m, (1, mask), mask)
-        for (i, c) in enumerate(dist)
-            @test c == masked_counts(m, (1, mask, i - 1), mask)
-        end
-    end
-    @testset "backward" begin
-        fill!(dist, 0)
-        masked_dist!(dist, m, (1, mask), mask; forward=false)
-        for (i, c) in enumerate(dist)
-            @test c == masked_counts(m, (i - 1, 1, mask), mask)
-        end
     end
 end
 
@@ -168,25 +142,6 @@ end
         ℓ = fb_log_probability(m, [3, 4, -100, 8])
         special = m.special_tokens .- 1 # One Based Index, but Zero-based token ids
         all(ℓ[special, :] .== -Inf)
-    end
-end
-
-@testitem "info loss" setup = [NGramModelSetup] begin
-    using TokenizerStats: NGramModel, information_loss
-    m = NGramModel(randngram(), 9)
-    code = rand(1:8, 32)
-    mask = code .== 4
-    mask[1] = true
-    i, P, Q = information_loss(m, code, mask)
-    @test i isa Float64 && 0 < i
-    @test P isa Matrix{Float64} && Q isa Matrix{Float64}
-    @test size(P) == size(Q) == (m.vocab_size, length(code))
-
-    @testset "P == Q" begin
-        mask .= false
-        i, P, Q = information_loss(m, code, mask)
-        @test i == 0
-        @test P == Q
     end
 end
 
