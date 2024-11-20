@@ -182,7 +182,7 @@ end
 """
     H = cross_entropy_log(P::AbstractVector, Q::AbstractVector)
 
-Computes the cross-entropy (sum(p * log(q/p))) between `exp(P)` and `exp(Q)` 
+Computes the cross-entropy (sum(p * log(q/p))) between `exp(P)` and `exp(Q)`
 (P & Q are log-probabilities) using Kahan-Babuska-Neumaier summation
 """
 function cross_entropy_log(P::AbstractVector, Q::AbstractVector)
@@ -239,7 +239,7 @@ function fb_log_probability(m::NGramModel, code::AbstractVector{<:Integer}; mask
     f_prob = @. log_smoothed_counts(fc, fmasked', V) - log_smoothed_counts(fm, fmasked .+ 1, V)'
     b_prob = @. log_smoothed_counts(bc, bmasked', V) - log_smoothed_counts(bm, bmasked .+ 1, V)'
 
-    # If forward/backward collapses to the unigram distribution, don't double count 
+    # If forward/backward collapses to the unigram distribution, don't double count
     for idx in eachindex(code)
         f_collapse = isempty(condgram(code, idx, N))
         b_collapse = isempty(condgram_backward(code, idx, N))
@@ -414,7 +414,7 @@ end
 Computes the Information Loss (KL-Divergence) from masking out tokens in an input code for a
 given n-gram model
 """
-function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
+@annotate function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
     @assert 0 < N <= length(m)
     loss = 0.0
     ctype = valtype(m.ngrams[N]) isa Integer ? UInt64 : Float64
@@ -505,7 +505,7 @@ end
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference
 """
-function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
+@annotate function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
     unk_token_id = pyconvert(Int, tok.unk_token_id)
     code = pyconvert(Vector{Int}, encoding["input_ids"])
     (unk_token_id ∉ code) && return zeros(length(N))

@@ -16,6 +16,8 @@ source ./activate
 export TOKENIZERS_PARALLELISM=false
 env
 
+# module load cuda/12.2.1
+# nsys profile -o "nsys_multinode_%q{SLURM_JOB_ID}_%q{PMIX_RANK}" --trace=mpi,nvtx \
 srun --mpi=pmix \
     julia --project --threads=${SLURM_CPUS_PER_TASK:-1} --color=no --startup-file=no -- \
     ./main.jl $@
