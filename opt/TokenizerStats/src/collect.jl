@@ -40,6 +40,18 @@ function leader_reduce(f, x)
     return nothing
 end
 
+function mpi_barrier(comm::MPI.Comm, timeout::Real=120.0)
+    start = time()
+    req = MPI.Ibarrier(comm)
+    while MPI.Test(req)
+        if time() - start > timeout
+            error("MPI.Barrier timed out after $timeout seconds")
+        end
+        yield()
+    end
+    return nothing
+end
+
 function setup_dm_mpi(dm::Py, split::AbstractString; rank::Int=0, size::Int=1)
     if split == "train"
         ds = dm.train_dataset
@@ -137,6 +149,8 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     )
     stats = Dict{Symbol,Any}()
     splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
+
+    mpi_barrier(comm)
     for split in splits
         rank_stats = rank_usage_stats(datamodule, split; rank, size)
         tokenizer_stats = leader_reduce(merge!, rank_stats)
@@ -186,6 +200,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         :ref_tokenizer => ref_info,
     )
 
+    mpi_barrier(comm)
     for split in ["train", "val", "test"]
         ds = setup_dm_mpi(datamodule, split; rank, size)
         unk_token_id = pyconvert(Int, datamodule.tokenizer.unk_token_id)
@@ -262,8 +277,8 @@ end
 
     @info "rank $rank: started processing"
     ds = setup_dm_mpi(datamodule, "val"; rank, size)
-    ds = Iterators.take(ds, 10)
 
+    mpi_barrier(comm)
     smi_column = pyconvert(String, datamodule.smi_column)
     start_time = time()
     for (idx, encoding) in enumerate(ds)
