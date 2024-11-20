@@ -288,8 +288,6 @@ def ngram_info_loss(dataset, tokenizer, ref, slurm={}, encoding="smiles"):
     ref_name = ref.replace("/", "--")
     ref_usage = STATS_DIR.joinpath(ref, "realspace", "usage.bson")
     output = STATS_DIR.joinpath(tokenizer, dataset, f"{ref_name}_info_loss.bson")
-    slurm["mem-per-cpu"] = slurm.get("mem-per-cpu", "3G")
-    slurm["partition"] = slurm.get("partition", "venkvis-largemem")
     if tokenizer == "SmilesPE/SPE_ChEMBL":
         slurm["mem-per-cpu"] = "8G"
         slurm["partition"] = "venkvis-largemem"
@@ -345,7 +343,7 @@ if __name__ == "__main__":
         p = wk.add_process(
             ["submit_oov.sh", "--output", output, tok_name],
             output=output,
-            slurm={"mem-per-cpu": "1G", "time": "0:30:0"},
+            slurm={"mem-per-cpu": "1G", "time": "1:0:0", "job-name": "oov"},
         )
 
         # Tokenize RealSpace
@@ -355,22 +353,30 @@ if __name__ == "__main__":
                 tok_name,
                 ds_name="realspace",
                 encoding=tok["encoding"],
-                slurm={"ntasks": 32, "time": "1-0:0:0"},
+                slurm={"ntasks": 32, "time": "1-0:0:0", "job-name": "realspace"},
             )
         )
-        src = STATS_DIR.joinpath(tok_name, "realspace_v4_dev.bson")
-        if src.exists():
-            STATS_DIR.joinpath(tok_name, "realspace").mkdir(exist_ok=True)
-            shutil.move(src, STATS_DIR.joinpath(tok_name, "realspace", "usage.bson"))
+        wk.add_process(
+            ngram_loss(
+                args.realspace,
+                tok_name,
+                encoding=tok["encoding"],
+                slurm={"ntasks": 32, "time": "8:0:0", "job-name": "loss-realspace"},
+            )
+        )
 
         # Tokenize MoleculeNet
         for ds in MOLNET_DATASETS:
+            src = STATS_DIR.joinpath(tok_name, f"{ds}.bson")
+            if src.exists():
+                shutil.move(src, STATS_DIR.joinpath(tok_name, ds, "usage.bson"))
+
             wk.add_process(
                 usage(
                     ds,
                     tok_name,
                     encoding=tok["encoding"],
-                    slurm={"ntasks": 1, "time": "1:0:0"},
+                    slurm={"ntasks": 1, "time": "1:0:0", "job-name": f"usage-{ds}"},
                 )
             )
             wk.add_process(
@@ -378,12 +384,9 @@ if __name__ == "__main__":
                     ds,
                     tok_name,
                     encoding=tok["encoding"],
-                    slurm={"ntasks": 1, "time": "2:0:0"},
+                    slurm={"ntasks": 1, "time": "2:0:0", "job-name": f"loss-{ds}"},
                 )
             )
-            src = STATS_DIR.joinpath(tok_name, f"{ds}.bson")
-            if src.exists():
-                shutil.move(src, STATS_DIR.joinpath(tok_name, ds, "usage.bson"))
 
             for ref in REF_INFO_LOSS:
                 if tok["encoding"] == "selfies":
@@ -395,7 +398,11 @@ if __name__ == "__main__":
                         tok_name,
                         ref,
                         encoding=tok["encoding"],
-                        slurm={"ntasks": 48, "time": "4:0:0"},
+                        slurm={
+                            "ntasks": 48,
+                            "time": "4:0:0",
+                            "job-name": f"distortion-{ds}",
+                        },
                     )
                 )
 
@@ -404,7 +411,7 @@ if __name__ == "__main__":
                 args.tmqm,
                 tok_name,
                 encoding=tok["encoding"],
-                slurm={"ntasks": 4, "time": "1:0:0"},
+                slurm={"ntasks": 4, "time": "1:0:0", "job-name": "usage-tmqm"},
             )
         )
         wk.add_process(
@@ -412,7 +419,7 @@ if __name__ == "__main__":
                 args.tmqm,
                 tok_name,
                 encoding=tok["encoding"],
-                slurm={"ntasks": 1, "time": "2:0:0"},
+                slurm={"ntasks": 1, "time": "2:0:0", "job-name": "loss-tmqm"},
             )
         )
         for ref in REF_INFO_LOSS:
@@ -425,7 +432,11 @@ if __name__ == "__main__":
                     tok_name,
                     ref,
                     encoding=tok["encoding"],
-                    slurm={"ntasks": 48, "time": "4:0:0"},
+                    slurm={
+                        "ntasks": 48,
+                        "time": "4:0:0",
+                        "job-name": "distortion-tmqm",
+                    },
                 )
             )
 

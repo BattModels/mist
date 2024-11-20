@@ -19,3 +19,6 @@ env
 
 python src/atomic_oov.py $@
 
+exit_code=$?
+echo "`date`: done"
+exit $exit_code
