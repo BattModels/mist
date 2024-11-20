@@ -13,11 +13,22 @@ end
 function usage_stats()
     rows = []
     stats_dir = joinpath(@__DIR__, "..", "stats")
-    for file in union(find(stats_dir, r"realspace_v4_dev2?\.bson"), find(stats_dir, r"[a-z0-9]+\.bson"))
-        data = BSON.load(file)
+    for file in find(stats_dir, r"usage.bson$")
+        local data
+        try
+            data = BSON.load(file)
+        catch e
+            if e isa ArgumentError
+                @warn "failed to parse $file"
+                continue
+            else
+                rethrow()
+            end
+        end
+
         file = relpath(file, stats_dir)
-        tokenizer = joinpath(splitpath(file)[1:end-1])
-        dataset = first(splitext(basename(file)))
+        tokenizer = joinpath(splitpath(file)[1:end-2])
+        dataset = splitpath(file)[end-1]
         for split in [:train, :val, :test]
             split ∉ keys(data) && continue
             Set(keys(data[split])) >= Set([:samples, :out_of_vocab, :fertility]) || continue
@@ -39,7 +50,6 @@ function usage_stats()
         end
     end
     df = DataFrame(rows)
-    replace!(df.dataset, "realspace_v4_dev2" => "realspace_v4_dev")
     return df
 end
 
@@ -83,18 +93,16 @@ end
 function model_loss_stats()
     rows = []
     stats_dir = joinpath(@__DIR__, "..", "stats")
-    for file in find(stats_dir, r".*model_loss\.bson")
+    for file in find(stats_dir, r"/model_loss\.bson$")
         data = BSON.load(file)
         tokenizer = data[:ref_tokenizer][:name]
         dataset = basename(dirname(file))
-        training_data = match(r"(.*?)_model_loss\.bson", basename(file)).captures[1]
         for split in [:train, :val, :test]
             split ∉ keys(data) && continue
             split_data = data[split]
             for ngram in 1:5
                 push!(rows, (;
                     tokenizer,
-                    training_dataset = training_data,
                     dataset,
                     split,
                     ngram,
@@ -107,8 +115,6 @@ function model_loss_stats()
         end
     end
     df = DataFrame(rows)
-    replace!(df.dataset, "realspace_v4_dev2" => "realspace_v4_dev")
-    replace!(df.training_dataset, "realspace_v4_dev2" => "realspace_v4_dev")
     return df
 end
 

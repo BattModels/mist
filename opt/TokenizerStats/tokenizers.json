@@ -2,156 +2,239 @@
   {
     "name": "smirk",
     "name_or_path": "smirk",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "smirk",
+    "domain": "chemistry"
   },
   {
     "name": "smirk-selfies",
     "name_or_path": "smirk-selfies",
-    "encoding": "selfies"
+    "encoding": "selfies",
+    "tokenizer_class": "smirk",
+    "domain": "chemistry"
+  },
+  {
+    "name": "smirk-gpe",
+    "name_or_path": "smirk-gpe-50k-mb-ss",
+    "encoding": "smiles",
+    "tokenizer_class": "gpe",
+    "domain": "chemistry"
+  },
+  {
+    "name": "smirk-gpe-nmb",
+    "name_or_path": "smirk-gpe-50k-nmb-ss",
+    "encoding": "smiles",
+    "tokenizer_class": "gpe",
+    "domain": "chemistry"
   },
   {
     "name": "character",
     "name_or_path": "character",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "character",
+    "domain": "chemistry"
   },
   {
-    "name": "MoLFormer-XL-both-10pct-oov",
+    "name": "MoLFormer",
     "name_or_path": "ibm/MoLFormer-XL-both-10pct-oov",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
-    "name": "Materials-SMI-TED-Light",
+    "name": "SMI-TED",
     "name_or_path": "ibm/materials.smi-ted-light",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
-    "name": "selfies-ted",
+    "name": "SELFIES-TED",
     "name_or_path": "ibm/materials.selfies-ted",
-    "encoding": "selfies"
+    "encoding": "selfies",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
-    "name": "MolGPT-MOSES",
+    "name": "MolGPT, MOSES",
     "name_or_path": "devalab/molgpt-moses",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
-    "name": "MolGPT-GuacaMol",
+    "name": "MolGPT, GuacaMol",
     "name_or_path": "devalab/molgpt-guacamol",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
     "name": "Chemformer",
     "name_or_path": "MolecularAI/Chemformer",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
     "name": "Chemformer, Downstream",
     "name_or_path": "MolecularAI/Chemformer-downstream",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
     "name": "ChemBERTa v1",
     "name_or_path": "seyonec/ChemBERTa-zinc-base-v1",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "chemistry"
   },
   {
-    "name": "ReactionT5-Product-Prediction",
+    "name": "ReactionT5, Product",
     "name_or_path": "sagawa/ReactionT5-product-prediction",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "unigram",
+    "domain": "chemistry"
   },
   {
-    "name": "ReactionT5-Yield-Prediction",
+    "name": "ReactionT5, Yield",
     "name_or_path": "sagawa/ReactionT5-yield-prediction",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "unigram",
+    "domain": "chemistry"
   },
   {
     "name": "Yield-BERT",
     "name_or_path": "rxn4chemistry/rxn_yields",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
     "name": "RXNFP",
     "name_or_path": "rxn4chemistry/rxnfp",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry"
   },
   {
     "name": "TransPolymer",
     "name_or_path": "ChangwenXu98/TransPolymer",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp"
   },
   {
-    "name": "Gemma-7B",
+    "name": "Gemma",
     "name_or_path": "google/gemma-7b",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp"
   },
   {
     "name": "GPT-4o",
     "name_or_path": "Xenova/gpt-4o",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp"
   },
   {
-    "name": "Llama-3.2-1B",
+    "name": "Llama 3.2",
     "name_or_path": "meta-llama/Llama-3.2-1B",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp"
   },
   {
-    "name": "Meta-Llama-3.1-8B",
+    "name": "Llama 3.1",
     "name_or_path": "meta-llama/Meta-Llama-3.1-8B",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp"
   },
   {
-    "name": "Meta-Llama-3-8B",
+    "name": "Llama 3",
     "name_or_path": "meta-llama/Meta-Llama-3-8B",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp"
+  },
+  {
+    "name": "SmilesPE",
+    "name_or_path": "SmilesPE/SPE_ChEMBL",
+    "encoding": "smiles",
+    "tokenizer_class": "spe",
+    "domain": "chemistry"
   },
   {
     "name": "SMILYBPE",
     "name_or_path": "mikemayuare/SMILYBPE",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "chemistry"
   },
   {
     "name": "SMILYAPE",
     "name_or_path": "mikemayuare/SMILYAPE",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "spe",
+    "domain": "chemistry"
   },
   {
     "name": "SELFYAPE",
     "name_or_path": "mikemayuare/SELFYAPE",
-    "encoding": "selfies"
+    "encoding": "selfies",
+    "tokenizer_class": "spe",
+    "domain": "chemistry"
   },
   {
     "name": "SELFYBPE",
     "name_or_path": "mikemayuare/SELFYBPE",
-    "encoding": "selfies"
+    "encoding": "selfies",
+    "tokenizer_class": "bpe",
+    "domain": "chemistry"
   },
   {
     "name": "MatBERT-Uncased",
     "name_or_path": "lbnlp/MatBERT-uncased",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp"
   },
   {
     "name": "MatBERT-Cased",
     "name_or_path": "lbnlp/MatBERT-cased",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp"
   },
   {
     "name": "Galactica",
     "name_or_path": "facebook/galactica-6.7b",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "nlp-science"
   },
   {
     "name": "SELFormer",
     "name_or_path": "HUBioDataLab/SELFormer",
-    "encoding": "selfies"
+    "encoding": "selfies",
+    "tokenizer_class": "bpe",
+    "domain": "chemistry"
   },
   {
     "name": "ChemGPT",
     "name_or_path": "ncfrey/ChemGPT-4.7M",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "bpe",
+    "domain": "chemistry"
   },
   {
     "name": "nach0",
     "name_or_path": "insilicomedicine/nach0_base",
-    "encoding": "smiles"
+    "encoding": "smiles",
+    "tokenizer_class": "unigram",
+    "domain": "nlp-science"
   }
 ]

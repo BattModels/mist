@@ -45,19 +45,17 @@ end
 
 @recipe(TokenUsage, usage, vocab_size) do scene
     Attributes(
-        smoothing = 1,
-        linestyle = :solid,
-        linewidth = 1.0,
+        smoothing=1,
     )
 end
 
-function collate_token_usage(ids::AbstractVector{<:Integer}, counts::Dict{<:AbstractString, Any}; smoothing=1)
-    counts = Dict(( parse(Int, k) => v for (k, v) in pairs(counts) ))
+function collate_token_usage(ids::AbstractVector{<:Integer}, counts::Dict{<:AbstractString,Any}; smoothing=1)
+    counts = Dict((parse(Int, k) => v for (k, v) in pairs(counts)))
     return collate_token_usage(ids, counts; smoothing)
 end
 collate_token_usage(counts::Dict, vocab_size::Integer; kwargs...) = collate_token_usage(0:vocab_size-1, counts; kwargs...)
-function collate_token_usage(ids::AbstractVector{T}, counts::Dict{T, <:Integer}; smoothing) where {T}
-    usage =  Vector{Int}(undef, length(ids))
+function collate_token_usage(ids::AbstractVector{T}, counts::Dict{T,<:Integer}; smoothing) where {T}
+    usage = Vector{Int}(undef, length(ids))
     for (idx, token_id) in enumerate(ids)
         usage[idx] = get(counts, token_id, 0) + smoothing
     end
@@ -71,10 +69,9 @@ function Makie.plot!(plt::TokenUsage)
     usage = usage ./ sum(usage)
     sort!(usage; rev=true)
     I = -log.(usage)
-    # filter!(isfinite, I)
-
     x = range(0, 1; length=length(I)) |> reverse
-    stairs!(plt, I; linewidth=plt[:linewidth][], linestyle=plt[:linestyle][])
+    attr = Makie.shared_attributes(plt, Stairs)
+    stairs!(plt, I; attr...)
 end
 
 function findfont(name, style)
