@@ -19,7 +19,7 @@ function common_args!(s)
 end
 
 
-function get_dataset(name_or_path, tokenizer, encoding)
+@annotate function get_dataset(name_or_path, tokenizer, encoding)
     if isdir(name_or_path)
         if "tmQM" in splitpath(name_or_path)
             dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
@@ -35,7 +35,7 @@ function get_dataset(name_or_path, tokenizer, encoding)
     return dm, dataset_name
 end
 
-function main(args::Vector{String})
+@annotate function main(args::Vector{String})
     s = ArgParseSettings()
     @add_arg_table! s begin
         "usage"

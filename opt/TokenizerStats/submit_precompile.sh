@@ -16,4 +16,5 @@ source ./activate
 export TOKENIZERS_PARALLELISM=false
 env
 
-julia --color=no --threads=8 --startup-file=no --project -e 'using Pkg; Pkg.instantiate(); Pkg.precompile(timing=true)'
+julia --color=no --threads=8 --startup-file=no --project -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+julia --color=no --threads=8 --startup-file=no --project -e 'using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile(timing=true)'

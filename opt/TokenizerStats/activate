@@ -8,3 +8,4 @@ source $DIR/.venv/bin/activate
 export HF_HOME="$(git rev-parse --show-toplevel)/.cache/huggingface"
 export JULIA_CONDAPKG_BACKEND=Null
 export JULIA_PYTHONCALL_EXE="$DIR/.venv/bin/python"
+export JULIA_CPU_TARGET="generic;x86_64,clone_all;haswell,base(1);znver4,base(1)"

@@ -15,6 +15,7 @@ using SparseArrays: sparse
 using LogExpFunctions: logsumexp, log1pexp, xexpy
 using Serialization: serialize, deserialize
 using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
+using NVTX: @annotate
 
 function find(dir, pattern)
     found = String[]
@@ -29,7 +30,7 @@ function find(dir, pattern)
     return found
 end
 
-load_tokenizer(args...; kwargs...) = @pyconst(pyimport("electrolyte_fm.utils.tokenizer")).load_tokenizer(args...; kwargs...)
+@annotate load_tokenizer(args...; kwargs...) = @pyconst(pyimport("electrolyte_fm.utils.tokenizer")).load_tokenizer(args...; kwargs...)
 function split_dataset_by_node(args...; kwargs...)
     m = @pyconst(pyimport("datasets.distributed"))
     return m.split_dataset_by_node(args...; kwargs...)

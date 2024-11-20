@@ -104,6 +104,18 @@ end
     end
 end
 
+@testitem "masked match" begin
+    using TokenizerStats: masked_match
+    mask = -100
+    @test masked_match((1, 2, 3), (1, 2, 3); mask) == true
+    @test masked_match((1, 3, 3), (1, 2, 3); mask) == false
+    @test masked_match((1, 2, 3), (1, 2); mask) == true
+    @test masked_match((2, 3), (1, 2); mask) == false
+    @test masked_match((1, mask, 3), (1, 5, 3); mask) == true
+    @test masked_match((1, mask, 3), (1, mask, 3); mask) == true
+    @test masked_match((1, mask, 5), (1, mask, 3); mask) == false
+end
+
 @testitem "fb_log_probability" setup = [NGramModelSetup] begin
     using TokenizerStats: NGramModel, fb_log_probability, cross_entropy
     function check(model, code)
