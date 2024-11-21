@@ -232,9 +232,10 @@ REF_INFO_LOSS = [
 ]
 
 
-def usage(dataset, tokenizer, ds_name=None, slurm={}, encoding="smiles"):
+def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles"):
     ds_name = ds_name or dataset
     output = STATS_DIR.joinpath(tokenizer, ds_name, "usage.bson")
+    slurm = slurm or {}
     slurm["job-name"] = slurm.get("job-name", f"usage-{dataset}")
 
     slurm.setdefault("job-name", f"usage-{dataset}")
@@ -266,9 +267,10 @@ def usage(dataset, tokenizer, ds_name=None, slurm={}, encoding="smiles"):
     )
 
 
-def ngram_loss(dataset, tokenizer, slurm={}, encoding="smiles"):
+def ngram_loss(dataset, tokenizer, slurm=None, encoding="smiles"):
     input = STATS_DIR.joinpath(tokenizer, "realspace", "usage.bson")
     output = STATS_DIR.joinpath(tokenizer, dataset, "model_loss.bson")
+    slurm = slurm or {}
     slurm.setdefault("job-name", f"loss-{dataset}")
     if "tmQM" in str(dataset):
         slurm.setdefault("ntasks", 8)
@@ -278,12 +280,13 @@ def ngram_loss(dataset, tokenizer, slurm={}, encoding="smiles"):
         slurm.setdefault("time", "1:0:0")
     else:
         slurm.setdefault("ntasks", 4)
-        slurm.setdefault("time", "1:0:0")
+        slurm.setdefault("time", "1:30:0")
 
     if tokenizer == "SmilesPE/SPE_ChEMBL":
         slurm["mem-per-cpu"] = "8G"
         slurm["partition"] = "venkvis-largemem"
 
+    logging.info("info: %s: %s", dataset, slurm)
     return Process(
         [
             "submit_tok_stats.sh",
@@ -304,20 +307,21 @@ def ngram_loss(dataset, tokenizer, slurm={}, encoding="smiles"):
     )
 
 
-def ngram_info_loss(dataset, tokenizer, ref, slurm={}, encoding="smiles"):
+def ngram_info_loss(dataset, tokenizer, ref, slurm=None, encoding="smiles"):
     ref_name = ref.replace("/", "--")
     ref_usage = STATS_DIR.joinpath(ref, "realspace", "usage.bson")
     output = STATS_DIR.joinpath(tokenizer, dataset, f"{ref_name}_info_loss.bson")
-    slurm.setdefault("job-name", f"distortion-{dataset}")
+    slurm = slurm or {}
+    slurm.setdefault("job-name", f"dist-{dataset}")
     if "tmQM" in str(dataset):
         slurm.setdefault("ntasks", 24)
         slurm.setdefault("time", "4:0:0")
     elif str(dataset) in ["qm9"]:
         slurm.setdefault("ntasks", 8)
-        slurm.setdefault("time", "1:0:0")
+        slurm.setdefault("time", "2:0:0")
     else:
         slurm.setdefault("ntasks", 4)
-        slurm.setdefault("time", "0:30:0")
+        slurm.setdefault("time", "1:30:0")
 
     if tokenizer == "SmilesPE/SPE_ChEMBL":
         slurm["mem-per-cpu"] = "8G"
@@ -451,7 +455,7 @@ if __name__ == "__main__":
                     tok_name,
                     ref,
                     encoding=tok["encoding"],
-                    slurm={"job-name": "distortion-tmqm"},
+                    slurm={"job-name": "dist-tmqm"},
                 )
             )
 
