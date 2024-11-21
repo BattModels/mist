@@ -9,6 +9,7 @@ using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights, Weights, nobs, mean, std
 using MPI: MPI
 using BSON: BSON
+using JLD2: jldopen
 using JSON: JSON
 using SHA: SHA
 using SparseArrays: sparse

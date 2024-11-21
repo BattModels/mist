@@ -60,6 +60,10 @@ function load_ngram_model(file::String, split=:train)
         ref = BSON.load(file)
     elseif suffix == ".jld"
         ref = deserialize(file)
+    elseif suffix == ".jld2"
+        ref = jldopen(file, "r") do data
+            NamedTuple(map(k -> Symbol(k) => data[k], keys(data)))
+        end
     else
         error("unknown filetype: $file")
     end

@@ -226,19 +226,29 @@ MOLNET_DATASETS = [
 
 REF_INFO_LOSS = [
     "character",
-    "smirk",
     "meta-llama/Meta-Llama-3.1-8B",
     "google/gemma-7b",
     "Xenova/gpt-4o",
 ]
 
 
-def usage(dataset, tokenizer, ds_name=None, slurm={}, encoding="smiles"):
+def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles"):
     ds_name = ds_name or dataset
     output = STATS_DIR.joinpath(tokenizer, ds_name, "usage.bson")
-    if tokenizer == "SmilesPE/SPE_ChEMBL":
-        slurm["--mem-per-cpu"] = "8G"
-        slurm["--partition"] = "venkvis-largemem"
+    slurm = slurm or {}
+    slurm["job-name"] = slurm.get("job-name", f"usage-{dataset}")
+
+    slurm.setdefault("job-name", f"usage-{dataset}")
+    slurm.setdefault("ntasks", 4)
+    slurm.setdefault("time", "1:0:0")
+
+    if tokenizer in [
+        "SmilesPE/SPE_ChEMBL",
+        "mikemayuare/SMILYAPE",
+        "mikemayuare/SELFYAPE",
+    ]:
+        slurm["mem-per-cpu"] = "8G"
+        slurm["partition"] = "venkvis-largemem"
 
     return Process(
         [
@@ -257,13 +267,26 @@ def usage(dataset, tokenizer, ds_name=None, slurm={}, encoding="smiles"):
     )
 
 
-def ngram_loss(dataset, tokenizer, slurm={}, encoding="smiles"):
+def ngram_loss(dataset, tokenizer, slurm=None, encoding="smiles"):
     input = STATS_DIR.joinpath(tokenizer, "realspace", "usage.bson")
     output = STATS_DIR.joinpath(tokenizer, dataset, "model_loss.bson")
-    if tokenizer == "SmilesPE/SPE_ChEMBL":
-        slurm["--mem-per-cpu"] = "8G"
-        slurm["--partition"] = "venkvis-largemem"
+    slurm = slurm or {}
+    slurm.setdefault("job-name", f"loss-{dataset}")
+    if "tmQM" in str(dataset):
+        slurm.setdefault("ntasks", 8)
+        slurm.setdefault("time", "1:0:0")
+    elif str(dataset) in ["qm9"]:
+        slurm.setdefault("ntasks", 8)
+        slurm.setdefault("time", "1:0:0")
+    else:
+        slurm.setdefault("ntasks", 4)
+        slurm.setdefault("time", "1:30:0")
 
+    if tokenizer == "SmilesPE/SPE_ChEMBL":
+        slurm["mem-per-cpu"] = "8G"
+        slurm["partition"] = "venkvis-largemem"
+
+    logging.info("info: %s: %s", dataset, slurm)
     return Process(
         [
             "submit_tok_stats.sh",
@@ -284,12 +307,22 @@ def ngram_loss(dataset, tokenizer, slurm={}, encoding="smiles"):
     )
 
 
-def ngram_info_loss(dataset, tokenizer, ref, slurm={}, encoding="smiles"):
+def ngram_info_loss(dataset, tokenizer, ref, slurm=None, encoding="smiles"):
     ref_name = ref.replace("/", "--")
     ref_usage = STATS_DIR.joinpath(ref, "realspace", "usage.bson")
     output = STATS_DIR.joinpath(tokenizer, dataset, f"{ref_name}_info_loss.bson")
-    slurm["mem-per-cpu"] = slurm.get("mem-per-cpu", "3G")
-    slurm["partition"] = slurm.get("partition", "venkvis-largemem")
+    slurm = slurm or {}
+    slurm.setdefault("job-name", f"dist-{dataset}")
+    if "tmQM" in str(dataset):
+        slurm.setdefault("ntasks", 24)
+        slurm.setdefault("time", "4:0:0")
+    elif str(dataset) in ["qm9"]:
+        slurm.setdefault("ntasks", 8)
+        slurm.setdefault("time", "2:0:0")
+    else:
+        slurm.setdefault("ntasks", 4)
+        slurm.setdefault("time", "1:30:0")
+
     if tokenizer == "SmilesPE/SPE_ChEMBL":
         slurm["mem-per-cpu"] = "8G"
         slurm["partition"] = "venkvis-largemem"
@@ -340,12 +373,12 @@ if __name__ == "__main__":
     wk = Workflow()
     for tok in tokenizers:
         tok_name = tok["name_or_path"]
+
         # Tabulate OOVs
         output = STATS_DIR.joinpath(tok_name, "oov.json")
         p = wk.add_process(
             ["submit_oov.sh", "--output", output, tok_name],
             output=output,
-            slurm={"mem-per-cpu": "1G", "time": "0:30:0"},
         )
 
         # Tokenize RealSpace
@@ -355,22 +388,29 @@ if __name__ == "__main__":
                 tok_name,
                 ds_name="realspace",
                 encoding=tok["encoding"],
-                slurm={"ntasks": 32, "time": "1-0:0:0"},
+                slurm={"ntasks": 32, "time": "1-0:0:0", "job-name": "usage-realspace"},
             )
         )
-        src = STATS_DIR.joinpath(tok_name, "realspace_v4_dev.bson")
-        if src.exists():
-            STATS_DIR.joinpath(tok_name, "realspace").mkdir(exist_ok=True)
-            shutil.move(src, STATS_DIR.joinpath(tok_name, "realspace", "usage.bson"))
+        wk.add_process(
+            ngram_loss(
+                args.realspace,
+                tok_name,
+                encoding=tok["encoding"],
+                slurm={"ntasks": 32, "time": "8:0:0", "job-name": "loss-realspace"},
+            )
+        )
 
         # Tokenize MoleculeNet
         for ds in MOLNET_DATASETS:
+            src = STATS_DIR.joinpath(tok_name, f"{ds}.bson")
+            if src.exists():
+                shutil.move(src, STATS_DIR.joinpath(tok_name, ds, "usage.bson"))
+
             wk.add_process(
                 usage(
                     ds,
                     tok_name,
                     encoding=tok["encoding"],
-                    slurm={"ntasks": 1, "time": "1:0:0"},
                 )
             )
             wk.add_process(
@@ -378,25 +418,15 @@ if __name__ == "__main__":
                     ds,
                     tok_name,
                     encoding=tok["encoding"],
-                    slurm={"ntasks": 1, "time": "2:0:0"},
                 )
             )
-            src = STATS_DIR.joinpath(tok_name, f"{ds}.bson")
-            if src.exists():
-                shutil.move(src, STATS_DIR.joinpath(tok_name, ds, "usage.bson"))
 
             for ref in REF_INFO_LOSS:
                 if tok["encoding"] == "selfies":
                     continue
 
                 wk.add_process(
-                    ngram_info_loss(
-                        ds,
-                        tok_name,
-                        ref,
-                        encoding=tok["encoding"],
-                        slurm={"ntasks": 48, "time": "4:0:0"},
-                    )
+                    ngram_info_loss(ds, tok_name, ref, encoding=tok["encoding"])
                 )
 
         wk.add_process(
@@ -404,7 +434,7 @@ if __name__ == "__main__":
                 args.tmqm,
                 tok_name,
                 encoding=tok["encoding"],
-                slurm={"ntasks": 4, "time": "1:0:0"},
+                slurm={"ntasks": 4, "time": "1:0:0", "job-name": "usage-tmqm"},
             )
         )
         wk.add_process(
@@ -412,7 +442,7 @@ if __name__ == "__main__":
                 args.tmqm,
                 tok_name,
                 encoding=tok["encoding"],
-                slurm={"ntasks": 1, "time": "2:0:0"},
+                slurm={"ntasks": 1, "time": "2:0:0", "job-name": "loss-tmqm"},
             )
         )
         for ref in REF_INFO_LOSS:
@@ -425,7 +455,7 @@ if __name__ == "__main__":
                     tok_name,
                     ref,
                     encoding=tok["encoding"],
-                    slurm={"ntasks": 48, "time": "4:0:0"},
+                    slurm={"job-name": "dist-tmqm"},
                 )
             )
 

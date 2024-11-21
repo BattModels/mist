@@ -309,7 +309,12 @@ def tabulate_tokenizer(
         batch, failed_encode = filter_and_count_nones(batch)
         n_failed_encode += failed_encode
 
-        batch_input_ids = tok(batch)["input_ids"]
+        # Fast tokenizers can be used directly
+        if hasattr(tok, "is_fast") and tok.is_fast:
+            batch_input_ids = tok(batch)["input_ids"]
+        else:
+            batch_input_ids = [tok(smi)["input_ids"] for smi in batch]
+
         # Tests are in test/test_tokenizer.py::test_oov_tokens
         # to ensure that unk_token_id is correctly emitted by
         # tokenizers

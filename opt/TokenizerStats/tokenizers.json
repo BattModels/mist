@@ -28,6 +28,16 @@
     "domain": "chemistry"
   },
   {
+    "name": "smirk-gpe-nmb",
+    "name_or_path": "./smirk-gpe-50k-nmb-ss",
+    "encoding": "smiles"
+  },
+  {
+    "name": "smirk-gpe-mb",
+    "name_or_path": "./smirk-gpe-50k-mb-ss",
+    "encoding": "smiles"
+  },
+  {
     "name": "character",
     "name_or_path": "character",
     "encoding": "smiles",
