@@ -154,12 +154,12 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
 
     # Save stats
     if rank == 0
-        @info "Saving stats on rank $rank to $out_file"
         mkpath(dirname(out_file))
         stats[:tokenizer] = tokenizer_info
         rm(out_file; force=true)
         BSON.bson(out_file; stats...)
         chmod(out_file, 0o444)
+        @info "saved stats on rank $rank to $out_file"
     end
 
     MPI.Barrier(comm)
@@ -229,11 +229,11 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
     end
 
     if rank == 0
-        @info "rank $rank: saving stats to $output" fit_stats
         mkpath(dirname(output))
         rm(output; force=true)
         BSON.bson(output; fit_stats...)
         chmod(output, 0o444)
+        @info "rank $rank: saved stats to $output" fit_stats
     end
 
     MPI.Barrier(comm)
@@ -281,7 +281,6 @@ end
     end
     stats = leader_reduce(merge!, stats; comm)
     if rank == 0
-        @info "saving results to $output"
         tok = datamodule.tokenizer
         stats = (;
             tokenizer=(;
@@ -296,6 +295,7 @@ end
         rm(output; force=true)
         BSON.bson(output; stats...)
         chmod(output, 0o444)
+        @info "saved results to $output"
     end
 
     MPI.Barrier(comm)

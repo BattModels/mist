@@ -242,7 +242,11 @@ def usage(dataset, tokenizer, ds_name=None, slurm={}, encoding="smiles"):
     slurm.setdefault("ntasks", 4)
     slurm.setdefault("time", "1:0:0")
 
-    if tokenizer == "SmilesPE/SPE_ChEMBL":
+    if tokenizer in [
+        "SmilesPE/SPE_ChEMBL",
+        "mikemayuare/SMILYAPE",
+        "mikemayuare/SELFYAPE",
+    ]:
         slurm["mem-per-cpu"] = "8G"
         slurm["partition"] = "venkvis-largemem"
 
@@ -355,6 +359,9 @@ if __name__ == "__main__":
         "--realspace", type=str, default="/nfs/turbo/coe-venkvis/mist/realspace_v4_dev2"
     )
     parser.add_argument(
+        "--tok-root", type=str, default="/nfs/turbo/coe-venkvis/mist/bayes"
+    )
+    parser.add_argument(
         "--tmqm",
         type=str,
         default=Path(__file__).parent.parent.joinpath("tmQM", "data"),
@@ -366,6 +373,9 @@ if __name__ == "__main__":
     wk = Workflow()
     for tok in tokenizers:
         tok_name = tok["name_or_path"]
+        if tok_name.startswith("smirk-gpe"):
+            tok_name = str(Path(args.tok_root, tok_name).resolve())
+
         # Tabulate OOVs
         output = STATS_DIR.joinpath(tok_name, "oov.json")
         p = wk.add_process(
