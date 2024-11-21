@@ -51,8 +51,27 @@ def get_cluster(hostname: str) -> str:
         return "polaris"
     elif hostname.endswith("delta.ncsa.illinois.edu"):
         return "delta"
+    elif hostname.startswith("gpu"):
+        return "dgx"
     else:
-        return hostname
+        return None
+
+
+def summary_metric(run, key, type="last", best=None):
+    value = run.summary_metrics.get(key, None)
+    if value is None:
+        return None
+
+    if isinstance(value, (float, int, str)):
+        return value if type == "last" else None
+
+    # Try to get the type
+    x = value.get(type, None)
+
+    # Hail mary for loss
+    if x is None and best is not None and type == "best":
+        return value.get(best, None)
+    return x
 
 
 def run_summary(run):
@@ -63,73 +82,101 @@ def run_summary(run):
         "url": run.url,
         "tags": run.tags,
         "state": run.state,
-        "hostname": get_cluster(run.metadata["host"]),
+        "user": run.metadata["username"],
+        "cluster": get_cluster(run.metadata["host"]),
+        "hostname": run.metadata["host"],
         "created": run.metadata["startedAt"],
-        "steps": run.summary["trainer/global_step"],
-        "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
-        "optimizer": get_entry(config, "cli", "model", "optimizer", "class_path"),
-        "tokenizer": get_entry(config, "cli", "data", "tokenizer")
-        or get_entry(config, "tokenizer"),
-        "num_training_steps": get_entry(
-            config, "cli", "model", "lr_schedule", "num_training_steps"
-        ),
-        "macro_batch_size": get_entry(config, "stats/train_macro_batch_size"),
-        "gas": get_entry(config, "cli", "trainer", "accumulate_grad_batches") or 1,
+        "gpu": run.metadata["gpu"],
+        "commit": run.metadata["git"]["commit"],
+        "optimizer": {
+            "class_path": get_entry(config, "cli", "model", "optimizer", "class_path"),
+            "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
+            "betas": get_entry(config, "cli", "model", "optimizer", "betas"),
+        },
+        "model": {
+            "class_path": get_entry(config, "cli", "model", "class_path"),
+        },
+        "data": {
+            "module": get_entry(config, "cli", "data", "class_path"),
+            "tokenizer": get_entry(config, "cli", "data", "tokenizer"),
+            "batch_size": get_entry(config, "cli", "data", "batch_size"),
+            "encoding": get_entry(config, "cli", "data", "encoding"),
+        },
+        "trainer": {
+            "num_training_steps": get_entry(
+                config, "cli", "model", "lr_schedule", "num_training_steps"
+            ),
+            "gas": get_entry(config, "cli", "trainer", "accumulate_grad_batches") or 1,
+            "macro_batch_size": get_entry(config, "stats/train_macro_batch_size"),
+            "step": run.summary["trainer/global_step"],
+            "tokens": run.summary.get("total_tokens_step", None),
+            "masked_tokens": run.summary.get("total_masked_tokens_step", None),
+        },
+        "job_config": {
+            "nodes": get_entry(config, "job_config", "nodes"),
+            "gpues_per_node": get_entry(config, "job_config", "gpus_per_node"),
+            "container": get_entry(config, "job_config", "container"),
+            "env": get_entry(config, "job_config", "env"),
+        },
+        "metrics": {
+            "train_loss_last": summary_metric(run, "train/loss_step", "last"),
+            "val_loss_last": summary_metric(run, "val/loss_epoch", "last"),
+            "val_loss_best": summary_metric(run, "val/loss_epoch", "best", best="min"),
+            "train_loss_best": summary_metric(run, "val/loss_step", "best", best="min"),
+        },
     }
 
-    # Get validation loss
-    val_loss = run.summary["val/loss_epoch"]
-    if isinstance(val_loss, float):
-        stats["val_loss_last"] = val_loss
-    else:
-        stats["val_loss_best"] = val_loss["min"]
-
-    stats["effective_batch_size"] = stats["macro_batch_size"] * stats["gas"]
+    # Populate Effective Batch Size
+    stats["trainer"]["effective_batch_size"] = (
+        stats["trainer"]["macro_batch_size"] * stats["trainer"]["gas"]
+    )
     return stats
 
 
 def pretraining_summary(run):
     config = run.config
     row = run_summary(run)
-    row.update(
+    row["model"].update(
         {
-            "d_ff": get_entry(config, "cli", "model", "intermediate_size")
-            or get_entry(config, "intermediate_size"),
-            "d_model": get_entry(config, "cli", "model", "hidden_size")
-            or get_entry(config, "hidden_size"),
-            "n_layers": get_entry(config, "cli", "model", "num_hidden_layers")
-            or get_entry(config, "num_hidden_layers"),
-            "n_heads": get_entry(config, "cli", "model", "num_attention_heads")
-            or get_entry(config, "num_attention_heads"),
-            "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
-            "optimizer": get_entry(config, "cli", "model", "optimizer", "class_path"),
-            "dataset": get_entry(config, "cli", "data", "path")
-            or get_entry(config, "path"),
+            "d_ff": get_entry(config, "cli", "model", "intermediate_size"),
+            "d_model": get_entry(config, "cli", "model", "hidden_size"),
+            "n_layers": get_entry(config, "cli", "model", "num_hidden_layers"),
+            "n_heads": get_entry(config, "cli", "model", "num_attention_heads"),
         }
     )
-    row["model_size"] = model_size(row["d_model"], row["d_ff"], row["n_layers"])
+    row["data"].update({"path": get_entry(config, "cli", "data", "path")})
+    row["model"]["model_size"] = model_size(
+        row["model"]["d_model"], row["model"]["d_ff"], row["model"]["n_layers"]
+    )
     return row
 
 
 def finetuning_summary(run):
     row = run_summary(run)
     config = run.config
-    row.update(
+    row["model"].update(
         {
             "encoder_ckpt": get_entry(config, "cli", "model", "encoder_ckpt"),
-            "dataset": get_entry(config, "cli", "data", "name"),
+            "task": get_entry(config, "cli", "model", "task"),
         }
     )
+
+    if row["data"]["module"] == "electrolyte_fm.data_module.tmQMDataModule":
+        dataset = "tmQM"
+    else:
+        dataset = get_entry(config, "cli", "data", "name")
+
+    row["data"].update({"dataset": dataset, "targets": get_entry(config, "cli", "data", "target_columns")})
 
     # Identify Encoder
     encoder_id = None
 
-    if row["encoder_ckpt"].endswith("ckpt"):
-        segments = Path(row["encoder_ckpt"]).parents
+    if row["model"]["encoder_ckpt"].endswith("ckpt"):
+        segments = Path(row["model"]["encoder_ckpt"]).parents
         id = str(segments[1].name)
         if len(id) == 8:
             encoder_id = id
-    row["encoder_id"] = encoder_id
+    row["model"]["encoder_id"] = encoder_id
 
     # Identify metrics
     row["metrics"] = identify_metrics(run.summary_metrics)
@@ -180,7 +227,12 @@ def export_runs(exportfun, cache: Path, runs, name: str = None):
         fp = fingerprint.update_fingerprint(
             run.id,
             exportfun,
-            {"run": run.id, "entity": run.entity, "project": run.project},
+            {
+                "run": run.id,
+                "entity": run.entity,
+                "project": run.project,
+                "state": run.state,
+            },
         )
 
         # Check for an existing export
@@ -196,10 +248,13 @@ def export_runs(exportfun, cache: Path, runs, name: str = None):
                 continue
 
         logging.info("exporting %s/%s (%s)", name, run.id, run.url)
-        stats = exportfun(run)
-        stats["fingerprint"] = fp
-        with open(run_cache, "w") as fid:
-            json.dump(stats, fid)
+        try:
+            stats = exportfun(run)
+            stats["fingerprint"] = fp
+            with open(run_cache, "w") as fid:
+                json.dump(stats, fid)
+        except TypeError:
+            logging.error("failed to export %s", run.id)
 
 
 if __name__ == "__main__":
