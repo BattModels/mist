@@ -203,7 +203,6 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
     mpi_barrier(comm)
     for split in ["train", "val", "test"]
         ds = setup_dm_mpi(datamodule, split; rank, size)
-        unk_token_id = pyconvert(Int, datamodule.tokenizer.unk_token_id)
         stats = map(1:length(ngram)) do _
             OnlineStats.Series(;
                 moments=OnlineStats.Moments(),
@@ -211,7 +210,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
                 histogram=KHist(100),
             )
         end |> OnlineStats.Group
-        stats = (; kld=deepcopy(stats),)
+        stats = (; kld=deepcopy(stats), kld_per_token=deepcopy(stats))
 
         @info "rank $rank: started processing $split"
         loss = zeros(length(ngram))
@@ -222,6 +221,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
                 loss[N] = autoregressive_kld(ngram, code; N)
             end
             fit!(stats.kld, tuple(loss))
+            fit!(stats.kld_per_token, tuple(loss ./ length(code)))
             if idx % 1_000_000 == 0 && rank == 0
                 elapsed = time() - start_time
                 @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
@@ -233,6 +233,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
             fit_stats[Symbol(split)] = (;
                 samples=nobs(stats),
                 kld=map(value, stats[:kld]),
+                kld_per_token=map(value, stats[:kld_per_token]),
             )
         end
         MPI.Barrier(comm)
