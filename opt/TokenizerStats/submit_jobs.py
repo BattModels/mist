@@ -359,9 +359,6 @@ if __name__ == "__main__":
         "--realspace", type=str, default="/nfs/turbo/coe-venkvis/mist/realspace_v4_dev2"
     )
     parser.add_argument(
-        "--tok-root", type=str, default="/nfs/turbo/coe-venkvis/mist/bayes"
-    )
-    parser.add_argument(
         "--tmqm",
         type=str,
         default=Path(__file__).parent.parent.joinpath("tmQM", "data"),
@@ -373,8 +370,6 @@ if __name__ == "__main__":
     wk = Workflow()
     for tok in tokenizers:
         tok_name = tok["name_or_path"]
-        if tok_name.startswith("smirk-gpe"):
-            tok_name = str(Path(args.tok_root, tok_name).resolve())
 
         # Tabulate OOVs
         output = STATS_DIR.joinpath(tok_name, "oov.json")

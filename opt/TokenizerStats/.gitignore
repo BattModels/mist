@@ -3,3 +3,5 @@ logs/
 .CondaPkg/
 stats/
 stats
+smirk-gpe-*
+smirk-gpe-*/
