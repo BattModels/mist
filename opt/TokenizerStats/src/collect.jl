@@ -31,24 +31,13 @@ function usage_stats!(stats, code::Vector{Int}, is_oov::Bool)
     return stats
 end
 
-function leader_reduce(f, x)
-    comm = MPI.COMM_WORLD
+function leader_reduce(f, x; comm=MPI.COMM_WORLD)
     g = MPI.gather(x, comm; root=0)
     if MPI.Comm_rank(comm) == 0
+        @assert length(g) == MPI.Comm_size(comm)
         return reduce(f, g)
     end
-    return nothing
-end
-
-function mpi_barrier(comm::MPI.Comm, timeout::Real=120.0)
-    start = time()
-    req = MPI.Ibarrier(comm)
-    while MPI.Test(req)
-        if time() - start > timeout
-            error("MPI.Barrier timed out after $timeout seconds")
-        end
-        yield()
-    end
+    MPI.Barrier(comm)
     return nothing
 end
 
@@ -150,7 +139,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     stats = Dict{Symbol,Any}()
     splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
 
-    mpi_barrier(comm)
+    MPI.Barrier(comm)
     for split in splits
         rank_stats = rank_usage_stats(datamodule, split; rank, size)
         tokenizer_stats = leader_reduce(merge!, rank_stats)
@@ -200,7 +189,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         :ref_tokenizer => ref_info,
     )
 
-    mpi_barrier(comm)
+    MPI.Barrier(comm)
     for split in ["train", "val", "test"]
         ds = setup_dm_mpi(datamodule, split; rank, size)
         stats = map(1:length(ngram)) do _
@@ -279,7 +268,7 @@ end
     @info "rank $rank: started processing"
     ds = setup_dm_mpi(datamodule, "val"; rank, size)
 
-    mpi_barrier(comm)
+    MPI.Barrier(comm)
     smi_column = pyconvert(String, datamodule.smi_column)
     start_time = time()
     for (idx, encoding) in enumerate(ds)
