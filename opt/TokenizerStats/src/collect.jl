@@ -93,30 +93,30 @@ function srun_usage_stats(datamodule::Py, out_file::AbstractString; tokenizer_na
         vocab_size=pyconvert(Int, length(tokenizer)),
         unk_token_id=pyconvert(Union{Int,Nothing}, tokenizer.unk_token_id),
     )
-    stats = Dict{Symbol,Any}()
+
     splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
+    out_file = out_file * "_split_$(join(splits, "_"))_rank_$rank.jld2"
+    if rank == 0
+        mkdir(dirname(out_file))
+        jldopen(out_file * ".tmp", "w+") do f
+            f["tokenizer"] = tokenizer_info
+        end
+    end
+
     for split in splits
         tokenizer_stats = rank_usage_stats(datamodule, split; rank, size)
-        if rank == 0 || true
-            @info "Saving results for $split on rank $rank"
-            stats[Symbol(split)] = (;
+        @info "Saving results for $split on rank $rank"
+        jldopen(out_file * ".tmp", "a+") do f
+            f[split] = (;
                 samples=nobs(tokenizer_stats),
                 map(value, tokenizer_stats.stats)...
             )
         end
     end
 
-    # Save stats
-    if rank == 0 || true
-        splits = join(splits, "_")
-        out_file = out_file * "_split_$(splits)_rank_$rank.bson"
-        @info "Saving stats on rank $rank to $out_file"
-        mkpath(dirname(out_file))
-        stats[:tokenizer] = tokenizer_info
-        rm(out_file; force=true)
-        BSON.bson(out_file; stats...)
-        chmod(out_file, 0o444)
-    end
+    # Finalize
+    mv(out_file * ".tmp", out_file; force=true)
+    chmod(out_file, 0o444)
 
     return 0
 end
@@ -136,30 +136,33 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
         vocab_size=pyconvert(Int, length(tokenizer)),
         unk_token_id=pyconvert(Union{Int,Nothing}, tokenizer.unk_token_id),
     )
-    stats = Dict{Symbol,Any}()
     splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
+    if rank == 0
+        mkpath(dirname(out_file))
+        jldopen(out_file * ".tmp", "w+") do f
+            f["tokenizer"] = tokenizer_info
+        end
+    end
 
     MPI.Barrier(comm)
     for split in splits
         rank_stats = rank_usage_stats(datamodule, split; rank, size)
         tokenizer_stats = leader_reduce(merge!, rank_stats; comm)
         if rank == 0
-            @info "Saving results for $split on rank $rank"
-            stats[Symbol(split)] = (;
-                samples=nobs(tokenizer_stats),
-                map(value, tokenizer_stats.stats)...
-            )
+            jldopen(out_file * ".tmp", "a+") do f
+                f[split] = (;
+                    samples=nobs(tokenizer_stats),
+                    map(value, tokenizer_stats.stats)...
+                )
+            end
+            @info "Saved results for $split on rank $rank"
         end
     end
 
-    # Save stats
     if rank == 0
-        mkpath(dirname(out_file))
-        stats[:tokenizer] = tokenizer_info
-        rm(out_file; force=true)
-        BSON.bson(out_file; stats...)
+        mv(out_file * ".tmp", out_file; force=true)
         chmod(out_file, 0o444)
-        @info "saved stats on rank $rank to $out_file"
+        @info "Saved stats on rank $rank to $out_file"
     end
 
     MPI.Barrier(comm)
@@ -181,13 +184,16 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
 
     # Init Fit Stats
     tok = datamodule.tokenizer
-    fit_stats = Dict{Symbol,Any}(
-        :tokenizer => (;
-            vocab_size=pyconvert(Int, length(tok)),
-            unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
-        ),
-        :ref_tokenizer => ref_info,
-    )
+    if rank == 0
+        mkpath(dirname(output))
+        jldopen(output * ".tmp", "w+") do f
+            f["tokenizer"] = (;
+                vocab_size=pyconvert(Int, length(tok)),
+                unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
+            )
+            f["ref_tokenizer"] = ref_info
+        end
+    end
 
     MPI.Barrier(comm)
     for split in ["train", "val", "test"]
@@ -219,21 +225,21 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         # Reduce stats over ranks
         stats = leader_reduce(merge!, OnlineStats.Group(; stats...); comm)
         if rank == 0
-            fit_stats[Symbol(split)] = (;
-                samples=nobs(stats),
-                kld=map(value, stats[:kld]),
-                kld_per_token=map(value, stats[:kld_per_token]),
-            )
+            jldopen(output * ".tmp", "a+") do f
+                f[split] = (;
+                    samples=nobs(stats),
+                    kld=map(value, stats[:kld]),
+                    kld_per_token=map(value, stats[:kld_per_token]),
+                )
+            end
         end
         MPI.Barrier(comm)
     end
 
     if rank == 0
-        mkpath(dirname(output))
-        rm(output; force=true)
-        BSON.bson(output; fit_stats...)
+        mv(output * ".tmp", output; force=true)
         chmod(output, 0o444)
-        @info "rank $rank: saved stats to $output" fit_stats
+        @info "rank $rank: saved stats to $output"
     end
 
     MPI.Barrier(comm)
@@ -254,6 +260,18 @@ end
     tokenizer = datamodule.tokenizer
     ngram, ref_tok, ref_info = load_ngram_model(ref_file)
     rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
+
+    if rank == 0
+        mkdir(dirname(output))
+        jldopen(output * ".tmp", "w+") do f
+            tok = datamodule.tokenizer
+            f["tokenizer"] = (;
+                vocab_size=pyconvert(Int, length(tok)),
+                unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
+            )
+            f["ref_tokenizer"] = ref_info
+        end
+    end
 
     # Stats to track
     stats = map(1:length(ngram)) do _
@@ -281,21 +299,13 @@ end
     end
     stats = leader_reduce(merge!, stats; comm)
     if rank == 0
-        tok = datamodule.tokenizer
-        stats = (;
-            tokenizer=(;
-                vocab_size=pyconvert(Int, length(tok)),
-                unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
-            ),
-            ref_tokenizer=ref_info,
-            samples=nobs(stats),
-            info_loss=map(value, stats),
-        )
-        mkpath(dirname(output))
-        rm(output; force=true)
-        BSON.bson(output; stats...)
-        chmod(output, 0o444)
+        jldopen(output * ".tmp", "a+") do f
+            f["smaples"] = nobs(stats)
+            f["info_loss"] = map(value, stats)
+        end
+        mv(output * ".tmp", output; force=true)
         @info "saved results to $output"
+        chmod(output, 0o444)
     end
 
     MPI.Barrier(comm)
