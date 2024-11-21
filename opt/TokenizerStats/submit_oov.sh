@@ -2,7 +2,7 @@
 #SBATCH -p venkvis-cpu
 #SBATCH --cpus-per-task=8
 #SBATCH --ntasks=1
-#SBATCH --mem-per-cpu=500M
+#SBATCH --mem-per-cpu=1G
 #SBATCH --time 0:30:0
 
 set -x

@@ -142,7 +142,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     MPI.Barrier(comm)
     for split in splits
         rank_stats = rank_usage_stats(datamodule, split; rank, size)
-        tokenizer_stats = leader_reduce(merge!, rank_stats)
+        tokenizer_stats = leader_reduce(merge!, rank_stats; comm)
         if rank == 0
             @info "Saving results for $split on rank $rank"
             stats[Symbol(split)] = (;
@@ -217,7 +217,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
             end
         end
         # Reduce stats over ranks
-        stats = leader_reduce(merge!, OnlineStats.Group(; stats...))
+        stats = leader_reduce(merge!, OnlineStats.Group(; stats...); comm)
         if rank == 0
             fit_stats[Symbol(split)] = (;
                 samples=nobs(stats),
@@ -279,7 +279,7 @@ end
             @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
         end
     end
-    stats = leader_reduce(merge!, stats)
+    stats = leader_reduce(merge!, stats; comm)
     if rank == 0
         @info "saving results to $output"
         tok = datamodule.tokenizer
