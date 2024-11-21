@@ -226,7 +226,6 @@ MOLNET_DATASETS = [
 
 REF_INFO_LOSS = [
     "character",
-    "smirk",
     "meta-llama/Meta-Llama-3.1-8B",
     "google/gemma-7b",
     "Xenova/gpt-4o",
