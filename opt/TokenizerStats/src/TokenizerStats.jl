@@ -12,6 +12,7 @@ using BSON: BSON
 using JLD2: jldopen
 using JSON: JSON
 using SHA: SHA
+using Dates: now
 using SparseArrays: sparse
 using LogExpFunctions: logsumexp, log1pexp, xexpy
 using Serialization: serialize, deserialize

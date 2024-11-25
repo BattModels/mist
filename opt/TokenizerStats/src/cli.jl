@@ -20,6 +20,7 @@ end
 
 
 @annotate function get_dataset(name_or_path, tokenizer, encoding)
+    start = time()
     if isdir(name_or_path)
         if "tmQM" in splitpath(name_or_path)
             dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
@@ -32,7 +33,16 @@ end
         dm = TokenizerStats.molnet(name_or_path; tokenizer, encoding)
         dataset_name = name_or_path
     end
+    @info "loaded $dataset_name in $(time() - start) s"
     return dm, dataset_name
+end
+
+function maybe_parse_env(T::Type, x::String)
+    env = get(ENV, x, nothing)
+    if !isnothing(env)
+        return parse(T, env)
+    end
+    return parse(T, x)
 end
 
 @annotate function main(args::Vector{String})
@@ -59,6 +69,12 @@ end
         "--mode"
         help = "Which mode to use for distributed computation"
         default = "mpi"
+        "--size"
+        help = "Number of nodes to use for distributed computation, only used with --mode=batch. Can be an environment variable."
+        default = "SLURM_ARRAY_TASK_COUNT"
+        "--rank"
+        help = "Rank of the task, only used with --mode=batch. Can be an environment variable."
+        default = "SLURM_ARRAY_TASK_ID"
     end
     common_args!(s["distortion"])
     @add_arg_table! s["distortion"] begin
@@ -111,10 +127,12 @@ end
         model_loss(dm, args_cmd["model"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "merge"
-        model_a = args_cmd["a"]
-        model_b = args_cmd["b"]
-        @assert isfile(model_a) && isfile(model_b) "Models must be saved to disk"
-        merge_ngrams(model_a, model_b, args_cmd["output"]; split=args_cmd["split"])
+        directory = args_cmd["directory"]
+        pattern = args_cmd["pattern"]
+        output = args_cmd["output"]
+        files = find(directory, Regex(pattern))
+        @info "Will merge $(length(files)) files into $output" files
+        merge_usage_stats(files; output)
 
     elseif args["%COMMAND%"] == "usage"
         tokenizer = args_cmd["tokenizer"]
@@ -125,9 +143,11 @@ end
         # Distribute computation
         if args_cmd["mode"] == "mpi"
             tabulate_dataset(dm, args_cmd["output"]; tokenizer_name, splits)
-        elseif args_cmd["mode"] == "srun"
-            @info "Using srun mode"
-            srun_usage_stats(dm, args_cmd["output"]; tokenizer_name, splits)
+        elseif args_cmd["mode"] == "batch"
+            size = maybe_parse_env(Int, args_cmd["size"])
+            rank = maybe_parse_env(Int, args_cmd["rank"])
+            @info "Using batch mode: $rank of $size (0-indexed)"
+            job_array_usage_stats(dm, args_cmd["output"]; tokenizer_name, splits, size, rank)
         else
             error("Unknown mode $(args_cmd["mode"])")
         end
@@ -136,37 +156,58 @@ end
     return 0
 end
 
-function merge_ngrams(a_file::String, b_file::String, output::String; split::String="train")
-    # Load Models
-    a = BSON.load(a_file)
-    b = BSON.load(b_file)
-    @assert a[:tokenizer] == b[:tokenizer] "N-gram models must use the same tokenizer"
+function merge_usage_stats(files::Vector{String}; output::String="merged.jld2", splits::Vector{String}=["train", "val", "test"])
+    data = Dict{String,Any}()
+    for file in files
+        jldopen(file, "r") do other
+            @info "Merging $file" other
+            if haskey(other, "tokenizer")
+                if haskey(data, "tokenizer")
+                    @assert other["tokenizer"] == data["tokenizer"] "N-gram models must use the same tokenizer"
+                else
+                    data["tokenizer"] = other["tokenizer"]
+                end
+            end
 
-    # Combine ngram counts from both models
-    a_ngrams = _get_split(a, a_file, split)
-    b_ngrams = _get_split(b, b_file, split)
-    ngrams = map(zip(a_ngrams, b_ngrams)) do (a, b)
-        mergewith!(+, a, b)
+            for split in splits
+                if haskey(data, split)
+                    data[split] = _merge_usage_stats(data[split], other[split])
+                else
+                    data[split] = other[split]
+                end
+            end
+        end
     end
-
-    # Save merged model
-    rm(output; force=true)
-    BSON.bson(output;
-        tokenizer=a[:tokenizer],
-        samples=a[:samples] + b[:samples],
-        ngrams,
-    )
-    chmod(output, 0o444)
-    return nothing
+    jldopen(output, "w") do f
+        for (k, v) in data
+            f[k] = v
+        end
+    end
+    return output
 end
 
-function _get_split(data, file, split)
-    if Symbol(split) ∉ keys(data) && :ngrams in keys(data)
-        @warn "Using :ngram from $file for $split"
-        return data[:ngrams]
-    elseif Symbol(split) ∈ keys(data)
-        return data[Symbol(split)]
-    else
-        error("No ngrams found for $split in $file")
+function _merge_usage_stats(a::NamedTuple, b::NamedTuple)
+    @assert Set(keys(a)) == Set(keys(b)) == Set([:samples, keys(tracked_stats())...])
+    samples = a.samples + b.samples
+    nunique = mergewith(+, a.nunique, b.nunique)
+    fertility = mergewith(+, a.fertility, b.fertility)
+    out_of_vocab = a.out_of_vocab + b.out_of_vocab
+    ngrams = map(1:5) do n
+        ang = a.ngrams[n]
+        bng = b.ngrams[n]
+        @assert keytype(ang) <: NTuple{n}
+        @assert keytype(bng) <: NTuple{n}
+        mergewith(+, compact_ngrams(ang), compact_ngrams(bng))
     end
+    out = (; samples, nunique, fertility, out_of_vocab, ngrams)
+    @assert Set(keys(out)) == Set([:samples, keys(tracked_stats())...])
+    return out
+end
+
+function compact_ngrams(ngrams::AbstractDict)
+    keytype(ngrams) == UInt16 && valuetype(ngrams) == Float32 && return ngrams
+    map(collect(pairs(ngrams))) do (k, v)
+        k = UInt16.(k)
+        k => Float32(v)
+    end |> Dict
 end
