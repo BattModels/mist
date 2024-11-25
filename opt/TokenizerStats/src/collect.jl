@@ -42,6 +42,8 @@ function leader_reduce(f, x; comm=MPI.COMM_WORLD)
 end
 
 function setup_dm_mpi(dm::Py, split::AbstractString; rank::Int=0, size::Int=1)
+    dm.trainer = (; global_rank=rank, world_size=size)
+    dm.setup("fit")
     if split == "train"
         ds = dm.train_dataset
     elseif split == "val"
@@ -51,7 +53,7 @@ function setup_dm_mpi(dm::Py, split::AbstractString; rank::Int=0, size::Int=1)
     else
         throw(ArgumentError(lazy"Invalid split: $split"))
     end
-    return split_dataset_by_node(ds, rank, size)
+    return ds
 end
 
 function rank_usage_stats(datamodule, split; rank, size)
