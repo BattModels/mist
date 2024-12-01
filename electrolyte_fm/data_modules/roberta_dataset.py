@@ -77,7 +77,7 @@ class RobertaDataSet(pl.LightningDataModule):
             },
             keep_in_memory=False,
             streaming=True,
-            save_infos=True,
+            save_infos=False,
         )
         return self._dataset
 

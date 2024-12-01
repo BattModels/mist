@@ -98,7 +98,7 @@ class MolNetDataModule(pl.LightningDataModule):
             data_files=[_URLS[self.name]],
             split="train",
             keep_in_memory=False,
-            save_infos=True,
+            save_infos=False,
         )  # type: ignore
 
         if self.name == "qm8":
