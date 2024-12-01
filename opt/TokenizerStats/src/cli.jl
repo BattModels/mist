@@ -91,18 +91,15 @@ end
         required = true
     end
     @add_arg_table! s["merge"] begin
-        "--split"
-        help = "Which splits to use for merging"
-        default = "train"
+        "--pattern"
+        default = r"usage.+?_rank_\d+\.jld2"
+        arg_type = Regex
+        "directory"
+        help = "Directory to search for files to merge"
         arg_type = String
-        "a"
-        help = "Name of the first n-gram model"
+        "output"
+        default = "merged.jld2"
         arg_type = String
-        required = true
-        "b"
-        help = "Name of the second n-gram model"
-        arg_type = String
-        required = true
     end
 
     args = parse_args(args, s)
@@ -130,7 +127,7 @@ end
         directory = args_cmd["directory"]
         pattern = args_cmd["pattern"]
         output = args_cmd["output"]
-        files = find(directory, Regex(pattern))
+        files = find(directory, pattern)
         @info "Will merge $(length(files)) files into $output" files
         merge_usage_stats(files; output)
 
