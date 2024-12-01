@@ -385,9 +385,7 @@ if __name__ == "__main__":
                 LOG.error("Error processing %s: %s", name, e)
 
     # Dump results
-    if args.output == "-":
-        print(json.dumps(out))
-    else:
-        output = Path(args.output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(out))
+    if args.output.name != "<stdout>":
+        Path(args.output.name).parent.mkdir(parents=True, exist_ok=True)
+
+    json.dump(out, args.output)
