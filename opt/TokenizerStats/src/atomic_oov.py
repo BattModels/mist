@@ -357,11 +357,16 @@ if __name__ == "__main__":
         "encoding": args.encoding,
     }
     tokenizers = Path(__file__).parent.parent.joinpath("tokenizers.json").read_text()
-    for tokenizer in json.loads(tokenizers):
-        if tokenizer["name_or_path"] == args.name_or_path:
-            tokenizer["name"] = args.name or tokenizer["name"]
-            tokenizer["encoding"] = args.encoding or tokenizer["encoding"]
+    for tok in json.loads(tokenizers):
+        if tok["name_or_path"] == args.name_or_path:
+            tokenizer["name"] = args.name or tok["name"]
+            tokenizer["encoding"] = args.encoding or tok["encoding"]
             break
+
+    # Fallback to defaults
+    tokenizer["name"] = tokenizer["name"] or tokenizer["name_or_path"]
+    tokenizer["encoding"] = tokenizer["encoding"] or "smiles"
+    logging.debug("using tokenizer %s", tokenizer)
 
     # Process datasets in parallel
     datasets = args.dataset or DATASETS.keys()
@@ -380,4 +385,9 @@ if __name__ == "__main__":
                 LOG.error("Error processing %s: %s", name, e)
 
     # Dump results
-    json.dump(out, args.output)
+    if args.output == "-":
+        print(json.dumps(out))
+    else:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(out))
