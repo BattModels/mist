@@ -232,6 +232,12 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
         tok.tokenize = tokenize.__get__(tok)
 
+        # Bind get_vocab method
+        def get_vocab(self):
+            return self.vocabulary
+
+        tok.get_vocab = get_vocab.__get__(tok)
+
         return tok
 
     elif (
