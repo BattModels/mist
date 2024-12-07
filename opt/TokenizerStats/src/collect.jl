@@ -37,7 +37,6 @@ function leader_reduce(f, x; comm=MPI.COMM_WORLD)
         @assert length(g) == MPI.Comm_size(comm)
         return reduce(f, g)
     end
-    MPI.Barrier(comm)
     return nothing
 end
 
@@ -135,6 +134,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     )
     splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
     if rank == 0
+        @debug "rank $rank: created $out_file" now()
         mkpath(dirname(out_file))
         jldopen(out_file * ".tmp", "w+") do f
             f["tokenizer"] = tokenizer_info
@@ -152,7 +152,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
                     map(value, tokenizer_stats.stats)...
                 )
             end
-            @info "Saved results for $split on rank $rank" now()
+            @info "rank $rank: saved results for $split" now()
         end
     end
 
@@ -164,6 +164,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
 
     MPI.Barrier(comm)
     MPI.Finalize()
+    @debug "rank $rank: finished" now()
     return 0
 end
 
