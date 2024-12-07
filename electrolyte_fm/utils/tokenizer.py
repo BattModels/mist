@@ -321,15 +321,3 @@ def rdkit_canonical(smi: str) -> str:
         return Chem.CanonSmiles(smi)
     except Exception:
         return None
-
-
-def rdkit_kekulize(smi: str) -> str:
-    """Kekulize SMILES."""
-    from rdkit import Chem
-
-    try:
-        return Chem.MolToSmiles(
-            Chem.MolFromSmiles(smi), kekuleSmiles=True, canonical=False
-        )
-    except Exception:
-        return None
