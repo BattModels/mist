@@ -50,7 +50,6 @@ class MyLightningCLI(LightningCLI):
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
         )
 
-
     def _add_instantiators(self) -> None:
         self.config_dump = json.loads(
             self.parser.dump(
