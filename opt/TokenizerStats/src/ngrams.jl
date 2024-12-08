@@ -599,9 +599,11 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             end
             unk_a_flag = unk_a
             unk_b_flag = unk_b
+
+            # Mark start of unknown token stream
+            mark = (; i, j, unk_a_flag, unk_b_flag, n=length(I))
         elseif ac == bc
             # Tokens are aligned, emit alignment entry
-            mark = (; i, j, unk_a_flag, unk_b_flag, n=length(I))
             push!(I, i.idx)
             push!(J, j.idx)
             i = _advance_idx(a[i.idx], i)
@@ -634,6 +636,7 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             if new_mark != mark
                 mark = new_mark
             else
+                @info mark new_mark
                 error("Failed to align unknown tokens: $a, $b")
             end
         else
