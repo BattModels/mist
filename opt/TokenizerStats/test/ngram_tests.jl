@@ -215,6 +215,12 @@ end
     @testset "mismatched" begin
         @test_throws ErrorException align_unknown(["hello", "world"], ["hello", "foo"])
     end
+    @testset "false alignment" begin
+        ref = vec("C[Ni@TB12]123") # Fragment of a real SMILES from tmQM
+        smi = ["C", "[UNK]", "1", "2", "3"]
+        out = check_commutative(ref, smi)
+        @test out == sparse([1, 11, 12], [1, 3, 4], trues(3), length(ref), length(smi))
+    end
 end
 
 @testitem "Rm Special Tokens" begin
