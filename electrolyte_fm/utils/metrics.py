@@ -1,25 +1,92 @@
-from typing import Union, Dict, Optional
+from typing import Any, Union, Dict, Optional, Tuple, List
 
 import torch
+from torch import Tensor, tensor
+
 from torchmetrics import Metric, MetricCollection
-from torchmetrics.wrappers.abstract import WrapperMetric
-from torchmetrics.wrappers.classwise import ClasswiseWrapper
 from torchmetrics.classification import (
     AUROC,
     AveragePrecision,
-    Accuracy,
     BinaryStatScores,
 )
 from torchmetrics.regression import (
-    MeanAbsoluteError,
     MeanSquaredError,
     R2Score,
     MeanAbsolutePercentageError,
 )
-
+from torchmetrics.utilities.checks import _check_same_shape
 
 """ Target Value to indicate missing data """
 IGNORE_INDEX = -100
+
+
+class MeanAbsoluteError(Metric):
+    is_differentiable: bool = True
+    higher_is_better: bool = False
+    full_state_update: bool = False
+    plot_lower_bound: float = 0.0
+
+    sum_abs_error: Tensor
+    total: Tensor
+
+    def __init__(
+        self,
+        num_outputs: int = 1,
+        target_labels: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+
+        if not (isinstance(num_outputs, int) and num_outputs > 0):
+            raise ValueError(
+                f"Expected num_outputs to be a positive integer but got {num_outputs}"
+            )
+        self.num_outputs = num_outputs
+        self.target_labels = target_labels or [str(i) for i in list(range(num_outputs))]
+
+        self.add_state(
+            "sum_abs_error", default=torch.zeros(num_outputs), dist_reduce_fx="sum"
+        )
+        self.add_state("total", default=tensor(0), dist_reduce_fx="sum")
+
+    def _update(
+        self, preds: Tensor, target: Tensor, num_outputs: int
+    ) -> Tuple[Tensor, int]:
+        """
+        Update and returns variables required to compute Mean Absolute Error.
+        Check for same shape of input tensors.
+        """
+        _check_same_shape(preds, target)
+        if num_outputs == 1:
+            preds = preds.view(-1)
+            target = target.view(-1)
+        preds = preds if preds.is_floating_point else preds.float()  # type: ignore[truthy-function] # todo
+        target = target if target.is_floating_point else target.float()  # type: ignore[truthy-function] # todo
+        sum_abs_error = torch.sum(torch.abs(preds - target), dim=0)
+        return sum_abs_error, target.shape[0]
+
+    def update(self, preds: Tensor, target: Tensor) -> None:
+        """Update state with predictions and targets."""
+        sum_abs_error, num_obs = self._update(
+            preds, target, num_outputs=self.num_outputs
+        )
+
+        self.sum_abs_error += sum_abs_error
+        self.total += num_obs
+
+    def compute(self) -> Tensor:
+        """Compute mean absolute error over state."""
+        out = self.sum_abs_error / self.total
+        out = dict(zip(self.target_labels, out))
+        out["mean"] = self.sum_abs_error.mean() / self.total
+        return out
+
+    def keys(self):
+        keys_ = [
+            "mean",
+        ]
+        keys_.extend(self.target_labels)
+        return keys_
 
 
 class SafeR2Score(R2Score):
@@ -180,7 +247,12 @@ class OOVMetric(Metric):
             yield v
 
 
-def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> Metric:
+def get_metric(
+    name: str,
+    task_type: str,
+    output_size: Optional[int] = None,
+    target_labels: Optional[List[str]] = None,
+) -> Metric:
     if name == "auroc" and task_type == "binary":
         return AUROC(
             task="binary",
@@ -201,7 +273,7 @@ def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> 
             }
         )
     elif name == "mae" and task_type == "regression":
-        return MeanAbsoluteError()
+        return MeanAbsoluteError(num_outputs=output_size, target_labels=target_labels)
     elif name == "mape" and task_type == "regression":
         return MeanAbsolutePercentageError()
     elif name == "rmse" and task_type == "regression":

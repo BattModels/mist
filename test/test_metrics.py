@@ -39,7 +39,7 @@ def test_scalar(name, task_type):
         targets = torch.rand(B, C)
 
     out = metric(preds, targets)
-    if name == "crosstab":
+    if name == "crosstab" or name == "mae":
         for v in out.values():
             assert v.ndim == 0
     else:
@@ -187,7 +187,7 @@ def test_oov_metric_empty_group(name, task_type):
     out = metric(preds, targets, input_ids)
     assert isinstance(out, dict)
     if hasattr(base_metric, "keys"):
-        for k in base_metric:
+        for k in base_metric.keys():
             assert f"{k}_oov" in out and f"{k}_non_oov" in out and f"{k}_all" in out
     else:
         assert "oov" in out and "non_oov" in out and "all" in out
@@ -197,7 +197,7 @@ def test_oov_metric_empty_group(name, task_type):
     out = metric(preds, targets, input_ids)
     assert isinstance(out, dict)
     if hasattr(base_metric, "keys"):
-        for k in base_metric:
+        for k in base_metric.keys():
             assert f"{k}_oov" in out and f"{k}_non_oov" in out and f"{k}_all" in out
     else:
         assert "oov" in out and "non_oov" in out and "all" in out
