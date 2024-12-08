@@ -85,7 +85,7 @@ class tmQMDataModule(pl.LightningDataModule):
         if not self.include_encoding:
             ds = ds.remove_columns(self.smi_column)
 
-        self.train_dataset = ds["train"]
+        self.train_dataset = ds["train"].shuffle(seed=42)
         self.val_dataset = ds["validation"]
         self.test_dataset = ds["test"]
         self.token_collator = DataCollatorWithPadding(self.tokenizer, "longest")

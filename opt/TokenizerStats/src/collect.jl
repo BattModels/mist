@@ -92,7 +92,7 @@ function job_array_usage_stats(datamodule::Py, out_file::AbstractString; tokeniz
         unk_token_id=pyconvert(Union{Int,Nothing}, tokenizer.unk_token_id),
     )
 
-    splits = (length(splits) == 1 && first(splits) == "all") ? ["train", "val", "test"] : splits
+    splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
     out_file = out_file * "_split_$(join(splits, "_"))_rank_$rank.jld2"
     mkpath(dirname(out_file))
     jldopen(out_file * ".tmp", "w+") do f
@@ -194,7 +194,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
     end
 
     MPI.Barrier(comm)
-    for split in ["train", "val", "test"]
+    for split in ["val", "train", "test"]
         ds = setup_dm_mpi(datamodule, split; rank, size)
         stats = map(1:length(ngram)) do _
             OnlineStats.Series(;
