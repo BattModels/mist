@@ -18,4 +18,5 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SMIRK_PRIVATE_KEY }}
       - run: poetry install
+      - run: poetry show
       - run: source activate && pytest
