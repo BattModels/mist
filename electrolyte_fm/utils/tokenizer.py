@@ -244,7 +244,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
         tok.all_special_tokens = all_special_tokens.__get__(tok)
 
-        @property 
+        @property
         def all_special_ids(self) -> list[int]:
             return list(self.special_tokens.values())
 
