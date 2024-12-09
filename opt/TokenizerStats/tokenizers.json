@@ -115,6 +115,13 @@
     "encoding": "smiles"
   },
   {
+    "name": "SmilesPE",
+    "name_or_path": "SmilesPE/SPE_ChEMBL",
+    "encoding": "smiles",
+    "tokenizer_class": "spe",
+    "domain": "chemistry"
+  },
+  {
     "name": "SMILYBPE",
     "name_or_path": "mikemayuare/SMILYBPE",
     "encoding": "smiles"
