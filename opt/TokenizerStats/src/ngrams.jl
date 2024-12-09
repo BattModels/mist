@@ -61,9 +61,11 @@ function load_ngram_model(file::String, split=:train)
     elseif suffix == ".jld"
         ref = deserialize(file)
     elseif suffix == ".jld2"
-        ref = jldopen(file, "r") do data
-            NamedTuple(map(k -> Symbol(k) => data[k], keys(data)))
+        stats = @timed jldopen(file, "r") do data
+            NamedTuple([:tokenizer => data["tokenizer"], split => data[string(split)]])
         end
+        ref = stats.value
+        @debug "loaded ngram model" file stats.time stats.bytes stats.gctime stats.gcstats.total_time stats.compile_time stats.recompile_time
     else
         error("unknown filetype: $file")
     end
@@ -79,7 +81,7 @@ function load_ngram_model(file::String, split=:train)
         unk_token_id=ref[:tokenizer][:unk_token_id],
         vocab_size,
         split,
-        sha256=bytes2hex(SHA.sha256(read(file)))
+        sha256=bytes2hex(open(SHA.sha256, file))
     )
     return ngram, tok, info
 end
@@ -92,6 +94,7 @@ function ngram_counts(dist::AbstractDict{<:Union{<:Integer,NTuple},<:Union{Integ
     for gram in grams
         @assert all(t -> 0 <= t < vocab_size, gram) "Expected all token ids to be ∈ [0, $vocab_size), got $gram"
     end
+    keytype(dist) <: NTuple && return dist
     return Dict{K,V}(zip(grams, values(dist)))
 end
 
