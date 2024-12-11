@@ -1,0 +1,18 @@
+[tool.poetry]
+package-mode = false
+authors = ["Alexius Wadell <awadell@umich.edu>"]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+numpy = "~1.26"
+electrolyte_fm = {path = "../..", develop = true}
+transformers = "~4"
+datasets = "^2.20"
+torch = "~2.3"
+rdkit = "^2024.3.5"
+BRSAScore = {git = "https://github.com/snu-micc/BR-SAScore.git", rev = "8c3081d7ebe747eb538ae9a591e1d076d4a30f2d"}
+syba = {git = "https://github.com/lich-uct/syba.git", rev = "30929eb2d3b9a03bef326a1f5180f26f55b19a29"}
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
