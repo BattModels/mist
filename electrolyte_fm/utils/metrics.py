@@ -208,7 +208,7 @@ def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> 
     elif name == "rmse" and task_type == "regression":
         return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
-        return SafeR2Score(multioutput="uniform_average")
+        return SafeR2Score(num_outputs=output_size)
     else:
         raise ValueError(f"Unknown metric {name} for {task_type} tasks")
 
