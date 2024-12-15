@@ -3,13 +3,15 @@ from typing import Dict
 
 import pytest
 import torch
-from torchmetrics import MetricCollection
-from torchmetrics import Accuracy
+from torchmetrics import MetricCollection, Accuracy
+from torchmetrics.regression import MeanSquaredError
+from torchmetrics.wrappers import BootStrapper
 
 from electrolyte_fm.utils.metrics import (
     get_metric,
     masked_loss,
     masked_metric_update,
+    bootstrap_collection,
     OOVMetric,
     HotellingTwoSample,
     TokenCounter,
@@ -316,3 +318,62 @@ def test_token_counter():
     out = metric.compute()
     assert out["masked_tokens"] == 1
     assert out["total_tokens"] == 3
+
+
+def test_bootstrap():
+    og_metrics = MetricCollection(
+        {
+            "mae": get_metric("mae", "regression", 1),
+            "r2": get_metric("r2", "regression", 8),
+            "auroc": get_metric("auroc", "binary", 8),
+        }
+    )
+    metrics = bootstrap_collection(og_metrics)
+    metrics = metrics.clone(prefix="train/")
+
+    for i in range(10):
+        preds = torch.rand(32, 8)
+        targets = torch.rand(32, 8)
+        metrics.update(preds, targets)
+    out = metrics.compute()
+
+    for v in out.values():
+        assert isinstance(v, torch.Tensor)
+
+    # Check metrics
+    for key in set(og_metrics.keys()):
+        for v in ["mean", "std"]:
+            assert "/" not in key
+            assert "_" not in key
+            assert f"train/{key}_{v}" in out.keys()
+
+
+def test_bootstrap_oov():
+    og_metrics = MetricCollection(
+        {
+            "mae": get_metric("mae", "regression", 1),
+            "r2": get_metric("r2", "regression", 8),
+            "auroc": get_metric("auroc", "binary", 8),
+        }
+    )
+    metrics = bootstrap_collection(og_metrics)
+    metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id=1)
+
+    for i in range(10):
+        preds = torch.rand(32, 8)
+        targets = torch.rand(32, 8)
+        input_ids = torch.randint(0, 8, (32, 8))
+        mask = input_ids == 0
+        masked_metric_update(metrics, preds, targets, mask, input_ids)
+    out = metrics.compute()
+
+    for v in out.values():
+        assert isinstance(v, torch.Tensor)
+
+    # Check metrics
+    for key in set(og_metrics.keys()):
+        for v in ["mean", "std"]:
+            assert "/" not in key
+            assert "_" not in key
+            for token_group in ["oov", "non_oov", "all"]:
+                assert f"train/{key}_{v}_{token_group}" in out.keys()

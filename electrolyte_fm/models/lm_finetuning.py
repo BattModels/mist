@@ -1,6 +1,6 @@
 from itertools import chain
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pytorch_lightning as pl
 import torch
@@ -13,8 +13,9 @@ from ..utils.metrics import (
     get_metric,
     masked_loss,
     masked_metric_update,
+    bootstrap_collection,
 )
-from .model_utils import record_summary_stats
+from .model_utils import record_summary_stats, record_loss_summary_stats
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin
 from .prediction_task_head import PredictionTaskHead
@@ -158,6 +159,8 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         lr_schedule: LRSchedulerCallable | None = None,
         transform: Optional[str] = None,
         tokenizer: Optional[str] = None,
+        bootstrap: Union[bool, int] = False,
+        track_oov: bool = True,
     ) -> None:
         super().__init__()
 
@@ -221,14 +224,23 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             unk_token_id = load_tokenizer(tokenizer).unk_token_id
         else:
             unk_token_id = load_tokenizer(encoder_ckpt).unk_token_id
-        self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
-        self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
-        self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
+
+        if bootstrap:
+            n = bootstrap if isinstance(bootstrap, int) else 50
+            metrics = bootstrap_collection(metrics, num_bootstraps=n)
+
+        if track_oov:
+            metrics = OOVMetric(metrics, unk_token_id)
+
+        self.train_metrics = metrics.clone(prefix="train/")
+        self.val_metrics = metrics.clone(prefix="val/")
+        self.test_metrics = metrics.clone(prefix="test/")
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
         for m in [self.train_metrics, self.val_metrics, self.test_metrics]:
             record_summary_stats(self.logger, m)
+        record_loss_summary_stats(self.logger)
 
     def on_fit_start(self):
         """Standardized training data"""

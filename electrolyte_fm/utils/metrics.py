@@ -2,6 +2,7 @@ from typing import Union, Dict, Optional
 
 import torch
 from torchmetrics import Metric, MetricCollection
+from torchmetrics.wrappers import BootStrapper
 from torchmetrics.wrappers.abstract import WrapperMetric
 from torchmetrics.wrappers.classwise import ClasswiseWrapper
 from torchmetrics.classification import (
@@ -34,7 +35,7 @@ class SafeR2Score(R2Score):
 
 
 class BinaryDictStatScores(BinaryStatScores):
-    def __init__(self, name, **kwargs):
+    def __init__(self, name: str, **kwargs):
         self.name = name
         if multidim_average := kwargs.pop("multidim_average", None):
             if multidim_average != "global":
@@ -207,7 +208,7 @@ def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> 
     elif name == "rmse" and task_type == "regression":
         return MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
-        return SafeR2Score(num_outputs=output_size)
+        return SafeR2Score(multioutput="uniform_average")
     else:
         raise ValueError(f"Unknown metric {name} for {task_type} tasks")
 
@@ -269,3 +270,7 @@ class TokenCounter(Metric):
             "total_tokens": self.total_tokens,
         }
         return out
+
+
+def bootstrap_collection(metrics: MetricCollection, **kwargs) -> MetricCollection:
+    return MetricCollection({k: BootStrapper(v, **kwargs) for k, v in metrics.items()})
