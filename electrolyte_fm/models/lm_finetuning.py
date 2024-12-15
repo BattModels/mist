@@ -230,11 +230,13 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
             metrics = bootstrap_collection(metrics, num_bootstraps=n)
 
         if track_oov:
-            metrics = OOVMetric(metrics, unk_token_id)
-
-        self.train_metrics = metrics.clone(prefix="train/")
-        self.val_metrics = metrics.clone(prefix="val/")
-        self.test_metrics = metrics.clone(prefix="test/")
+            self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
+            self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
+            self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
+        else:
+            self.train_metrics = metrics.clone(prefix="train/")
+            self.val_metrics = metrics.clone(prefix="val/")
+            self.test_metrics = metrics.clone(prefix="test/")
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
