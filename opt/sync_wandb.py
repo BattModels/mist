@@ -76,6 +76,17 @@ def summary_metric(run, key, type="last", best=None):
     return x
 
 
+def system_metrics(run):
+    df = run.history(stream="system")
+    mean = df.mean().to_dict()
+    std = df.std().to_dict()
+    stats = {}
+    for k in mean.keys():
+        stats[k] = {"mean": mean[k], "std": std[k]}
+
+    return stats
+
+
 def run_summary(run):
     config = run.config
     stats = {
@@ -126,6 +137,14 @@ def run_summary(run):
             "val_loss_last": summary_metric(run, "val/loss_epoch", "last"),
             "val_loss_best": summary_metric(run, "val/loss_epoch", "best", best="min"),
             "train_loss_best": summary_metric(run, "val/loss_step", "best", best="min"),
+        },
+        "system": {
+            "train_throughput": summary_metric(
+                run, "stats/train_batch_throughput_epoch"
+            ),
+            "val_throughput": summary_metric(run, "stats/val_batch_throughput", "mean"),
+            "train_batch_time": summary_metric(run, "stats/train_batch_time_epoch"),
+            **system_metrics(run),
         },
     }
 
