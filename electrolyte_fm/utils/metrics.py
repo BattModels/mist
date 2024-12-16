@@ -265,7 +265,6 @@ def get_metric(name: str, task_type: str, **kwargs) -> Metric:
             thresholds=500,
             **kwargs,
         )
-        print(m.__dict__)
     elif name == "avg-precision" and task_type == "binary":
         m = AveragePrecision(
             task="binary",
