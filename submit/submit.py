@@ -10,7 +10,7 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 from shlex import quote
-from typing import List
+from typing import List, Union
 
 import jinja2
 import rich
@@ -26,9 +26,13 @@ cli = typer.Typer(rich_markup_mode="markdown")
 console = rich.console.Console(stderr=True)
 
 
+def jsonnet_load(path: Union[str, Path], **kwargs) -> dict:
+    return json.loads(jsonnet.evaluate_file(str(path), **kwargs))
+
+
 def parse_data(path: Path) -> dict:
     if path.suffix in [".jsonnet", ".libsonnet"]:
-        return json.loads(jsonnet.evaluate_file(str(path)))
+        return jsonnet_load(path)
 
     with open(path, "r") as fid:
         if path.suffix in [".yaml", ".yml"]:
