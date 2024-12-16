@@ -1,6 +1,8 @@
-import pytorch_lightning as pl
 from typing import Optional
-from pytorch_lightning.callbacks import Callback
+
+import lightning as L
+import lightning.pytorch as pl
+from lightning.pytorch.callbacks import Callback
 from transformers import PreTrainedTokenizerBase
 
 
@@ -9,7 +11,7 @@ class LLMPredictions(Callback):
         self.every_n_steps = every_n_steps
         self.tokenizer: Optional[PreTrainedTokenizerBase] = None
 
-    def on_train_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
+    def on_train_start(self, trainer: "pl.Trainer", pl_module: "L.LightningModule"):
         dm = trainer.datamodule
         assert hasattr(dm, "tokenizer")
         assert isinstance(dm.tokenizer, PreTrainedTokenizerBase)

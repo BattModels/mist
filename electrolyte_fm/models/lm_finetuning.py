@@ -2,22 +2,21 @@ from itertools import chain
 from pathlib import Path
 from typing import List, Optional, Union
 
-import pytorch_lightning as pl
 import torch
-from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from torchmetrics import MetricCollection
+from lightning import LightningModule
+from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from sklearn.preprocessing import PowerTransformer as _PowerTransformer
+from torchmetrics import MetricCollection
 
 from ..utils.metrics import (
     OOVMetric,
+    bootstrap_collection,
     get_metric,
     masked_loss,
     masked_metric_update,
-    bootstrap_collection,
 )
-from .model_utils import record_summary_stats, record_loss_summary_stats
 from ..utils.tokenizer import load_tokenizer
-from .model_utils import DeepSpeedMixin
+from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
 from .prediction_task_head import PredictionTaskHead
 
 
@@ -141,7 +140,7 @@ class IdentityTransform(torch.nn.Identity):
         return x
 
 
-class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
+class LMFinetuning(LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on multiple tasks.
     """

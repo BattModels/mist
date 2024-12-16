@@ -1,20 +1,20 @@
 import json
-from unittest import mock
-from tempfile import TemporaryDirectory
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import mock
 
 import pytest
 import torch
-from pytorch_lightning import LightningDataModule, LightningModule, Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
-from pytorch_lightning.demos.boring_classes import BoringModel, BoringDataModule
+from lightning.pytorch import LightningDataModule, LightningModule, Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.cli import LightningArgumentParser, LightningCLI
+from lightning.pytorch.demos.boring_classes import BoringDataModule, BoringModel
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizerBase
 
-from train import cli_main
-from electrolyte_fm.utils.tokenizer import load_tokenizer
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
+from electrolyte_fm.utils.tokenizer import load_tokenizer
+from train import cli_main
 
 
 class MockedModel(BoringModel):
@@ -84,11 +84,11 @@ def test_ckpt(cli):
     assert model_config["class_path"] == __name__ + ".MockedModel"
     assert model_config["lightning_module"] == {
         "class_path": __name__ + ".MockedModel",
-        "_instantiator": "pytorch_lightning.cli.instantiate_module",
+        "_instantiator": "lightning.pytorch.cli.instantiate_module",
         "init_args": {"vocab_size": None},
     }
     assert model_config["datamodule"] == {
-        "_instantiator": "pytorch_lightning.cli.instantiate_module",
+        "_instantiator": "lightning.pytorch.cli.instantiate_module",
         "vocab_size": cli.datamodule.vocab_size,
         **data_config,
     }

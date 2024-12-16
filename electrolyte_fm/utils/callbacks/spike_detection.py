@@ -1,13 +1,14 @@
-import warnings
 import json
-from typing import Any, Dict, Mapping, Union
+import warnings
 from pathlib import Path
+from typing import Any, Dict, Mapping, Union
 
-import pytorch_lightning as pl
 import torch
+import lightning as L
+import lightning.pytorch as pl
 from lightning.fabric.utilities.spike import SpikeDetection as FabricSpikeDetection
-from pytorch_lightning.callbacks import Callback
-from pytorch_lightning.utilities.rank_zero import rank_zero_info
+from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.utilities.rank_zero import rank_zero_info
 
 from ..ckpt import SaveConfigWithCkpts
 
@@ -26,27 +27,27 @@ class SpikeDetection(FabricSpikeDetection, Callback):
         self.checkpoint_path = None
         self.checkpoint_spikes = checkpoint_spikes
 
-    def setup(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", stage: str):
+    def setup(self, trainer: "pl.Trainer", pl_module: "L.LightningModule", stage: str):
         # Ensure metrics are moved to device before training starts
         self.running_mean.to(trainer.strategy.root_device)
 
     def on_train_batch_start(
         self,
         trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
+        pl_module: "L.LightningModule",
         batch: Any,
         batch_idx: int,
     ) -> None:
         pl_module.skip_this_batch = batch_idx in self.bad_batches
 
-    def on_train_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
+    def on_train_end(self, trainer: "pl.Trainer", pl_module: "L.LightningModule"):
         pl_module.skip_this_batch = False
 
     @torch.no_grad()
     def on_train_batch_end(  # type: ignore
         self,
         trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
+        pl_module: "L.LightningModule",
         outputs: Union[torch.Tensor, Mapping[str, torch.Tensor]],
         batch: Any,
         batch_idx: int,

@@ -1,6 +1,6 @@
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
 from torchmetrics import MetricCollection
-from pytorch_lightning.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger
 
 from ..utils.ckpt import SaveConfigWithCkpts
 
