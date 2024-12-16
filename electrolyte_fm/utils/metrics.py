@@ -183,6 +183,12 @@ class ClasswiseWrapper(TmClasswiseWrapper):
         else:
             prefix = self._prefix if self._prefix is not None else ""
             postfix = self._postfix if self._postfix is not None else ""
+
+        # Handle singletons
+        if x.ndim == 0:
+            assert self.labels is None or len(self.labels) == 1
+            x = [x]
+
         if self.labels is None:
             return {f"{prefix}{i}{postfix}": val for i, val in enumerate(x)}
         return {f"{prefix}{lab}{postfix}": val for lab, val in zip(self.labels, x)}
@@ -253,7 +259,7 @@ def get_metrics(
 
 def get_metric(name: str, task_type: str, **kwargs) -> Metric:
     if name == "auroc" and task_type == "binary":
-        if num_labels := kwargs.pop("num_outputs", None):
+        if (num_labels := kwargs.pop("num_outputs", None)) and num_labels > 1:
             kwargs["task"] = "multilabel"
             kwargs["num_labels"] = num_labels
             kwargs["average"] = "none"
