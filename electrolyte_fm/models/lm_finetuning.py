@@ -6,12 +6,12 @@ import torch
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from sklearn.preprocessing import PowerTransformer as _PowerTransformer
-from torchmetrics import MetricCollection
 
 from ..utils.metrics import (
+    MetricCollection,
     OOVMetric,
     bootstrap_collection,
-    get_metric,
+    get_metrics,
     masked_loss,
     masked_metric_update,
 )
@@ -159,6 +159,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         transform: Optional[str] = None,
         tokenizer: Optional[str] = None,
         bootstrap: Union[bool, int] = False,
+        target_channels: Optional[List[str]] = None,
         track_oov: bool = True,
     ) -> None:
         super().__init__()
@@ -215,20 +216,19 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         self.transform.eval()
 
         # Additional Metrics
-        metrics = MetricCollection(
-            {metric: get_metric(metric, task, output_size) for metric in metrics}
+        metrics = get_metrics(
+            metrics,
+            task,
+            num_outputs=output_size,
+            target_channels=target_channels,
         )
-
-        if tokenizer:
-            unk_token_id = load_tokenizer(tokenizer).unk_token_id
-        else:
-            unk_token_id = load_tokenizer(encoder_ckpt).unk_token_id
 
         if bootstrap:
             n = bootstrap if isinstance(bootstrap, int) else 50
             metrics = bootstrap_collection(metrics, num_bootstraps=n)
 
         if track_oov:
+            unk_token_id = load_tokenizer(tokenizer or encoder_ckpt).unk_token_id
             self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
             self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
             self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)

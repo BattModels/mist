@@ -1,10 +1,11 @@
-from typing import Union, Dict, Optional
+from typing import Union, Dict, Optional, Any, Literal
 
 import torch
-from torchmetrics import Metric, MetricCollection
+from torchmetrics import Metric
+from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.wrappers import BootStrapper
 from torchmetrics.wrappers.abstract import WrapperMetric
-from torchmetrics.wrappers.classwise import ClasswiseWrapper
+from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 from torchmetrics.classification import (
     AUROC,
     AveragePrecision,
@@ -32,29 +33,6 @@ class SafeR2Score(R2Score):
                 dtype=self.sum_error.dtype,
             )
         return super().compute()
-
-
-class BinaryDictStatScores(BinaryStatScores):
-    def __init__(self, name: str, **kwargs):
-        self.name = name
-        if multidim_average := kwargs.pop("multidim_average", None):
-            if multidim_average != "global":
-                raise ValueError("multidim_average must be global")
-        super().__init__(multidim_average="global", **kwargs)
-
-    def update(self, preds: torch.FloatTensor, targets: torch.IntTensor) -> None:
-        # StatScores doesn't support bf16
-        super().update(preds.float(), targets.float())
-
-    def compute(self) -> torch.Tensor:
-        out = super().compute()
-        return {
-            "tp": out[0],
-            "fp": out[1],
-            "tn": out[2],
-            "fn": out[3],
-            "sup": out[4],
-        }[self.name]
 
 
 class HotellingTwoSample(Metric):
@@ -181,36 +159,158 @@ class OOVMetric(Metric):
             yield v
 
 
-def get_metric(name: str, task_type: str, output_size: Optional[int] = None) -> Metric:
+class ClasswiseWrapper(TmClasswiseWrapper):
+    def _convert_output(
+        self, x: Union[torch.Tensor, Dict[str, torch.Tensor]]
+    ) -> Dict[str, Any]:
+        """Override the default _convert_output to support wrapping a single dict-returning metric"""
+        if not isinstance(x, dict):
+            return self._convert_output_tensor(x)
+
+        out = {}
+        for k, v in x.items():
+            co = self._convert_output_tensor(v)
+            for ck, cv in co.items():
+                out[f"{ck}_{k}"] = cv
+
+        return out
+
+    def _convert_output_tensor(self, x: torch.Tensor) -> Dict[str, Any]:
+        """Override the default all allow for blank prefixes and postfixes"""
+        if self._prefix is None and self._postfix is None:
+            prefix = f"{self.metric.__class__.__name__.lower()}_"
+            postfix = ""
+        else:
+            prefix = self._prefix if self._prefix is not None else ""
+            postfix = self._postfix if self._postfix is not None else ""
+        if self.labels is None:
+            return {f"{prefix}{i}{postfix}": val for i, val in enumerate(x)}
+        return {f"{prefix}{lab}{postfix}": val for lab, val in zip(self.labels, x)}
+
+
+class MetricCollection(TmMetricCollection):
+    def _compute_and_reduce(
+        self, method_name: Literal["compute", "forward"], *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        result = {}
+        """ Overrides the default implementation of MetricCollection._compute_and_reduce to support wrapping a single Bootstrapping metric"""
+        for k, m in self.items(keep_base=True, copy_state=False):
+            if method_name == "compute":
+                res = m.compute()
+            elif method_name == "forward":
+                res = m(*args, **m._filter_kwargs(**kwargs))
+            else:
+                raise ValueError(
+                    f"method_name should be either 'compute' or 'forward', but got {method_name}"
+                )
+            result[k] = res
+
+        flattened_results = {}
+        for k, m in self.items(keep_base=True, copy_state=False):
+            res = result[k]
+            if isinstance(res, dict):
+                for key, v in res.items():
+                    # Strip prefixes and postfixes
+                    stripped_k = k.replace(getattr(m, "prefix", ""), "")
+                    stripped_k = stripped_k.replace(getattr(m, "postfix", ""), "")
+                    key = f"{stripped_k}_{key}"
+
+                    if getattr(m, "_from_collection", None) and m.prefix is not None:
+                        key = f"{m.prefix}{key}"
+                    if getattr(m, "_from_collection", None) and m.postfix is not None:
+                        key = f"{key}{m.postfix}"
+                    flattened_results[key] = v
+            else:
+                flattened_results[k] = res
+        return {self._set_name(k): v for k, v in flattened_results.items()}
+
+
+def get_metrics(
+    metrics: list[str],
+    task: str,
+    num_outputs: int = 1,
+    target_channels: Optional[list[str]] = None,
+    **kwargs,
+) -> MetricCollection:
+    mc = {}
+    for metric in metrics:
+        if metric.endswith("-channel"):
+            key = metric.replace("-", "_")
+            mc[key] = get_metric(
+                metric, task, num_outputs=num_outputs, target_channels=target_channels
+            )
+        else:
+            mc[metric] = get_metric(metric, task)
+
+    return MetricCollection(mc)
+
+
+def get_metric(name: str, task_type: str, **kwargs) -> Metric:
     if name == "auroc" and task_type == "binary":
-        return AUROC(
-            task="binary",
+        if num_labels := kwargs.pop("num_outputs", None):
+            kwargs["task"] = "multilabel"
+            kwargs["num_labels"] = num_labels
+            kwargs["average"] = "none"
+        else:
+            kwargs["task"] = "binary"
+
+        m = AUROC(
             ignore_index=IGNORE_INDEX,
             thresholds=500,
+            **kwargs,
         )
+        print(m.__dict__)
     elif name == "avg-precision" and task_type == "binary":
-        return AveragePrecision(
+        m = AveragePrecision(
             task="binary",
             ignore_index=IGNORE_INDEX,
             thresholds=250,
+            **kwargs,
         )
     elif name == "crosstab" and task_type == "binary":
-        return MetricCollection(
-            {
-                name: BinaryDictStatScores(name, ignore_index=IGNORE_INDEX)
-                for name in ["tp", "tn", "fp", "fn", "sup"]
-            }
+        m = ClasswiseWrapper(
+            BinaryStatScores(ignore_index=IGNORE_INDEX, **kwargs),
+            labels=["tp", "tn", "fp", "fn", "sup"],
+            prefix="",
         )
     elif name == "mae" and task_type == "regression":
-        return MeanAbsoluteError()
+        m = MeanAbsoluteError(**kwargs)
     elif name == "mape" and task_type == "regression":
-        return MeanAbsolutePercentageError()
+        m = MeanAbsolutePercentageError(**kwargs)
     elif name == "rmse" and task_type == "regression":
-        return MeanSquaredError(squared=True)
+        m = MeanSquaredError(squared=True)
     elif name == "r2" and task_type == "regression":
-        return SafeR2Score(num_outputs=output_size)
+        multioutput = (
+            "uniform_average"
+            if kwargs.pop("num_outputs", None) is None
+            else "raw_values"
+        )
+        m = SafeR2Score(multioutput=multioutput, **kwargs)
+
+    elif name.endswith("-channel"):
+        target_channels = kwargs.pop("target_channels", None)
+        if target_channels is None:
+            assert kwargs.get("num_outputs", None) is not None
+        else:
+            kwargs["num_outputs"] = kwargs.get("num_outputs", len(target_channels))
+            assert len(target_channels) == kwargs["num_outputs"]
+            assert kwargs["num_outputs"] >= 1
+
+        m = ClasswiseWrapper(
+            get_metric(
+                name.replace("-channel", ""),
+                task_type,
+                **kwargs,
+            ),
+            labels=target_channels,
+            prefix="",
+        )
     else:
         raise ValueError(f"Unknown metric {name} for {task_type} tasks")
+
+    m.name = name
+
+    return m
 
 
 def masked_loss(
@@ -273,4 +373,20 @@ class TokenCounter(Metric):
 
 
 def bootstrap_collection(metrics: MetricCollection, **kwargs) -> MetricCollection:
-    return MetricCollection({k: BootStrapper(v, **kwargs) for k, v in metrics.items()})
+    """Apply Bootstrapping to all supported metrics in a MetricCollection"""
+    mc = {}
+    for k, v in metrics.items():
+        if isinstance(v, ClasswiseWrapper):
+            if k in ["crosstab"]:
+                mc[k] = v  # Don't bootstrap unsupported metrics
+            else:
+                mc[k] = ClasswiseWrapper(
+                    BootStrapper(v.metric, **kwargs),
+                    labels=v.labels,
+                    prefix=v._prefix,
+                    postfix=v._postfix,
+                )
+        else:
+            mc[k] = BootStrapper(v, **kwargs)
+
+    return MetricCollection(mc)
