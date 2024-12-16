@@ -159,7 +159,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         transform: Optional[str] = None,
         tokenizer: Optional[str] = None,
         bootstrap: Union[bool, int] = False,
-        target_channels: Optional[List[str]] = None,
+        target_columns: Optional[List[str]] = None,
         track_oov: bool = True,
     ) -> None:
         super().__init__()
@@ -220,7 +220,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             metrics,
             task,
             num_outputs=output_size,
-            target_channels=target_channels,
+            target_channels=target_columns,
         )
 
         if bootstrap:

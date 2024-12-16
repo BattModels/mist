@@ -225,6 +225,10 @@ class MetricCollection(TmMetricCollection):
         return {self._set_name(k): v for k, v in flattened_results.items()}
 
 
+def normalize_name(channel: str) -> str:
+    return channel.replace("_", "-").replace("/", "--").strip()
+
+
 def get_metrics(
     metrics: list[str],
     task: str,
@@ -233,6 +237,8 @@ def get_metrics(
     **kwargs,
 ) -> MetricCollection:
     mc = {}
+    if target_channels is not None:
+        target_channels = [normalize_name(c) for c in target_channels]
     for metric in metrics:
         if metric.endswith("-channel"):
             key = metric.replace("-", "_")
