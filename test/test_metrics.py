@@ -1,5 +1,5 @@
 from itertools import chain, repeat
-from typing import Union
+from typing import Union, Optional
 
 import pytest
 import torch
@@ -364,14 +364,21 @@ def test_token_counter():
             "num_outputs": 3,
         },
         {
-            "metrics": ["auroc", "auroc-channel"],
+            "metrics": ["auroc", "auroc-channel", "avg-precision-channel"],
             "task": "binary",
             "num_outputs": 3,
+        },
+        {
+            "metrics": ["auroc", "auroc-channel"],
+            "task": "binary",
+            "num_outputs": 1,
         },
     ],
 )
 def metric_collection(request):
-    return get_metrics(**request.param)
+    mc = get_metrics(**request.param)
+    mc.__num_outputs__ = request.param.get("num_outputs", None)
+    return mc
 
 
 def test_bootstrap(metric_collection):
@@ -382,12 +389,13 @@ def test_bootstrap(metric_collection):
     print("metrics:", metrics)
     print("og_metrics:", og_metrics)
 
+    C = og_metrics.__num_outputs__ or 4
     for i in range(10):
-        preds = torch.rand(32, 3)
+        preds = torch.rand(32, C)
         if is_binary(og_metrics):
-            targets = torch.randint(0, 1, (32, 3))
+            targets = torch.randint(0, 1, (32, C))
         else:
-            targets = torch.rand(32, 3)
+            targets = torch.rand(32, C)
         metrics.update(preds, targets)
         og_metrics.update(preds, targets)
     og_out = og_metrics.compute()

@@ -272,8 +272,14 @@ def get_metric(name: str, task_type: str, **kwargs) -> Metric:
             **kwargs,
         )
     elif name == "avg-precision" and task_type == "binary":
+        if (num_labels := kwargs.pop("num_outputs", None)) and num_labels > 1:
+            kwargs["task"] = "multilabel"
+            kwargs["num_labels"] = num_labels
+            kwargs["average"] = "none"
+        else:
+            kwargs["task"] = "binary"
+
         m = AveragePrecision(
-            task="binary",
             ignore_index=IGNORE_INDEX,
             thresholds=250,
             **kwargs,
