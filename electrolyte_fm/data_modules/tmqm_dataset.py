@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 import logging
 
-import pytorch_lightning as pl
+from lightning import LightningDataModule
 import torch
 
 from torch.utils.data import DataLoader
@@ -17,7 +17,7 @@ from .molnet_dataset import collate_target
 from .utils import MolEncoding, encode_molecules, is_fast
 
 
-class tmQMDataModule(pl.LightningDataModule):
+class tmQMDataModule(LightningDataModule):
     def __init__(
         self,
         path: str,

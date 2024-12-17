@@ -1,14 +1,14 @@
+import json
 import os
 import signal
-import json
 import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, Mock
 
-from pytorch_lightning import Trainer
-from pytorch_lightning.demos.boring_classes import BoringDataModule, BoringModel
+from lightning.pytorch import Trainer
+from lightning.pytorch.demos.boring_classes import BoringDataModule, BoringModel
 
 import train
 from electrolyte_fm.utils.callbacks import Requeue

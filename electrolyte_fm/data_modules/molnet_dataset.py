@@ -1,21 +1,21 @@
 import json
+import logging
 from pathlib import Path
 from statistics import mean
 from typing import Dict, List, Optional, Union
-import logging
 
-from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
-from sklearn.model_selection import GroupShuffleSplit
-import pytorch_lightning as pl
 import torch
-from transformers import DataCollatorWithPadding
 from datasets import Dataset, DatasetDict, load_dataset
 from datasets.distributed import split_dataset_by_node
+from lightning import LightningDataModule
+from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
+from sklearn.model_selection import GroupShuffleSplit
 from torch.utils.data import DataLoader
+from transformers import DataCollatorWithPadding
+
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
 from .utils import MolEncoding, encode_molecules, is_fast
-
 
 _URLS = {
     "qm8": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm8.csv",
@@ -34,7 +34,7 @@ _URLS = {
 }
 
 
-class MolNetDataModule(pl.LightningDataModule):
+class MolNetDataModule(LightningDataModule):
     def __init__(
         self,
         name: str = "bace",

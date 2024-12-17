@@ -1,24 +1,24 @@
 from itertools import chain
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
-import pytorch_lightning as pl
 import torch
 from torch.masked import MaskedTensor
-from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from torchmetrics import MetricCollection
+from lightning import LightningModule
+from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from sklearn.preprocessing import PowerTransformer as _PowerTransformer
 from datasets import IterableDataset
 
 from ..utils.metrics import (
+    MetricCollection,
     OOVMetric,
-    get_metric,
+    bootstrap_collection,
+    get_metrics,
     masked_loss,
     masked_metric_update,
 )
-from .model_utils import record_summary_stats
 from ..utils.tokenizer import load_tokenizer
-from .model_utils import DeepSpeedMixin
+from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
 from .prediction_task_head import PredictionTaskHead
 
 
@@ -156,7 +156,7 @@ class IdentityTransform(torch.nn.Identity):
         return x
 
 
-class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
+class LMFinetuning(LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on multiple tasks.
     """
@@ -175,6 +175,8 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         target_columns: Optional[List[str]] = None,
         transform: Optional[str] = None,
         tokenizer: Optional[str] = None,
+        bootstrap: Union[bool, int] = False,
+        track_oov: bool = True,
     ) -> None:
         super().__init__()
 
@@ -231,25 +233,32 @@ class LMFinetuning(pl.LightningModule, DeepSpeedMixin):
         self.transform.eval()
 
         # Additional Metrics
-        metrics = MetricCollection(
-            {
-                metric: get_metric(metric, task, output_size, target_columns)
-                for metric in metrics
-            }
+        metrics = get_metrics(
+            metrics,
+            task,
+            num_outputs=output_size,
+            target_channels=target_columns,
         )
 
-        if tokenizer:
-            unk_token_id = load_tokenizer(tokenizer).unk_token_id
+        if bootstrap:
+            n = bootstrap if isinstance(bootstrap, int) else 50
+            metrics = bootstrap_collection(metrics, num_bootstraps=n)
+
+        if track_oov:
+            unk_token_id = load_tokenizer(tokenizer or encoder_ckpt).unk_token_id
+            self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
+            self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
+            self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
         else:
-            unk_token_id = load_tokenizer(encoder_ckpt).unk_token_id
-        self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
-        self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
-        self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
+            self.train_metrics = metrics.clone(prefix="train/")
+            self.val_metrics = metrics.clone(prefix="val/")
+            self.test_metrics = metrics.clone(prefix="test/")
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
         for m in [self.train_metrics, self.val_metrics, self.test_metrics]:
             record_summary_stats(self.logger, m)
+        record_loss_summary_stats(self.logger)
 
     def on_fit_start(self):
         """Standardized training data"""

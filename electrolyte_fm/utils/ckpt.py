@@ -5,9 +5,9 @@ from typing import Optional
 from pathlib import Path
 
 from jsonargparse import Namespace
-from pytorch_lightning import Callback, LightningModule, Trainer
-from pytorch_lightning.cli import LightningArgumentParser
-from pytorch_lightning.loggers import WandbLogger
+from lightning.pytorch import Callback, LightningModule, Trainer
+from lightning.pytorch.cli import LightningArgumentParser
+from lightning.pytorch.loggers import WandbLogger
 
 
 class SaveConfigWithCkpts(Callback):

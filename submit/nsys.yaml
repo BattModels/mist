@@ -10,6 +10,6 @@ train:
   trainer:
     fast_dev_run: 10
     profiler:
-      class_path: pytorch_lightning.profilers.PyTorchProfiler
+      class_path: lightning.pytorch.profiler.NsysProfiler
       init_args:
         emit_nvtx: true
