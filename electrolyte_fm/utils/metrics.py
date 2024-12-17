@@ -17,6 +17,7 @@ from torchmetrics.regression import (
     MeanSquaredError,
     R2Score,
     MeanAbsolutePercentageError,
+    PearsonCorrCoef,
 )
 
 
@@ -295,7 +296,9 @@ def get_metric(name: str, task_type: str, **kwargs) -> Metric:
     elif name == "mape" and task_type == "regression":
         m = MeanAbsolutePercentageError(**kwargs)
     elif name == "rmse" and task_type == "regression":
-        m = MeanSquaredError(squared=True)
+        m = MeanSquaredError(squared=True, **kwargs)
+    elif name == "pearson" and task_type == "regression":
+        m = PearsonCorrCoef(**kwargs)
     elif name == "r2" and task_type == "regression":
         multioutput = (
             "uniform_average"
@@ -352,7 +355,10 @@ def masked_metric_update(
 ):
     """Update metrics, masking out targets as needed"""
     targets = targets.masked_fill(mask, IGNORE_INDEX)
-    metrics.update(preds, targets, *args)
+    if isinstance(metrics, OOVMetric):
+        metrics.update(preds, targets, *args)
+    else:
+        metrics.update(preds, targets)
 
 
 class TokenCounter(Metric):
