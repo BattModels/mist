@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import pytorch_lightning as pl
-from torchmetrics import MetricCollection
-from sklearn.preprocessing import PowerTransformer as _PowerTransformer
+from torchmetrics import Metric
 
 from ..utils.metrics import (
     OOVMetric,
@@ -23,7 +22,6 @@ from ..utils.metrics import (
 )
 from .model_utils import record_summary_stats
 from ..utils.tokenizer import load_tokenizer
-from .prediction_task_head import PredictionTaskHead
 
 
 class Standardize(torch.nn.Module):
@@ -47,6 +45,50 @@ class Standardize(torch.nn.Module):
         return self.state_dict()
 
 
+class MixturePredictionTaskHead(nn.Module):
+    def __init__(
+        self, embed_dim: int, output_size: int = 1, dropout: float = 0.2
+    ) -> None:
+        super().__init__()
+        self.desc_skip_connection = True
+        self.fcs = []
+
+        self.fc1 = nn.Linear(embed_dim, embed_dim)
+        self.dropout1 = nn.Dropout(dropout)
+        self.relu1 = nn.GELU()
+        self.fc2 = nn.Linear(embed_dim, embed_dim)
+        self.dropout2 = nn.Dropout(dropout)
+        self.relu2 = nn.GELU()
+        self.final = nn.Linear(embed_dim, output_size)
+
+    def forward(self, emb):
+        x_out = self.fc1(emb)
+        x_out = self.dropout1(x_out)
+        x_out = self.relu1(x_out)
+
+        if self.desc_skip_connection is True:
+            x_out = x_out + emb
+
+        z = self.fc2(x_out)
+        z = self.dropout2(z)
+        z = self.relu2(z)
+        if self.desc_skip_connection is True:
+            z = self.final(z + x_out)
+        else:
+            z = self.final(z)
+        return z
+
+
+def metric_update(
+    metrics: Metric,
+    preds: torch.Tensor,
+    targets: torch.Tensor,
+    *args,
+):
+    """Update metrics"""
+    metrics.update(preds, targets, *args)
+
+
 class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
     """
     PyTorch Lightning module for mixture property prediction.
@@ -64,13 +106,13 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
-        self.task_network = PredictionTaskHead(
+        self.task_network = MixturePredictionTaskHead(
             embed_dim=hidden_size,
             output_size=output_size,
             dropout=dropout,
         )
         self.lossfn = torch.nn.MSELoss(reduction="mean")
-        self.mae = MeanAbsoluteError()
+        self.metric = MeanAbsoluteError()
         self.transform = Standardize(output_size)
 
     def on_fit_start(self):
@@ -84,7 +126,7 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.transform.load_state_dict(state)
 
     def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
-        pred_unscaled = self.task_network(batch["embedding"])
+        pred_unscaled = self.task_network(batch["embedding"]).flatten()
         if transform:
             return self.transform.forward(pred_unscaled)
         return pred_unscaled
@@ -97,7 +139,7 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
 
     def _scaled_pred_loss(self, batch):
         """Compute loss before transforming the model's predictions"""
-        preds = self.forward(batch, transform=False).flatten()
+        preds = self.forward(batch, transform=False)
         target = batch["target"]
         target = self.transform.inverse(target)
         loss = self.lossfn(preds, target)
@@ -114,16 +156,34 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             prog_bar=True,
             sync_dist=True,
         )
-        self.log("train/mae", self.mae)
+        metric_update(self.metric, preds, batch["target"])
         return loss
+
+    def on_train_epoch_end(self):
+        self.log(
+            "train/mae",
+            value=self.metric.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.metric.reset()
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         preds, loss = self._scaled_pred_loss(batch)
         self.log(
             "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
         )
-        self.log("val/mae", self.mae)
+
+        metric_update(self.metric, preds, batch["target"])
         return loss
+
+    def on_validation_epoch_end(self):
+        self.log(
+            value=self.metric.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.metric.reset()
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         preds, loss = self._scaled_pred_loss(batch)
@@ -135,7 +195,7 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             prog_bar=True,
             sync_dist=True,
         )
-        self.log("test/mae", self.mae)
+        self.log("test/mae", self.metric)
         return loss
 
     def configure_optimizers(self):

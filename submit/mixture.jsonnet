@@ -16,7 +16,7 @@
         lr_schedule: {
           class_path: 'electrolyte_fm.utils.lr_schedule.RelativeCosineWarmup',
           init_args: {
-            num_training_steps: 200,
+            num_training_steps: 20000,
             num_warmup_steps: 'beta2',
           },
         },
@@ -28,8 +28,8 @@
       init_args: {
         name_or_path: '/nfs/turbo/coe-venkvis/mist/q2egf8f2/checkpoints/last.ckpt',
         path: '/home/abhutani/electrolyte-fm/diffmix_data/published_excess_molar_enthalpy',
-        batch_size: 4,
-        val_batch_size: 2,
+        batch_size: 8,
+        val_batch_size: 4,
         target_col: 'excess_molar_enthalpy/(J/mol)',
         tokenizer: '/nfs/turbo/coe-venkvis/mist/q2egf8f2/checkpoints/last.ckpt',
       },
