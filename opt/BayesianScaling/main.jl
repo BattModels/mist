@@ -8,16 +8,16 @@ using StatsBase: mean_and_std, mean
 using UUIDs: uuid4
 using Random
 using Enzyme
-using JLD2
+using JLD2: jldsave
 using ADTypes: AutoForwardDiff
 
 # @static isinteractive() ? using GLMakie : using CairoMakie
 
-RUNS_DIR=abspath(joinpath(pathof(BayesianScaling), "..", "..", "..", "..", ".cache", "wandb-export"))
+RUNS_DIR = abspath(joinpath(pathof(BayesianScaling), "..", "..", "..", "..", ".cache", "wandb-export"))
 
 function figure_training_campaign(dir=RUNS_DIR)
     f = Figure()
-    ax = Axis(f[1,1];
+    ax = Axis(f[1, 1];
         xscale=log10,
         yscale=log10,
         xlabel="Compute [FLOP]",
@@ -28,7 +28,7 @@ function figure_training_campaign(dir=RUNS_DIR)
     C = @. 6 * df.model_size * df.step * df.effective_batch_size
     scatter!(ax, C, df.val_loss_best)
     @info "Cummulative Compute Budget" sum(C; init=0.0)
-    ax_cum = Axis(f[1,2];
+    ax_cum = Axis(f[1, 2];
         yscale=log10,
         ylabel="Cummulative Compute Spend [FLOP]"
     )
@@ -41,9 +41,9 @@ function init_hoffman(df=pretraining_runs(), tokenizer="smirk")
         :model_size,
         :tokenizer,
         :val_loss_best => :loss,
-        [:effective_batch_size, :step] => ByRow(*) => :data_size
-        :tags => ByRow(tags -> "gas-sqrt-scaling" ∈ tags),
+        [:effective_batch_size, :step] => ByRow(*) => :data_size,
     )
+    dropmissing!(df)
     df = subset(df,
         :loss => ByRow(x -> 1e-4 < x < 1.0),
         :tokenizer => ByRow(==(tokenizer)),
@@ -71,6 +71,7 @@ function init_shaped(df=pretraining_runs(), tokenizer="smirk")
         :tokenizer => ByRow(==(tokenizer)),
         :optimizer => ByRow(==("deepspeed.ops.lamb.FusedLamb")),
     )
+    df.lr_base = @. df.lr / sqrt(df.effective_batch_size / 1024)
     m = BayesianScaling.ShapedScaling(df)
     m = BayesianScaling.init_logdensity_model(m, :Enzyme)
     return m, df
@@ -133,6 +134,39 @@ function max_noise_level(x; n=20)
 end
 
 savefig(dir::String, name::String, f) = save(joinpath(dir, name), f)
+
+function process_model(model, df)
+    outdir = mkpath(joinpath(@__DIR__, "out", string(uuid4())) * "/")
+    @info "Will save output to $outdir"
+
+    # Sample chaings
+    y, yr = BayesianScaling.sample_chains(model)
+    jldsave(joinpath(outdir, "chains.jld2"); model, df, chains=y, chains_raw=yr)
+
+    # Save figures
+    save_figures(outdir, model, df, y, yr)
+
+end
+
+function save_figures(outdir, model, df, chains, raw_chains)
+    # Subsample for faster plotting
+    mkpath(outdir)
+    chains = BayesianScaling.subsample(chains, 0.3)
+
+    # Generate Plots
+    savefig(outdir, "scaling.pdf", BayesianScaling.plot_scaling(chains[:, :, :scaling], df))
+    savefig(outdir, "lr_map.pdf", BayesianScaling.plot_lr_map(m.ℓ.log_density_function, chains, df))
+    savefig(outdir, "compute_optimal.pdf", BayesianScaling.plot_compute_optimal(chains[:, :, :scaling], df))
+    savefig(outdir, "penalties.pdf", BayesianScaling.plot_penalty(model.ℓ.log_density_function, chains))
+
+    # Bayesian Plots
+    for sym = [:scaling, :lr]
+        savefig(outdir, "raw_chains_$sym.pdf", BayesianScaling.plot_chains(raw_chains[:, :, sym]))
+        savefig(outdir, "raw_chains_covar_$sym.pdf", BayesianScaling.plot_chain_covariance(raw_chains[:, :, sym]))
+    end
+
+    return outdir
+end
 
 function main(args)
     dir = args[1]

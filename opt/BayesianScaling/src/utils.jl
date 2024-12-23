@@ -48,9 +48,9 @@ Kaplan, J. et al. 2020. Scaling Laws for Neural Language Models. arXiv.
 `d_attn` and `d_model` by default are the same
 """
 function non_embedding_size(d_model, d_ff, n_layers; d_attn=d_model)
-    attention_qkv = n_layers * d_model * 3 * d_attn
+    attention_qkv = n_layers * 3 * d_model * d_attn
     project = n_layers * d_model * d_attn
-    ff = n_layers = 2 * d_model * d_ff
+    ff = n_layers * 2 * d_model * d_ff
     return attention_qkv + project + ff
 end
 

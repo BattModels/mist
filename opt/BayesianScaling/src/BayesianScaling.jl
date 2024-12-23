@@ -23,7 +23,7 @@ using TransformedLogDensities: TransformedLogDensity
 using TransformVariables: TransformVariables, as, as_real, as_positive_real, as_negative_real
 using ProgressBars: ProgressBar
 
-Statistics.middle(x::ComponentVector, y::ComponentVector) = @. (x+y)/2
+Statistics.middle(x::ComponentVector, y::ComponentVector) = @. (x + y) / 2
 
 """ Path to exported wandb runs"""
 const WANDB_EXPORT_DIR = joinpath(@__DIR__, "..", "..", "..", ".cache", "wandb-export")

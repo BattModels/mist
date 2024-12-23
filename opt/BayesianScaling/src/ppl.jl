@@ -157,8 +157,9 @@ function sample_chains(model; nchains=15, draws=1_000)
     d = dimension(model)
     nchains *= ceil(Int, sqrt(d))
     raw_samples = Array{Float64}(undef, d, draws, nchains)
+    reporter = DynamicHMC.NoProgressReport()
     Threads.@threads :dynamic for i in ProgressBar(1:nchains)
-        result = DynamicHMC.mcmc_with_warmup(Random.default_rng(), model, draws)
+        result = DynamicHMC.mcmc_with_warmup(Random.default_rng(), model, draws; reporter)
         raw_samples[:, :, i] .= result.posterior_matrix
     end
     rs = reshape(raw_samples, :, draws * nchains)
@@ -176,6 +177,25 @@ function sample_chains(model; nchains=15, draws=1_000)
     return y, yr
 end
 
-mapchains(f, op, chains::AbstractArray{<:Real,3}) = mapreduce(f, op, eachslice(chains, dims=(1,2)))
+mapchains(f, op, chains::AbstractArray{<:Real,3}) = mapreduce(f, op, eachslice(chains, dims=(1, 2)))
 
+function subsample(chains::AbstractArray{T,3}, n::Integer) where {T}
+    s = similar(chains, n, 1, size(chains, 3))
+    indices = CartesianIndices((axes(chains, 1), axes(chains, 2)))
+    for i in 1:n
+        I = rand(indices).I
+        s[i, 1, :] .= chains[I..., :]
+    end
+    if chains isa ComponentArray
+        s = ComponentArray(s, chains.axes...)
+    end
+    return s
+end
+
+function subsample(chains::AbstractArray{T,3}, p::AbstractFloat=0.2) where {T}
+    ns = size(chains, 1) * size(chains, 2)
+    @assert 0 < p <= 1 lazy"Expected p ∈ (0, 1], got $p"
+    n = ceil(Int, ns * p)
+    return subsample(chains, n)
+end
 

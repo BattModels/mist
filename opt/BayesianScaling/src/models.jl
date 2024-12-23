@@ -4,6 +4,11 @@ function compute_optimal_model_size(flops; A, α, B, β)
     a = @. β / (α + β)
     return @. G * (flops / 6)^a
 end
+function compute_optimal_data_size(flops; A, α, B, β)
+    G_inv = @. ((α * A) / (β * B))^(-1 / (α + β))
+    b = @. α / (α + β)
+    return @. G_inv * (flops / 6)^b
+end
 function compute_optimal_loss(C; A, α, B, β, E)
     G = @. ((α * A) / (β * B))^(1 / (α + β))
     a = @. β / (α + β)
@@ -45,7 +50,7 @@ function hoffman_huber_loss(θ, p)
     (; model_size, data_size, loss) = p
     ℓ = 0.0
     for i in eachindex(loss)
-        loss_lse = lse(a - α*log(model_size[i]), b - β*log(data_size[i]), e)
+        loss_lse = lse(a - α * log(model_size[i]), b - β * log(data_size[i]), e)
         ℓ += huber_loss(loss_lse - log(loss[i]); δ=1e-3)
     end
     return ℓ
@@ -58,11 +63,11 @@ Distributions.quantile(d::UnivariateDistribution, p) = map(x -> quantile(d, x), 
 function fit_model_huber(m::HoffmanScaling; l=0.01)
     priors = m.model.priors
     grid = Iterators.product(
-        range(quantile(priors.α, (l, 1-l))...; length=5),
-        range(quantile(priors.β, (l, 1-l))...; length=5),
-        range(log.(quantile(priors.A, (l, 1-l)))...; length=10),
-        range(log.(quantile(priors.B, (l, 1-l)))...; length=10),
-        range(log.(quantile(priors.E, (l, 1-l)))...; length=10),
+        range(quantile(priors.α, (l, 1 - l))...; length=5),
+        range(quantile(priors.β, (l, 1 - l))...; length=5),
+        range(log.(quantile(priors.A, (l, 1 - l)))...; length=10),
+        range(log.(quantile(priors.B, (l, 1 - l)))...; length=10),
+        range(log.(quantile(priors.E, (l, 1 - l)))...; length=10),
     )
 
     # Initial grid search
@@ -84,9 +89,9 @@ function model_priors(::Type{HoffmanScaling})
     return (;
         A=LogNormal(log(500), 2.0),
         B=LogNormal(log(500), 2.0),
-        α=truncated(Normal(1, 0.5), 0, Inf),
-        β=truncated(Normal(1, 0.5), 0, Inf),
-        E=Exponential(1e-3),
+        α=Uniform(0, 2),
+        β=Uniform(0, 2),
+        E=LogNormal(log(1e-3), 1),
         sigma=LogNormal(-1, 2.0),
     )
 end
@@ -110,7 +115,7 @@ function lr_penalty(lr, N, θ)
 end
 
 
-struct ShapedScaling{P, R}
+struct ShapedScaling{P,R}
     priors::P
     runs::Vector{R}
 end
@@ -119,26 +124,26 @@ transform_support(m::ShapedScaling) = transform_support(m.priors)
 
 function model_priors(::Type{ShapedScaling})
     return (;
-        scaling = Base.structdiff(model_priors(HoffmanScaling), NamedTuple{(:sigma,)}),
-        lr = (;
-            ideal = (;
-                a = Normal(log(3.9e-5), 1),     # Reference log(LR)
-                b = Normal(0.5, 0.1),           # Scaling with effective batch size
-                c = Normal(0, 0.5),             # Scaling with model size
+        scaling=Base.structdiff(model_priors(HoffmanScaling), NamedTuple{(:sigma,)}),
+        lr=(;
+            ideal=(;
+                a=Normal(log(3.9e-5), 1),     # Reference log(LR)
+                b=Normal(0.5, 0.1),           # Scaling with effective batch size
+                c=Normal(0, 0.5),             # Scaling with model size
             ),
-            penalty = (Exponential(1.0),),
+            penalty=(Exponential(1.0),),
         ),
-        beta = (;
-            ideal = (;
-                beta1 = truncated(LogNormal(log(0.87), 0.1), 0, 1),
-                beta2 = truncated(LogNormal(0.997, 0.1), 0, 1),
-            ),
-            penalty = (Exponential(1.0),),
-        ),
-        ff_ratio = (LogNormal(log(4), log(2)), Exponential(1.0)),
-        kv_size = (LogNormal(log(64), 1), Exponential(1.0)),
-        aspect_ratio = (LogNormal(log(64), 2), Exponential(1.0)),
-        sigma = Exponential(1.0),
+        # beta=(;
+        #     ideal=(;
+        #         beta1=Uniform(0, 1),
+        #         beta2=Uniform(0, 1),
+        #     ),
+        #     penalty=(Exponential(1.0),),
+        # ),
+        ff_ratio=(LogNormal(log(4), log(2)), Exponential(1.0)),
+        kv_size=(LogNormal(log(64), 1), Exponential(1.0)),
+        aspect_ratio=(LogNormal(log(64), 2), Exponential(1.0)),
+        sigma=Exponential(1.0),
     )
 end
 
@@ -149,12 +154,15 @@ function ShapedScaling(df::DataFrame)
     return ShapedScaling(priors, runs)
 end
 
+StatsBase.response(m::ShapedScaling) = map(run -> run.loss, m.runs)
+
 function (m::ShapedScaling)(θ)
-    (; scaling, lr, beta, ff_ratio, aspect_ratio, kv_size, sigma) = θ
+    (; scaling, lr, ff_ratio, aspect_ratio, kv_size, sigma) = θ
 
     # Priors
     ℓ = logpdf_prior(m.priors.scaling, scaling)
     ℓ += logpdf_prior(m.priors.lr, lr)
+    # ℓ += logpdf_prior(m.priors.beta, beta)
     ℓ += logpdf_prior(m.priors.ff_ratio, ff_ratio)
     ℓ += logpdf_prior(m.priors.aspect_ratio, aspect_ratio)
     ℓ += logpdf_prior(m.priors.kv_size, kv_size)
@@ -163,7 +171,7 @@ function (m::ShapedScaling)(θ)
     ℓ += sum(m.runs) do run
         min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
         min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
-        min_loss += beta_penalty(run.beta1, run.beta2, run.effective_batch_size; beta...)
+        # min_loss += beta_penalty(run.beta1, run.beta2, run.effective_batch_size; beta...)
         min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
         min_loss += harmonic_penalty(run.kv_size, kv_size...)
         min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
@@ -172,11 +180,44 @@ function (m::ShapedScaling)(θ)
     return ℓ
 end
 
+function sample_response(m::ShapedScaling, chains; nsamples=1_000)
+    nruns = length(m.runs)
+    y_hat = Array{Float64}(undef, nruns, nsamples)
+    indices = CartesianIndices((axes(chains, 1), axes(chains, 2)))
+    for (idx, run) in enumerate(m.runs)
+        for sdx in 1:nsamples
+            I = rand(indices).I
+            θ = chains[I..., :]
+            y_hat[idx, sdx] = expected_loss(m, θ, run)
+        end
+    end
+    return y_hat
+end
+
+function sample_penalty(m::ShapedScaling, chains; nsamples=1_000)
+    nruns = length(m.runs)
+    P = Array{Float64}(undef, nruns, nsamples, 4)
+    indices = CartesianIndices((axes(chains, 1), axes(chains, 2)))
+    for (idx, run) in enumerate(m.runs)
+        for sdx in 1:nsamples
+            I = rand(indices).I
+            θ = chains[I..., :]
+            p_lr = lamb_penalty(run.lr, run.model_size, run.effective_batch_size; θ[:lr]...)
+            p_ff = harmonic_penalty(run.ff_ratio, θ[:ff_ratio]...)
+            p_kv = harmonic_penalty(run.kv_size, θ[:kv_size]...)
+            p_aspect = harmonic_penalty(run.aspect_ratio, θ[:aspect_ratio]...)
+            P[idx, sdx, :] .= [p_lr, p_ff, p_kv, p_aspect]
+        end
+    end
+    return P
+end
+
+
 function expected_loss(::ShapedScaling, θ, run::NamedTuple)
     (; scaling, lr, ff_ratio, aspect_ratio, kv_size, sigma) = θ
     min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
     min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
-    min_loss += beta_penalty(run.beta1, run.beta2, run.effective_batch_size; beta...)
+    # min_loss += beta_penalty(run.beta1, run.beta2, run.effective_batch_size; beta...)
     min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
     min_loss += harmonic_penalty(run.kv_size, kv_size...)
     min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
@@ -196,7 +237,7 @@ end
 
 
 geoharmonic_penalty(args...) = 1 + harmonic_penalty(args...)
-function harmonic_penalty(x, x0::T, penalty::T...) where {T <: Real}
+function harmonic_penalty(x, x0::T, penalty::T...) where {T<:Real}
     δ = (T(x) - x0)^2
     l = first(penalty) * δ
     for p in Base.tail(penalty)
@@ -205,7 +246,7 @@ function harmonic_penalty(x, x0::T, penalty::T...) where {T <: Real}
     end
     return l
 end
-function geometric_penalty(x, x0::T, penalty::T...) where {T <: Real}
+function geometric_penalty(x, x0::T, penalty::T...) where {T<:Real}
     δ = (log(T(x)) - log(x0))^2
     l = first(penalty) * δ
     for p in Base.tail(penalty)
@@ -220,6 +261,51 @@ function lamb_penalty(lr, model_size, effective_batch_size; ideal, penalty)
     lr_0 = a + b * log(effective_batch_size) + c * log(model_size) |> exp
     return geometric_penalty(lr, lr_0, penalty...)
 end
+
+function ideal_lr(model::ShapedScaling, chains::AbstractArray{T,3}, df::DataFrame) where {T}
+    lr = Array{T}(undef, nrow(df), size(chains)[1:2]...)
+    indices = CartesianIndices(axes(chains)[1:2])
+    for (rdx, row) in enumerate(eachrow(df))
+        for sdx in indices
+            I = sdx.I
+            lr[rdx, I...] = ideal_lr(model, chains[I..., :], row.model_size, row.effective_batch_size)
+        end
+    end
+    return lr
+end
+
+function ideal_lr(model::ShapedScaling, chains::AbstractArray{T,3}; model_size, effective_batch_size) where {T}
+    lr = Array{T}(undef, size(chains)[1:2]...)
+    for sdx in CartesianIndices(axes(lr))
+        lr[sdx] = ideal_lr(model, chains[sdx.I..., :], model_size, effective_batch_size)
+    end
+    return lr
+end
+
+function ideal_lr(::ShapedScaling, θ::ComponentVector, model_size, effective_batch_size)
+    (; a, b, c) = θ.lr.ideal
+    return exp(a + b * log(effective_batch_size) + c * log(model_size))
+end
+
+function ideal_lr!(lr::AbstractArray{T,2}, m, chains::AbstractArray{T,3}, args...) where {T}
+    for idx in CartesianIndices(axes(chains)[1:2])
+        lr[idx.I...] = ideal_lr(m, chains[idx.I..., :], args...)
+    end
+    return lr
+end
+
+function ideal_lr_map(m::ShapedScaling, chains::AbstractArray{T,3}, model_size, effective_batch_size; p=[0.025, 0.5, 0.975]) where {T}
+    lr_map = Array{T}(undef, length(p), length(model_size), length(effective_batch_size))
+    lr = Array{T}(undef, size(chains)[1:2]...)
+    for (mdx, ms) in enumerate(model_size)
+        for (edx, ebs) in enumerate(effective_batch_size)
+            ideal_lr!(lr, m, chains, ms, ebs)
+            lr_map[:, mdx, edx] .= quantile(lr, p)
+        end
+    end
+    return lr_map
+end
+
 
 struct TrainingProgress{M,N,P,X}
     scaling::M
@@ -238,7 +324,7 @@ function model_priors(::Type{TrainingProgress})
         γ=LogNormal(0, 1),
     )
     penalty = (;
-        lr = (;
+        lr=(;
             lr_0=LogNormal(log(1e-3), 3),
             lr_n=LogNormal(log(1e-4), 3),
             lr_p=Exponential(1),
@@ -273,7 +359,7 @@ function (m::TrainingProgress)(θ)
         steps = m.step[idx]
         loss = m.loss[idx]
         for (s, l) in zip(steps, loss)
-            s_eff = s / (1 + batch_critical/batch_size)
+            s_eff = s / (1 + batch_critical / batch_size)
             expected_loss = min_loss + Sm / s_eff^γ - Sm
             ℓ += loglikelihood(LogNormal(log(expected_loss), sigma), l)
         end
