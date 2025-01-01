@@ -50,6 +50,7 @@ class MixturePredictionTaskHead(nn.Module):
         self, embed_dim: int, output_size: int = 1, dropout: float = 0.2
     ) -> None:
         super().__init__()
+        embed_dim += 1  # Temperature appended to embedding
         self.desc_skip_connection = True
         self.fcs = []
 
@@ -111,7 +112,8 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             output_size=output_size,
             dropout=dropout,
         )
-        self.lossfn = torch.nn.MSELoss(reduction="mean")
+        # self.lossfn = torch.nn.MSELoss(reduction="mean")
+        self.lossfn = torch.nn.L1Loss(reduction="mean")
         self.metric = MeanAbsoluteError()
         self.transform = Standardize(output_size)
 
@@ -156,16 +158,16 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             prog_bar=True,
             sync_dist=True,
         )
-        metric_update(self.metric, preds, batch["target"])
-        return loss
-
-    def on_train_epoch_end(self):
+        self.metric.update(preds, batch["target"])
         self.log(
             "train/mae",
             value=self.metric.compute(),
             on_epoch=True,
             sync_dist=True,
         )
+        return loss
+
+    def on_train_epoch_end(self):
         self.metric.reset()
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
@@ -174,11 +176,12 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
         )
 
-        metric_update(self.metric, preds, batch["target"])
+        self.metric.update(preds, batch["target"])
         return loss
 
     def on_validation_epoch_end(self):
         self.log(
+            "val/mae",
             value=self.metric.compute(),
             on_epoch=True,
             sync_dist=True,

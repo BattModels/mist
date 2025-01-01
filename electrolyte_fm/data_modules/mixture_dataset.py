@@ -16,18 +16,24 @@ from .utils import MolEncoding, encode_molecules
 
 
 def extract_hidden_state(
-    sub1_smiles,
-    x1,
-    sub2_smiles,
-    x2,
-    target,
+    *args,
+    temperature,
     tokenizer,
+    n_components,
     encoder: PreTrainedModel = None,
     collate: DataCollatorWithPadding = None,
 ):
     mix_embedding = None
 
-    for smiles, composition in [(sub1_smiles, x1), (sub2_smiles, x2)]:
+    target = args[-1]
+
+    if temperature:
+        temperature = args[-2]
+
+    for i in range(n_components):
+        idx = 2 * i
+        smiles = args[idx]
+        composition = args[idx + 1]
         batch = tokenizer(smiles)
         batch = collate(batch)
         batch = batch.to(encoder.device)
@@ -55,7 +61,8 @@ def extract_hidden_state(
                     mix_embedding = update
                 else:
                     mix_embedding += update
-
+    temperature = (torch.tensor(temperature) - 273) / (400 - 273)
+    mix_embedding = torch.hstack((temperature.view(-1, 1), mix_embedding))
     return {"embedding": mix_embedding, "target": target}
 
 
@@ -65,6 +72,7 @@ class HiddenStateDataModule(pl.LightningDataModule):
         name_or_path: str,
         path: str,
         target_col: str,
+        n_components: int = 2,
         tokenizer: Optional[str] = None,
         batch_size: int = 64,
         val_batch_size: Optional[int] = None,
@@ -73,6 +81,7 @@ class HiddenStateDataModule(pl.LightningDataModule):
         encoder_batch_size: Optional[int] = None,
         encoder_device: str = "cuda",
         return_molecule: bool = False,
+        include_temperature: bool = False,
         encoding: Optional[str | MolEncoding] = "smiles",
     ):
         super().__init__()
@@ -88,6 +97,8 @@ class HiddenStateDataModule(pl.LightningDataModule):
         assert self.path.is_dir() or self.path.is_file()
 
         self.batch_size = batch_size
+        self.n_components = n_components
+        self.temperature = include_temperature
         self.val_batch_size = val_batch_size or batch_size
         self.encoder_batch_size = encoder_batch_size or batch_size
         self.num_workers = num_workers
@@ -119,16 +130,23 @@ class HiddenStateDataModule(pl.LightningDataModule):
         self.encoder = load_encoder(self.name_or_path).to(self.encoder_device)
 
         # Extract per molecule hidden states
-        input_columns = ["sub1_smiles", "x1", "sub2_smiles", "x2", self.target_col]
+        input_columns = []
+        for i in range(self.n_components):
+            input_columns.extend([f"smi{i+1}", f"x{i+1}"])
+        if self.temperature:
+            input_columns.append("temperature")
+        input_columns.append(self.target_col)
         ds = self.dataset
         ds = ds.map(
             extract_hidden_state,
             batched=True,
             batch_size=self.encoder_batch_size,
             fn_kwargs={
+                "temperature": self.temperature,
                 "tokenizer": self.tokenizer,
                 "encoder": self.encoder,
                 "collate": self.data_collator,
+                "n_components": self.n_components,
             },
             input_columns=input_columns,
             remove_columns=input_columns,
