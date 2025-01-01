@@ -11,6 +11,8 @@ logging.basicConfig(level=logging.INFO)
 
 
 def model_size(d_model: int, d_ff: int, n_layers: int) -> int:
+    if d_model is None or d_ff is None or n_layers is None:
+        return None
     attention_qkv = n_layers * 3 * d_model**2
     project = n_layers * d_model**2
     ff = n_layers * 2 * d_model * d_ff
@@ -127,9 +129,13 @@ def run_summary(run):
     }
 
     # Populate Effective Batch Size
-    stats["trainer"]["effective_batch_size"] = (
-        stats["trainer"]["macro_batch_size"] * stats["trainer"]["gas"]
-    )
+    macro_batch_size = stats["trainer"]["macro_batch_size"]
+    gas = stats["trainer"]["gas"]
+    if macro_batch_size is not None and gas is not None:
+        stats["trainer"]["effective_batch_size"] = macro_batch_size * gas
+    else:
+        stats["trainer"]["effective_batch_size"] = None
+
     return stats
 
 
@@ -151,6 +157,35 @@ def pretraining_summary(run):
     return row
 
 
+def identify_dataset(config):
+    if (
+        get_entry(config, "cli", "data", "class_path")
+        == "electrolyte_fm.data_modules.tmQMDataModule"
+    ):
+        path = get_entry(config, "cli", "data", "path")
+        if path is None:
+            return "tmQM"
+        if path.endswith("data_tm_split"):
+            return "tmQM-tm-split"
+        else:
+            return "tmQM"
+    else:
+        return get_entry(config, "cli", "data", "name")
+
+
+def get_ckpt_id(ckpt):
+    if ckpt is None:
+        return None
+    if not ckpt.endswith("ckpt"):
+        return None
+
+    segments = Path(ckpt).parents
+    id = str(segments[1].name)
+    if len(id) == 8:
+        return id
+    return None
+
+
 def finetuning_summary(run):
     row = run_summary(run)
     config = run.config
@@ -158,70 +193,125 @@ def finetuning_summary(run):
         {
             "encoder_ckpt": get_entry(config, "cli", "model", "encoder_ckpt"),
             "task": get_entry(config, "cli", "model", "task"),
+            "metrics": get_entry(config, "cli", "model", "metrics"),
         }
     )
 
-    if row["data"]["module"] == "electrolyte_fm.data_module.tmQMDataModule":
-        dataset = "tmQM"
-    else:
-        dataset = get_entry(config, "cli", "data", "name")
-
-    row["data"].update({"dataset": dataset, "targets": get_entry(config, "cli", "data", "target_columns")})
+    row["data"].update(
+        {
+            "dataset": identify_dataset(config),
+            "targets": get_entry(config, "cli", "data", "target_columns"),
+        }
+    )
 
     # Identify Encoder
-    encoder_id = None
-
-    if row["model"]["encoder_ckpt"].endswith("ckpt"):
-        segments = Path(row["model"]["encoder_ckpt"]).parents
-        id = str(segments[1].name)
-        if len(id) == 8:
-            encoder_id = id
-    row["model"]["encoder_id"] = encoder_id
+    row["model"]["encoder_id"] = get_ckpt_id(row["model"]["encoder_ckpt"])
 
     # Identify metrics
-    row["metrics"] = identify_metrics(run.summary_metrics)
+    row["metrics"] = identify_metrics(run)
+    return row
+
+
+def test_summary(run):
+    row = run_summary(run)
+    config = run.config
+    row["model"].update(
+        {
+            "ckpt": get_entry(config, "cli", "ckpt_path"),
+            "task": get_entry(config, "cli", "model", "task"),
+            "ckpt_id": get_ckpt_id(get_entry(config, "cli", "ckpt_path")),
+            "metrics": get_entry(config, "cli", "model", "metrics"),
+        }
+    )
+    row["data"].update(
+        {
+            "dataset": identify_dataset(config),
+            "targets": get_entry(config, "cli", "data", "target_columns"),
+        }
+    )
+    row["metrics"] = identify_metrics(run)
     return row
 
 
 METRIC_REGEX = re.compile(
-    r"(?P<split>\w+)/(?P<metric>\w+?)_(?P<tok_group>(?:oov)|(?:all)|(?:non_oov))(?:_(?P<bootstrap>(?:mean)|(?:std)))?"
+    r"^(?P<split>\w+)/(?P<metric>.+?)(:?_channel_(?P<channel>.+?))?(?:_(?P<bootstrap>mean|std))?(?:_(?P<tok_group>all|oov|non_oov))?$"
 )
 
 
-def identify_metrics(summary_metrics):
-    metrics = []
+def parse_value(v: str) -> Union[float, str]:
+    if v == "NaN":
+        return float("nan")
+    elif v == "Infinity":
+        return float("inf")
+    else:
+        return v
+
+
+def identify_metrics(run):
+    out = []
+    summary_metrics = run.summary_metrics
+    metrics = get_entry(run.config, "cli", "model", "metrics")
+    target_columns = get_entry(run.config, "cli", "model", "target_columns")
     for k, v in summary_metrics.items():
         m = METRIC_REGEX.match(k)
         if m is None:
             continue
 
-        # Unpack metric
         entry = m.groupdict()
+
+        # handle MAE naming nonsense
+        if metrics is not None and target_columns is not None and "mae" in metrics:
+            metric = entry["metric"]
+            if metric.startswith("mae") and "_" in metric and "channel" not in metric:
+                # Depreciate channel naming
+                entry["channel"] = entry["metric"].split("_", maxsplit=1)[1]
+                assert entry["channel"] in [
+                    "mean",
+                    *target_columns,
+                ], f"{entry['channel']} not in {target_columns} or `mean`"
+                entry["metric"] = "mae"
+
+            elif not any([metric.startswith(c) for c in metrics]):
+                # If no metric is specified, assume MAE
+                entry["channel"] = entry["metric"]
+                entry["metric"] = "mae"
+            else:
+                pass
+
+        # Unpack metric
         if isinstance(v, (float, int)):
             entry["type"] = "last"
             entry["value"] = v
-            metrics.append(entry)
+            out.append(entry)
 
         elif isinstance(v, str):
             entry["type"] = "last"
-            entry["value"] = v if v != "NaN" else float("nan")
-            metrics.append(entry)
+            entry["value"] = parse_value(v)
+            out.append(entry)
 
         else:
             # Multiple summary metrics were logged
             for sk, sv in v.items():
-                metrics.append({"type": sk, "value": sv, **entry})
-    return metrics
+                out.append({"type": sk, "value": sv, **entry})
+    return out
 
 
-def export_runs(exportfun, cache: Path, runs, name: str = None):
-    if name:
+def export_runs(export_map: dict, cache: Path, runs, name: str = None):
+    for run in runs:
+        if "pretraining" in run.tags and "finetuning" in run.tags:
+            run.tags.remove("pretraining")
+            run.update()
+
+        # Identify export function
+        exportfun = run_summary
+        name = "default"
+        for tag, f in export_map.items():
+            if tag in run.tags:
+                exportfun = f
+                name = tag
+
         cache = cache_path.joinpath(name)
         cache.mkdir(exist_ok=True, parents=True)
-    else:
-        name = "default"
-    for run in runs:
-        run_cache = cache.joinpath(run.id).with_suffix(".json")
 
         # Compute fingerprint
         fp = fingerprint.update_fingerprint(
@@ -232,10 +322,12 @@ def export_runs(exportfun, cache: Path, runs, name: str = None):
                 "entity": run.entity,
                 "project": run.project,
                 "state": run.state,
+                "tags": run.tags,
             },
         )
 
         # Check for an existing export
+        run_cache = cache.joinpath(run.id).with_suffix(".json")
         if run_cache.exists():
             with open(run_cache, "r") as fid:
                 export_fp = json.load(fid).get("fingerprint", None)
@@ -253,8 +345,13 @@ def export_runs(exportfun, cache: Path, runs, name: str = None):
             stats["fingerprint"] = fp
             with open(run_cache, "w") as fid:
                 json.dump(stats, fid)
-        except TypeError:
+        except KeyboardInterrupt:
+            raise
+        except:
             logging.error("failed to export %s", run.id)
+            raise
+        # except TypeError:
+        #     logging.error("failed to export %s", run.id)
 
 
 if __name__ == "__main__":
@@ -264,27 +361,19 @@ if __name__ == "__main__":
     cache_path = Path(__file__).parent.parent.joinpath(".cache", "wandb-export")
     cache_path.mkdir(exist_ok=True, parents=True)
 
-    # Sync Pretraining Runs
-    runs = api.runs(
-        "incite-mist/mist",
-        filters={
-            "State": {"$in": ["Crashed", "Finished"]},
-            "tags": {"$in": ["pretraining"], "$nin": ["debug"]},
-            "summary_metrics.trainer/global_step": {"$exists": True, "$gte": 100},
-            "summary_metrics.val/loss_epoch.min": {"$exists": True},
-        },
-    )
-    export_runs(pretraining_summary, cache_path, runs, name="pretraining")
+    export_map = {
+        "pretraining": pretraining_summary,
+        "finetuning": finetuning_summary,
+        "test": test_summary,
+    }
 
-    # Sync Finetuning
+    # Sync Runs
     runs = api.runs(
         "incite-mist/mist",
         filters={
             "State": {"$in": ["Crashed", "Finished"]},
-            "tags": {"$in": ["finetuning"], "$nin": ["debug"]},
-            "summary_metrics.trainer/global_step": {"$exists": True, "$gte": 100},
-            "summary_metrics.val/loss_epoch": {"$exists": True},
-            "config.cli.model.init_args.encoder_ckpt": {"$exists": True},
+            "tags": {"$in": list(export_map.keys()), "$nin": ["debug"]},
+            "summary_metrics.trainer/global_step": {"$exists": True},
         },
     )
-    export_runs(finetuning_summary, cache_path, runs, name="finetuning")
+    export_runs(export_map, cache_path, runs)
