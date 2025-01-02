@@ -1,15 +1,20 @@
 from itertools import chain, repeat
-from typing import Dict
+from typing import Union, Optional
 
 import pytest
 import torch
-from torchmetrics import MetricCollection
-from torchmetrics import Accuracy
+from torchmetrics import Metric, Accuracy
+from torchmetrics import MetricCollection as TmMetricCollection
+from torchmetrics.regression import MeanSquaredError
+from torchmetrics.wrappers import BootStrapper, ClasswiseWrapper
 
 from electrolyte_fm.utils.metrics import (
+    MetricCollection,
     get_metric,
+    get_metrics,
     masked_loss,
     masked_metric_update,
+    bootstrap_collection,
     OOVMetric,
     HotellingTwoSample,
     TokenCounter,
@@ -20,58 +25,75 @@ BINARY_METRICS = ["auroc", "avg-precision", "crosstab"]
 
 REGRESSION_METRICS = ["mae", "rmse", "r2", "mape"]
 
+CHANNEL_METRICS = [
+    ("auroc-channel", "binary"),
+    ("mae-channel", "regression"),
+    ("mape-channel", "regression"),
+    ("r2-channel", "regression"),
+]
 
-@pytest.mark.parametrize(
-    "name,task_type",
-    chain(
+
+@pytest.fixture(
+    params=chain(
         zip(BINARY_METRICS, repeat("binary")),
         zip(REGRESSION_METRICS, repeat("regression")),
     ),
+    ids=lambda x: x[0],
 )
-def test_scalar(name, task_type):
+def metric(request):
+    name, task_type = request.param
+    return get_metric(name, task_type)
+
+
+def is_binary(metric: Metric) -> bool:
+    if "classification" in metric.__module__:
+        return True
+    elif isinstance(metric, ClasswiseWrapper):
+        return is_binary(metric.metric)
+    elif isinstance(metric, MetricCollection):
+        return any(is_binary(m) for m in metric.values())
+    return False
+
+
+def test_is_binary():
+    assert is_binary(get_metric("auroc", "binary"))
+    assert is_binary(get_metric("crosstab", "binary"))
+    assert not is_binary(get_metric("mae", "regression"))
+
+
+def test_scalar(metric: Metric):
+    assert hasattr(metric, "name") and isinstance(metric.name, str)
     B = 8
-    C = 4
-    metric = get_metric(name, task_type, C)
+    C = 2
     preds = torch.rand(B, C)
-    if task_type == "binary":
+    if is_binary(metric):
         targets = torch.randint(0, 1, (B, C))
     else:
         targets = torch.rand(B, C)
 
     out = metric(preds, targets)
-    if name == "crosstab":
+    if isinstance(out, dict):
         for v in out.values():
             assert v.ndim == 0
     else:
         assert out.ndim == 0
 
 
-@pytest.mark.parametrize(
-    "name,task_type",
-    chain(
-        zip(BINARY_METRICS, repeat("binary")),
-        zip(REGRESSION_METRICS, repeat("regression")),
-    ),
-)
-def test_higher_is_better(name, task_type):
-    m = get_metric(name, task_type, 2)
-    if name == "crosstab":
-        assert not hasattr(m, "higher_is_better")
-    else:
-        assert hasattr(m, "higher_is_better")
-        assert isinstance(m.higher_is_better, bool)
+def test_higher_is_better(metric):
+    assert hasattr(metric, "higher_is_better")
+    assert isinstance(metric.higher_is_better, Union[bool, None])
 
 
 def test_invalid():
     with pytest.raises(ValueError):
-        get_metric("auroc", "regression", 1)
+        get_metric("auroc", "regression")
     with pytest.raises(ValueError):
-        get_metric("not-a-metric", "multiclass", 8)
+        get_metric("not-a-metric", "multiclass")
 
 
 @pytest.mark.parametrize("name", BINARY_METRICS)
 def test_masked_metric(name):
-    metric = get_metric(name, "binary", 3)
+    metric = get_metric(name, "binary")
     preds = torch.rand(2, 3)
     targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
     mask = torch.tensor([[False, False, True], [True, False, False]])
@@ -98,15 +120,29 @@ def test_masked_metric(name):
     assert out_init == metric.compute()
 
 
-@pytest.mark.parametrize(
-    "name,task_type",
-    chain(
-        zip(BINARY_METRICS, repeat("binary")),
-        zip(REGRESSION_METRICS, repeat("regression")),
-    ),
-)
-def test_safe_for_nullset(name, task_type):
-    metric = get_metric(name, task_type, 1)
+def test_metric_collection(metric):
+    mc = MetricCollection({metric.name: metric})
+
+    for _ in range(10):
+        preds = torch.rand(8, 2)
+        if is_binary(metric):
+            targets = torch.randint(1, (8, 2))
+        else:
+            targets = torch.rand(8, 2)
+        mc.update(preds, targets)
+
+    out = mc.compute()
+    assert isinstance(out, dict)
+    if metric.name == "crosstab":
+        keys = ["tp", "tn", "fp", "fn", "sup"]
+        keys = ["crosstab_" + k for k in keys]
+    else:
+        keys = set([metric.name])
+
+    assert set(keys) == set(out.keys())
+
+
+def test_safe_for_nullset(metric):
     metric.compute()
 
 
@@ -142,7 +178,7 @@ def test_masked_loss_reduction():
 
 
 def test_auroc():
-    auroc = get_metric("auroc", "binary", 1)
+    auroc = get_metric("auroc", "binary")
     test_logits = torch.tensor([0.1, 0.2, 0.3, 0.4])
     assert auroc(test_logits, torch.tensor([0, 0, 1, 1])) == 1.0
     assert auroc(torch.tensor([0.4, 0.3, 0.2, 0.1]), torch.tensor([0, 1, 1, 0])) == 0.5
@@ -169,35 +205,29 @@ def test_oov_metric():
     assert out["all"] == torch.tensor(1 / 3)
 
 
-@pytest.mark.parametrize(
-    "name,task_type",
-    chain(
-        zip(BINARY_METRICS, repeat("binary")),
-        zip(REGRESSION_METRICS, repeat("regression")),
-    ),
-)
-def test_oov_metric_empty_group(name, task_type):
-    base_metric = get_metric(name, task_type, 3)
-    metric = OOVMetric(base_metric, unk_token_id=1)
+def test_oov_metric_empty_group(metric):
+    metric_oov = OOVMetric(metric, unk_token_id=1)
     preds = torch.rand(8, 3)
     targets = torch.randint(1, (8, 3))
 
     # Check for all non_oov
     input_ids = torch.zeros((8, 8))
-    out = metric(preds, targets, input_ids)
+    out = metric_oov(preds, targets, input_ids)
     assert isinstance(out, dict)
-    if hasattr(base_metric, "keys"):
-        for k in base_metric:
+
+    # Check that all keys are present
+    base_out = metric(preds, targets)
+    if isinstance(base_out, dict):
+        for k in base_out.keys():
             assert f"{k}_oov" in out and f"{k}_non_oov" in out and f"{k}_all" in out
     else:
         assert "oov" in out and "non_oov" in out and "all" in out
 
     # Check for all oov
     input_ids = torch.ones((8, 8))
-    out = metric(preds, targets, input_ids)
-    assert isinstance(out, dict)
-    if hasattr(base_metric, "keys"):
-        for k in base_metric:
+    out = metric_oov(preds, targets, input_ids)
+    if isinstance(base_out, dict):
+        for k in base_out.keys():
             assert f"{k}_oov" in out and f"{k}_non_oov" in out and f"{k}_all" in out
     else:
         assert "oov" in out and "non_oov" in out and "all" in out
@@ -316,3 +346,125 @@ def test_token_counter():
     out = metric.compute()
     assert out["masked_tokens"] == 1
     assert out["total_tokens"] == 3
+
+
+@pytest.fixture(
+    params=[
+        {
+            "metrics": ["mae", "r2"],
+            "task": "regression",
+        },
+        {
+            "metrics": ["auroc", "crosstab"],
+            "task": "binary",
+        },
+        {
+            "metrics": ["mae", "mae-channel", "r2", "r2-channel"],
+            "task": "regression",
+            "num_outputs": 3,
+        },
+        {
+            "metrics": ["auroc", "auroc-channel", "avg-precision-channel"],
+            "task": "binary",
+            "num_outputs": 3,
+        },
+        {
+            "metrics": ["auroc", "auroc-channel"],
+            "task": "binary",
+            "num_outputs": 1,
+        },
+    ],
+)
+def metric_collection(request):
+    mc = get_metrics(**request.param)
+    mc.__num_outputs__ = request.param.get("num_outputs", None)
+    return mc
+
+
+def test_bootstrap(metric_collection):
+    og_metrics = metric_collection
+    metrics = bootstrap_collection(og_metrics)
+    metrics = metrics.clone(prefix="train/")
+    og_metrics = og_metrics.clone(prefix="train/")
+    print("metrics:", metrics)
+    print("og_metrics:", og_metrics)
+
+    C = og_metrics.__num_outputs__ or 4
+    for i in range(10):
+        preds = torch.rand(32, C)
+        if is_binary(og_metrics):
+            targets = torch.randint(0, 1, (32, C))
+        else:
+            targets = torch.rand(32, C)
+        metrics.update(preds, targets)
+        og_metrics.update(preds, targets)
+    og_out = og_metrics.compute()
+    print("og_out:", og_out)
+    out = metrics.compute()
+    print("out:", out)
+
+    for v in out.values():
+        assert isinstance(v, torch.Tensor)
+
+    # Check metrics
+    for key in og_out.keys():
+        if "crosstab" in key:
+            assert key in out.keys()
+        else:
+            for v in ["mean", "std"]:
+                assert f"{key}_{v}" in out.keys()
+
+
+@pytest.mark.xfail(reason="https://github.com/Lightning-AI/torchmetrics/issues/2046")
+def test_torchmetricmetric_collection_issue():
+    """Test case to validate torchmetrics.MetricCollection doesn't handle dict returns
+
+    Related: https://github.com/Lightning-AI/torchmetrics/issues/2046
+
+    If this test passes (unexpected), then should revert to torchmetrics.MetricCollection
+
+    """
+    mc = TmMetricCollection({"mae": BootStrapper(get_metric("mae", "regression"))})
+    preds = torch.rand(8, 3)
+    targets = torch.rand(8, 3)
+    out = mc(preds, targets)
+    assert out.keys() == set(["mae_mean", "mae_std"])
+
+
+def test_our_metric_collection_issue():
+    mc = MetricCollection({"mae": BootStrapper(get_metric("mae", "regression"))})
+    preds = torch.rand(8, 3)
+    targets = torch.rand(8, 3)
+    out = mc(preds, targets)
+    assert out.keys() == set(["mae_mean", "mae_std"])
+
+
+def test_bootstrap_oov():
+    og_metrics = MetricCollection(
+        {
+            "mae": get_metric("mae", "regression"),
+            "r2": get_metric("r2", "regression"),
+            "auroc": get_metric("auroc", "binary"),
+        }
+    )
+    metrics = bootstrap_collection(og_metrics)
+    metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id=1)
+
+    for i in range(10):
+        preds = torch.rand(32, 8)
+        targets = torch.rand(32, 8)
+        input_ids = torch.randint(0, 8, (32, 8))
+        mask = input_ids == 0
+        masked_metric_update(metrics, preds, targets, mask, input_ids)
+    out = metrics.compute()
+
+    for v in out.values():
+        assert isinstance(v, torch.Tensor)
+
+    # Check metrics
+    for key in set(og_metrics.keys()):
+        for v in ["mean", "std"]:
+            assert "/" not in key
+            assert "_" not in key
+            for token_group in ["oov", "non_oov", "all"]:
+                assert f"train/{key}_{v}_{token_group}" in out.keys()

@@ -1,20 +1,21 @@
 import json
-import os
 import logging
+import os
 from datetime import timedelta
 
 import _jsonnet as jsonnet  # Unused, but otherwise we get glibc errors on delta 🫠
 import torch
 from jsonargparse import lazy_instance
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.cli import (
+from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch.cli import (
     LightningArgumentParser,
     LightningCLI,
-    _InstantiatorFn,
     _get_module_type,
+    _InstantiatorFn,
 )
-from pytorch_lightning.loggers import WandbLogger
-from electrolyte_fm.utils.callbacks import ThroughputMonitor, SpikeDetection
+from lightning.pytorch.loggers import WandbLogger
+
+from electrolyte_fm.utils.callbacks import SpikeDetection, ThroughputMonitor
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
 
 

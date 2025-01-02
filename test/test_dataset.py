@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 from datasets import Dataset
-from pytorch_lightning import LightningDataModule, Trainer
+from lightning.pytorch import LightningDataModule, Trainer
 
 from electrolyte_fm.data_modules import (
     PropertyPredictionDataModule,

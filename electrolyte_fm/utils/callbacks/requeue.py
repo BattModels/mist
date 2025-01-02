@@ -1,14 +1,15 @@
-import os
-import sys
-import signal
 import logging
-from subprocess import PIPE, run, Popen, STDOUT
+import os
+import signal
+import sys
 from pathlib import Path
 from shutil import which
+from subprocess import PIPE, STDOUT, Popen, run
 from typing import Optional, Union
 
-import pytorch_lightning as pl
-from pytorch_lightning import Callback
+import lightning as L
+import lightning.pytorch as pl
+from lightning.pytorch import Callback
 
 from ..ckpt import SaveConfigWithCkpts
 
@@ -36,7 +37,7 @@ class Requeue(Callback):
         super().__init__()
 
     def on_train_start(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+        self, trainer: "pl.Trainer", pl_module: "L.LightningModule"
     ) -> None:
         self.trainer = trainer
         self.ckpt_path = SaveConfigWithCkpts.log_dir(trainer).joinpath("checkpoints")

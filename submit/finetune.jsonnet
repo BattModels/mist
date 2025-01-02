@@ -28,6 +28,7 @@ function(dataset='bace') {
         metrics: molnet_tasks[dataset].metrics,
         freeze_encoder: true,
         output_size: std.length($.train.data.init_args.target_columns),
+        target_columns: $.train.data.init_args.target_columns,
 
         // Duplicate pre-training optimizer config
         optimizer: {

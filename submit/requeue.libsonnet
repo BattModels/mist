@@ -6,7 +6,7 @@
       plugins: [
         {
           // Disable SLURMEnvironment's requeuing
-          class_path: 'pytorch_lightning.plugins.environments.SLURMEnvironment',
+          class_path: 'lightning.pytorch.plugins.environments.SLURMEnvironment',
           init_args: {
             auto_requeue: false,
           },

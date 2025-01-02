@@ -1,6 +1,6 @@
-import pytorch_lightning as pl
+import lightning as L
 from deepspeed.utils import safe_get_full_grad
-from pytorch_lightning.callbacks import Callback
+from lightning.pytorch.callbacks import Callback
 
 
 class GradientNormMonitor(Callback):
@@ -11,7 +11,7 @@ class GradientNormMonitor(Callback):
         super().__init__()
 
     def on_after_backward(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+        self, trainer: "L.pytorch.Trainer", pl_module: "L.LightningModule"
     ) -> None:
         # Compute the 2-norm for each layer
         # If using mixed precision, the gradients are unscaled here
