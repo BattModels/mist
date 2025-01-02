@@ -362,8 +362,8 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         )
         masked_metric_update(
             self.test_metrics,
-            preds,
-            batch["target"],
+            preds.to(dtype=torch.float32),
+            batch["target"].to(dtype=torch.float32),
             batch["target_mask"],
             batch["input_ids"],
             batch.get("is_oov", None),
