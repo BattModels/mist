@@ -197,6 +197,10 @@ def collate_components_and_environment(
     include_temperature,
     tokenizer,
     n_components,
+<<<<<<< HEAD
+=======
+    encoder: PreTrainedModel = None,
+>>>>>>> 57a9ce9 (feat: rk, chebyshev and legendre basis)
     collate: DataCollatorWithPadding = None,
 ):
     target = args[-1]
