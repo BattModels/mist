@@ -1,11 +1,7 @@
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
 from torchmetrics import MetricCollection
-<<<<<<< HEAD
-from lightning.pytorch.loggers import WandbLogger
-=======
 from pytorch_lightning.loggers import WandbLogger
 from pathlib import Path
->>>>>>> 10cf189 (feat: first pass mixture property prediction)
 
 from ..utils.ckpt import SaveConfigWithCkpts
 

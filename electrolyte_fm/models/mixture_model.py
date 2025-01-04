@@ -112,8 +112,8 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             output_size=output_size,
             dropout=dropout,
         )
-        # self.lossfn = torch.nn.MSELoss(reduction="mean")
-        self.lossfn = torch.nn.L1Loss(reduction="mean")
+        self.lossfn = torch.nn.MSELoss(reduction="mean")
+        # self.lossfn = torch.nn.L1Loss(reduction="mean")
         self.metric = MeanAbsoluteError()
         self.transform = Standardize(output_size)
 

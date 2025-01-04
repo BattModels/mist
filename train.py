@@ -97,11 +97,6 @@ def cli_main(args=None):
     step_ckpt.CHECKPOINT_NAME_LAST = "last"
     callbacks = [
         ThroughputMonitor(),
-<<<<<<< HEAD
-        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
-        val_loss_ckpt,
-        step_ckpt,
-=======
         SpikeDetection(atol=0.3, warmup=800, finite_only=False),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
@@ -122,7 +117,6 @@ def cli_main(args=None):
             train_time_interval=timedelta(minutes=30),
             auto_insert_metric_name=False,
         ),
->>>>>>> 97e3924 (feat: add variable number of components)
         LearningRateMonitor("step"),
     ]
 
