@@ -212,6 +212,7 @@ def collate_components_and_environment(
 
     output = {
         "target": target,
+        "temperature": temperature,
     }
 
     for i in range(n_components):
@@ -220,24 +221,26 @@ def collate_components_and_environment(
         composition = args[idx + 1]
         batch = tokenizer(smiles)
         batch = collate(batch)
-        batch = batch.to(encoder.device)
+        # batch = batch.to(encoder.device)
         # Disable gradients
-        with nvtx.annotate("encoder"):
-            with torch.inference_mode():
-                embedding = (
-                    encoder(
-                        batch["input_ids"],
-                        attention_mask=batch["attention_mask"],
-                        return_dict=True,
-                        output_hidden_states=True,
-                    )
-                    .last_hidden_state.detach()
-                    .cpu()
-                    .mean(axis=1)
-                )
-                embedding = torch.hstack((temperature.view(-1, 1), embedding))
-                output[f"embedding_{i}"] = embedding
-                output[f"composition_{i}"] = composition
+        # with nvtx.annotate("encoder"):
+        #     with torch.inference_mode():
+        # embedding = (
+        #     encoder(
+        #         batch["input_ids"],
+        #         attention_mask=batch["attention_mask"],
+        #         return_dict=True,
+        #         output_hidden_states=True,
+        #     )
+        #     .last_hidden_state.detach()
+        #     .cpu()
+        #     .mean(axis=1)
+        # )
+        # embedding = torch.hstack((temperature.view(-1, 1), embedding))
+        output[f"input_ids_{i}"] = batch["input_ids"]
+        output[f"attention_mask_{i}"] = batch["attention_mask"]
+        output[f"composition_{i}"] = composition
+
     return output
 
 
@@ -245,7 +248,7 @@ class ComponentDataModule(pl.LightningDataModule):
     def __init__(
         self,
         path: str,
-        name_or_path: str,
+        # name_or_path: str,
         target_col: str,
         n_components: int = 2,
         tokenizer: Optional[str] = None,
@@ -263,7 +266,7 @@ class ComponentDataModule(pl.LightningDataModule):
         # Locate Tokeniser and dataset
         self.tokenizer = load_tokenizer(tokenizer)
         self.path: Path = Path(path)
-        self.name_or_path = name_or_path
+        # self.name_or_path = name_or_path
         self.encoding = MolEncoding(encoding)
         self.target_col = target_col
         self.encoder_batch_size = encoder_batch_size
@@ -276,7 +279,7 @@ class ComponentDataModule(pl.LightningDataModule):
         self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
-        self.hparams["tokenizer"] = tokenizer
+        # self.hparams["tokenizer"] = tokenizer
         self.save_hyperparameters(logger=False)
         self.data_collator = DataCollatorWithPadding(self.tokenizer, "longest")
 
@@ -300,7 +303,7 @@ class ComponentDataModule(pl.LightningDataModule):
         return self._dataset
 
     def setup(self, stage: str) -> None:
-        self.encoder = load_encoder(self.name_or_path).to(self.encoder_device)
+        # self.encoder = load_encoder(self.name_or_path).to(self.encoder_device)
 
         # Extract per molecule hidden states
         input_columns = []
@@ -318,7 +321,7 @@ class ComponentDataModule(pl.LightningDataModule):
             fn_kwargs={
                 "include_temperature": self.temperature,
                 "tokenizer": self.tokenizer,
-                "encoder": self.encoder,
+                # "encoder": self.encoder,
                 "collate": self.data_collator,
                 "n_components": self.n_components,
             },
@@ -335,8 +338,11 @@ class ComponentDataModule(pl.LightningDataModule):
     def collator(self, batch):
         output = {}
         for i in range(self.n_components):
-            output[f"embedding_{i}"] = torch.stack(
-                [torch.tensor(x[f"embedding_{i}"]) for x in batch]
+            output[f"input_ids_{i}"] = torch.stack(
+                [torch.tensor(x[f"input_ids_{i}"]) for x in batch]
+            )
+            output[f"attention_mask_{i}"] = torch.stack(
+                [torch.tensor(x[f"attention_mask_{i}"]) for x in batch]
             )
             output[f"composition_{i}"] = torch.stack(
                 [torch.tensor(x[f"composition_{i}"]) for x in batch]
@@ -344,6 +350,9 @@ class ComponentDataModule(pl.LightningDataModule):
 
         output["target"] = torch.stack(
             [torch.tensor(x["target"], dtype=float) for x in batch]
+        )
+        output["temperature"] = torch.stack(
+            [torch.tensor(x["temperature"], dtype=float) for x in batch]
         )
         return output
 
