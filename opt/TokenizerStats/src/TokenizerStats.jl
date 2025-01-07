@@ -4,7 +4,7 @@ using DataFrames
 using Makie
 using PythonCall: Py, pyimport, pyconvert, @pyconst
 using ArgParse: ArgParseSettings, parse_args, @add_arg_table!
-using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
+using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, OrderedDict, fit!, merge!, value
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, AbstractWeights, Weights, nobs, mean, std
 using MPI: MPI
@@ -65,6 +65,7 @@ end
 include("ngrams.jl")
 include("collect.jl")
 include("finetune.jl")
+include("serialize.jl")
 include("cli.jl")
 
 include("analysis.jl")

@@ -74,6 +74,26 @@ function Makie.plot!(plt::TokenUsage)
     stairs!(plt, I; attr...)
 end
 
+Makie.@recipe(DodgedErrorBars, x, y, error) do scene
+    Attributes(
+        width=Makie.inherit(scene, :BarPlot, :width),
+        dodge=Makie.inherit(scene, :BarPlot, :dodge),
+        n_dodge=Makie.inherit(scene, :BarPlot, :n_dodge),
+        gap=Makie.inherit(scene, :BarPlot, :gap),
+        dodge_gap=Makie.inherit(scene, :BarPlot, :dodge_gap),
+    )
+end
+
+function Makie.plot!(plt::DodgedErrorBars)
+    x = lift(plt[:x], plt[:width], plt[:gap], plt[:dodge], plt[:n_dodge], plt[:dodge_gap]) do x, width, gap, dodge, n_dodge, dodge_gap
+        first(Makie.compute_x_and_width(x, width, gap, dodge, n_dodge, dodge_gap))
+    end
+    attr = Makie.shared_attributes(plt, Errorbars)
+    errorbars!(plt, x, plt[:y], plt[:error]; attr...)
+    return plt
+end
+
+
 function findfont(name, style)
     for folder in FreeTypeAbstraction.fontpaths()
         for file in readdir(folder; join=true)

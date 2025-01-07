@@ -12,9 +12,12 @@ using CategoricalArrays: categorical, levelcode, levels
 using OnlineStats: OrderedDict
 using Colors: distinguishable_colors, weighted_color_mean, RGBA
 using GLM
+using CSV: CSV
 using Format
 
 GLMakie.activate!()
+
+include("summarize.jl")
 
 const GIT_ROOT = strip(read(`git rev-parse --show-toplevel`, String))
 
@@ -47,10 +50,6 @@ plt_tokenizers = [
     "Xenova/gpt-4o",
 ]
 
-function tokenizers_info()
-    info = JSON.parsefile(joinpath(@__DIR__, "tokenizers.json"))
-    return Dict(tok["name_or_path"] => tok for tok in info)
-end
 
 function theme()
     Theme(
@@ -77,7 +76,7 @@ function theme()
         ),
         Axis=(;
             spinewidth=0.5,
-            ylabelpadding=2pt,
+            ylabelpadding=3pt,
             yticksize=3,
             ytickwidth=0.5,
             yminortickwidth=0.5,
@@ -126,18 +125,30 @@ function all_figures()
     mkpath(joinpath(@__DIR__, "fig"))
     CairoMakie.activate!()
 
+    loss_stats = model_loss_stats()
+    info_loss = info_loss_stats()
+    molnet_info_loss = TokenizerStats.avg_molnet_info_loss(info_loss)
+    usage_stats = TokenizerStats.usage_stats()
+    dfp, dff, dft = filter_runs(transformer_models()...)
+
     with_theme(theme()) do
         # Token Usage
         savefig("token_usage", figure_token_usage())
-        savefig("fertility", figure_fertility())
+        savefig("fertility", figure_fertility(usage_stats, loss_stats, dfp))
         savefig("oov_rate", figure_oov_rate())
         # savefig("jaccard", figure_jaccard())
 
+        # Transformers
+        savefig("ngram_vs_transformer", figure_ngram_vs_transformer(loss_stats, dfp, dff))
+        f, df = figure_tf_finetune(dff, dft)
+        savefig("tf_finetune", f)
+        CSV.write(joinpath("stats/tf_model_summary.csv"), df)
+
         # N-Gram Analysis
-        savefig("ngram_fits", figure_ngram_fits())
-        savefig("ngram_unk_log_odds", figure_ngram_info_loss())
-        savefig("kl_v_info_loss", figure_kl_v_info_loss())
-        savefig("info_loss_ref_tokenzier", figure_info_loss_ref_tokenizer())
+        savefig("ngram_fits", figure_ngram_fits(loss_stats))
+        # savefig("ngram_unk_log_odds", figure_ngram_info_loss())
+        savefig("kl_v_info_loss", figure_kl_v_info_loss(loss_stats, molnet_info_loss))
+        # savefig("info_loss_ref_tokenzier", figure_info_loss_ref_tokenizer(info_loss))
 
         # savefig("ngrma_unk_log_odds_cobalt", figure_ngram_info_loss(;
         #     smi="[Cl-][Co+2@OH1]([Cl-])([NH3])([NH3])([NH3])[NH3]",
@@ -500,27 +511,32 @@ function figure_oov_rate(stats_dir=joinpath(@__DIR__, "stats"))
 end
 
 
-function figure_ngram_fits(; colormap=:Set2_5)
-    df = TokenizerStats.model_loss_stats()
+function figure_ngram_fits(df=nothing; colormap=:Set2_5)
+    if isnothing(df)
+        df = TokenizerStats.model_loss_stats()
+    end
     plt_toks = [
         "smirk",
         "smirk-gpe-50k-nmb-ss",
-        # "character",
         "ibm/MoLFormer-XL-both-10pct-oov",
         "ibm/materials.smi-ted-light",
         "devalab/molgpt-moses",
-        # "rxn4chemistry/rxn_yields",
         "rxn4chemistry/rxnfp",
         "SmilesPE/SPE_ChEMBL",
-        "mikemayuare/SMILYAPE",
         "MolecularAI/Chemformer",
+        "mikemayuare/SMILYAPE",
+        "mikemayuare/SELFYAPE",
+        "HUBioDataLab/SELFormer",
         "seyonec/ChemBERTa-zinc-base-v1",
+        "ncfrey/ChemGPT-4.7M",
         "ChangwenXu98/TransPolymer",
-        "meta-llama/Meta-Llama-3.1-8B",
+        "sagawa/ReactionT5-product-prediction",
+        "facebook/galactica-6.7b",
+        "meta-llama/Llama-3.2-1B",
         "Xenova/gpt-4o",
         "google/gemma-7b",
     ]
-    subset!(df,
+    df = subset(df,
         :tokenizer => ByRow(x -> x in plt_toks),
         :split => ByRow(==("val")),
     )
@@ -530,9 +546,14 @@ function figure_ngram_fits(; colormap=:Set2_5)
     # Set up figure
     f = Figure(; size=(7inch, 3inch))
     tokenizer = levels(df.tokenizer)
+    plt_label = map(tokenizer) do tok
+        name = tokenizers[tok]["name"]
+        class = tokenizers[tok]["tokenizer_class"]
+        return "$name - $class"
+    end
     ax_kwargs = (;
         limits=(nothing, (0, nothing)),
-        xticks=(1:length(tokenizer), map(n -> tokenizers[n]["name"], plt_toks)),
+        xticks=(1:length(tokenizer), plt_label),
         xticklabelrotation=0.4,
         xticksvisible=false,
         xgridvisible=false,
@@ -547,6 +568,13 @@ function figure_ngram_fits(; colormap=:Set2_5)
         ax_kwargs...
     )
     linkxaxes!(ax_pretrain, ax_molnet)
+    ax = Axis(f[1:2, 2];
+        ylabel="Molecule Net [nats/token]",
+        xlabel="Enimine REAL Space\n[nats/token]",
+        limits=((0, nothing), (0, nothing)),
+    )
+    colsize!(f.layout, 2, Aspect(1, 1))
+    colgap!(f.layout, 5)
 
     # N-Gram Legend
     ds_elements = map(1:5) do gdx
@@ -555,20 +583,21 @@ function figure_ngram_fits(; colormap=:Set2_5)
             colorrange=(1, 5),
         )
     end
-    Legend(f[0, 1], ds_elements, ["unigram", "bigram", "trigram", "4-gram", "5-gram"];
-        tellheight=true, tellwidth=false, orientation=:horizontal,
-        framevisible=false,
+    Legend(f[1, 1], ds_elements, ["unigram", "bigram", "trigram", "4-gram", "5-gram"];
+        tellheight=false, tellwidth=false, orientation=:horizontal,
+        framevisible=true,
         patchstrokecolor=:black,
         patchstrokewidth=1,
-        margin=(0, 0, 0, 0),
-        padding=1,
+        margin=(2, 2, 2, 2),
+        padding=3,
+        valign=:top,
+        halign=:left,
     )
 
     # Pretraining
     df_pretrain = subset(df,
         :dataset => ByRow(==("realspace")),
     )
-    @info df_pretrain
     barplot!(ax_pretrain, levelcode.(df_pretrain.tokenizer), df_pretrain.avg_model_token_loss;
         dodge=df_pretrain.ngram,
         color=df_pretrain.ngram,
@@ -584,13 +613,53 @@ function figure_ngram_fits(; colormap=:Set2_5)
             avg_model_loss=mean(gdf.avg_model_token_loss, Weights(gdf.samples)),
         )
     end
-    @info df_finetune
     barplot!(ax_molnet, levelcode.(df_finetune.tokenizer), df_finetune.avg_model_loss;
         dodge=df_finetune.ngram,
         color=df_finetune.ngram,
         colormap,
     )
-    @info ax_molnet.limits
+
+    # Scatter Plot of Pretrain vs. Finetune 
+    df = leftjoin(
+        select(subset(df_pretrain, :ngram => ByRow(==(5))), :tokenizer, :avg_model_token_loss => :pretrain),
+        select(subset(df_finetune, :ngram => ByRow(==(5))), :tokenizer, :avg_model_loss => :finetune);
+        on=:tokenizer,
+    )
+    df.class = map(name -> tokenizers[name]["tokenizer_class"], df.tokenizer) |> categorical
+    df.domain = map(name -> tokenizers[name]["domain"], df.tokenizer) |> categorical
+    markers = [:x, :+, :diamond, :square]
+    h = scatter!(ax, df.pretrain, df.finetune;
+        marker=map(i -> markers[levelcode(i)], df.domain),
+        colormap=:Dark2_6,
+        color=levelcode.(df.class),
+        colorrange=(1, length(levels(df.class))),
+    )
+    domains = map(enumerate(levels(df.domain))) do (i, domain)
+        MarkerElement(label=string(domain), marker=markers[i], color=:black)
+    end
+    classes = map(enumerate(levels(df.class))) do (i, class)
+        PolyElement(
+            label=string(class),
+            marker=:x,
+            color=i,
+            colormap=h.colormap,
+            colorrange=h.colorrange
+        )
+    end
+    labels(x) = map(e -> e.label[], x)
+    Legend(f[2, 1:2],
+        [domains, classes],
+        [labels(domains), labels(classes)],
+        ["Domain", "Tokenizer Class"];
+        halign=:right, valign=:bottom,
+        nbanks=2,
+        titleposition=:top,
+        margin=(5, 5, 5, 5),
+    )
+
+
+
+
     rowgap!(f.layout, 2)
     resize_to_layout!(f)
     return f
@@ -836,20 +905,18 @@ Makie.inverse_transform(::typeof(asinh)) = sinh
 Makie.defined_interval(::typeof(asinh)) = Makie.defined_interval(identity)
 Makie.defaultlimits(::typeof(asinh)) = (0.0, 10.0)
 
-function figure_kl_v_info_loss(; reference="character")
-    model_loss = TokenizerStats.model_loss_stats()
-    info_loss = TokenizerStats.avg_molnet_info_loss()
+function figure_kl_v_info_loss(model_loss, info_loss; reference="character")
     tokenizers = tokenizers_info()
 
-    subset!(model_loss,
-        :dataset => ByRow(!=("realspace")),
-        # :training_dataset => ByRow(==("realspace_v4_dev")),
-        :split => ByRow(==(:val)),
+    model_loss = subset(model_loss,
+        :dataset => ByRow(∉(["realspace", "tmqm"])),
+        :split => ByRow(==("val")),
     )
-    subset!(info_loss,
+    info_loss = subset(info_loss,
         :ref_tokenizer => ByRow(==(reference)),
     )
     model_loss = combine(groupby(model_loss, [:tokenizer, :split, :ngram])) do gdf
+        @info gdf
         return (;
             avg_model_loss=mean(gdf.avg_model_loss, Weights(gdf.samples)),
             vocab_size=first(gdf.vocab_size),
@@ -858,7 +925,7 @@ function figure_kl_v_info_loss(; reference="character")
     end
     select!(model_loss, Not([:samples]))
     select!(info_loss, Not([:samples, :vocab_size]))
-    df = leftjoin(model_loss, info_loss, on=[:tokenizer, :split, :ngram])
+    df = leftjoin(model_loss, info_loss, on=[:tokenizer, :ngram])
     plt_tokenizers = [
         "smirk-gpe-50k-nmb-ss" => :star8,
         "smirk" => :star5,
@@ -875,7 +942,7 @@ function figure_kl_v_info_loss(; reference="character")
     dropmissing!(df)
     subset!(df,
         :ngram => ByRow(>(1)),
-        :split => ByRow(==(:val)),
+        :split => ByRow(==("val")),
     )
     @info "Tokens with no info_loss" unique(df.tokenizer)
     subset!(df, :tokenizer => ByRow(x -> x in first.(plt_tokenizers)))
@@ -884,11 +951,11 @@ function figure_kl_v_info_loss(; reference="character")
 
     f = Figure(; size=72 .* (4.5, 3), figure_padding=(1, 1, 1, 4))
     ax = Axis(f[1, 1];
-        limits=((50, 230), (-0.01, 64)),
+        limits=(nothing, (-0.1, nothing)),
         xlabel="Cross Entropy Loss [nats]",
         ylabel="Information Loss [nats]",
-        yticks=[0, 0.05, 0.25, 1, 4, 16, 64],
-        yscale=Asinh(0.05),
+        yticks=[0, 0.5, 2, 4, 16, 64, 256, 512],
+        yscale=Asinh(0.2),
         yminorticksvisible=true,
         yminorticks=IntervalsBetween(4),
         yminorgridvisible=true,
@@ -926,8 +993,7 @@ function figure_kl_v_info_loss(; reference="character")
     return f
 end
 
-function figure_info_loss_ref_tokenizer()
-    df = TokenizerStats.avg_molnet_info_loss()
+function figure_info_loss_ref_tokenizer(df=TokenizerStats.avg_molnet_info_loss())
     tokenizers = ("character", "meta-llama/Meta-Llama-3.1-8B")
     subset!(df,
         :split => ByRow(==(:val)),
@@ -1052,129 +1118,6 @@ function figure_jaccard()
     return f
 end
 
-function transformer_models(cache=joinpath(@__DIR__, "..", "..", ".cache", "wandb-export"))
-    run_ids = [
-        "c1clszmm",
-        "u2vgi8dy",
-        "ti624ev1",
-        "llqb57c8",
-        "wv2dbdxf",
-        "20zu6xej",
-        "4jthuyy4",
-        "lk971fa3",
-        "qdyxbwv3",
-        "2scil3tk",
-        "ulxte55y",
-        "3kdikco4",
-        "x8jqdruh",
-        "c59ebnog",
-        "cz8q161k",
-        "p3xqpkrv",
-        "b61irf10",
-        "l7axquz1",
-        "4bnai5jj",
-        "soc7iuax",
-    ]
-    cache = abspath(cache)
-    runs = []
-    for id in run_ids
-        file = joinpath(cache, "pretraining", id * ".json")
-        data = JSON.parsefile(file)
-        tokenizer = data["data"]["tokenizer"]
-        if startswith(tokenizer, "/")
-            tokenizer = basename(tokenizer)
-        end
-        push!(runs, (;
-            id=data["id"],
-            state=data["state"],
-            tokenizer,
-            model_class=data["model"]["class_path"],
-            encoding=data["data"]["encoding"],
-            d_model=data["model"]["d_model"],
-            d_ff=data["model"]["d_ff"],
-            n_layers=data["model"]["n_layers"],
-            n_heads=data["model"]["n_heads"],
-            model_size=data["model"]["model_size"],
-            val_loss=data["metrics"]["val_loss_best"],
-            train_loss=data["metrics"]["train_loss_best"],
-            molecules_seen=data["trainer"]["effective_batch_size"] * data["trainer"]["num_training_steps"],
-            tokens_seen=data["trainer"]["tokens"],
-        ))
-    end
-    pretrained = DataFrame(runs)
-    subset!(pretrained, :state => ByRow(==("finished")))
-
-    # Add vocab size
-    tok_vs = combine(groupby(TokenizerStats.model_loss_stats(), :tokenizer)) do gdf
-        return (; vocab_size=first(gdf.vocab_size))
-    end
-    leftjoin!(pretrained, tok_vs, on=:tokenizer)
-    tokenizers = tokenizers_info()
-    pretrained.tokenizer_class = map(name_or_path -> tokenizers[name_or_path]["tokenizer_class"], pretrained.tokenizer)
-
-    runs = []
-    for file in readdir(joinpath(cache, "finetuning"); join=true)
-        data = JSON.parsefile(file)
-        pretrained_id = data["model"]["encoder_id"]
-        pretrained_id in run_ids || continue
-        "smirk-paper" in data["tags"] || continue
-        task = get(data["model"], "task", missing)
-        push!(runs, (;
-            id=data["id"],
-            pretrained_id,
-            task,
-            dataset=data["data"]["dataset"],
-            encoding=data["data"]["encoding"],
-            state=data["state"],
-            step=data["trainer"]["step"],
-            task_metrics(task, data["metrics"]; dataset=data["data"]["dataset"])...
-        ))
-    end
-    finetuned = DataFrame(runs)
-    subset!(finetuned, :state => ByRow(==("finished")))
-    # finetuned.dataset .= categorical(finetuned.dataset)
-
-    # Add pretraining info
-    leftjoin!(finetuned,
-        select(pretrained,
-            :id => :pretrained_id,
-            :tokenizer,
-            :tokenizer_class,
-            :vocab_size,
-            :encoding => :pretrained_encoding,
-            :val_loss => :pretrained_val_loss
-        ),
-        on=:pretrained_id
-    )
-
-    return pretrained, finetuned
-end
-
-function task_metrics(task, metrics; dataset=nothing)
-    if task == "regression"
-        metric = "r2"
-    elseif task == "binary"
-        metric = dataset == "muv" ? "avg-precision" : "auroc"
-    else
-        metric = missing
-    end
-    return (;
-        metric,
-        train_loss=get_metric(metrics, metric; split="train", tok_group="non_oov"),
-        train_oov_loss=get_metric(metrics, metric; split="train", tok_group="oov"),
-        val_loss=get_metric(metrics, metric; split="val", tok_group="non_oov"),
-        val_oov_loss=get_metric(metrics, metric; split="val", tok_group="oov"),
-    )
-end
-
-function get_metric(metrics::Vector, name::String; split, tok_group="all", type="best")
-    for metric in metrics
-        if metric["metric"] == name && metric["split"] == split && metric["tok_group"] == tok_group && metric["type"] == type
-            return metric["value"]
-        end
-    end
-    return missing
-end
 
 function pretraining_tokenizer_scheme(dfp, dff)
 
@@ -1217,46 +1160,63 @@ function pretraining_tokenizer_scheme(dfp, dff)
     return m_class, m_reg
 end
 
-function figure_tf_finetune(dff)
+function figure_tf_finetune(dff, dft)
     f = Figure(; size=(5inch, 2.5inch), figure_padding=(1, 1, 1, 4))
     tokenizers = tokenizers_info()
     dff.tokenizer = categorical(dff.tokenizer)
     dff.dataset = categorical(dff.dataset)
 
-    dff = subset(dff, :step => ByRow(>=(99999)))
-    dff = combine(groupby(dff, [:tokenizer, :dataset])) do gdf
-        ids = argmax(gdf.val_loss)
-        return gdf[ids, :]
-    end
 
+    # Tabulated Results for SI
     colormap = distinguishable_colors(length(levels(dff.tokenizer)), [colorant"white", colorant"black"];
         dropseed=true,
         lchoices=range(0, stop=70, length=15), # Avoid light colors
     )
 
+    # Get test results
+    dft = subset(dft, :channel => ByRow(isnothing), :tok_group => ByRow(==("all")))
+    select!(dft, Not(:tok_group, :channel))
+    rename!(dft, :mean => :test_loss, :std => :test_loss_std, :id => :test_id)
+    dff = leftjoin(dff, dft; on=[:id => :ckpt_id, :metric])
+
+    # Merge smiles/canonical/kekule encoding into one bar (pick best by val loss)
+    dff_all = dff # Save for reporting
+    select!(dff, Not(:train_oov_loss, :val_oov_loss))
+    dff = combine(groupby(dff, [:tokenizer, :dataset])) do gdf
+        ids = argmin(gdf.val_loss)
+        return gdf[ids, :]
+    end
+
+    # Plot Regression
     dfr = subset(dff, :task => ByRow(==("regression")))
     dfr.dataset = categorical(string.(dfr.dataset))
-    @info "regression" dfr
     ax = Axis(f[1, 1];
         limits=(nothing, (0, 1)),
-        ylabel="Validation R2",
+        ylabel="Test R2",
         xticks=categorical_ticks(dfr.dataset),
         xticklabelrotation=0.4,
+        yticks=LinearTicks(5),
+        ytickformat="{:.0%}",
     )
-    h = _finetune_results!(ax, dfr.dataset, dfr.val_loss, dfr.tokenizer;
+    h = _finetune_results!(ax, dfr.dataset, dfr.test_loss, dfr.tokenizer;
+        std=dfr.test_loss_std,
         colormap,
         colorrange=(1, length(colormap)),
     )
 
+    # Skip MUV as it use AU-PRC, not AUROC
     dfc = subset(dff, :task => ByRow(==("binary")), :dataset => ByRow(!=("muv")))
     dfc.dataset = categorical(string.(dfc.dataset))
     ax = Axis(f[2, 1];
         limits=(nothing, (0, 1)),
-        ylabel="Validation AUROC",
+        ylabel="Test AUROC",
         xticks=categorical_ticks(dfc.dataset),
         xticklabelrotation=0.4,
+        yticks=LinearTicks(5),
+        ytickformat="{:.0%}",
     )
-    _finetune_results!(ax, dfc.dataset, dfc.val_loss, dfc.tokenizer;
+    _finetune_results!(ax, dfc.dataset, dfc.test_loss, dfc.tokenizer;
+        std=dfc.test_loss_std,
         colormap=h.colormap,
         colorrange=h.colorrange
     )
@@ -1273,10 +1233,10 @@ function figure_tf_finetune(dff)
     )
 
     resize_to_layout!(f)
-    return f
+    return f, dff_all
 end
 
-function _finetune_results!(ax, x, y, dodge; colormap, colorrange=nothing)
+function _finetune_results!(ax, x, y, dodge; std=nothing, colormap, colorrange=nothing)
     if isnothing(colorrange)
         colorrange = extrema(levelcode.(dodge))
     end
@@ -1287,14 +1247,25 @@ function _finetune_results!(ax, x, y, dodge; colormap, colorrange=nothing)
         colorrange,
         color=levelcode.(dodge),
     )
+
+    if !isnothing(std)
+        TokenizerStats.dodgederrorbars!(ax, levelcode.(x), y, std;
+            dodge=h.dodge,
+            width=h.width,
+            n_dodge=h.n_dodge,
+            gap=h.gap,
+            dodge_gap=h.dodge_gap,
+            linewidth=1,
+            color=:black,
+        )
+    end
+
     return h
 end
 
 categorical_ticks(x) = (1:length(levels(x)), levels(x))
 
-function figure_ngram_vs_transformer()
-    # Select the best n-gram model for each tokenizer (Pretraining)
-    loss_stats = TokenizerStats.model_loss_stats()
+function figure_ngram_vs_transformer(loss_stats, dfp, dff)
     tokenizers = tokenizers_info()
     val_loss = subset(loss_stats,
         :split => ByRow(==("val")),
@@ -1307,45 +1278,69 @@ function figure_ngram_vs_transformer()
     end
     select!(best_models, :tokenizer, :ngram, :avg_model_loss => :ngram_val_loss, :avg_model_token_loss => :ngram_val_token_loss)
 
-    f = Figure(; size=(5inch, 2.5inch), figure_padding=(1, 1, 1, 4))
+    f = Figure(; size=(3.25inch, 1.5inch), figure_padding=(1, 1, 1, 4))
 
     # Get transformer model pretraining loss
-    dfp, dff = transformer_models()
-    @info "runs" dfp dff
     dfp = leftjoin(dfp, best_models, on=[:tokenizer])
-    dfp_smiles = subset(dfp, :encoding => ByRow(==("smiles")))
-    sort!(dfp_smiles, :val_loss)
-    toks = dfp_smiles.tokenizer
+    sort!(dfp, :val_loss)
+    dfp.tokenizer = categorical(dfp.tokenizer, levels=unique(dfp.tokenizer))
+    replace!(dfp.encoding,
+        "smiles" => "SMILES",
+        "smiles-canonical" => "Canonical SMILES",
+        "selfies" => "SELFIES"
+    )
+    dfp.encoding = categorical(dfp.encoding, levels=["SMILES", "Canonical SMILES", "SELFIES"])
 
+    toks = levels(dfp.tokenizer)
     ax = Axis(f[1, 1];
         limits=(nothing, (0, nothing)),
-        ylabel="Cross Entropy Loss [nats/token]",
+        ylabel="Transformer [nats/token]",
         xticklabelrotation=0.4,
         xticks=(1:length(toks), map(n -> tokenizers[n]["name"], toks)),
     )
-    barplot!(ax, dfp_smiles.val_loss)
+    h = barplot!(ax, levelcode.(dfp.tokenizer), dfp.val_loss;
+        dodge=replace(levelcode.(dfp.encoding), 3 => 2),
+        color=levelcode.(dfp.encoding),
+        colormap=:Set1_3,
+        colorrange=(1, length(levels(dfp.encoding))),
+    )
 
-    # Align finetuned models
-    dff = leftjoin(dff, select(dfp, :id); on=:pretrained_id => :id)
-    dropmissing!(dff)
-    dff = leftjoin(dff, best_models; on=:tokenizer)
+    ds_elements = map(enumerate(levels(dfp.encoding))) do (gdx, encoding)
+        PolyElement(label=encoding, color=gdx, colorrange=h.colorrange, colormap=h.colormap)
+    end
+    Legend(f[1, 1], ds_elements, map(e -> e.label, ds_elements);
+        tellheight=false, tellwidth=false, orientation=:vertical,
+        framevisible=true,
+        patchstrokecolor=:black,
+        patchstrokewidth=1,
+        margin=(2, 2, 2, 2),
+        padding=3,
+        valign=:top,
+        halign=:left,
+    )
 
-    # ols = lm(@formula(log(val_loss) ~ avg_fertility + log(vocab_size) + log(ngram_val_token_loss)), df)
-    dropmissing!(dfp)
-    ols = lm(@formula(log(val_loss) ~ 1 + log(ngram_val_token_loss)), dfp)
+
+    # Test if N-Gram's predict pretraining loss
+    ols = glm(@formula(val_loss ~ 1 + log(ngram_val_token_loss)), dfp, Normal(), LogLink())
     display(ols)
 
     ax = Axis(f[1, 2];
-        xlabel="n-gram Cross Entropy Loss [nats/token]",
-        ylabel="Transformer Cross Entropy Loss [nats/token]",
+        xlabel="n-gram [nats/token]",
+        ylabel="Transformer [nats/token]",
         xscale=log10,
         yscale=log10,
         limits=((1, 3), (2e-2, 1)),
     )
     powerlaw!(ax, exp(coef(ols)[1]), coef(ols)[2]; linewidth=0.5, color=:black)
-    scatter!(ax, dfp.ngram_val_token_loss, dfp.val_loss)
 
-    # colsize!(f.layout, 1, Relative(0.6))
+    scatter!(ax, dfp.ngram_val_token_loss, dfp.val_loss;
+        color=levelcode.(dfp.encoding),
+        colormap=h.colormap,
+        colorrange=h.colorrange,
+    )
+
+    colsize!(f.layout, 1, Relative(2 / 3))
+    colgap!(f.layout, 5)
     resize_to_layout!(f)
 
     return f

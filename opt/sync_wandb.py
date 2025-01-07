@@ -186,6 +186,11 @@ def get_ckpt_id(ckpt):
     return None
 
 
+def something(x, default):
+    """Return x if not None, otherwise default"""
+    return x if x is not None else default
+
+
 def finetuning_summary(run):
     row = run_summary(run)
     config = run.config
@@ -194,6 +199,9 @@ def finetuning_summary(run):
             "encoder_ckpt": get_entry(config, "cli", "model", "encoder_ckpt"),
             "task": get_entry(config, "cli", "model", "task"),
             "metrics": get_entry(config, "cli", "model", "metrics"),
+            "freeze_encoder": something(
+                get_entry(config, "cli", "model", "freeze_encoder"), True
+            ),
         }
     )
 

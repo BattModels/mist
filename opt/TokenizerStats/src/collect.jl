@@ -300,7 +300,7 @@ end
     stats = leader_reduce(merge!, stats; comm)
     if rank == 0
         jldopen(output * ".tmp", "a+") do f
-            f["smaples"] = nobs(stats)
+            f["samples"] = nobs(stats)
             f["info_loss"] = map(value, stats)
         end
         mv(output * ".tmp", output; force=true)

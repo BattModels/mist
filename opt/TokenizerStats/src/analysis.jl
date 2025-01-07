@@ -49,43 +49,6 @@ function mean_std_countmap(x::AbstractDict)
     return StatsBase.mean_and_std(collect(v), Weights(collect(c)))
 end
 
-function info_loss_stats()
-    rows = []
-    stats_dir = joinpath(@__DIR__, "..", "stats")
-    for file in find(stats_dir, r"character_info_loss\.jld2$")
-        @info "loading" file
-        try
-            jldopen(file) do data
-                file = relpath(file, stats_dir)
-                tokenizer = joinpath(splitpath(file)[1:end-2])
-                dataset = basename(dirname(file))
-                for (ngram, loss) in enumerate(data["info_loss"])
-                    n_zero = loss[:extrema][:nmin]
-                    n_nonzero = data["samples"] - n_zero
-                    push!(rows, (;
-                        tokenizer,
-                        ref_tokenizer=data["ref_tokenizer"][:name],
-                        dataset,
-                        ngram,
-                        split=:val,
-                        vocab_size=data["tokenizer"][:vocab_size],
-                        samples=data["samples"],
-                        avg_info_loss=first(loss[:moments]),
-                        max_info_loss=loss[:extrema][:max],
-                        n_nonzero,
-                        nonzero_avg_info_loss=(data["samples"] * first(loss[:moments])) / n_nonzero,
-                    ))
-                end
-            end
-        catch err
-            @info "failed to load" file err
-        end
-    end
-    df = DataFrame(rows)
-    replace!(df.dataset, "realspace_v4_dev2" => "realspace_v4_dev")
-    return df
-end
-
 function model_loss_stats()
     rows = []
     stats_dir = joinpath(@__DIR__, "..", "stats")
@@ -146,10 +109,11 @@ function model_loss_stats()
     return df
 end
 
-function avg_molnet_info_loss()
-    df = TokenizerStats.info_loss_stats()
-    subset!(df, :dataset => ByRow(!=("realspace_v4_dev")))
-    return combine(groupby(df, [:tokenizer, :ref_tokenizer, :split, :ngram])) do gdf
+function avg_molnet_info_loss(df=TokenizerStats.info_loss_stats())
+    subset!(df, :dataset => ByRow(!=("realspace")))
+    subset!(df, :dataset => ByRow(!=("tmQM")))
+    @assert "split" ∉ names(df) "Expecting info loss to only be for the val split"
+    return combine(groupby(df, [:tokenizer, :ref_tokenizer, :ngram])) do gdf
         # Information Loss Statistics
         avg_info_loss = mean(gdf.avg_info_loss, Weights(gdf.samples))
         nonzero = subset(gdf, :n_nonzero => ByRow(x -> x > 0))
