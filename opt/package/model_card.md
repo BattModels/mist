@@ -11,6 +11,9 @@ python -m venv .venv
 
 ```
 
+> Smirk tokenizers may require rust to be installed to run.
+> See [install rust](https://www.rust-lang.org/tools/install) for more info.
+
 See [demo.py](demo.py) for an example of how to use the model, or run
 `.venv/bin/python demo.py` to run the demo.
 

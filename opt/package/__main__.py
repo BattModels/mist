@@ -44,7 +44,7 @@ def create_demo(save_directory: Path, model_class: str):
 
 
 def write_requirements(save_directory: Path, extra_deps: list[str] = []):
-    deps = ["transformers", "torch", *extra_deps]
+    deps = ["transformers", "torch", "scikit-learn", *extra_deps]
     with open(save_directory.joinpath("requirements.txt"), "w") as fid:
         for dep in deps:
             fid.write(f"{dep}=={version(dep)}\n")
