@@ -339,13 +339,13 @@ class ComponentDataModule(pl.LightningDataModule):
         output = {}
         for i in range(self.n_components):
             output[f"input_ids_{i}"] = torch.stack(
-                [torch.tensor(x[f"input_ids_{i}"]) for x in batch]
+                [torch.tensor(x[f"input_ids_{i}"], dtype=int) for x in batch]
             )
             output[f"attention_mask_{i}"] = torch.stack(
-                [torch.tensor(x[f"attention_mask_{i}"]) for x in batch]
+                [torch.tensor(x[f"attention_mask_{i}"], dtype=int) for x in batch]
             )
             output[f"composition_{i}"] = torch.stack(
-                [torch.tensor(x[f"composition_{i}"]) for x in batch]
+                [torch.tensor(x[f"composition_{i}"], dtype=float) for x in batch]
             )
 
         output["target"] = torch.stack(
