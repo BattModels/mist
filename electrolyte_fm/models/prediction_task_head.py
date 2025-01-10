@@ -7,7 +7,6 @@ class PredictionTaskHead(nn.Module):
     ) -> None:
         super().__init__()
         self.desc_skip_connection = True
-        self.fcs = []
 
         self.fc1 = nn.Linear(embed_dim, embed_dim)
         self.dropout1 = nn.Dropout(dropout)
