@@ -186,7 +186,7 @@ end
 """
     H = cross_entropy_log(P::AbstractVector, Q::AbstractVector)
 
-Computes the cross-entropy (sum(p * log(q/p))) between `exp(P)` and `exp(Q)`
+Computes the cross-entropy (sum(p * log(p/q))) between `exp(P)` and `exp(Q)`
 (P & Q are log-probabilities) using Kahan-Babuska-Neumaier summation
 """
 function cross_entropy_log(P::AbstractVector, Q::AbstractVector)

@@ -1,12 +1,10 @@
 module TokenizerStats
 
-using DataFrames
-using Makie
 using PythonCall: Py, pyimport, pyconvert, @pyconst
 using ArgParse: ArgParseSettings, parse_args, @add_arg_table!
-using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, OrderedDict, fit!, merge!, value
+using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
 using LinearAlgebra: normalize
-using StatsBase: StatsBase, Histogram, fit, AbstractWeights, Weights, nobs, mean, std
+using StatsBase: StatsBase, Histogram, fit, nobs, mean, std
 using MPI: MPI
 using BSON: BSON
 using JLD2: jldopen
@@ -15,7 +13,6 @@ using SHA: SHA
 using SparseArrays: sparse
 using LogExpFunctions: logsumexp, log1pexp, xexpy
 using Serialization: serialize, deserialize
-using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
 using NVTX: @annotate
 
 function find(dir, pattern)
@@ -65,10 +62,6 @@ end
 include("ngrams.jl")
 include("collect.jl")
 include("finetune.jl")
-include("serialize.jl")
 include("cli.jl")
-
-include("analysis.jl")
-include("plotting.jl")
 
 end

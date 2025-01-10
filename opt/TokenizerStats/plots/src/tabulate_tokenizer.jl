@@ -1,18 +1,5 @@
-function classify_tokenizer(name::String)
-    if startswith(name, "smirk")
-        return :ours
-    elseif name in ["Xenova/gpt-4o", "google/gemma-7b"] || startswith(name, "meta-llama")
-        return :nlp
-    elseif startswith(name, "sagawa") || name in ["ChangwenXu98/TransPolymer"]
-        return :nlp_based
-    else
-        return :atomic
-    end
-end
-
-function usage_stats()
+function usage_stats(stats_dir)
     rows = []
-    stats_dir = joinpath(@__DIR__, "..", "stats")
     for file in find(stats_dir, r"usage.jld2$")
         jldopen(file) do data
             file = relpath(file, stats_dir)
@@ -49,9 +36,44 @@ function mean_std_countmap(x::AbstractDict)
     return StatsBase.mean_and_std(collect(v), Weights(collect(c)))
 end
 
-function model_loss_stats()
+function info_loss_stats(stats_dir)
     rows = []
-    stats_dir = joinpath(@__DIR__, "..", "stats")
+    for file in find(stats_dir, r"character_info_loss\.jld2$")
+        try
+            jldopen(file) do data
+                file = relpath(file, stats_dir)
+                tokenizer = joinpath(splitpath(file)[1:end-2])
+                dataset = basename(dirname(file))
+                for (ngram, loss) in enumerate(data["info_loss"])
+                    n_zero = loss[:extrema][:nmin]
+                    n_nonzero = data["samples"] - n_zero
+                    loss_moments = OnlineStats.Moments(loss[:moments], EqualWeight(), data["samples"])
+                    push!(rows, (;
+                        tokenizer,
+                        ref_tokenizer=data["ref_tokenizer"][:name],
+                        dataset,
+                        ngram,
+                        vocab_size=data["tokenizer"][:vocab_size],
+                        samples=data["samples"],
+                        info_loss_moments=loss_moments,
+                        avg_info_loss=mean(loss_moments),
+                        std_info_loss=std(loss_moments),
+                        max_info_loss=loss[:extrema][:max],
+                        n_nonzero,
+                        nonzero_avg_info_loss=(data["samples"] * mean(loss_moments)) / n_nonzero,
+                    ))
+                end
+            end
+        catch err
+            @info "failed to load" file err
+        end
+    end
+    df = DataFrame(rows)
+    return df
+end
+
+function model_loss_stats(stats_dir)
+    rows = []
     for file in find(stats_dir, r"/model_loss\.jld2$")
 
         # Get average fertility
@@ -60,7 +82,7 @@ function model_loss_stats()
             @warn "No usage file found for $file"
             avg_fertility = Dict{String,Float64}()
         else
-            avg_fertility = jldopen(usage) do data
+            avg_fertility = jldopen(usage, "r") do data
                 usage_data = Dict{String,Float64}()
                 for split in ["train", "val", "test"]
                     haskey(data, split) || continue
@@ -79,15 +101,8 @@ function model_loss_stats()
                 split ∉ keys(data) && continue
                 split_data = data[split]
                 for ngram in 1:5
-                    local avg_model_token_loss, stderr_model_token_loss
-                    try
-                        avg_model_token_loss = first(split_data[:kld_per_token][ngram][:moments])
-                        stderr_model_token_loss = sqrt(split_data[:kld_per_token][ngram][:moments][2]) / sqrt(split_data[:samples])
-                    catch
-                        @warn "falling back to loss/fertility for $file"
-                        avg_model_token_loss = first(split_data[:kld][ngram][:moments]) / get(avg_fertility, split, missing)
-                        stderr_model_token_loss = missing
-                    end
+                    kld_loss = OnlineStats.Moments(split_data[:kld][ngram][:moments], EqualWeight(), split_data[:samples])
+                    kld_per_token = OnlineStats.Moments(split_data[:kld_per_token][ngram][:moments], EqualWeight(), split_data[:samples])
 
                     push!(rows, (;
                         tokenizer,
@@ -96,10 +111,12 @@ function model_loss_stats()
                         ngram,
                         vocab_size=data["tokenizer"][:vocab_size],
                         samples=split_data[:samples],
-                        avg_model_loss=first(split_data[:kld][ngram][:moments]),
-                        stderr_model_loss=sqrt(split_data[:kld][ngram][:moments][2]) / sqrt(split_data[:samples]),
-                        avg_model_token_loss,
-                        stderr_model_token_loss,
+                        loss_moments=kld_loss,
+                        loss_per_token_moments=kld_per_token,
+                        avg_model_loss=mean(kld_loss),
+                        std_model_loss=std(kld_loss),
+                        avg_model_token_loss=mean(kld_per_token),
+                        std_model_token_loss=std(kld_per_token),
                     ))
                 end
             end
@@ -109,29 +126,6 @@ function model_loss_stats()
     return df
 end
 
-function avg_molnet_info_loss(df=TokenizerStats.info_loss_stats())
-    subset!(df, :dataset => ByRow(!=("realspace")))
-    subset!(df, :dataset => ByRow(!=("tmQM")))
-    @assert "split" ∉ names(df) "Expecting info loss to only be for the val split"
-    return combine(groupby(df, [:tokenizer, :ref_tokenizer, :ngram])) do gdf
-        # Information Loss Statistics
-        avg_info_loss = mean(gdf.avg_info_loss, Weights(gdf.samples))
-        nonzero = subset(gdf, :n_nonzero => ByRow(x -> x > 0))
-        avg_nonzero_info_loss = mean(nonzero.avg_info_loss, Weights(nonzero.n_nonzero))
-        n_nonzero = sum(nonzero.n_nonzero)
-        samples = sum(gdf.samples)
-        return (;
-            vocab_size=first(gdf.vocab_size),
-            avg_info_loss,
-            avg_perplexity=exp(avg_info_loss),
-            samples,
-            avg_nonzero_info_loss,
-            nonzero_perplexity=exp(avg_nonzero_info_loss),
-            n_nonzero,
-            nonzero_rate=n_nonzero / samples,
-        )
-    end
-end
 
 function find_oov_samples(results::Dict)
     oov_samples = Dict{String,Set{String}}()
@@ -155,29 +149,8 @@ function find_oov_samples(results::Dict)
     return df
 end
 
-function oov_stats()
-    data = JSON.parsefile(joinpath(@__DIR__, "..", "stats-atomic.json"))
-    rows = []
-    for (tokenizer, tok_data) in pairs(data)
-        for (dataset, stats) in pairs(tok_data)
-            ds_name = startswith(dataset, "MoleculeNet") ? lowercase(split(dataset, "/")[end]) : dataset
-            ds_name = replace(ds_name, "lipophilicity" => "lipo")
-            push!(rows, (;
-                tokenizer,
-                molnet=startswith(dataset, "MoleculeNet"),
-                dataset=ds_name,
-                samples=stats["nobs"],
-                n_oov=stats["oov"],
-                oov_samples=stats["oov_samples"],
-            ))
-        end
-    end
-    return DataFrame(rows)
-end
-
-function tokenizer_summary(; k=5)
-    tokenizers = JSON.parsefile(joinpath(@__DIR__, "..", "tokenizers.json"))
-    stats_dir = joinpath(@__DIR__, "..", "stats")
+function tokenizer_summary(stats_dir; k=5)
+    tokenizers = JSON.parsefile(joinpath(stats_dir, "tokenizers.json"))
     smirk = load_tokenizer("smirk")
     rows = []
     for tokenizer in tokenizers
@@ -217,35 +190,6 @@ function tokenizer_summary(; k=5)
     return df
 end
 
-function tokenizer_jaccard(tokenizers::Vector{String})
-    tok_tokens = map(tokenizers) do tokenizer
-        name_or_path = startswith(tokenizer, "smirk-gpe") ? "./" * tokenizer : tokenizer
-        tok = load_tokenizer(name_or_path)
-        vocab_size = pyconvert(Int, length(tok))
-        pytokens = map(id -> tok.decode([id]), range(0; length=vocab_size))
-        tokens = pyconvert(Vector{String}, pytokens)
-        return tokenizer => tokens
-    end |> Dict
-    return tokenizer_jaccard(tok_tokens)
-end
-
-function tokenizer_jaccard(tok_vocab::Dict{String})
-    k = collect(keys(tok_vocab))
-    J = Matrix{Float64}(undef, length(k), length(k))
-    for i in 1:length(k)
-        J[i, i] = jaccard(tok_vocab[k[i]], tok_vocab[k[i]])
-        @assert J[i, i] == 1
-        for j in i+1:length(k)
-            J[i, j] = jaccard(tok_vocab[k[i]], tok_vocab[k[j]])
-            J[j, i] = J[i, j]
-        end
-    end
-    return J, k
-end
-
-jaccard(a::AbstractVector, b::AbstractVector) = jaccard(Set(a), Set(b))
-jaccard(a::AbstractSet, b::AbstractSet) = length(intersect(a, b)) / length(union(a, b))
-
 function has_element(smirk::Py, smiles::String; element::String="C")
     smiles = replace(smiles, "▁" => "")
     local tokens
@@ -278,7 +222,7 @@ end
 
 function top_k_tokens(ngram_file; k=5)
     # Load ngram model
-    ngram, tok, _ = load_ngram_model(ngram_file)
+    ngram, tok, _ = TokenizerStats.load_ngram_model(ngram_file)
 
     # Find the top k tokens
     id_count = collect(pairs(ngram.ngrams[1]))

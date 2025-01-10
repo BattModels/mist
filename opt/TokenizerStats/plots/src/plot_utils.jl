@@ -1,3 +1,84 @@
+function theme()
+    Theme(
+        rowgap=2,
+        colgap=2,
+        fonts=(;
+            :regular => findfont("Helvetica", "Regular"),
+            :bold => findfont("Helvetica", "Bold"),
+        ),
+        fontsize=8pt,
+        size=(246, 152),
+        figure_padding=(1, 15, 2, 2),
+        CairoMakie=(;
+            pt_per_unit=2,
+            px_per_unit=300 / inch
+        ),
+        GLMakie=(; px_per_unit=4, scalefactor=4, focus_on_show=false),
+        palette=(;
+            color=cgrad(:seaborn_muted, 10),
+            linestyle=[:solid, :dot, :dashdot],
+        ),
+        Lines=(;
+            cycle=Cycle([:color, :linestyle], covary=true),
+        ),
+        Axis=(;
+            spinewidth=0.5,
+            ylabelpadding=3pt,
+            yticksize=3,
+            ytickwidth=0.5,
+            yminortickwidth=0.5,
+            yminorticksize=2,
+            xtickwidth=0.5,
+            xticksize=3,
+            xminortickwidth=0.5,
+            xminorticksize=2,
+            xgridwidth=0.5,
+            ygridwidth=0.5,
+            xminorgridwidth=0.5,
+            yminorgridwidth=0.5,
+        ),
+        Legend=(;
+            titlegap=0,
+            patchsize=(8, 8),
+            rowgap=2pt,
+            colgap=8,
+            groupgap=4pt,
+            framewidth=0.5,
+            tellheight=false,
+            tellwidth=false,
+            padding=(2pt, 2pt, 2pt, 2pt),
+        ),
+        Colorbar=(;
+            spinewidth=0.5,
+            tickwidth=0.5,
+            ticksize=2,
+        ),
+        Scatter=(;
+            markersize=8pt,
+            marker=:x,
+        ),
+        ErrrorBar=(;
+            whiskerwidth=2,
+            linewidth=0.5,
+        )
+    )
+end
+
+struct Asinh
+    a::Float64
+end
+Asinh() = Asinh(1)
+(m::Asinh)(x::Real) = m.a * asinh(x / m.a)
+
+Makie.inverse_transform(m::Asinh) = x -> m.a * sinh(x / m.a)
+Makie.defined_interval(::Asinh) = Makie.defined_interval(identity)
+Makie.defaultlimits(m::Asinh) = (0.0, 10 * m.a)
+
+Makie.inverse_transform(::typeof(asinh)) = sinh
+Makie.defined_interval(::typeof(asinh)) = Makie.defined_interval(identity)
+Makie.defaultlimits(::typeof(asinh)) = (0.0, 10.0)
+
+
 # Estimate Number of Histogram Bins from data
 hist_nbins(x::AbstractVector, w::AbstractWeights) = hist_nbins(:scott, x)
 hist_nbins(method::Symbol, x::AbstractVector) = hist_nbins(method, x, StatsBase.UnitWeights{Int}(length(x)))
@@ -14,23 +95,6 @@ hist_nbins(::Val{:sqrt}, x, w) = ceil(Int, sqrt(length(x)))
 hist_nbins(::Val{M}, args...) where {M} = MethodError(hist_nbins, M, args...)
 hist_nbins(::Val{:sturges}, x, w) = ceil(Int, log2(length(x)) + 1)
 hist_nbins(::Val{:sturges}, x, w::StatsBase.FrequencyWeights) = ceil(Int, log2(sum(w)) + 1)
-
-@recipe(Moments, x, moments, extrema) do scene
-    Attributes(
-        sigma_level=1,
-    )
-end
-
-function Makie.plot!(plt::Moments)
-    mu = plt.moments[][1]
-    var = plt.moments[][2]
-    lower, upper = plt.extrema[]
-    sigma_level = plt.sigma_level
-    σ = @lift $sigma_level * sqrt(var)
-    lines!(plt, float.([plt.x[], plt.x[]]), [lower, upper])
-    crossbar!(plt, plt.x, mu, @lift($mu + $σ), @lift($mu - $σ))
-    return plt
-end
 
 function tokenizer_label(tok; vocab_size=false)
     name = tok.name

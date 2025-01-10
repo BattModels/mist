@@ -1,106 +1,14 @@
-using DataFrames
-using TokenizerStats: find
-using JSON: JSON
-using JLD2: jldopen
-using CategoricalArrays: categorical
-using OnlineStats: Moments, EqualWeight, mean, std
+"""
+    dfp, dff, dft = transformer_models(stats_dir, cache; filter_runs)
 
-function fix_info_loss_typo()
-    stats_dir = joinpath(@__DIR__, "stats")
-    for file in find(stats_dir, r"_info_loss\.jld2$")
-        chmod(file, 0o700)
-        jldopen(file, "a") do fid
-            if "smaples" in keys(fid)
-                fid["samples"] = fid["smaples"]
-                delete!(fid, "smaples")
-            end
-        end
-        chmod(file, 0o444)
-    end
-end
-
-function tokenizers_info()
-    info = JSON.parsefile(joinpath(@__DIR__, "tokenizers.json"))
-    return Dict(tok["name_or_path"] => tok for tok in info)
-end
-
-function info_loss_stats()
-    rows = []
-    stats_dir = joinpath(@__DIR__, "stats")
-    for file in find(stats_dir, r"character_info_loss\.jld2$")
-        try
-            jldopen(file) do data
-                file = relpath(file, stats_dir)
-                tokenizer = joinpath(splitpath(file)[1:end-2])
-                dataset = basename(dirname(file))
-                for (ngram, loss) in enumerate(data["info_loss"])
-                    n_zero = loss[:extrema][:nmin]
-                    n_nonzero = data["samples"] - n_zero
-                    loss_moments = Moments(loss[:moments], EqualWeight(), data["samples"])
-                    push!(rows, (;
-                        tokenizer,
-                        ref_tokenizer=data["ref_tokenizer"][:name],
-                        dataset,
-                        ngram,
-                        vocab_size=data["tokenizer"][:vocab_size],
-                        samples=data["samples"],
-                        avg_info_loss=mean(loss_moments),
-                        std_info_loss=std(loss_moments),
-                        max_info_loss=loss[:extrema][:max],
-                        n_nonzero,
-                        nonzero_avg_info_loss=(data["samples"] * mean(loss_moments)) / n_nonzero,
-                    ))
-                end
-            end
-        catch err
-            @info "failed to load" file err
-        end
-    end
-    df = DataFrame(rows)
-    return df
-end
-
-function model_loss_stats()
-    rows = []
-    stats_dir = joinpath(@__DIR__, "stats")
-    for file in find(stats_dir, r"model_loss\.jld2$")
-        # Get model loss
-        jldopen(file) do data
-            tokenizer = data["ref_tokenizer"][:name]
-            dataset = basename(dirname(file))
-            for split in ["train", "val", "test"]
-                split ∉ keys(data) && continue
-                split_data = data[split]
-                if !(:kld_per_token in keys(split_data))
-                    @info "per token missing -> removing" file
-                    isfile(file) && rm(file)
-                    continue
-                end
-                for ngram in eachindex(split_data[:kld])
-                    kld = Moments(split_data[:kld][ngram][:moments], EqualWeight(), split_data[:samples])
-                    kld_per_token = Moments(split_data[:kld_per_token][ngram][:moments], EqualWeight(), split_data[:samples])
-                    push!(rows, (;
-                        tokenizer,
-                        dataset,
-                        split,
-                        ngram,
-                        vocab_size=data["tokenizer"][:vocab_size],
-                        samples=split_data[:samples],
-                        avg_model_loss=mean(kld),
-                        stderr_model_loss=std(kld),
-                        avg_model_token_loss=mean(kld_per_token),
-                        stderr_model_token_loss=std(kld_per_token),
-                    ))
-                end
-            end
-        end
-    end
-    df = DataFrame(rows)
-    return df
-end
-
+Collate wandb results into pretraining/finetune/test dataframes for further analysis.
+By default load all results (can be trickier to filter), but can be restricted to only the
+relevant runs (i.e. those in a sweep)
+"""
 function transformer_models(
-    cache=joinpath(@__DIR__, "..", "..", ".cache", "wandb-export")
+    stats_dir,
+    cache=joinpath(pkgdir(TokenizerStats), "..", "..", ".cache", "wandb-export");
+    filter_runs=nothing,
 )
     # Get the pretrained models
     cache = abspath(cache)
@@ -133,7 +41,7 @@ function transformer_models(
     pretrained.d_model = Int.(pretrained.d_model)
 
     # Add tokenizer info
-    tokenizers = tokenizers_info()
+    tokenizers = tokenizers_info(stats_dir)
     pretrained.tokenizer_class = map(name_or_path -> tokenizers[name_or_path]["tokenizer_class"], pretrained.tokenizer)
     dropmissing!(pretrained)
 
@@ -199,6 +107,10 @@ function transformer_models(
     test.tok_group = coalesce.(test.tok_group)
     dropmissing!(test, :mean)
 
+    # Restrict to relevant runs
+    if filter_runs !== nothing
+        return filter_runs(pretrained, finetuned, test)
+    end
     return pretrained, finetuned, test
 end
 
@@ -228,13 +140,13 @@ function get_metric(metrics::Vector, name::String; split, tok_group="all", type=
     return missing
 end
 
-function filter_runs(dfp, dff, dft; sweep_file=joinpath(@__DIR__, "pipeline_unfrozen.json"))
+function filter_runs(dfp, dff, dft; sweep_file)
     data = JSON.parsefile(sweep_file)
     dfp = subset(dfp, :id => ByRow(x -> x ∈ keys(data)))
     ids_finetune = []
     ids_test = []
-    for (id, ds_runs) in pairs(data)
-        for (dataset, runs) in pairs(ds_runs)
+    for (_, ds_runs) in pairs(data)
+        for (_, runs) in pairs(ds_runs)
             push!(ids_finetune, runs["finetune"])
             push!(ids_test, runs["test"])
         end
