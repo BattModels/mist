@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional, Union
 
 import torch
-import nvtx
 import pytorch_lightning as pl
 from datasets import Dataset, load_dataset
 from torch.utils.data import DataLoader
@@ -38,29 +37,28 @@ def extract_hidden_state(
         batch = collate(batch)
         batch = batch.to(encoder.device)
         # Disable gradients
-        with nvtx.annotate("encoder"):
-            with torch.inference_mode():
-                embedding = (
-                    encoder(
-                        batch["input_ids"],
-                        attention_mask=batch["attention_mask"],
-                        return_dict=True,
-                        output_hidden_states=True,
-                    )
-                    .last_hidden_state.detach()
-                    .cpu()
-                    .mean(axis=1)
+        with torch.inference_mode():
+            embedding = (
+                encoder(
+                    batch["input_ids"],
+                    attention_mask=batch["attention_mask"],
+                    return_dict=True,
+                    output_hidden_states=True,
                 )
-                update = torch.stack(
-                    [
-                        torch.mul(embedding[i, :], composition[i])
-                        for i in range(embedding.shape[0])
-                    ]
-                )
-                if mix_embedding is None:
-                    mix_embedding = update
-                else:
-                    mix_embedding += update
+                .last_hidden_state.detach()
+                .cpu()
+                .mean(axis=1)
+            )
+            update = torch.stack(
+                [
+                    torch.mul(embedding[i, :], composition[i])
+                    for i in range(embedding.shape[0])
+                ]
+            )
+            if mix_embedding is None:
+                mix_embedding = update
+            else:
+                mix_embedding += update
     temperature = (torch.tensor(temperature) - 273) / (400 - 273)
     mix_embedding = torch.hstack((temperature.view(-1, 1), mix_embedding))
     return {"embedding": mix_embedding, "target": target}
@@ -232,7 +230,6 @@ class ComponentDataModule(pl.LightningDataModule):
     def __init__(
         self,
         path: str,
-        # name_or_path: str,
         target_col: str,
         n_components: int = 2,
         tokenizer: Optional[str] = None,
@@ -250,7 +247,6 @@ class ComponentDataModule(pl.LightningDataModule):
         # Locate Tokeniser and dataset
         self.tokenizer = load_tokenizer(tokenizer)
         self.path: Path = Path(path)
-        # self.name_or_path = name_or_path
         self.encoding = MolEncoding(encoding)
         self.target_col = target_col
         self.encoder_batch_size = encoder_batch_size
@@ -263,7 +259,6 @@ class ComponentDataModule(pl.LightningDataModule):
         self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
-        # self.hparams["tokenizer"] = tokenizer
         self.save_hyperparameters(logger=False)
         self.data_collator = DataCollatorWithPadding(self.tokenizer, "longest")
 
