@@ -221,22 +221,6 @@ def collate_components_and_environment(
         composition = args[idx + 1]
         batch = tokenizer(smiles)
         batch = collate(batch)
-        # batch = batch.to(encoder.device)
-        # Disable gradients
-        # with nvtx.annotate("encoder"):
-        #     with torch.inference_mode():
-        # embedding = (
-        #     encoder(
-        #         batch["input_ids"],
-        #         attention_mask=batch["attention_mask"],
-        #         return_dict=True,
-        #         output_hidden_states=True,
-        #     )
-        #     .last_hidden_state.detach()
-        #     .cpu()
-        #     .mean(axis=1)
-        # )
-        # embedding = torch.hstack((temperature.view(-1, 1), embedding))
         output[f"input_ids_{i}"] = batch["input_ids"]
         output[f"attention_mask_{i}"] = batch["attention_mask"]
         output[f"composition_{i}"] = composition
@@ -303,8 +287,6 @@ class ComponentDataModule(pl.LightningDataModule):
         return self._dataset
 
     def setup(self, stage: str) -> None:
-        # self.encoder = load_encoder(self.name_or_path).to(self.encoder_device)
-
         # Extract per molecule hidden states
         input_columns = []
         for i in range(self.n_components):
@@ -321,7 +303,6 @@ class ComponentDataModule(pl.LightningDataModule):
             fn_kwargs={
                 "include_temperature": self.temperature,
                 "tokenizer": self.tokenizer,
-                # "encoder": self.encoder,
                 "collate": self.data_collator,
                 "n_components": self.n_components,
             },

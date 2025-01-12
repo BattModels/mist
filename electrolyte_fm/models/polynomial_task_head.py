@@ -80,7 +80,7 @@ class RKPredictionTaskHead(PolynomialPredictionTaskHead):
         return P_m  # [batch_size, 1]
 
 
-class LegendrePredictionTaskHead(nn.Module):
+class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
     def __init__(
         self,
         embed_dim: int,
@@ -128,7 +128,7 @@ class LegendrePredictionTaskHead(nn.Module):
         return P_m  # [batch_size, 1]
 
 
-class ChebyshevPredictionTaskHead(nn.Module):
+class ChebyshevPredictionTaskHead(PolynomialPredictionTaskHead):
     def __init__(
         self,
         embed_dim: int,
