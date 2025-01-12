@@ -22,27 +22,7 @@ from ..utils.metrics import (
 )
 from .model_utils import record_summary_stats
 from ..utils.tokenizer import load_tokenizer
-
-
-class Standardize(torch.nn.Module):
-    def __init__(self, num_outputs: int, eps: float = 1e-8):
-        super().__init__()
-        self.register_buffer("mean", torch.zeros(num_outputs))
-        self.register_buffer("std", torch.zeros(num_outputs))
-        self.eps = float(eps)
-        assert 0 <= self.eps
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return (self.std * x) + self.mean
-
-    def inverse(self, x: torch.Tensor) -> torch.Tensor:
-        return (x - self.mean) / self.std
-
-    def fit(self, ds) -> dict:
-        target = torch.stack([torch.tensor(x) for x in ds["target"]])
-        self.mean = target.float().mean(0).to(self.mean)
-        self.std = target.float().std(0).to(self.std) + self.eps
-        return self.state_dict()
+from .lm_finetuning import Standardize
 
 
 class MixturePredictionTaskHead(nn.Module):
