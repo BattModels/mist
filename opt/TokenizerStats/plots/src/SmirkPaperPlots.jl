@@ -77,12 +77,10 @@ function (@main)(stats_dir=joinpath(pkgdir(TokenizerStats), "stats"))
     # Tokenizer Statistics
     loss_stats = model_loss_stats(stats_dir)
     info_loss = info_loss_stats(stats_dir)
-    token_usage = usage_stats(stats_dir)
+    # token_usage = usage_stats(stats_dir)
 
     # Transformer Models
-    dfp, dff, dft = transformer_models(stats_dir;
-        sweep_file=joinpath(pkgdir(TokenizerStats), "pipeline_unfrozen.json")
-    )
+    dfp, dff, dft = transformer_models(stats_dir)
 
     with_theme(theme()) do
         # Token Usage

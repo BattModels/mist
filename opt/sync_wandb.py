@@ -90,6 +90,7 @@ def run_summary(run):
         "created": run.metadata["startedAt"],
         "gpu": run.metadata["gpu"],
         "commit": run.metadata["git"]["commit"],
+        "runtime": run.summary["_runtime"],
         "optimizer": {
             "class_path": get_entry(config, "cli", "model", "optimizer", "class_path"),
             "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
@@ -355,11 +356,9 @@ def export_runs(export_map: dict, cache: Path, runs, name: str = None):
                 json.dump(stats, fid)
         except KeyboardInterrupt:
             raise
-        except:
+        except Exception:
             logging.error("failed to export %s", run.id)
-            raise
-        # except TypeError:
-        #     logging.error("failed to export %s", run.id)
+            continue
 
 
 if __name__ == "__main__":

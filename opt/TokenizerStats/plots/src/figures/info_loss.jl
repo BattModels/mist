@@ -225,10 +225,11 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="char
     tokenizers = tokenizers_info(stats_dir)
 
     model_loss = subset(model_loss,
-        :dataset => ByRow(∉(["realspace", "tmqm"])),
+        :dataset => ByRow(∉(["realspace"])),
         :split => ByRow(==("val")),
     )
-    model_loss = combine(groupby(model_loss, [:tokenizer, :split, :ngram])) do gdf
+    model_loss.dataset = map(d -> d == "tmQM" ? d : "MoleculeNet", model_loss.dataset)
+    model_loss = combine(groupby(model_loss, [:tokenizer, :split, :ngram, :dataset])) do gdf
         loss_per_token_moments = reduce(merge, gdf.loss_per_token_moments)
         loss_moments = reduce(merge, gdf.loss_moments)
         return (;
@@ -242,10 +243,11 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="char
 
     # Summarize over MoleculeNet
     info_loss = subset(info_loss,
-        :dataset => ByRow(∉(["realspace", "tmqm"])),
+        :dataset => ByRow(∉(["realspace"])),
         :ref_tokenizer => ByRow(==(reference)),
     )
-    info_loss = combine(groupby(info_loss, [:tokenizer, :ref_tokenizer, :ngram])) do gdf
+    info_loss.dataset = map(d -> d == "tmQM" ? d : "MoleculeNet", info_loss.dataset)
+    info_loss = combine(groupby(info_loss, [:tokenizer, :ref_tokenizer, :ngram, :dataset])) do gdf
         info_loss_moments = reduce(merge, gdf.info_loss_moments)
         return (;
             avg_info_loss=mean(info_loss_moments),
@@ -253,31 +255,36 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="char
         )
     end
 
-    df = leftjoin(model_loss, info_loss, on=[:tokenizer, :ngram])
-    plt_tokenizers = [
-        "smirk-gpe-50k-nmb-ss" => :star8,
+    df = innerjoin(model_loss, info_loss, on=[:tokenizer, :ngram, :dataset])
+    plt_tokenizers = OrderedDict(
+        # "smirk-gpe-50k-nmb-ss" => :star8,
+        "smirk-gpe-50k-mb-ss" => :star8,
         "smirk" => :star5,
         "ibm/MoLFormer-XL-both-10pct-oov" => :diamond,
         "devalab/molgpt-moses" => :ltriangle,
         "devalab/molgpt-guacamol" => :rtriangle,
-        # "rxn4chemistry/rxn_yields" => :cross,
+        "rxn4chemistry/rxn_yields" => :cross,
         "rxn4chemistry/rxnfp" => :x,
-        "sagawa/ReactionT5-product-prediction" => :circle,
+        # "sagawa/ReactionT5-product-prediction" => :circle,
         "ChangwenXu98/TransPolymer" => :dtriangle,
         "MolecularAI/Chemformer" => :utriangle,
         "SmilesPE/SPE_ChEMBL" => :hexagon,
-    ]
+    )
     dropmissing!(df)
     subset!(df,
-        :ngram => ByRow(>=(4)),
+        :ngram => ByRow(==(5)),
         :split => ByRow(==("val")),
     )
     @info "Tokens with no info_loss" unique(df.tokenizer)
-    # subset!(df, :tokenizer => ByRow(x -> x in first.(plt_tokenizers)))
+    subset!(df, :tokenizer => ByRow(x -> x in keys(plt_tokenizers)))
+    df.marker = map(tok -> plt_tokenizers[tok], df.tokenizer)
     df.tokenizer = categorical(df.tokenizer)
-    df_sum = select(df, [:tokenizer, :ngram, :avg_model_token_loss, :stderr_model_token_loss, :avg_info_loss, :stderr_info_loss])
+    df.dataset = categorical(df.dataset)
+    df_sum = select(df, [:tokenizer, :ngram, :dataset, :avg_model_token_loss, :stderr_model_token_loss, :avg_info_loss, :stderr_info_loss])
     sort!(df_sum, :avg_info_loss; rev=true)
     display(df_sum)
+    display(df)
+
 
     f = Figure(; size=72 .* (4.5, 3), figure_padding=(1, 1, 1, 4))
     ax = Axis(f[1, 1];
@@ -296,32 +303,32 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="char
     errorbars!(ax, df.avg_model_token_loss, df.avg_info_loss, 3 .* df.stderr_info_loss; direction=:y, color=:black, linewidth=1)
     h = scatter!(ax, df.avg_model_token_loss, df.avg_info_loss;
         colormap=:Set2_5,
-        colorrange=(1, 5),
-        color=df.ngram,
-        # marker=map(n -> Dict(plt_tokenizers)[n], df.tokenizer),
+        colorrange=(1, 2),
+        color=levelcode.(df.dataset),
+        marker=df.marker
     )
 
-    # # Build legend
-    # ngram_elements = map(2:5) do gdx
-    #     PolyElement(color=gdx, colorrange=h.colorrange, colormap=h.colormap)
-    # end
-    # ngram_labels = ["Bigram", "Trigram", "4-gram", "5-gram"]
-    # tokenizer_elements = map(levels(df.tokenizer)) do name
-    #     MarkerElement(; marker=Dict(plt_tokenizers)[name], color=:black)
-    # end
-    # tokenizer_labels = map(levels(df.tokenizer)) do name_or_path
-    #     return tokenizers[name_or_path]["name"]
-    # end
-    # Legend(f[1, 1],
-    #     [ngram_elements, tokenizer_elements],
-    #     [ngram_labels, tokenizer_labels],
-    #     ["n-gram", "Tokenizer"];
-    #     tellheight=false,
-    #     tellwidth=false,
-    #     halign=:right,
-    #     valign=:top,
-    # )
-    # resize_to_layout!(f)
+    # Build legend
+    ngram_elements = map(enumerate(levels(df.dataset))) do (gdx, label)
+        PolyElement(; label, color=gdx, colorrange=h.colorrange, colormap=h.colormap)
+    end
+    ngram_labels = [x.label[] for x in ngram_elements]
+    tokenizer_elements = map(levels(df.tokenizer)) do name
+        MarkerElement(; marker=Dict(plt_tokenizers)[name], color=:black)
+    end
+    tokenizer_labels = map(levels(df.tokenizer)) do name_or_path
+        return tokenizers[name_or_path]["name"]
+    end
+    Legend(f[1, 1],
+        [ngram_elements, tokenizer_elements],
+        [ngram_labels, tokenizer_labels],
+        ["Dataset", "Tokenizer"];
+        tellheight=false,
+        tellwidth=false,
+        halign=:right,
+        valign=:top,
+    )
+    resize_to_layout!(f)
 
     return f
 end

@@ -302,7 +302,7 @@ function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
     )
 
     # Finetune
-    df_finetune = subset(df, :dataset => ByRow(∉(["realspace", "tmqm"])))
+    df_finetune = subset(df, :dataset => ByRow(∉(["realspace", "tmQM"])))
     df_finetune = combine(groupby(df_finetune, [:tokenizer, :ngram])) do gdf
         loss_per_token_moments = reduce(merge, gdf.loss_per_token_moments)
         return (;

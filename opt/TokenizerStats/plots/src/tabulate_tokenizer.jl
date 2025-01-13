@@ -5,6 +5,7 @@ function usage_stats(stats_dir)
             file = relpath(file, stats_dir)
             tokenizer = joinpath(splitpath(file)[1:end-2])
             dataset = splitpath(file)[end-1]
+            dataset = dataset == "tmqm" ? "tmQM" : dataset
             for split in ["train", "val", "test"]
                 split ∉ keys(data) && continue
                 Set(keys(data[split])) >= Set([:samples, :out_of_vocab, :fertility]) || continue
@@ -44,6 +45,7 @@ function info_loss_stats(stats_dir)
                 file = relpath(file, stats_dir)
                 tokenizer = joinpath(splitpath(file)[1:end-2])
                 dataset = basename(dirname(file))
+                dataset = dataset == "tmqm" ? "tmQM" : dataset
                 for (ngram, loss) in enumerate(data["info_loss"])
                     n_zero = loss[:extrema][:nmin]
                     n_nonzero = data["samples"] - n_zero
@@ -97,6 +99,7 @@ function model_loss_stats(stats_dir)
         jldopen(file) do data
             tokenizer = data["ref_tokenizer"][:name]
             dataset = basename(dirname(file))
+            dataset = dataset == "tmqm" ? "tmQM" : dataset
             for split in ["train", "val", "test"]
                 split ∉ keys(data) && continue
                 split_data = data[split]

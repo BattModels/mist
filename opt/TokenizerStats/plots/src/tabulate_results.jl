@@ -6,7 +6,7 @@ By default load all results (can be trickier to filter), but can be restricted t
 relevant runs (i.e. those in a sweep)
 """
 function transformer_models(
-    stats_dir,
+    stats_dir;
     cache=joinpath(pkgdir(TokenizerStats), "models", "wandb-export"),
     sweep_file=nothing,
 )
