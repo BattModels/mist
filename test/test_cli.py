@@ -1,11 +1,11 @@
-import pytest
 import json
 from pathlib import Path
 from random import randint
 from tempfile import TemporaryDirectory
 
+import pytest
 from deepspeed.utils import zero_to_fp32
-from pytorch_lightning.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger
 from torch.nn import Module
 
 from train import cli_main

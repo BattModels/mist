@@ -1,12 +1,12 @@
 import json
+from itertools import product
 from pathlib import Path
 from typing import List
-from itertools import product
 
 import _jsonnet as jsonnet
 import pytest
-from pytorch_lightning import LightningDataModule
 from datasets import DatasetDict, load_dataset
+from lightning import LightningDataModule
 
 from electrolyte_fm.data_modules import MolNetDataModule, PropertyPredictionDataModule
 from electrolyte_fm.data_modules.molnet_dataset import _URLS as MOLNET_URLS

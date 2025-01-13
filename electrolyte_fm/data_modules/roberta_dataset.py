@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Optional
 
-import pytorch_lightning as pl
-from datasets import IterableDataset, DatasetDict, IterableDatasetDict, load_dataset
+from datasets import DatasetDict, IterableDataset, IterableDatasetDict, load_dataset
 from datasets.distributed import split_dataset_by_node
+from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from transformers import DataCollatorForLanguageModeling
 
@@ -20,7 +20,7 @@ def maybe_shard_dataset(trainer, ds):
     return split_dataset_by_node(ds, trainer.global_rank, trainer.world_size)
 
 
-class RobertaDataSet(pl.LightningDataModule):
+class RobertaDataSet(LightningDataModule):
     def __init__(
         self,
         path: str,
@@ -77,7 +77,7 @@ class RobertaDataSet(pl.LightningDataModule):
             },
             keep_in_memory=False,
             streaming=True,
-            save_infos=True,
+            save_infos=False,
         )
         return self._dataset
 

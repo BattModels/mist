@@ -238,6 +238,18 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
         tok.get_vocab = get_vocab.__get__(tok)
 
+        @property
+        def all_special_tokens(self) -> list[str]:
+            return list(self.special_tokens.keys())
+
+        tok.all_special_tokens = all_special_tokens.__get__(tok)
+
+        @property
+        def all_special_ids(self) -> list[int]:
+            return list(self.special_tokens.values())
+
+        tok.all_special_ids = all_special_ids.__get__(tok)
+
         return tok
 
     elif (

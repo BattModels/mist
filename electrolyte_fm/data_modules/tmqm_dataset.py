@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 import logging
 
-import pytorch_lightning as pl
+from lightning import LightningDataModule
 import torch
 
 from torch.utils.data import DataLoader
@@ -17,7 +17,7 @@ from .molnet_dataset import collate_target
 from .utils import MolEncoding, encode_molecules, is_fast
 
 
-class tmQMDataModule(pl.LightningDataModule):
+class tmQMDataModule(LightningDataModule):
     def __init__(
         self,
         path: str,
@@ -60,7 +60,7 @@ class tmQMDataModule(pl.LightningDataModule):
             },
             keep_in_memory=False,
             streaming=True,
-            save_infos=True,
+            save_infos=False,
         )
         ds = maybe_shard_dataset(self.trainer, ds)
 
@@ -85,7 +85,7 @@ class tmQMDataModule(pl.LightningDataModule):
         if not self.include_encoding:
             ds = ds.remove_columns(self.smi_column)
 
-        self.train_dataset = ds["train"]
+        self.train_dataset = ds["train"].shuffle(seed=42)
         self.val_dataset = ds["validation"]
         self.test_dataset = ds["test"]
         self.token_collator = DataCollatorWithPadding(self.tokenizer, "longest")

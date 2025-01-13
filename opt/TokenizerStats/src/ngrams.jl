@@ -87,11 +87,12 @@ end
 function ngram_counts(dist::AbstractDict{<:Union{<:Integer,NTuple},<:Union{Integer,Float32}}, vocab_size::Int)
     n = length(first(keys(dist)))
     K = NTuple{n,Int}
+    V = valtype(dist)
     grams = keytype(dist) <: NTuple ? keys(dist) : Iterators.map(tuple, keys(dist))
     for gram in grams
         @assert all(t -> 0 <= t < vocab_size, gram) "Expected all token ids to be ∈ [0, $vocab_size), got $gram"
     end
-    return Dict{K,Int}(zip(grams, values(dist)))
+    return Dict{K,V}(zip(grams, values(dist)))
 end
 
 

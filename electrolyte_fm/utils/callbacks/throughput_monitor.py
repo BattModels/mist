@@ -6,9 +6,10 @@ https://github.com/ramanathanlab/genslm/blob/71beb030df72010f5a4883a1f1a0b25bbaf
 import time
 from typing import Any
 
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import Callback
-from pytorch_lightning.loggers import WandbLogger
+import lightning as L
+import lightning.pytorch as pl
+from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.loggers import WandbLogger
 
 
 class ThroughputMonitor(Callback):
@@ -21,7 +22,7 @@ class ThroughputMonitor(Callback):
         self.macro_batch_size = dict()
 
     def on_train_start(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"
+        self, trainer: "pl.Trainer", pl_module: "L.LightningModule"
     ) -> None:
         if trainer.is_global_zero:
             self.record_macro_batch_size(
@@ -53,7 +54,7 @@ class ThroughputMonitor(Callback):
         self.start_time = time.perf_counter()
 
     def record_batch_perf(
-        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", stage: str
+        self, trainer: "pl.Trainer", pl_module: "L.LightningModule", stage: str
     ):
         batch_time = time.perf_counter() - self.start_time
         macro_batch = self.macro_batch_size.get(stage, 1)
@@ -70,7 +71,7 @@ class ThroughputMonitor(Callback):
     def on_validation_batch_start(
         self,
         trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
+        pl_module: "L.LightningModule",
         batch: Any,
         batch_idx: int,
         dataloader_idx: int = 0,
@@ -81,7 +82,7 @@ class ThroughputMonitor(Callback):
     def on_train_batch_start(
         self,
         trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
+        pl_module: "L.LightningModule",
         batch: Any,
         batch_idx: int,
     ) -> None:
@@ -91,7 +92,7 @@ class ThroughputMonitor(Callback):
     def on_train_batch_end(
         self,
         trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
+        pl_module: "L.LightningModule",
         outputs: Any,
         batch: Any,
         batch_idx: int,
@@ -102,7 +103,7 @@ class ThroughputMonitor(Callback):
     def on_validation_batch_end(
         self,
         trainer: "pl.Trainer",
-        pl_module: "pl.LightningModule",
+        pl_module: "L.LightningModule",
         outputs,
         batch: Any,
         batch_idx: int,

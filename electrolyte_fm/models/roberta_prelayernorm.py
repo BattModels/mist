@@ -1,7 +1,5 @@
-import torch
 from copy import deepcopy
-from pytorch_lightning import LightningModule
-from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
+
 from transformers import RobertaPreLayerNormConfig, RobertaPreLayerNormForMaskedLM
 
 from .roberta_base import RoBERTa
