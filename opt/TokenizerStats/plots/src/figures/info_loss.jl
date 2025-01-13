@@ -221,7 +221,7 @@ function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_cod
 end
 
 
-function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="character")
+function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; reference="character")
     tokenizers = tokenizers_info(stats_dir)
 
     model_loss = subset(model_loss,
@@ -254,20 +254,30 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="char
             stderr_info_loss=std(info_loss_moments) / sqrt(nobs(info_loss_moments)),
         )
     end
+    @info info_loss
+
+    # Summarize Transformer Model
+    df_tf = deepcopy(df_tf)
+    df_tf.dataset = map(d -> d == "tmQM" ? d : "MoleculeNet", string.(df_tf.dataset))
+    df_tf = combine(groupby(df_tf, [:tokenizer, :dataset])) do gdf
+        i = argmin(gdf.test_loss)
+        return (; test_loss=gdf.test_loss[i], test_loss_std=gdf.test_loss_std[i])
+    end
 
     df = innerjoin(model_loss, info_loss, on=[:tokenizer, :ngram, :dataset])
+    df = innerjoin(df, df_tf; on=[:tokenizer, :dataset])
     plt_tokenizers = OrderedDict(
         # "smirk-gpe-50k-nmb-ss" => :star8,
         "smirk-gpe-50k-mb-ss" => :star8,
         "smirk" => :star5,
-        "ibm/MoLFormer-XL-both-10pct-oov" => :diamond,
-        "devalab/molgpt-moses" => :ltriangle,
-        "devalab/molgpt-guacamol" => :rtriangle,
-        "rxn4chemistry/rxn_yields" => :cross,
-        "rxn4chemistry/rxnfp" => :x,
+        "smirk-gpe-50k-nmb-ss" => :diamond,
+        "ibm/MoLFormer-XL-both-10pct-oov" => :cross,
+        "meta-llama/Llama-3.2-1B" => :ltriangle,
+        "ibm/materials.smi-ted-light" => :rtriangle,
+        "mikemayuare/SELFYAPE" => :x,
         # "sagawa/ReactionT5-product-prediction" => :circle,
-        "ChangwenXu98/TransPolymer" => :dtriangle,
-        "MolecularAI/Chemformer" => :utriangle,
+        "mikemayuare/SMILYAPE" => :dtriangle,
+        "HUBioDataLab/SELFormer" => :utriangle,
         "SmilesPE/SPE_ChEMBL" => :hexagon,
     )
     dropmissing!(df)
@@ -290,7 +300,7 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="char
     ax = Axis(f[1, 1];
         limits=(nothing, (-0.1, nothing)),
         xlabel="Cross Entropy Loss [nats/token]",
-        ylabel="Information Loss [nats]",
+        ylabel="Information Loss [nats/molecule]",
         yticks=[0, 0.5, 2, 4, 16, 64, 256, 512],
         yscale=Asinh(1),
         yminorticksvisible=true,
@@ -308,6 +318,43 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="char
         marker=df.marker
     )
 
+    ax = Axis(f[1, 2];
+        limits=(nothing, (0, 1)),
+        ylabel="tmQM Test R2",
+        xlabel="Information Loss [nats/molecule]",
+        yticks=LinearTicks(5),
+        ytickformat="{:.0%}",
+    )
+
+    df = subset(df, :dataset => ByRow(==("tmQM")))
+    scatter!(ax, df.avg_info_loss, df.test_loss;
+        marker=df.marker,
+        color=levelcode.(df.dataset),
+        colormap=h.colormap[],
+        colorrange=h.colorrange[],
+    )
+
+    # Check correlation 
+    @show t = HypothesisTests.CorrelationTest(df.avg_info_loss, df.test_loss)
+    @show pvalue(t)
+
+
+    Label(f[1, 1, TopLeft()], "a)";
+        font=:bold,
+        halign=:right,
+        padding=(0, 20, -3, 0),
+        tellwidth=false,
+    )
+    Label(f[1, 2, TopLeft()], "b)";
+        font=:bold,
+        halign=:right,
+        padding=(0, 25, -3, 0),
+        tellwidth=false,
+    )
+
+    colgap!(f.layout, 5)
+    resize_to_layout!(f)
+
     # Build legend
     ngram_elements = map(enumerate(levels(df.dataset))) do (gdx, label)
         PolyElement(; label, color=gdx, colorrange=h.colorrange, colormap=h.colormap)
@@ -319,16 +366,19 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss; reference="char
     tokenizer_labels = map(levels(df.tokenizer)) do name_or_path
         return tokenizers[name_or_path]["name"]
     end
-    Legend(f[1, 1],
+    Legend(f[1, 2],
         [ngram_elements, tokenizer_elements],
         [ngram_labels, tokenizer_labels],
         ["Dataset", "Tokenizer"];
+        nbanks=2,
         tellheight=false,
         tellwidth=false,
         halign=:right,
-        valign=:top,
+        valign=:bottom,
+        margin=(2, 2, 2, 2),
     )
-    resize_to_layout!(f)
+
+
 
     return f
 end

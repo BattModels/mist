@@ -100,7 +100,7 @@ function (@main)(stats_dir=joinpath(pkgdir(TokenizerStats), "stats"))
         # N-Gram Analysis
         savefig("ngram_fits", figure_ngram_fits(loss_stats, stats_dir))
         # savefig("ngram_unk_log_odds", figure_ngram_info_loss())
-        savefig("kl_v_info_loss", figure_kl_v_info_loss(stats_dir, loss_stats, info_loss))
+        savefig("kl_v_info_loss", figure_kl_v_info_loss(stats_dir, loss_stats, info_loss, df))
         # savefig("info_loss_ref_tokenzier", figure_info_loss_ref_tokenizer(info_loss))
 
         # savefig("ngrma_unk_log_odds_cobalt", figure_ngram_info_loss(;
