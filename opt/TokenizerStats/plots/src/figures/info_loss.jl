@@ -1,4 +1,4 @@
-function figure_ngram_prediction(smi; direction=:forward)
+function figure_ngram_prediction(smi, stats_dir; direction=:forward)
     f = Figure(size=(3.42inch, 3inch))
     cb = Colorbar(f[1:3, 4];
         label="Log Probability",
@@ -7,8 +7,8 @@ function figure_ngram_prediction(smi; direction=:forward)
         tickformat="{:2d}",
     )
 
-    tokenizers = tokenizers_info()
-    path(name_or_path) = (joinpath(@__DIR__, "stats", name_or_path, "realspace", "usage.jld2"), tokenizers[name_or_path]["name"])
+    tokenizers = tokenizers_info(stats_dir)
+    path(name_or_path) = (joinpath(stats_dir, name_or_path, "realspace", "usage.jld2"), tokenizers[name_or_path]["name"])
     tok_log_prob!(f[1, 1], cb, path("smirk")..., smi; direction)
     tok_log_prob!(f[1, 2], cb, path("ibm/MoLFormer-XL-both-10pct-oov")..., smi; direction)
     tok_log_prob!(f[1, 3], cb, path("seyonec/ChemBERTa-zinc-base-v1")..., smi; direction)

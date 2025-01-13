@@ -1,6 +1,6 @@
 [
   {
-    "name": "smirk",
+    "name": "Smirk",
     "name_or_path": "smirk",
     "encoding": "smiles",
     "tokenizer_class": "smirk",
@@ -14,14 +14,14 @@
     "domain": "chemistry"
   },
   {
-    "name": "smirk-gpe-mb",
+    "name": "Smirk-GPE",
     "name_or_path": "smirk-gpe-50k-mb-ss",
     "encoding": "smiles",
     "tokenizer_class": "smirk-gpe",
     "domain": "chemistry"
   },
   {
-    "name": "smirk-gpe",
+    "name": "Smirk-GPE (NMB)",
     "name_or_path": "smirk-gpe-50k-nmb-ss",
     "encoding": "smiles",
     "tokenizer_class": "smirk-gpe",

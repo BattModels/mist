@@ -1,44 +1,33 @@
-function figure_ngram_vs_transformer(loss_stats, dfp, dff)
-    tokenizers = tokenizers_info()
-    val_loss = subset(loss_stats,
-        :split => ByRow(==("val")),
-        :dataset => ByRow(==("realspace")),
-        :tokenizer => ByRow(x -> haskey(tokenizers, x)),
-    )
-    best_models = combine(groupby(val_loss, :tokenizer)) do gdf
-        sort!(gdf, :avg_model_loss; rev=false)
-        return gdf[1, :]
-    end
-    select!(best_models, :tokenizer, :ngram, :avg_model_loss => :ngram_val_loss, :avg_model_token_loss => :ngram_val_token_loss)
 
-    f = Figure(; size=(3.25inch, 1.5inch), figure_padding=(1, 1, 1, 4))
+function figure_ngram_vs_transformer(stats_dir, df)
 
     # Get transformer model pretraining loss
-    dfp = leftjoin(dfp, best_models, on=[:tokenizer])
-    sort!(dfp, :val_loss)
-    dfp.tokenizer = categorical(dfp.tokenizer, levels=unique(dfp.tokenizer))
-    replace!(dfp.encoding,
-        "smiles" => "SMILES",
-        "smiles-canonical" => "Canonical SMILES",
-        "selfies" => "SELFIES"
-    )
-    dfp.encoding = categorical(dfp.encoding, levels=["SMILES", "Canonical SMILES", "SELFIES"])
+    tokenizers = tokenizers_info(stats_dir)
 
-    toks = levels(dfp.tokenizer)
+    f = Figure(; size=(3.25inch, 1.5inch), figure_padding=(10, 1, 1, 4))
+    xticks = map(enumerate(levels(df.tokenizer))) do (id, tok)
+        name = tokenizers[tok]["name"]
+        class = tokenizers[tok]["tokenizer_class"]
+        cls_label = get(CLASS_PLT_LABEL, class, class)
+        return (id, name)
+        # return (id, lowercase(name) != class ? "$name - $cls_label" : name)
+    end
+    xticks = (first.(xticks), last.(xticks))
+
     ax = Axis(f[1, 1];
         limits=(nothing, (0, nothing)),
         ylabel="Transformer [nats/token]",
         xticklabelrotation=0.4,
-        xticks=(1:length(toks), map(n -> tokenizers[n]["name"], toks)),
+        xticks,
     )
-    h = barplot!(ax, levelcode.(dfp.tokenizer), dfp.val_loss;
-        dodge=replace(levelcode.(dfp.encoding), 3 => 2),
-        color=levelcode.(dfp.encoding),
+    h = barplot!(ax, levelcode.(df.tokenizer), df.val_loss;
+        dodge=replace(levelcode.(df.encoding), 3 => 2),
+        color=levelcode.(df.encoding),
         colormap=:Set1_3,
-        colorrange=(1, length(levels(dfp.encoding))),
+        colorrange=(1, length(levels(df.encoding))),
     )
 
-    ds_elements = map(enumerate(levels(dfp.encoding))) do (gdx, encoding)
+    ds_elements = map(enumerate(levels(df.encoding))) do (gdx, encoding)
         PolyElement(label=encoding, color=gdx, colorrange=h.colorrange, colormap=h.colormap)
     end
     Legend(f[1, 1], ds_elements, map(e -> e.label, ds_elements);
@@ -54,7 +43,7 @@ function figure_ngram_vs_transformer(loss_stats, dfp, dff)
 
 
     # Test if N-Gram's predict pretraining loss
-    ols = glm(@formula(val_loss ~ 1 + log(ngram_val_token_loss)), dfp, Normal(), LogLink())
+    ols = glm(@formula(val_loss ~ 1 + log(ngram_token_loss)), df, Normal(), LogLink())
     display(ols)
 
     ax = Axis(f[1, 2];
@@ -66,12 +55,19 @@ function figure_ngram_vs_transformer(loss_stats, dfp, dff)
     )
     powerlaw!(ax, exp(coef(ols)[1]), coef(ols)[2]; linewidth=0.5, color=:black)
 
-    scatter!(ax, dfp.ngram_val_token_loss, dfp.val_loss;
-        color=levelcode.(dfp.encoding),
+    scatter!(ax, df.ngram_token_loss, df.val_loss;
+        color=levelcode.(df.encoding),
         colormap=h.colormap,
         colorrange=h.colorrange,
     )
 
+    label_kwargs = (;
+        fontsize=12pt, font=:bold,
+        halign=:right,
+        tellheight=false,
+    )
+    Label(f[1, 1, TopLeft()], "A)"; padding=(0, 20, -5, 0), label_kwargs...)
+    Label(f[1, 2, TopLeft()], "B)"; padding=(0, 23, -5, 0), label_kwargs...)
     colsize!(f.layout, 1, Relative(2 / 3))
     colgap!(f.layout, 5)
     resize_to_layout!(f)
@@ -80,7 +76,7 @@ function figure_ngram_vs_transformer(loss_stats, dfp, dff)
 end
 
 
-function figure_tf_finetune(dff, dft, stats_dir)
+function figure_tf_finetune(stats_dir, dff, dft)
     f = Figure(; size=(5inch, 2.5inch), figure_padding=(1, 1, 1, 4))
     tokenizers = tokenizers_info(stats_dir)
     dff.tokenizer = categorical(dff.tokenizer)
@@ -168,7 +164,7 @@ function _finetune_results!(ax, x, y, dodge; std=nothing, colormap, colorrange=n
     )
 
     if !isnothing(std)
-        TokenizerStats.dodgederrorbars!(ax, levelcode.(x), y, std;
+        SmirkPaperPlots.dodgederrorbars!(ax, levelcode.(x), y, std;
             dodge=h.dodge,
             width=h.width,
             n_dodge=h.n_dodge,
@@ -184,3 +180,81 @@ end
 
 categorical_ticks(x) = (1:length(levels(x)), levels(x))
 
+function table_finetuned_models(stats_dir, dff, dft)
+    dff = select(dff, [:id, :pretrained_id, :tokenizer, :task, :dataset, :encoding])
+    dff.benchmark = map(dff.dataset, dff.task) do dataset, task
+        if task == "regression"
+            if dataset in ["qm8", "qm9", "tmQM"]
+                return "mae"
+            elseif dataset in ["esol", "freesolv", "lipo"]
+                return "rmse"
+            end
+        else
+            return "auroc"
+        end
+    end
+    tokenizers = tokenizers_info(stats_dir)
+    dft = subset(dft, :tok_group => ByRow(==("all")))
+    select!(dft, Not(:tok_group))
+    dfb = innerjoin(dft, dff, on=[:ckpt_id => :id, :metric => :benchmark])
+    dfb.tokenizer_name = map(tok -> tokenizers[tok]["name"], dfb.tokenizer)
+    dfb = subset(dfb, :encoding => ByRow(!=("smiles-canonical")))
+    dfb = combine(groupby(dfb, [:dataset, :channel])) do gdf
+        score = collect(gdf.mean)
+        gdf.rank = sortperm(score; rev=first(gdf.metric) ∉ ["mae", "rmse"]) |> invperm
+        return gdf
+    end
+
+
+    dfb.value = map(dfb.dataset, dfb.metric, dfb.mean, dfb.std, dfb.rank) do dataset, task, mean, std, rank
+        if dataset in ["qm8"]
+            fmt = "{:.4f} \\pm {:.4f}"
+        else
+            fmt = "{:.3f} \\pm {:.3f}"
+        end
+        if task == "auroc"
+            mean *= 100
+            std *= 100
+        end
+        s = format(fmt, mean, std)
+        if rank == 1
+            s = "\\mathbf{$s}"
+        end
+        return "\\($s\\)"
+    end
+
+
+    subset!(dfb, :channel => ByRow(isnothing))
+    tab = unstack(dfb, [:tokenizer, :tokenizer_name], :dataset, :value)
+    display(tab)
+
+    # Regression
+    println("\nRegression:\n")
+    select(tab, [:tokenizer_name, :qm8, :qm9, :tmQM, :esol, :freesolv, :lipo]) |> latex
+
+    # Classification
+    println("\nClassification:\n")
+    select(tab, [:tokenizer_name, :hiv, :bace, :clintox, :tox21, :toxcast, :sider]) |> latex
+
+
+
+
+    return dfb, tab
+end
+
+function anova_explanatory(mu, std, n)
+    m = sum(mu .* n) / sum(n)
+    SSt = @. n * (mu - m)^2
+    SSe = @. (n - 1) * std^2
+    J = length(mu)
+    t = ("One-way analysis of variance (ANOVA) test", "Means", "F")
+    return VarianceEqualityTest{FDist}(n, SSt, SSe, J - 1, sum(n) - J, t)
+end
+
+latex(df::DataFrame) = latex(stdout, df)
+function latex(io::IO, df::DataFrame)
+    println(io, join(names(df), " & ") * " \\\\")
+    for row in eachrow(df)
+        println(io, join(values(row), " & ") * " \\\\")
+    end
+end

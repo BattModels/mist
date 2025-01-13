@@ -14,6 +14,10 @@ using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
 using JLD2: jldopen
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode
+using HypothesisTests: HypothesisTests, HypothesisTest, VarianceEqualityTest, pvalue
+using Distributions: Chisq, FDist, Normal
+using OrderedCollections: OrderedDict
+using CSV: CSV
 
 using TokenizerStats
 using TokenizerStats: load_tokenizer, find
@@ -39,6 +43,15 @@ const CLASS_MARKER = Dict(
     :ours => :star5,
 )
 
+CLASS_PLT_LABEL = Dict(
+    "smirk" => "Smirk",
+    "smirk-gpe" => "Smirk-GPE",
+    "spe" => "SPE",
+    "bpe" => "BPE",
+    "unigram" => "Unigram",
+    "atomwise" => "Atom-wise",
+)
+
 # Figure Units
 const pt = 3 / 4
 const inch = 96
@@ -51,9 +64,10 @@ end
 
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300)
-    mkpath(joinpath(@__DIR__, "..", "fig"))
-    save(joinpath(@__DIR__, "..", "fig", name * ".pdf"), f; pt_per_unit=1)
-    save(joinpath(@__DIR__, "..", "fig", name * ".png"), f; px_per_unit=dpi / inch)
+    fig_dir = joinpath(pkgdir(TokenizerStats), "fig")
+    mkpath(fig_dir)
+    save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1)
+    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch)
     return nothing
 end
 
@@ -66,18 +80,22 @@ function (@main)(stats_dir=joinpath(pkgdir(TokenizerStats), "stats"))
     token_usage = usage_stats(stats_dir)
 
     # Transformer Models
-    dfp, dff, dft = transformer_models(stats_dir; filter_runs=joinpath(pkgdir(TokenizerStats), "pipeline_unfrozen.json"))
+    dfp, dff, dft = transformer_models(stats_dir;
+        sweep_file=joinpath(pkgdir(TokenizerStats), "pipeline_unfrozen.json")
+    )
 
     with_theme(theme()) do
         # Token Usage
         savefig("token_usage", figure_token_usage(stats_dir))
-        savefig("fertility", figure_fertility(token_usage, loss_stats, dfp))
-        savefig("oov_rate", figure_oov_rate())
+        savefig("oov_rate", figure_oov_rate(stats_dir))
         # savefig("jaccard", figure_jaccard())
 
-        # Transformers
-        savefig("ngram_vs_transformer", figure_ngram_vs_transformer(loss_stats, dfp, dff))
-        f, df = figure_tf_finetune(dff, dft)
+        # Transformers vs. N-Grams
+        df = ngram_vs_transformer_fits(stats_dir, loss_stats, dfp)
+        savefig("ngram_vs_transformer", figure_ngram_vs_transformer(stats_dir, df))
+
+        # Transformer Model Summary
+        f, df = figure_tf_finetune(stats_dir, dff, dft)
         savefig("tf_finetune", f)
         CSV.write(joinpath("stats/tf_model_summary.csv"), df)
 
@@ -100,7 +118,7 @@ function (@main)(stats_dir=joinpath(pkgdir(TokenizerStats), "stats"))
         ]
         for (name, smi) in compunds
             for direction in [:forward, :bidirectional]
-                savefig("log_prob_$(direction)_$name", figure_ngram_prediction(smi; direction))
+                savefig("log_prob_$(direction)_$name", figure_ngram_prediction(smi, stats_dir; direction))
             end
         end
     end

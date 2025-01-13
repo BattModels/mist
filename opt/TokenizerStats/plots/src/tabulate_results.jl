@@ -1,5 +1,5 @@
 """
-    dfp, dff, dft = transformer_models(stats_dir, cache; filter_runs)
+    dfp, dff, dft = transformer_models(stats_dir, cache; sweep_file)
 
 Collate wandb results into pretraining/finetune/test dataframes for further analysis.
 By default load all results (can be trickier to filter), but can be restricted to only the
@@ -7,8 +7,8 @@ relevant runs (i.e. those in a sweep)
 """
 function transformer_models(
     stats_dir,
-    cache=joinpath(pkgdir(TokenizerStats), "..", "..", ".cache", "wandb-export");
-    filter_runs=nothing,
+    cache=joinpath(pkgdir(TokenizerStats), "models", "wandb-export"),
+    sweep_file=nothing,
 )
     # Get the pretrained models
     cache = abspath(cache)
@@ -108,10 +108,30 @@ function transformer_models(
     dropmissing!(test, :mean)
 
     # Restrict to relevant runs
-    if filter_runs !== nothing
-        return filter_runs(pretrained, finetuned, test)
+    if sweep_file !== nothing
+        return filter_runs(pretrained, finetuned, test; sweep_file)
     end
+
     return pretrained, finetuned, test
+end
+
+function copy_sweep_results(dfp::DataFrame, dff::DataFrame, dft::DataFrame,
+    src_cache=joinpath(pkgdir(TokenizerStats), "..", "..", ".cache", "wandb-export"),
+    dst_cache=joinpath(pkgdir(TokenizerStats), "models", "wandb-export"),
+)
+    # Copy to data drop
+    copy_sweep_results("pretraining", dfp.id, src_cache, dst_cache)
+    copy_sweep_results("finetuning", dff.id, src_cache, dst_cache)
+    copy_sweep_results("test", dft.id, src_cache, dst_cache)
+
+end
+
+function copy_sweep_results(type, ids, src, dst=joinpath(pkgdir(TokenizerStats), "models", "wandb-export"))
+    mkpath(joinpath(dst, type))
+    for id in ids
+        cp(joinpath(src, type, id * ".json"), joinpath(joinpath(dst, type, id * ".json")); force=true)
+    end
+    return nothing
 end
 
 function task_metrics(task, metrics; dataset=nothing)
@@ -193,3 +213,109 @@ function link_training_runs(runs)
     end
     return linked
 end
+
+function df_ngrams_vs_transformer(stats_dir, loss_stats, dfp)
+    tokenizers = tokenizers_info(stats_dir)
+    val_loss = subset(loss_stats,
+        :split => ByRow(==("val")),
+        :dataset => ByRow(==("realspace")),
+        :tokenizer => ByRow(x -> haskey(tokenizers, x)),
+    )
+    best_models = combine(groupby(val_loss, :tokenizer)) do gdf
+        sort!(gdf, :avg_model_loss; rev=false)
+        return gdf[1, :]
+    end
+    select!(best_models, :tokenizer, :ngram, :avg_model_loss => :ngram_loss, :avg_model_token_loss => :ngram_token_loss)
+
+    # Merge with pretraining data
+    dfp = leftjoin(dfp, best_models, on=[:tokenizer])
+    sort!(dfp, :val_loss)
+    dfp.tokenizer = categorical(dfp.tokenizer, levels=unique(dfp.tokenizer))
+    replace!(dfp.encoding,
+        "smiles" => "SMILES",
+        "smiles-canonical" => "Canonical SMILES",
+        "selfies" => "SELFIES"
+    )
+    dfp.encoding = categorical(dfp.encoding, levels=["SMILES", "Canonical SMILES", "SELFIES"])
+
+    return dfp, best_models
+end
+
+struct LogLikelihoodRatioTest
+    lr::Float64
+    df::Int
+end
+
+function LogLikelihoodRatioTest(model::StatsBase.RegressionModel, null::StatsBase.RegressionModel)
+    λ = -2 * (loglikelihood(null) - loglikelihood(model))
+    df = dof(model) - dof(null)
+    return LogLikelihoodRatioTest(λ, df)
+end
+
+HypothesisTests.pvalue(lrt::LogLikelihoodRatioTest) = pvalue(Chisq(lrt.df), lrt.lr)
+
+function Base.show(io::IO, mime::MIME"text/plain", lrt::LogLikelihoodRatioTest)
+    println(io, "λ:       $(round(lrt.lr; sigdigits=3))")
+    println(io, "df:      $(lrt.df)")
+    println(io, "p-value: $(round(pvalue(lrt); sigdigits=3))")
+end
+
+function ngram_vs_transformer_fits(stats_dir, loss_stats, dfp)
+    df, best_models = df_ngrams_vs_transformer(stats_dir, loss_stats, dfp)
+
+    contrasts = Dict(
+        :tokenizer_class => EffectsCoding(; base="atomwise"),
+        :encoding => EffectsCoding(; base="SMILES"),
+    )
+
+    # Test impact of encoding on pretraining
+    null = lm(@formula(val_loss ~ 1), df)
+    @show tok = lm(
+        @formula(val_loss ~ 1 + tokenizer_class + encoding),
+        df; contrasts
+    )
+    LogLikelihoodRatioTest(tok, null) |> display
+
+    # Test impact of encoding on pretraining
+    tokenizers = tokenizers_info(stats_dir)
+    best_models.tokenizer_class = map(tok -> tokenizers[tok]["tokenizer_class"], best_models.tokenizer)
+    best_models.encoding = map(tok -> tokenizers[tok]["encoding"], best_models.tokenizer)
+    replace!(best_models.encoding,
+        "smiles" => "SMILES",
+        "smiles-canonical" => "Canonical SMILES",
+        "selfies" => "SELFIES"
+    )
+
+    null = lm(@formula(ngram_token_loss ~ 1), best_models)
+    @show tok = lm(
+        @formula(ngram_token_loss ~ 1 + tokenizer_class + encoding),
+        best_models; contrasts
+    )
+    LogLikelihoodRatioTest(tok, null) |> display
+
+
+    # Predict pretraining loss using n-gram model
+    null = glm(@formula(val_loss ~ 1), df, Normal(), LogLink())
+    @show ngram = glm(@formula(val_loss ~ 1 + log(ngram_token_loss)), df, Normal(), LogLink(); contrasts)
+    LogLikelihoodRatioTest(ngram, null) |> display
+    r2(ngram.model, :devianceratio) |> display
+
+    return df
+end
+
+function tmqm_finetune(stats_dir, dff, dft)
+    df = subset(dff, :dataset => ByRow(==("tmQM")))
+    select!(df, [:id, :pretrained_id, :tokenizer, :task, :dataset, :encoding])
+    dft = subset(dft,
+        :metric => ByRow(==("mae")),
+        :tok_group => ByRow(==("all")),
+    )
+    select!(dft, Not([:id, :tok_group]))
+
+    df = innerjoin(df, dft; on=:id => :ckpt_id)
+    return df
+
+
+end
+
+

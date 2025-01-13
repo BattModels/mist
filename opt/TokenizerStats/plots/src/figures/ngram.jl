@@ -210,9 +210,9 @@ end
 
 function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
     plt_toks = [
-        "character",
+        # "character",
         "smirk",
-        "smirk-gpe-50k-nmb-ss",
+        "smirk-gpe-50k-mb-ss",
         "ibm/MoLFormer-XL-both-10pct-oov",
         "ibm/materials.smi-ted-light",
         "devalab/molgpt-moses",
@@ -239,15 +239,15 @@ function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
     tokenizers = tokenizers_info(stats_dir)
 
     # Set up figure
-    f = Figure(; size=(7inch, 3inch))
+    f = Figure(; size=(7inch, 3inch), figure_padding=(1, 20, 5, 5))
     tokenizer = levels(df.tokenizer)
     plt_label = map(tokenizer) do tok
         name = tokenizers[tok]["name"]
         class = tokenizers[tok]["tokenizer_class"]
-        return name != class ? "$name - $class" : name
+        class_label = get(CLASS_PLT_LABEL, class, class)
+        return lowercase(name) != class ? "$name - $class_label" : name
     end
     ax_kwargs = (;
-        limits=(nothing, (0, nothing)),
         xticks=(1:length(tokenizer), plt_label),
         xticklabelrotation=0.4,
         xticksvisible=false,
@@ -255,11 +255,13 @@ function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
     )
     ax_pretrain = Axis(f[1, 1];
         ylabel="Enimine REAL Space\nCross Entropy Loss [nats/token]",
+        limits=(nothing, (0, 7)),
         ax_kwargs...
     )
     hidexdecorations!(ax_pretrain)
     ax_molnet = Axis(f[2, 1];
         ylabel="MoleculeNet\nCross Entropy Loss [nats/token]",
+        limits=(nothing, (0, nothing)),
         ax_kwargs...
     )
     linkxaxes!(ax_pretrain, ax_molnet)
@@ -278,7 +280,7 @@ function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
             colorrange=(1, 5),
         )
     end
-    Legend(f[1, 1], ds_elements, ["unigram", "bigram", "trigram", "4-gram", "5-gram"];
+    Legend(f[1, 1], ds_elements, ["Unigram", "Bigram", "Trigram", "4-gram", "5-gram"];
         tellheight=false, tellwidth=false, orientation=:horizontal,
         framevisible=true,
         patchstrokecolor=:black,
@@ -329,12 +331,20 @@ function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
         color=levelcode.(df.class),
         colorrange=(1, length(levels(df.class))),
     )
+    domain_labels = Dict(
+        "chemistry" => "Chemistry",
+        "nlp" => "NLP",
+        "nlp-science" => "NLP, Science",
+    )
     domains = map(enumerate(levels(df.domain))) do (i, domain)
-        MarkerElement(label=string(domain), marker=markers[i], color=:black)
+        label = domain_labels[string(domain)]
+        MarkerElement(; label, marker=markers[i], color=:black)
     end
     classes = map(enumerate(levels(df.class))) do (i, class)
-        PolyElement(
-            label=string(class),
+        class = string(class)
+        label = get(CLASS_PLT_LABEL, class, class)
+        PolyElement(;
+            label,
             marker=:x,
             color=i,
             colormap=h.colormap,
@@ -352,6 +362,16 @@ function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
         titleposition=:top,
         margin=(5, 2, 2, 5),
     )
+
+    # Add Labels
+    label_kwargs = (;
+        fontsize=12pt, font=:bold,
+        halign=:right,
+        tellheight=false,
+    )
+    Label(f[1, 1, TopLeft()], "A)"; padding=(0, 15, -5, 0), label_kwargs...)
+    Label(f[2, 1, TopLeft()], "B)"; padding=(0, 15, -5, 0), label_kwargs...)
+    Label(f[1, 2, TopLeft()], "C)"; padding=(0, 5, -5, 0), label_kwargs...)
 
     rowgap!(f.layout, 2)
     resize_to_layout!(f)
