@@ -22,7 +22,7 @@ from ..utils.metrics import (
 )
 from .model_utils import record_summary_stats
 from ..utils.tokenizer import load_tokenizer
-from .lm_finetuning import Standardize
+from .normalize import Standardize
 
 
 class MixturePredictionTaskHead(nn.Module):
