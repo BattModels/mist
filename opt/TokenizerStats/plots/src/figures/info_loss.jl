@@ -34,7 +34,7 @@ function tok_log_prob!(f, cb, file, name, smi, max_vocab=50; direction=:forward)
     code = pyconvert(Vector{Int}, tok(smi)["input_ids"])
 
     if direction == :forward
-        P = TokenizerStats.autoregressive_log_prob(ngram, code)
+        P = TokenizerStats.log_probability(ngram, code)
     elseif direction == :bidirectional
         P = TokenizerStats.fb_log_probability(ngram, code)
     else

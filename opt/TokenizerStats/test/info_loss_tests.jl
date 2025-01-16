@@ -1,5 +1,5 @@
 @testitem "Info Loss" setup = [NGramModelSetup] begin
-    using TokenizerStats: TokenizerStats, NGramModel, information_loss, fb_log_probability, cross_entropy_log
+    using TokenizerStats: TokenizerStats, NGramModel, information_loss, fb_log_probability, kl_divergence
     using LogExpFunctions: logsumexp
 
     # Setup a random n-gram model
@@ -31,7 +31,7 @@
         Q_ref = fb_log_probability(m, Vector(code); mask=code.mask_value)
         @test Q_ref isa Matrix{Float64}
         @test size(P_ref) == size(Q_ref) == (m.vocab_size, length(code))
-        loss_expected = cross_entropy_log(vec(P_ref), vec(Q_ref))
+        loss_expected = kl_divergence(vec(P_ref), vec(Q_ref))
         @test loss_expected isa AbstractFloat
         @test loss_expected >= 0 && isfinite(loss_expected)
 

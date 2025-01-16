@@ -141,6 +141,7 @@ function gram_odds(model::NGramModel, gram::NTuple{N,<:Integer}) where {N}
     return counts, marginal
 end
 
+""" Computes the log-probability of `gram` using the N-gram `model` with Add-1 Smoothing """
 function log_probability(model::NGramModel, gram::NTuple{N,<:Integer}) where {N}
     c, n = gram_odds(model, gram)
     ln_c = any(∈(model.special_tokens), gram) ? log(c) : log1p(c)
@@ -148,6 +149,7 @@ function log_probability(model::NGramModel, gram::NTuple{N,<:Integer}) where {N}
     return ln_c - ln_n
 end
 
+""" Computes the log-odds of `gram` using the N-gram `model` with Add-1 Smoothing """
 function log_odds(model::NGramModel, gram::NTuple{N,<:Integer}) where {N}
     c, n = gram_odds(model, gram)
     ln_c = any(∈(model.special_tokens), gram) ? log(c) : log1p(c)
@@ -155,14 +157,10 @@ function log_odds(model::NGramModel, gram::NTuple{N,<:Integer}) where {N}
 end
 
 """
-    loss = autoregressive_kld(model::NGramModel, code::Vector{Int}; N=length(model))
-
-Computes the KL-Divergence loss (cross-entropy) using an `N`-gram model for `code`.
+Computes the cross-entropy loss using an `N`-gram model for `code`.
 """
-function autoregressive_kld(model::NGramModel, code::Vector{<:Integer}; N=length(model))
+function cross_entropy(model::NGramModel, code::Vector{<:Integer}; N=length(model))
     @assert !any(∈(model.special_tokens), code)
-    counts = 0
-    marginal = 0
     loss = 0.0
     V = nonspecial_vocab_size(model)
     for i in 1:length(code)
@@ -173,9 +171,7 @@ function autoregressive_kld(model::NGramModel, code::Vector{<:Integer}; N=length
 end
 
 """
-    H = cross_entropy(ℓ::AbstractMatrix, code::Vector{Int}; ignore_id=-100)
-
-Computes the cross entropy of the code `code` given the log-probabilities `ℓ`.
+Computes the cross entropy loss of the code `code` given the log-probabilities `ℓ`.
 Will ignore tokens with id `ignore_id` in `code`
 """
 function cross_entropy(ℓ::AbstractMatrix, code::Vector{<:Integer}; ignore_id=-100)
@@ -188,15 +184,13 @@ function cross_entropy(ℓ::AbstractMatrix, code::Vector{<:Integer}; ignore_id=-
 end
 
 """
-    H = cross_entropy_log(P::AbstractVector, Q::AbstractVector)
-
-Computes the cross-entropy (sum(p * log(p/q))) between `exp(P)` and `exp(Q)`
+Computes the KL-Divergence `∑ p * log(p/q)` between `p = exp(P)` and `q = exp(Q)`
 (P & Q are log-probabilities) using Kahan-Babuska-Neumaier summation
 """
-function cross_entropy_log(P::AbstractVector, Q::AbstractVector)
+function kl_divergence(P::AbstractArray, Q::AbstractArray)
     H = zero(eltype(P))
     c = zero(H)
-    @assert length(P) == length(Q)
+    @assert size(P) == size(Q)
     for (p, q) in zip(P, Q)
         i = xexpy(p - q, p)
         t = H + i
@@ -210,7 +204,11 @@ function cross_entropy_log(P::AbstractVector, Q::AbstractVector)
     return H + c
 end
 
-function autoregressive_log_prob(model::NGramModel, code::Vector; N=length(model))
+"""
+Computes the log-probability `ℓ` of `code` using the N-gram `model`. Returns a
+`Matrix{Float64}` of size `(model.vocab_size, length(code))`
+"""
+function log_probability(model::NGramModel, code::Vector; N=length(model))
     ell = Matrix{Float64}(undef, model.vocab_size, length(code))
     V = nonspecial_vocab_size(model)
     for i in 1:length(code)
@@ -441,7 +439,7 @@ given n-gram model
         fb_log_probability!(Q, m, code; N, idx, mask=code.mask_value)
 
         # Update information loss
-        loss += cross_entropy_log(P, Q)
+        loss += kl_divergence(P, Q)
     end
     return loss
 end

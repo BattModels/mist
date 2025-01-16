@@ -203,7 +203,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
                 histogram=KHist(100),
             )
         end |> OnlineStats.Group
-        stats = (; kld=deepcopy(stats), kld_per_token=deepcopy(stats))
+        stats = (; cross_entropy=deepcopy(stats), cross_entropy_per_token=deepcopy(stats))
 
         @info "rank $rank: started processing $split" now()
         loss = zeros(length(ngram))
@@ -211,10 +211,10 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
         for (idx, encoding) in enumerate(ds)
             code = pyconvert(Vector{Int}, encoding["input_ids"])
             for N in 1:length(ngram)
-                loss[N] = autoregressive_kld(ngram, code; N)
+                loss[N] = cross_entropy(ngram, code; N)
             end
-            fit!(stats.kld, tuple(loss))
-            fit!(stats.kld_per_token, tuple(loss ./ length(code)))
+            fit!(stats.cross_entropy, tuple(loss))
+            fit!(stats.cross_entropy_per_token, tuple(loss ./ length(code)))
             if idx % 1_000_000 == 0 && rank == 0
                 elapsed = time() - start_time
                 @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
@@ -226,8 +226,8 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
             jldopen(output * ".tmp", "a+") do f
                 f[split] = (;
                     samples=nobs(stats),
-                    kld=map(value, stats[:kld]),
-                    kld_per_token=map(value, stats[:kld_per_token]),
+                    cross_entropy=map(value, stats[:cross_entropy]),
+                    cross_entropy_per_token=map(value, stats[:cross_entropy_per_token]),
                 )
             end
         end

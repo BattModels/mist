@@ -104,8 +104,8 @@ function model_loss_stats(stats_dir)
                 split ∉ keys(data) && continue
                 split_data = data[split]
                 for ngram in 1:5
-                    kld_loss = OnlineStats.Moments(split_data[:kld][ngram][:moments], EqualWeight(), split_data[:samples])
-                    kld_per_token = OnlineStats.Moments(split_data[:kld_per_token][ngram][:moments], EqualWeight(), split_data[:samples])
+                    cross_entropy = OnlineStats.Moments(split_data[:cross_entropy][ngram][:moments], EqualWeight(), split_data[:samples])
+                    cross_entropy_per_token = OnlineStats.Moments(split_data[:cross_entropy_per_token][ngram][:moments], EqualWeight(), split_data[:samples])
 
                     push!(rows, (;
                         tokenizer,
@@ -114,12 +114,12 @@ function model_loss_stats(stats_dir)
                         ngram,
                         vocab_size=data["tokenizer"][:vocab_size],
                         samples=split_data[:samples],
-                        loss_moments=kld_loss,
-                        loss_per_token_moments=kld_per_token,
-                        avg_model_loss=mean(kld_loss),
-                        std_model_loss=std(kld_loss),
-                        avg_model_token_loss=mean(kld_per_token),
-                        std_model_token_loss=std(kld_per_token),
+                        loss_moments=cross_entropy,
+                        loss_per_token_moments=cross_entropy_per_token,
+                        avg_model_loss=mean(cross_entropy),
+                        std_model_loss=std(cross_entropy),
+                        avg_model_token_loss=mean(cross_entropy_per_token),
+                        std_model_token_loss=std(cross_entropy_per_token),
                     ))
                 end
             end

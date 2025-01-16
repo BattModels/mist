@@ -145,17 +145,16 @@ end
     end
 end
 
-@testitem "autoregressive_kld" setup = [NGramModelSetup] begin
-    using TokenizerStats: NGramModel, autoregressive_kld, autoregressive_log_prob, cross_entropy
+@testitem "cross_entropy_loss" setup = [NGramModelSetup] begin
+    using TokenizerStats: NGramModel, cross_entropy, log_probability
     m = NGramModel(randngram(), 9)
     code = rand(1:8, 32)
-    loss = zeros(length(m))
     for N in 1:length(m)
-        loss[N] = autoregressive_kld(m, code; N)
-        ℓ = autoregressive_log_prob(m, code; N)
-        @test loss[N] ≈ cross_entropy(ℓ, code) rtol = 1e-4
+        loss = cross_entropy(m, code; N)
+        @test loss > 0
+        ℓ = log_probability(m, code; N)
+        @test loss ≈ cross_entropy(ℓ, code) rtol = 1e-4
     end
-    @test all(>(0), loss)
 end
 
 @testitem "unk token information loss" setup = [NGramModelSetup] begin
