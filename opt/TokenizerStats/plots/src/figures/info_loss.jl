@@ -312,7 +312,7 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
     errorbars!(ax, df.avg_model_token_loss, df.avg_info_loss, 3 .* df.stderr_model_token_loss; direction=:x, color=:black, linewidth=1)
     errorbars!(ax, df.avg_model_token_loss, df.avg_info_loss, 3 .* df.stderr_info_loss; direction=:y, color=:black, linewidth=1)
     h = scatter!(ax, df.avg_model_token_loss, df.avg_info_loss;
-        colormap=:Set2_5,
+        colormap=[:red, :blue],
         colorrange=(1, 2),
         color=levelcode.(df.dataset),
         marker=df.marker

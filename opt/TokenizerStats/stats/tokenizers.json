@@ -7,7 +7,7 @@
     "domain": "chemistry"
   },
   {
-    "name": "smirk-selfies",
+    "name": "Smirk-SELFIES",
     "name_or_path": "smirk-selfies",
     "encoding": "selfies",
     "tokenizer_class": "smirk",

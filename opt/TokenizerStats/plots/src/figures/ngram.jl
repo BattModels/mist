@@ -123,6 +123,7 @@ function figure_oov_rate(stats_dir)
     plt_tokenizers = [
         "smirk",
         "smirk-gpe-50k-mb-ss",
+        "smirk-selfies",
         "ibm/MoLFormer-XL-both-10pct-oov",
         "ibm/materials.smi-ted-light",
         "seyonec/ChemBERTa-zinc-base-v1",
