@@ -1,11 +1,11 @@
 import torch
-from pytorch_lightning import LightningModule
-from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from pytorch_lightning.loggers import WandbLogger
+from lightning import LightningModule
+from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
+from lightning.pytorch.loggers import WandbLogger
 from transformers import RobertaConfig, RobertaForMaskedLM
 
-from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
 from ..utils.metrics import TokenCounter
+from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
 
 
 class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):

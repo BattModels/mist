@@ -1,7 +1,9 @@
 logs
 logs/
 .CondaPkg/
-stats/
-stats
+!stats/tokenizers.json
+stats/*/
+stats/*.csv
 smirk-gpe-*
 smirk-gpe-*/
+fig/

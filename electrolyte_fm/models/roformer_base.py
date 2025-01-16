@@ -1,8 +1,6 @@
 import torch
-from pytorch_lightning import LightningModule
-
-from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from pytorch_lightning.loggers import WandbLogger
+from lightning import LightningModule
+from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from transformers import RoFormerConfig, RoFormerForMaskedLM
 
 from .roberta_base import RoBERTa

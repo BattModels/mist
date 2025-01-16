@@ -11,6 +11,8 @@ logging.basicConfig(level=logging.INFO)
 
 
 def model_size(d_model: int, d_ff: int, n_layers: int) -> int:
+    if d_model is None or d_ff is None or n_layers is None:
+        return None
     attention_qkv = n_layers * 3 * d_model**2
     project = n_layers * d_model**2
     ff = n_layers * 2 * d_model * d_ff
@@ -51,8 +53,27 @@ def get_cluster(hostname: str) -> str:
         return "polaris"
     elif hostname.endswith("delta.ncsa.illinois.edu"):
         return "delta"
+    elif hostname.startswith("gpu"):
+        return "dgx"
     else:
-        return hostname
+        return None
+
+
+def summary_metric(run, key, type="last", best=None):
+    value = run.summary_metrics.get(key, None)
+    if value is None:
+        return None
+
+    if isinstance(value, (float, int, str)):
+        return value if type == "last" else None
+
+    # Try to get the type
+    x = value.get(type, None)
+
+    # Hail mary for loss
+    if x is None and best is not None and type == "best":
+        return value.get(best, None)
+    return x
 
 
 def run_summary(run):
@@ -63,127 +84,259 @@ def run_summary(run):
         "url": run.url,
         "tags": run.tags,
         "state": run.state,
-        "hostname": get_cluster(run.metadata["host"]),
+        "user": run.metadata["username"],
+        "cluster": get_cluster(run.metadata["host"]),
+        "hostname": run.metadata["host"],
         "created": run.metadata["startedAt"],
-        "steps": run.summary["trainer/global_step"],
-        "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
-        "optimizer": get_entry(config, "cli", "model", "optimizer", "class_path"),
-        "tokenizer": get_entry(config, "cli", "data", "tokenizer")
-        or get_entry(config, "tokenizer"),
-        "num_training_steps": get_entry(
-            config, "cli", "model", "lr_schedule", "num_training_steps"
-        ),
-        "macro_batch_size": get_entry(config, "stats/train_macro_batch_size"),
-        "gas": get_entry(config, "cli", "trainer", "accumulate_grad_batches") or 1,
+        "gpu": run.metadata["gpu"],
+        "commit": run.metadata["git"]["commit"],
+        "runtime": run.summary["_runtime"],
+        "optimizer": {
+            "class_path": get_entry(config, "cli", "model", "optimizer", "class_path"),
+            "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
+            "betas": get_entry(config, "cli", "model", "optimizer", "betas"),
+        },
+        "model": {
+            "class_path": get_entry(config, "cli", "model", "class_path"),
+        },
+        "data": {
+            "module": get_entry(config, "cli", "data", "class_path"),
+            "tokenizer": get_entry(config, "cli", "data", "tokenizer"),
+            "batch_size": get_entry(config, "cli", "data", "batch_size"),
+            "encoding": get_entry(config, "cli", "data", "encoding"),
+        },
+        "trainer": {
+            "num_training_steps": get_entry(
+                config, "cli", "model", "lr_schedule", "num_training_steps"
+            ),
+            "gas": get_entry(config, "cli", "trainer", "accumulate_grad_batches") or 1,
+            "macro_batch_size": get_entry(config, "stats/train_macro_batch_size"),
+            "step": run.summary["trainer/global_step"],
+            "tokens": run.summary.get("total_tokens_step", None),
+            "masked_tokens": run.summary.get("total_masked_tokens_step", None),
+        },
+        "job_config": {
+            "nodes": get_entry(config, "job_config", "nodes"),
+            "gpues_per_node": get_entry(config, "job_config", "gpus_per_node"),
+            "container": get_entry(config, "job_config", "container"),
+            "env": get_entry(config, "job_config", "env"),
+        },
+        "metrics": {
+            "train_loss_last": summary_metric(run, "train/loss_step", "last"),
+            "val_loss_last": summary_metric(run, "val/loss_epoch", "last"),
+            "val_loss_best": summary_metric(run, "val/loss_epoch", "best", best="min"),
+            "train_loss_best": summary_metric(run, "val/loss_step", "best", best="min"),
+        },
     }
 
-    # Get validation loss
-    val_loss = run.summary["val/loss_epoch"]
-    if isinstance(val_loss, float):
-        stats["val_loss_last"] = val_loss
+    # Populate Effective Batch Size
+    macro_batch_size = stats["trainer"]["macro_batch_size"]
+    gas = stats["trainer"]["gas"]
+    if macro_batch_size is not None and gas is not None:
+        stats["trainer"]["effective_batch_size"] = macro_batch_size * gas
     else:
-        stats["val_loss_best"] = val_loss["min"]
+        stats["trainer"]["effective_batch_size"] = None
 
-    stats["effective_batch_size"] = stats["macro_batch_size"] * stats["gas"]
     return stats
 
 
 def pretraining_summary(run):
     config = run.config
     row = run_summary(run)
-    row.update(
+    row["model"].update(
         {
-            "d_ff": get_entry(config, "cli", "model", "intermediate_size")
-            or get_entry(config, "intermediate_size"),
-            "d_model": get_entry(config, "cli", "model", "hidden_size")
-            or get_entry(config, "hidden_size"),
-            "n_layers": get_entry(config, "cli", "model", "num_hidden_layers")
-            or get_entry(config, "num_hidden_layers"),
-            "n_heads": get_entry(config, "cli", "model", "num_attention_heads")
-            or get_entry(config, "num_attention_heads"),
-            "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
-            "optimizer": get_entry(config, "cli", "model", "optimizer", "class_path"),
-            "dataset": get_entry(config, "cli", "data", "path")
-            or get_entry(config, "path"),
+            "d_ff": get_entry(config, "cli", "model", "intermediate_size"),
+            "d_model": get_entry(config, "cli", "model", "hidden_size"),
+            "n_layers": get_entry(config, "cli", "model", "num_hidden_layers"),
+            "n_heads": get_entry(config, "cli", "model", "num_attention_heads"),
         }
     )
-    row["model_size"] = model_size(row["d_model"], row["d_ff"], row["n_layers"])
+    row["data"].update({"path": get_entry(config, "cli", "data", "path")})
+    row["model"]["model_size"] = model_size(
+        row["model"]["d_model"], row["model"]["d_ff"], row["model"]["n_layers"]
+    )
     return row
+
+
+def identify_dataset(config):
+    if (
+        get_entry(config, "cli", "data", "class_path")
+        == "electrolyte_fm.data_modules.tmQMDataModule"
+    ):
+        path = get_entry(config, "cli", "data", "path")
+        if path is None:
+            return "tmQM"
+        if path.endswith("data_tm_split"):
+            return "tmQM-tm-split"
+        else:
+            return "tmQM"
+    else:
+        return get_entry(config, "cli", "data", "name")
+
+
+def get_ckpt_id(ckpt):
+    if ckpt is None:
+        return None
+    if not ckpt.endswith("ckpt"):
+        return None
+
+    segments = Path(ckpt).parents
+    id = str(segments[1].name)
+    if len(id) == 8:
+        return id
+    return None
+
+
+def something(x, default):
+    """Return x if not None, otherwise default"""
+    return x if x is not None else default
 
 
 def finetuning_summary(run):
     row = run_summary(run)
     config = run.config
-    row.update(
+    row["model"].update(
         {
             "encoder_ckpt": get_entry(config, "cli", "model", "encoder_ckpt"),
-            "dataset": get_entry(config, "cli", "data", "name"),
+            "task": get_entry(config, "cli", "model", "task"),
+            "metrics": get_entry(config, "cli", "model", "metrics"),
+            "freeze_encoder": something(
+                get_entry(config, "cli", "model", "freeze_encoder"), True
+            ),
+        }
+    )
+
+    row["data"].update(
+        {
+            "dataset": identify_dataset(config),
+            "targets": get_entry(config, "cli", "data", "target_columns"),
         }
     )
 
     # Identify Encoder
-    encoder_id = None
-
-    if row["encoder_ckpt"].endswith("ckpt"):
-        segments = Path(row["encoder_ckpt"]).parents
-        id = str(segments[1].name)
-        if len(id) == 8:
-            encoder_id = id
-    row["encoder_id"] = encoder_id
+    row["model"]["encoder_id"] = get_ckpt_id(row["model"]["encoder_ckpt"])
 
     # Identify metrics
-    row["metrics"] = identify_metrics(run.summary_metrics)
+    row["metrics"] = identify_metrics(run)
+    return row
+
+
+def test_summary(run):
+    row = run_summary(run)
+    config = run.config
+    row["model"].update(
+        {
+            "ckpt": get_entry(config, "cli", "ckpt_path"),
+            "task": get_entry(config, "cli", "model", "task"),
+            "ckpt_id": get_ckpt_id(get_entry(config, "cli", "ckpt_path")),
+            "metrics": get_entry(config, "cli", "model", "metrics"),
+        }
+    )
+    row["data"].update(
+        {
+            "dataset": identify_dataset(config),
+            "targets": get_entry(config, "cli", "data", "target_columns"),
+        }
+    )
+    row["metrics"] = identify_metrics(run)
     return row
 
 
 METRIC_REGEX = re.compile(
-    r"(?P<split>\w+)/(?P<metric>\w+?)_(?P<tok_group>(?:oov)|(?:all)|(?:non_oov))(?:_(?P<bootstrap>(?:mean)|(?:std)))?"
+    r"^(?P<split>\w+)/(?P<metric>.+?)(:?_channel_(?P<channel>.+?))?(?:_(?P<bootstrap>mean|std))?(?:_(?P<tok_group>all|oov|non_oov))?$"
 )
 
 
-def identify_metrics(summary_metrics):
-    metrics = []
+def parse_value(v: str) -> Union[float, str]:
+    if v == "NaN":
+        return float("nan")
+    elif v == "Infinity":
+        return float("inf")
+    else:
+        return v
+
+
+def identify_metrics(run):
+    out = []
+    summary_metrics = run.summary_metrics
+    metrics = get_entry(run.config, "cli", "model", "metrics")
+    target_columns = get_entry(run.config, "cli", "model", "target_columns")
     for k, v in summary_metrics.items():
         m = METRIC_REGEX.match(k)
         if m is None:
             continue
 
-        # Unpack metric
         entry = m.groupdict()
+
+        # handle MAE naming nonsense
+        if metrics is not None and target_columns is not None and "mae" in metrics:
+            metric = entry["metric"]
+            if metric.startswith("mae") and "_" in metric and "channel" not in metric:
+                # Depreciate channel naming
+                entry["channel"] = entry["metric"].split("_", maxsplit=1)[1]
+                assert entry["channel"] in [
+                    "mean",
+                    *target_columns,
+                ], f"{entry['channel']} not in {target_columns} or `mean`"
+                entry["metric"] = "mae"
+
+            elif not any([metric.startswith(c) for c in metrics]):
+                # If no metric is specified, assume MAE
+                entry["channel"] = entry["metric"]
+                entry["metric"] = "mae"
+            else:
+                pass
+
+        # Unpack metric
         if isinstance(v, (float, int)):
             entry["type"] = "last"
             entry["value"] = v
-            metrics.append(entry)
+            out.append(entry)
 
         elif isinstance(v, str):
             entry["type"] = "last"
-            entry["value"] = v if v != "NaN" else float("nan")
-            metrics.append(entry)
+            entry["value"] = parse_value(v)
+            out.append(entry)
 
         else:
             # Multiple summary metrics were logged
             for sk, sv in v.items():
-                metrics.append({"type": sk, "value": sv, **entry})
-    return metrics
+                out.append({"type": sk, "value": sv, **entry})
+    return out
 
 
-def export_runs(exportfun, cache: Path, runs, name: str = None):
-    if name:
+def export_runs(export_map: dict, cache: Path, runs, name: str = None):
+    for run in runs:
+        if "pretraining" in run.tags and "finetuning" in run.tags:
+            run.tags.remove("pretraining")
+            run.update()
+
+        # Identify export function
+        exportfun = run_summary
+        name = "default"
+        for tag, f in export_map.items():
+            if tag in run.tags:
+                exportfun = f
+                name = tag
+
         cache = cache_path.joinpath(name)
         cache.mkdir(exist_ok=True, parents=True)
-    else:
-        name = "default"
-    for run in runs:
-        run_cache = cache.joinpath(run.id).with_suffix(".json")
 
         # Compute fingerprint
         fp = fingerprint.update_fingerprint(
             run.id,
             exportfun,
-            {"run": run.id, "entity": run.entity, "project": run.project},
+            {
+                "run": run.id,
+                "entity": run.entity,
+                "project": run.project,
+                "state": run.state,
+                "tags": run.tags,
+            },
         )
 
         # Check for an existing export
+        run_cache = cache.joinpath(run.id).with_suffix(".json")
         if run_cache.exists():
             with open(run_cache, "r") as fid:
                 export_fp = json.load(fid).get("fingerprint", None)
@@ -196,10 +349,16 @@ def export_runs(exportfun, cache: Path, runs, name: str = None):
                 continue
 
         logging.info("exporting %s/%s (%s)", name, run.id, run.url)
-        stats = exportfun(run)
-        stats["fingerprint"] = fp
-        with open(run_cache, "w") as fid:
-            json.dump(stats, fid)
+        try:
+            stats = exportfun(run)
+            stats["fingerprint"] = fp
+            with open(run_cache, "w") as fid:
+                json.dump(stats, fid)
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            logging.error("failed to export %s", run.id)
+            continue
 
 
 if __name__ == "__main__":
@@ -209,27 +368,19 @@ if __name__ == "__main__":
     cache_path = Path(__file__).parent.parent.joinpath(".cache", "wandb-export")
     cache_path.mkdir(exist_ok=True, parents=True)
 
-    # Sync Pretraining Runs
-    runs = api.runs(
-        "incite-mist/mist",
-        filters={
-            "State": {"$in": ["Crashed", "Finished"]},
-            "tags": {"$in": ["pretraining"], "$nin": ["debug"]},
-            "summary_metrics.trainer/global_step": {"$exists": True, "$gte": 100},
-            "summary_metrics.val/loss_epoch.min": {"$exists": True},
-        },
-    )
-    export_runs(pretraining_summary, cache_path, runs, name="pretraining")
+    export_map = {
+        "pretraining": pretraining_summary,
+        "finetuning": finetuning_summary,
+        "test": test_summary,
+    }
 
-    # Sync Finetuning
+    # Sync Runs
     runs = api.runs(
         "incite-mist/mist",
         filters={
             "State": {"$in": ["Crashed", "Finished"]},
-            "tags": {"$in": ["finetuning"], "$nin": ["debug"]},
-            "summary_metrics.trainer/global_step": {"$exists": True, "$gte": 100},
-            "summary_metrics.val/loss_epoch": {"$exists": True},
-            "config.cli.model.init_args.encoder_ckpt": {"$exists": True},
+            "tags": {"$in": list(export_map.keys()), "$nin": ["debug"]},
+            "summary_metrics.trainer/global_step": {"$exists": True},
         },
     )
-    export_runs(finetuning_summary, cache_path, runs, name="finetuning")
+    export_runs(export_map, cache_path, runs)

@@ -1,17 +1,9 @@
-import os
 from pathlib import Path
-from statistics import mean
-from typing import Dict, List, Optional, Union
+from typing import List, Optional
 
-import pytorch_lightning as pl
-import torch
-from transformers import DataCollatorWithPadding
 from datasets import Dataset, load_dataset
-from datasets.distributed import split_dataset_by_node
-from torch.utils.data import DataLoader
 
 from ..utils.tokenizer import load_tokenizer
-from .roberta_dataset import maybe_shard_dataset
 from .molnet_dataset import MolNetDataModule
 from .utils import MolEncoding
 
@@ -25,7 +17,7 @@ class PropertyPredictionDataModule(MolNetDataModule):
         num_workers: int = 1,
         prefetch_factor: int = 4,
         smi_column: str = "smiles",
-        target_columns: list[str] = ["Class"],
+        target_columns: List[str] = ["Class"],
         strip_unk_tokens: bool = False,
         val_batch_size: Optional[int] = None,
         encoding: str = "smiles",

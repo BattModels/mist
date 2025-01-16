@@ -1,13 +1,13 @@
 import json
 import logging
-from unittest.mock import MagicMock
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import MagicMock
 
 import torch
-from pytorch_lightning import Trainer, LightningModule
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.demos.boring_classes import BoringDataModule, BoringModel
+from lightning.pytorch import LightningModule, Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.demos.boring_classes import BoringDataModule, BoringModel
 
 from electrolyte_fm.utils.callbacks import SpikeDetection
 
