@@ -582,6 +582,7 @@ function align_unknown(a::Vector{String}, b::Vector{String})
     unk_a_flag = false
     unk_b_flag = false
     mark = nothing
+    failed = false
     while i.idx <= lastindex(a) && j.idx <= lastindex(b)
         ac = a[i.idx][i.char]
         bc = b[j.idx][j.char]
@@ -638,12 +639,19 @@ function align_unknown(a::Vector{String}, b::Vector{String})
             if new_mark != mark
                 mark = new_mark
             else
-                @info mark new_mark
-                error("Failed to align unknown tokens: $a, $b")
+                failed = true
+                break
             end
         else
-            error("Failed to align: $a, $b")
+            failed = true
+            break
         end
     end
+
+    if failed
+        @error "Alignment failed" a b sparse(I, J, trues(length(I)), length(a), length(b))
+        error("Failed to align unknown tokens")
+    end
+
     return sparse(I, J, trues(length(I)), length(a), length(b))
 end
