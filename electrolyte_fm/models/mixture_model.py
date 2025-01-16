@@ -1,8 +1,8 @@
 import torch
 from torch import nn
-from pytorch_lightning import LightningModule
-from pytorch_lightning.cli import LRSchedulerCallable, OptimizerCallable
-from pytorch_lightning.loggers import WandbLogger
+from lightning import LightningModule
+from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
+from lightning.pytorch.loggers import WandbLogger
 from torchmetrics import MeanAbsoluteError
 
 from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin

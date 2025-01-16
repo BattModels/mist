@@ -114,9 +114,17 @@ class Standardize(AbstractNormalizer):
     def inverse(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.mean) / self.std
 
+<<<<<<< HEAD
     def _fit(self, target: MaskedTensor) -> dict:
         self.mean = target.mean(0).get_data().to(self.mean)
         self.std = target.std(0).get_data().to(self.std) + self.eps
+=======
+    def fit(self, ds) -> dict:
+        target = torch.stack([torch.tensor(x).float() for x in ds["target"]])
+        print(f"target: {target.shape}")
+        self.mean = target.mean(0).to(self.mean)
+        self.std = target.std(0).to(self.std) + self.eps
+>>>>>>> 6754b94 (fix: RK polynomial head access incorrect attribute)
         return self.state_dict()
 
 

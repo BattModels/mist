@@ -4,14 +4,26 @@ from pathlib import Path
 from typing import Optional, Union
 
 import torch
-import pytorch_lightning as pl
+from lightning import LightningDataModule
 from datasets import Dataset, load_dataset
 from torch.utils.data import DataLoader
 from transformers import DataCollatorWithPadding, PreTrainedModel
 
-from ..models.model_utils import load_encoder
+from ..models.model_utils import DeepSpeedMixin
 from ..utils.tokenizer import load_tokenizer
 from .utils import MolEncoding, encode_molecules
+
+
+def load_encoder(name_or_path: str):
+    if Path(name_or_path).exists():
+        return DeepSpeedMixin.load(name_or_path).get_encoder()
+    else:
+        from transformers import AutoModel
+
+        return AutoModel.from_pretrained(
+            name_or_path,
+            trust_remote_code=True,
+        )
 
 
 def extract_hidden_state(
@@ -64,7 +76,7 @@ def extract_hidden_state(
     return {"embedding": mix_embedding, "target": target}
 
 
-class HiddenStateDataModule(pl.LightningDataModule):
+class HiddenStateDataModule(LightningDataModule):
     def __init__(
         self,
         name_or_path: str,
@@ -226,7 +238,7 @@ def collate_components_and_environment(
     return output
 
 
-class ComponentDataModule(pl.LightningDataModule):
+class ComponentDataModule(LightningDataModule):
     def __init__(
         self,
         path: str,

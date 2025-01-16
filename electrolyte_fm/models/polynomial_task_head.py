@@ -63,7 +63,7 @@ class RKPredictionTaskHead(PolynomialPredictionTaskHead):
 
         concat_embedding = torch.hstack(concat_embedding)
 
-        RK_coeffients = self.RK_coeffients(concat_embedding)
+        RK_coeffients = self.coeffients(concat_embedding)
 
         # excess term
         for i in range(self.n_components):
