@@ -118,9 +118,6 @@ end
         tokenizer = args_cmd["tokenizer"]
         tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
         dm, dataset = get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"])
-        if endswith(args_cmd["model"], ".bson")
-            @assert BSON.load(args_cmd["model"])[:tokenizer][:name] == tokenizer_name "ngram model must use the same tokenizer"
-        end
         model_loss(dm, args_cmd["model"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "merge"
@@ -154,57 +151,57 @@ end
 end
 
 function merge_usage_stats(files::Vector{String}; output::String="merged.jld2", splits::Vector{String}=["train", "val", "test"])
-    data = Dict{String,Any}()
+    merged = jldopen(output, "w")
     for file in files
         jldopen(file, "r") do other
             @info "Merging $file" other
             if haskey(other, "tokenizer")
-                if haskey(data, "tokenizer")
-                    @assert other["tokenizer"] == data["tokenizer"] "N-gram models must use the same tokenizer"
+                if haskey(merged, "tokenizer")
+                    @assert other["tokenizer"] == merged["tokenizer"] "N-gram models must use the same tokenizer"
                 else
-                    data["tokenizer"] = other["tokenizer"]
+                    merged["tokenizer"] = other["tokenizer"]
                 end
             end
 
             for split in splits
-                if haskey(data, split)
-                    data[split] = _merge_usage_stats(data[split], other[split])
+                if haskey(merged, split)
+                    merged[split]["out_of_vocab"] += other["out_of_vocab"]
+                    merged[split]["samples"] += other["samples"]
+                    merged[split]["out_of_vocab"] += other["out_of_vocab"]
+                    merged[split]["fertility"] = Dict(mergewith(+, merged[split]["fertility"], other["fertility"]))
+                    merged[split]["nunique"] = Dict(mergewith(+, merged[split]["nunique"], other["nunique"]))
+                    for n in 1:length(merged[split]["ngrams"])
+                        a_ngram = merged[split]["ngrams"]["$n"]
+                        b_ngram = compact_ngrams(other["ngrams"]["$n"])
+                        merged[split]["ngrams"]["$n"] = Dict(mergewith(+, a_ngram, b_ngram))
+                    end
                 else
-                    data[split] = other[split]
+                    merged[split]["out_of_vocab"] = other[split]["out_of_vocab"]
+                    merged[split]["samples"] = other[split]["samples"]
+                    merged[split]["out_of_vocab"] = other[split]["out_of_vocab"]
+                    merged[split]["fertility"] = other[split]["fertility"]
+                    merged[split]["nunique"] = other[split]["nunique"]
+                    for n in 1:length(other[split]["ngrams"])
+                        merged[split]["ngrams"]["$n"] = compact_ngrams(other[split]["ngrams"]["$n"])
+                    end
                 end
             end
-        end
-    end
-    jldopen(output, "w") do f
-        for (k, v) in data
-            f[k] = v
         end
     end
     return output
 end
 
-function _merge_usage_stats(a::NamedTuple, b::NamedTuple)
-    @assert Set(keys(a)) == Set(keys(b)) == Set([:samples, keys(tracked_stats())...])
-    samples = a.samples + b.samples
-    nunique = mergewith(+, a.nunique, b.nunique)
-    fertility = mergewith(+, a.fertility, b.fertility)
-    out_of_vocab = a.out_of_vocab + b.out_of_vocab
-    ngrams = map(1:5) do n
-        ang = a.ngrams[n]
-        bng = b.ngrams[n]
-        @assert keytype(ang) <: NTuple{n}
-        @assert keytype(bng) <: NTuple{n}
-        mergewith(+, compact_ngrams(ang), compact_ngrams(bng))
-    end
-    out = (; samples, nunique, fertility, out_of_vocab, ngrams)
-    @assert Set(keys(out)) == Set([:samples, keys(tracked_stats())...])
-    return out
-end
+"""
+When merging multi-file usage stats, switch counts to Float32 (avoid overflow) and
+ids to UInt16 (reduce memory usage)
 
-function compact_ngrams(ngrams::AbstractDict)
-    keytype(ngrams) == UInt16 && valuetype(ngrams) == Float32 && return ngrams
-    map(collect(pairs(ngrams))) do (k, v)
-        k = UInt16.(k)
-        k => Float32(v)
-    end |> Dict
+> Some tokenizer (e.g. Llama) use more tokens than UInt16 can hold, but for the
+> tokenizers requiring merging (APE and SmilesPE) this is fine.
+
+> TODO: Dynamically set this based on vocab size
+"""
+function compact_ngrams(T::Type, ngrams::AbstractDict)
+    Dict(T.(k) => Float32(v) for (k, v) in pairs(ngrams))
 end
+compact_ngrams(ngrams::AbstractDict) = compact_ngrams(UInt16, ngrams)
+

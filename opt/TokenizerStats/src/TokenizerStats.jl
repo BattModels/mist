@@ -6,8 +6,7 @@ using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, 
 using LinearAlgebra: normalize
 using StatsBase: StatsBase, Histogram, fit, nobs, mean, std
 using MPI: MPI
-using BSON: BSON
-using JLD2: jldopen
+using JLD2: JLD2, jldopen
 using JSON: JSON
 using SHA: SHA
 using Dates: now
@@ -58,6 +57,7 @@ function pretrain(path::AbstractString; tokenizer="smirk", encoding::String="smi
 end
 
 include("ngrams.jl")
+include("serialize.jl")
 include("collect.jl")
 include("finetune.jl")
 include("cli.jl")

@@ -53,37 +53,27 @@ function NGramModel(ngrams::Union{Tuple,Vector}, vocab_size::Int; special_tokens
     return NGramModel{N,G}(total, vocab_size, ngrams, special_tokens)
 end
 
-function load_ngram_model(file::String, split=:train)
+function load_ngram_model(file::String, split="train")
     # Open token stats file
-    suffix = last(splitext(file))
-    if suffix == ".bson"
-        ref = BSON.load(file)
-    elseif suffix == ".jld"
-        ref = deserialize(file)
-    elseif suffix == ".jld2"
-        stats = @timed jldopen(file, "r") do data
-            NamedTuple([:tokenizer => data["tokenizer"], split => data[string(split)]])
-        end
-        ref = stats.value
-        @debug "loaded ngram model" file stats.time stats.bytes stats.gctime stats.gcstats.total_time stats.compile_time stats.recompile_time
-    else
-        error("unknown filetype: $file")
-    end
+    @assert last(splitext(file)) == ".jld2" "Expected .jld2 file, got $file"
+    jldopen(file, "r") do data
+        # Extract tokenizer info
+        sha256 = bytes2hex(open(SHA.sha256, file))
+        name = data["tokenizer"][:name]
+        name = startswith(name, "smirk-gpe") ? "./" * name : name
+        tok = load_tokenizer(name)
+        vocab_size = pyconvert(Int, length(tok))
+        unk_token_id = pyconvert(Union{Nothing,Int}, tok.unk_token_id)
+        info = (; name, unk_token_id, vocab_size, split, sha256)
 
-    # Extract tokenizer info
-    name = ref[:tokenizer][:name]
-    name = startswith(name, "smirk-gpe") ? "./" * name : name
-    tok = load_tokenizer(name)
-    vocab_size = pyconvert(Int, length(tok))
-    ngram = NGramModel(tok, ref[split][:ngrams])
-    info = (;
-        name=ref[:tokenizer][:name],
-        unk_token_id=ref[:tokenizer][:unk_token_id],
-        vocab_size,
-        split,
-        sha256=bytes2hex(open(SHA.sha256, file))
-    )
-    return ngram, tok, info
+        # Construct N-gram model
+        grams = map(1:length(data[split]["ngrams"])) do i
+            data[split]["ngrams"][string(i)]
+        end
+        model = NGramModel(tok, grams)
+
+        return model, tok, info
+    end
 end
 
 function ngram_counts(dist::AbstractDict{<:Union{<:Integer,NTuple},<:Union{Integer,Float32}}, vocab_size::Int)

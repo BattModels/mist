@@ -15,14 +15,13 @@ function figure_token_usage(stats_dir)
 
     rows = []
     tokenizers = tokenizers_info(stats_dir)
-    pop!(tokenizers, "smirk-gpe-50k-nmb-ss", nothing)
     for name_or_path in keys(tokenizers)
         tok_info = tokenizers[name_or_path]
         usage_file = joinpath(stats_dir, tok_info["name_or_path"], "realspace", "usage.jld2")
         isfile(usage_file) || continue
 
         stats = jldopen(usage_file)
-        usage = stats["train"][:ngrams][1]
+        usage = stats["train"]["ngrams"]["1"]
         usage = Dict{Int,Int}(only(k) => v for (k, v) in pairs(usage))
         vocab_size = stats["tokenizer"][:vocab_size]
         unk_count = pop!(usage, stats["tokenizer"][:unk_token_id], 0)

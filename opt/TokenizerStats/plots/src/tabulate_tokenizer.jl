@@ -8,7 +8,7 @@ function usage_stats(stats_dir)
             dataset = dataset == "tmqm" ? "tmQM" : dataset
             for split in ["train", "val", "test"]
                 split ∉ keys(data) && continue
-                Set(keys(data[split])) >= Set([:samples, :out_of_vocab, :fertility]) || continue
+                Set(keys(data[split])) >= Set(["samples", "out_of_vocab", "fertility"]) || continue
                 fertility = mean_std_countmap(data[split][:fertility])
                 nunique = mean_std_countmap(data[split][:fertility])
                 push!(rows, (;
@@ -16,11 +16,11 @@ function usage_stats(stats_dir)
                     tokenizer,
                     dataset,
                     split,
-                    samples=data[split][:samples],
-                    out_of_vocab=data[split][:out_of_vocab],
+                    samples=data[split]["samples"],
+                    out_of_vocab=data[split]["out_of_vocab"],
                     avg_fertility=first(fertility),
                     std_fertility=last(fertility),
-                    max_fertility=maximum(keys(data[split][:fertility])),
+                    max_fertility=maximum(keys(data[split]["fertility"])),
                     avg_nunique=first(nunique),
                     std_nunique=last(nunique),
                 ))
@@ -77,25 +77,6 @@ end
 function model_loss_stats(stats_dir)
     rows = []
     for file in find(stats_dir, r"/model_loss\.jld2$")
-
-        # Get average fertility
-        usage = joinpath(dirname(file), "usage.jld2")
-        if !isfile(usage)
-            @warn "No usage file found for $file"
-            avg_fertility = Dict{String,Float64}()
-        else
-            avg_fertility = jldopen(usage, "r") do data
-                usage_data = Dict{String,Float64}()
-                for split in ["train", "val", "test"]
-                    haskey(data, split) || continue
-                    fertility = first(mean_std_countmap(data[split][:fertility]))
-                    usage_data[split] = fertility
-                end
-                return usage_data
-            end
-        end
-
-        # Get model loss
         jldopen(file) do data
             tokenizer = data["ref_tokenizer"][:name]
             dataset = basename(dirname(file))

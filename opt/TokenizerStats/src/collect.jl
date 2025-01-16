@@ -6,8 +6,8 @@ function tracked_stats()
     return (;
         fertility=CountMap(Int),
         nunique=CountMap(Int),
-        ngrams=ntuple(i -> CountMap(NTuple{i,Int}), 5),
         out_of_vocab=Counter(Int),
+        ngrams=ntuple(i -> CountMap(NTuple{i,Int}), 5),
     )
 end
 
@@ -103,10 +103,7 @@ function job_array_usage_stats(datamodule::Py, out_file::AbstractString; tokeniz
         tokenizer_stats = rank_usage_stats(datamodule, split; rank, size)
         @info "Saving results for $split on rank $rank" now()
         jldopen(out_file * ".tmp", "a+") do f
-            f[split] = (;
-                samples=nobs(tokenizer_stats),
-                map(value, tokenizer_stats.stats)...
-            )
+            serialize_usage!(f, split, tokenizer_stats)
         end
     end
 
@@ -147,10 +144,7 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
         tokenizer_stats = leader_reduce(merge!, rank_stats; comm)
         if rank == 0
             jldopen(out_file * ".tmp", "a+") do f
-                f[split] = (;
-                    samples=nobs(tokenizer_stats),
-                    map(value, tokenizer_stats.stats)...
-                )
+                serialize_usage!(f, split, tokenizer_stats)
             end
             @info "rank $rank: saved results for $split" now()
         end
@@ -177,7 +171,7 @@ function model_loss(datamodule::Py, ref_file::String, output::String)
     @info "Rank $rank of $size is starting" now()
 
     # Load Reference Tokenizer / n-gram model
-    ngram, ref_tok, ref_info = load_ngram_model(ref_file)
+    ngram, _, ref_info = load_ngram_model(ref_file)
     rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
 
     # Init Fit Stats
