@@ -70,12 +70,13 @@ class RKPredictionTaskHead(PolynomialPredictionTaskHead):
             x_i = batch[f"composition_{i}"]
             for j in range(i + 1, self.n_components):
                 x_j = batch[f"composition_{j}"]
-            for k in range(self.polynomial_order):
-                x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
-                RK_summation = torch.mul(
-                    torch.mul(-(1.0**k), RK_coeffients[:, k]), torch.pow((x_i - x_j), k)
-                )
-                P_m += torch.mul(x_ix_j, RK_summation).view(-1, 1)
+                for k in range(self.polynomial_order):
+                    x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
+                    RK_summation = torch.mul(
+                        torch.mul((-(1.0**k)), RK_coeffients[:, k]),
+                        torch.pow((x_i - x_j), k),
+                    )
+                    P_m += torch.mul(x_ix_j, RK_summation).view(-1, 1)
 
         return P_m  # [batch_size, 1]
 
@@ -119,7 +120,7 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
 
         for m in range(M):
             summation = torch.mul(
-                torch.mul(-(1.0**m), coeffients[:, m]),
+                torch.mul((-(1.0**m)), coeffients[:, m]),
                 torch.pow(x, self.polynomial_order - 2 * m),
             )
 
