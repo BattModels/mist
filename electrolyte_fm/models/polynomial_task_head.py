@@ -60,9 +60,7 @@ class RKPredictionTaskHead(PolynomialPredictionTaskHead):
         concat_embedding = tuple(
             batch[f"embedding_{i}"] for i in range(self.n_components)
         )
-
         concat_embedding = torch.hstack(concat_embedding)
-
         RK_coeffients = self.coeffients(concat_embedding)
 
         # excess term
@@ -73,7 +71,7 @@ class RKPredictionTaskHead(PolynomialPredictionTaskHead):
                 for k in range(self.polynomial_order):
                     x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
                     RK_summation = torch.mul(
-                        torch.mul((-(1.0**k)), RK_coeffients[:, k]),
+                        torch.mul(-(1.0**k), RK_coeffients[:, k]),
                         torch.pow((x_i - x_j), k),
                     )
                     P_m += torch.mul(x_ix_j, RK_summation).view(-1, 1)
@@ -85,7 +83,7 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
     def __init__(
         self,
         embed_dim: int,
-        polynomial_order: int = 4,
+        polynomial_order: int = 8,
         n_components: int = 2,
     ) -> None:
         super().__init__(
@@ -115,12 +113,13 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
         x_j = batch["composition_1"]
         x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
 
-        x = 2 * x_j - 1
+        x = 1 - 2 * x_j
+
         M = math.floor(0.5 * self.polynomial_order)
 
         for m in range(M):
             summation = torch.mul(
-                torch.mul((-(1.0**m)), coeffients[:, m]),
+                torch.mul(-(1.0**m), coeffients[:, m]),
                 torch.pow(x, self.polynomial_order - 2 * m),
             )
 
@@ -145,10 +144,14 @@ class ChebyshevPredictionTaskHead(PolynomialPredictionTaskHead):
     def chebyshev_poly(self, n, x):
         """Recursive formula to compute Chebyshev Polynomials T_n(x)"""
         if n == 0:
+            # base case: T_0 = 1
             return torch.ones_like(x)
         elif n == 1:
+            # base case: T_1 = x
             return x
         else:
+            # recurrence relation for chebyshev polynomials
+            # of the first kind  T_{n} = 2*x*T_{n-1} - T_{n-2}
             return torch.mul(
                 2 * x, self.chebyshev_poly(n - 1, x)
             ) - self.chebyshev_poly(n - 2, x)
@@ -161,26 +164,23 @@ class ChebyshevPredictionTaskHead(PolynomialPredictionTaskHead):
             P_i = self.single_substance_property(batch[f"embedding_{i}"])
             P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
 
+        # predict polynomial coefficients
         concat_embedding = tuple(
             batch[f"embedding_{i}"] for i in range(self.n_components)
         )
-
         concat_embedding = torch.hstack(concat_embedding)
-
         coeffients = self.coeffients(concat_embedding)
 
         # binary excess term
         x_i = batch["composition_0"]
         x_j = batch["composition_1"]
         x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
+        x = 1 - 2.0 * x_j
 
-        x = 2 * x_j - 1
-        M = math.floor(0.5 * self.polynomial_order)
-
-        for m in range(M):
+        for m in range(self.polynomial_order):
             summation = torch.mul(
-                torch.mul((-1.0) ** m, coeffients[:, m]),
-                self.chebyshev_poly(self.polynomial_order - 2 * m, x),
+                torch.mul(-(1.0**m), coeffients[:, m]),
+                self.chebyshev_poly(m, x),
             )
 
             P_m += torch.mul(x_ix_j, summation).view(-1, 1)
