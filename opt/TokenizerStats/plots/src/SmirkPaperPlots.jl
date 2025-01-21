@@ -58,7 +58,7 @@ const pt = 3 / 4
 const inch = 96
 
 function tokenizers_info(stats_dir)
-    data = JSON.parsefile(joinpath(stats_dir, "tokenizers.json"))
+    data = JSON.parsefile(abspath(joinpath(stats_dir, "..", "tokenizers.json")))
     return Dict(tok["name_or_path"] => tok for tok in data)
 end
 

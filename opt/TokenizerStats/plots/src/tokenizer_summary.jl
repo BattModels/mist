@@ -70,7 +70,7 @@ function tokenizer_summary(stats_dir; k=5)
     smirk = load_tokenizer("smirk")
     smirk_selfies = load_tokenizer("smirk-selfies")
     rows = []
-    for tokenizer in JSON.parsefile(joinpath(stats_dir, "tokenizers.json"))
+    for tokenizer in JSON.parsefile(abspath(joinpath(stats_dir, "..", "tokenizers.json")))
 
         # Count carbon containing tokens
         n_carbon_tokens = missing
@@ -107,7 +107,7 @@ end
 
 function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_stats)
     fmt(μ, σ) = "\\($(format(round(μ; sigdigits=3))) \\pm $(format(round(σ; sigdigits=3)))\\)"
-    tokenizers = JSON.parsefile(joinpath(stats_dir, "tokenizers.json"))
+    tokenizers = JSON.parsefile(abspath(joinpath(stats_dir, "..", "tokenizers.json")))
 
     model_loss = subset(model_loss, :ngram => ByRow(==(5)), :split => ByRow(==("val")))
     df_loss = tokenizer_dataset_avg(model_loss; metric=:loss_per_token_moments)
@@ -213,7 +213,7 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
                 &
                 &
                 \\multicolumn{2}{c|}{REAL Space} &
-                \\multicolumn{2}{c|}{MoleculeNet} & 
+                \\multicolumn{2}{c|}{MoleculeNet} &
                 \\multicolumn{2}{c}{tmQM} \\\\
                 Tokenizer &
                 Domain &
