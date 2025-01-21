@@ -122,7 +122,7 @@ class MixtureModelWithPhysics(LightningModule, DeepSpeedMixin, LoggingMixin):
                 output_hidden_states=True,
             ).last_hidden_state.mean(axis=1)
             embedding = torch.hstack((temperature.view(-1, 1), embedding))
-            batch[f"embedding_{i}"] = embedding
+            batch[f"embedding_{i}"] = embedding.float()
         pred_unscaled = self.task_network(batch).flatten()
         if transform:
             return self.transform.forward(pred_unscaled)

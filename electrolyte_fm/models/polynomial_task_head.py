@@ -92,6 +92,22 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
             n_components=n_components,
         )
 
+    def legendre_poly(self, n, x):
+        if n == 0:
+            # base case: T_0 = 1
+            return torch.ones_like(x)
+        elif n == 1:
+            # base case: T_1 = x
+            return x
+        else:
+            # recurrence relation for legendre polynomials
+            # Bonnet's formula: (n+1)*T_{n} = (2*n+1)*x*T_{n-1} - n*T_{n-2}
+            return torch.div(
+                torch.mul((2 * n + 1) * x, self.legendre_poly(n - 1, x))
+                - n * self.legendre_poly(n - 2, x),
+                n + 1,
+            )
+
     def forward(self, batch):
         P_m = 0
 
@@ -115,12 +131,10 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
 
         x = 1 - 2 * x_j
 
-        M = math.floor(0.5 * self.polynomial_order)
-
-        for m in range(M):
+        for m in range(self.polynomial_order):
             summation = torch.mul(
                 torch.mul(-(1.0**m), coeffients[:, m]),
-                torch.pow(x, self.polynomial_order - 2 * m),
+                self.legendre_poly(m, x),
             )
 
             P_m += torch.mul(x_ix_j, summation).view(-1, 1)

@@ -99,6 +99,7 @@ class HiddenStateDataModule(LightningDataModule):
         # Locate Tokeniser and dataset
         self.name_or_path = name_or_path
         self.tokenizer = load_tokenizer(tokenizer or name_or_path)
+        self.vocab_size = len(self.tokenizer)
         self.encoder_device = torch.device(encoder_device)
         self.path: Path = Path(path)
         self.return_molecule = return_molecule
@@ -211,7 +212,6 @@ def collate_components_and_environment(
     include_temperature,
     tokenizer,
     n_components,
-    encoder: PreTrainedModel = None,
     collate: DataCollatorWithPadding = None,
 ):
     target = args[-1]
@@ -258,6 +258,7 @@ class ComponentDataModule(LightningDataModule):
 
         # Locate Tokeniser and dataset
         self.tokenizer = load_tokenizer(tokenizer)
+        self.vocab_size = len(self.tokenizer)
         self.path: Path = Path(path)
         self.encoding = MolEncoding(encoding)
         self.target_col = target_col
