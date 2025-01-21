@@ -18,17 +18,17 @@ class PolynomialPredictionTaskHead(nn.Module):
         # predict property for single substance in mixture (P_i)
         self.single_substance_property = nn.Sequential(
             nn.Linear(embed_dim, embed_dim),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(embed_dim, embed_dim),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(embed_dim, 1),
         )
 
         self.coeffients = nn.Sequential(
             nn.Linear(self.n_components * embed_dim, embed_dim),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(embed_dim, embed_dim),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(embed_dim, polynomial_order),
         )
 
