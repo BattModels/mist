@@ -25,6 +25,7 @@ using TokenizerStats: load_tokenizer, find
 # Tabulate Results for plotting / analysis
 include("tabulate_results.jl")
 include("tabulate_tokenizer.jl")
+include("tokenizer_summary.jl")
 
 # Helper for plotting
 include("plot_utils.jl")
@@ -77,10 +78,13 @@ function (@main)(stats_dir=joinpath(pkgdir(TokenizerStats), "stats"))
     # Tokenizer Statistics
     loss_stats = model_loss_stats(stats_dir)
     info_loss = info_loss_stats(stats_dir)
-    # token_usage = usage_stats(stats_dir)
+    token_usage = usage_stats(stats_dir)
 
     # Transformer Models
     dfp, dff, dft = transformer_models(stats_dir)
+
+    # Tokenizer Summary
+    report_tokenizer_summary_stats(stats_dir, loss_stats, info_loss, token_usage)
 
     with_theme(theme()) do
         # Token Usage

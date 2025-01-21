@@ -314,8 +314,6 @@ function tmqm_finetune(stats_dir, dff, dft)
 
     df = innerjoin(df, dft; on=:id => :ckpt_id)
     return df
-
-
 end
 
 

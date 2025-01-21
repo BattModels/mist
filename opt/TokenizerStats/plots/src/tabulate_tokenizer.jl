@@ -9,20 +9,23 @@ function usage_stats(stats_dir)
             for split in ["train", "val", "test"]
                 split ∉ keys(data) && continue
                 Set(keys(data[split])) >= Set(["samples", "out_of_vocab", "fertility"]) || continue
-                fertility = mean_std_countmap(data[split][:fertility])
-                nunique = mean_std_countmap(data[split][:fertility])
+                samples = data[split]["samples"]
+                fertility = CountMap(data[split]["fertility"], samples)
+                nunique = CountMap(data[split]["fertility"], samples)
                 push!(rows, (;
                     file,
                     tokenizer,
                     dataset,
                     split,
-                    samples=data[split]["samples"],
+                    samples,
                     out_of_vocab=data[split]["out_of_vocab"],
-                    avg_fertility=first(fertility),
-                    std_fertility=last(fertility),
+                    fertility,
+                    nunique,
+                    avg_fertility=mean(fertility),
+                    std_fertility=std(fertility),
                     max_fertility=maximum(keys(data[split]["fertility"])),
-                    avg_nunique=first(nunique),
-                    std_nunique=last(nunique),
+                    avg_nunique=mean(nunique),
+                    std_nunique=std(nunique),
                 ))
             end
         end
@@ -30,6 +33,10 @@ function usage_stats(stats_dir)
     df = DataFrame(rows)
     return df
 end
+
+StatsBase.mean(s::OnlineStats.CountMap) = StatsBase.mean(collect(keys(s)), Weights(collect(values(s))))
+StatsBase.std(s::OnlineStats.CountMap) = StatsBase.std(collect(keys(s)), Weights(collect(values(s))))
+StatsBase.quantile(s::OnlineStats.CountMap, p) = StatsBase.quantile(collect(keys(s)), Weights(collect(values(s))), p)
 
 function mean_std_countmap(x::AbstractDict)
     v = keys(x)
@@ -133,91 +140,3 @@ function find_oov_samples(results::Dict)
     return df
 end
 
-function tokenizer_summary(stats_dir; k=5)
-    tokenizers = JSON.parsefile(joinpath(stats_dir, "tokenizers.json"))
-    smirk = load_tokenizer("smirk")
-    rows = []
-    for tokenizer in tokenizers
-        @info tokenizer
-        occursin("smirk-gpe", tokenizer["name"]) && continue
-        tok = load_tokenizer(tokenizer["name_or_path"])
-        domain = tokenizer["domain"]
-
-        # Count carbon containing tokens
-        local n_carbon_tokens
-        local carbon_tokens
-        if domain != :nlp
-            vocab = pyconvert(Vector{String}, values(tok.get_vocab()))
-            carbon_tokens = filter(x -> has_element(smirk, x), vocab)
-            n_carbon_tokens = length(carbon_tokens)
-        else
-            carbon_tokens = missing
-            n_carbon_tokens = missing
-        end
-
-        # Get top-5 tokens
-        usage_file = joinpath(stats_dir, tokenizer["name_or_path"], "realspace", "usage.jld2")
-        top_tokens = isfile(usage_file) ? top_k_tokens(usage_file; k) : missing
-
-        push!(rows, (;
-            tokenizer=tokenizer["name_or_path"],
-            domain=tokenizer["domain"],
-            class=tokenizer["tokenizer_class"],
-            encoding=tokenizer["encoding"],
-            vocab_size=pyconvert(Int, length(tok)),
-            carbon_tokens,
-            n_carbon_tokens,
-            top_tokens
-        ))
-    end
-    df = DataFrame(rows)
-    return df
-end
-
-function has_element(smirk::Py, smiles::String; element::String="C")
-    smiles = replace(smiles, "▁" => "")
-    local tokens
-    try
-        tokens = pyconvert(Vector{String}, smirk.tokenize(smiles))
-    catch
-        # Smirk's support for unicode is limited, ignore errors
-        @warn "failed to tokenize" smiles
-        return false
-    end
-    any(x -> occursin(r"\[[A-Z]*?]", x), tokens) && return false # Don't count tokens smirk can't parse
-    if length(tokens) == 1 && tokens[1] == element
-        return true
-    elseif !occursin(r"^\[.*?]$", smiles)
-        return false # Non-bracketed token -> skip
-    end
-    n = 0
-    for i in 1:length(tokens)
-        gram = tokens[i:min(i + 1, length(tokens))]
-        if length(gram) == 1 && gram[1] == element
-            n += 1
-        elseif length(gram) == 2
-            if gram[1] == element && !islowercase(gram[2][1])
-                n += 1
-            end
-        end
-    end
-    return n == 1 # Don't count merged tokens
-end
-
-function top_k_tokens(ngram_file; k=5)
-    # Load ngram model
-    ngram, tok, _ = TokenizerStats.load_ngram_model(ngram_file)
-
-    # Find the top k tokens
-    id_count = collect(pairs(ngram.ngrams[1]))
-    sort!(id_count; rev=true, by=last)
-    top_k = [first(id) for (id, _) in id_count[1:k]]
-
-    # Get the tokens
-    try
-        return pyconvert(Vector{String}, map(tok.decode, top_k))
-    catch
-        @warn "failed to decode tokens for $ngram_file"
-        return missing
-    end
-end
