@@ -71,7 +71,7 @@ class RKPredictionTaskHead(PolynomialPredictionTaskHead):
                 for k in range(self.polynomial_order):
                     x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
                     RK_summation = torch.mul(
-                        torch.mul(-(1.0**k), RK_coeffients[:, k]),
+                        torch.mul((-1.0) ** k, RK_coeffients[:, k]),
                         torch.pow((x_i - x_j), k),
                     )
                     P_m += torch.mul(x_ix_j, RK_summation).view(-1, 1)
@@ -133,7 +133,7 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
 
         for m in range(self.polynomial_order):
             summation = torch.mul(
-                torch.mul(-(1.0**m), coeffients[:, m]),
+                torch.mul((-1.0) ** m, coeffients[:, m]),
                 self.legendre_poly(m, x),
             )
 
@@ -193,7 +193,7 @@ class ChebyshevPredictionTaskHead(PolynomialPredictionTaskHead):
 
         for m in range(self.polynomial_order):
             summation = torch.mul(
-                torch.mul(-(1.0**m), coeffients[:, m]),
+                torch.mul((-1.0) ** m, coeffients[:, m]),
                 self.chebyshev_poly(m, x),
             )
 
