@@ -226,6 +226,47 @@ end
     end
 end
 
+@testitem "Tricky Alignments" begin
+    using TokenizerStats: load_tokenizer, compute_unknown_mask
+    using PythonCall: pyconvert
+
+    ref_tok = load_tokenizer("character")
+    function check_mask(tok, ref_tok, smi, expected; ref=nothing)
+        @testset "check mask: $smi" begin
+            mask = compute_unknown_mask(tok, ref_tok, smi)
+            @test length(mask) == length(ref_tok.encode(smi))
+            @test mask == expected
+        end
+    end
+    @testset "MoLFormer" begin
+        tok = load_tokenizer("ibm/MoLFormer-XL-both-10pct-oov")
+        check_mask(tok, ref_tok, "C[Pt@H]C", [0, 1, 1, 1, 1, 1, 1, 0])
+        check_mask(tok, ref_tok, "CCl", [0, 0, 0])
+        check_mask(tok, ref_tok, "CCy", [0, 0, 1])
+        check_mask(tok, ref_tok, "C[Ni@TB12]123", [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0])
+    end
+    @testset "SMILYAPE" begin
+        tok = load_tokenizer("mikemayuare/SMILYAPE")
+        check_mask(tok, ref_tok, "C[Pt@H]C", [0, 1, 0, 1, 1, 1, 1, 0])
+        check_mask(tok, ref_tok, "CCl", [0, 0, 0])
+        check_mask(tok, ref_tok, "CCy", [0, 0, 1])
+        check_mask(tok, ref_tok, "C[Ni@TB12]123", [0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0])
+    end
+    @testset "SELFormer" begin
+        tok = load_tokenizer("HUBioDataLab/SELFormer")
+        check_mask(tok, ref_tok, "[C][Pt@H1][C]", [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+        check_mask(tok, ref_tok, "[C][Cl]", zeros(7))
+        check_mask(tok, ref_tok, "CCy", [0, 0, 1])
+    end
+    @testset "4o" begin
+        ref_tok = load_tokenizer("Xenova/gpt-4o")
+        tok = load_tokenizer("sagawa/ReactionT5-product-prediction")
+        check_mask(tok, ref_tok, "C[Pt@H]C", falses(7))
+        check_mask(tok, ref_tok, "CCy", [0, 1])
+        check_mask(tok, ref_tok, "C[Ni@TB12]123", [0, 0, 0, 0, 1, 0, 0, 0]) # Misses the B
+    end
+end
+
 @testitem "Rm Special Tokens" begin
     using TokenizerStats: load_tokenizer, rm_special_tokens
     using PythonCall: pyconvert

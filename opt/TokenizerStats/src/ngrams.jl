@@ -506,28 +506,17 @@ Compute the information_loss from unknown tokens using a character-tokenizer as 
     code = pyconvert(Vector{Int}, encoding["input_ids"])
     (unk_token_id ∉ code) && return zeros(length(N))
 
-    # Align both tokenizations
-    smi_tokens = pyconvert(Vector{String}, tok.tokenize(encoding[smi_column]))
-    ref_tokens = pyconvert(Vector{String}, ref_tok.tokenize(encoding[smi_column]))
-    smi_tokens = rm_special_tokens(tok, smi_tokens)
-    ref_tokens = rm_special_tokens(ref_tok, ref_tokens)
-    A = align_unknown(ref_tokens, smi_tokens)
-
     # Mask out unknown tokens
-    masked = map(!, vec(any(A; dims=2)))
+    masked = compute_unknown_mask(tok, ref_tok, encoding[smi_column])
     !(any(masked)) && return zeros(length(N)) # Unexpected, but possible if unk is from whitespace
 
     # Compute information_loss from unknown tokens
     ref_code = pyconvert(Vector{Int}, ref_tok(encoding[smi_column])["input_ids"])
-    ref_code = rm_special_tokens(ref_tok, ref_code, length(masked))
     @assert length(masked) == length(ref_code)
     return map(n -> information_loss(ngram, ref_code, masked; N=n), N)
 end
 
-function rm_special_tokens(tok::Py, code::Vector{<:Integer}, n::Integer)
-    # If the code is already of length n, return it
-    length(code) == n && return code
-
+function rm_special_tokens(tok::Py, code::Vector{<:Integer})
     # Remove special tokens from the code
     unk_token_id = pyconvert(Int, tok.unk_token_id)
     special_tokens = pyconvert(Vector{Int}, tok.all_special_ids)
@@ -552,6 +541,70 @@ function _advance_idx(token::String, index::NamedTuple)
         idx += 1
     end
     return (; idx, char)
+end
+
+function compute_unknown_mask(tok, ref_tok, smi)
+    tok_out = _maybe_tokenize_offset(tok, smi)
+    ref_tok_out = _maybe_tokenize_offset(ref_tok, smi)
+
+    unk_token_id = pyconvert(Int, tok.unk_token_id)
+    if !isnothing(tok_out.offsets) && !isnothing(ref_tok_out.offsets)
+        A = align_offset_masks(tok_out.offsets, ref_tok_out.offsets)
+        known_tokens = @. tok_out.ids != unk_token_id
+        A[known_tokens, :] .= false
+        return vec(any(A; dims=1))
+    else
+        # Fallback to aligning based on the text
+        tok_tokens = decode_non_special(tok, tok_out.ids)
+        ref_tokens = decode_non_special(ref_tok, ref_tok_out.ids)
+        A = align_unknown(ref_tokens, tok_tokens)
+        return map(!, vec(any(A; dims=2)))
+    end
+end
+
+function decode_non_special(tok::Py, ids::Vector{Int})
+    ids = rm_special_tokens(tok, ids)
+    tokens = pyconvert(Vector{String}, tok.convert_ids_to_tokens(ids))
+    return rm_special_tokens(tok, tokens)
+end
+
+function _maybe_tokenize_offset(tok, smi)
+    local out
+    try
+        out = tok.encode_plus(smi; return_offsets_mapping=true)
+    catch
+        out = tok(smi)
+    end
+    if haskey(out, "offset_mapping")
+        offsets = pyconvert(Vector{Tuple{Int,Int}}, out["offset_mapping"])
+        ids = pyconvert(Vector{Int}, out["input_ids"])
+        return (; ids, offsets)
+    else
+        @assert haskey(out, "input_ids")
+        ids = pyconvert(Vector{Int}, out["input_ids"])
+        return (; ids, offsets=nothing)
+    end
+end
+
+function align_offset_masks(a::Vector{Tuple{Int,Int}}, b::Vector{Tuple{Int,Int}})
+    I = Int[]
+    J = Int[]
+    v = Bool[]
+    for j in eachindex(b)
+        for i in eachindex(a)
+            if tokens_overlap(a[i], b[j])
+                push!(I, i)
+                push!(J, j)
+                push!(v, true)
+            end
+        end
+    end
+    return sparse(I, J, trues(length(I)), length(a), length(b))
+end
+function tokens_overlap(a::Tuple{Int,Int}, b::Tuple{Int,Int})
+    a_start, a_end = a
+    b_start, b_end = b
+    return !(a_end <= b_start || b_end <= a_start)
 end
 
 """
