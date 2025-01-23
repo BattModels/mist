@@ -5,7 +5,7 @@ function has_element(smirk::Py, smiles::String; element::String="C")
         tokens = pyconvert(Vector{String}, smirk.tokenize(smiles))
     catch
         # Smirk's support for unicode is limited, ignore errors
-        @warn "failed to tokenize" smiles
+        @debug "failed to tokenize" smiles
         return false
     end
     any(==("[UNK]"), tokens) && return false # Don't count tokens smirk can't parse
@@ -29,26 +29,25 @@ function has_element(smirk::Py, smiles::String; element::String="C")
 end
 
 function top_k_tokens(ngram_file; k=5)
-    # Load ngram model
-    local ngram, tok
-    try
-        ngram, tok, _ = TokenizerStats.load_ngram_model(ngram_file)
-    catch
-        return missing
+    # Load unigram statistics 
+    unigram, tok = jldopen(ngram_file, "r") do data
+        # Load tokenizer
+        name = data["tokenizer"][:name]
+        name = startswith(name, "smirk-gpe") ? "./" * name : name
+        tok = load_tokenizer(name)
+
+        # Get unigram stats
+        unigram = data["train"]["ngrams"]["1"]
+        return unigram, tok
     end
 
     # Find the top k tokens
-    id_count = collect(pairs(ngram.ngrams[1]))
+    id_count = collect(unigram)
     sort!(id_count; rev=true, by=last)
     top_k = [first(id) for (id, _) in id_count[1:k]]
 
     # Get the tokens
-    try
-        return pyconvert(Vector{String}, map(tok.decode, top_k))
-    catch
-        @warn "failed to decode tokens for $ngram_file"
-        return missing
-    end
+    return pyconvert(Vector{String}, tok.convert_ids_to_tokens(top_k))
 end
 
 function tokenizer_dataset_avg(model_loss; metric=:loss_per_token_moments)
@@ -77,14 +76,23 @@ function tokenizer_summary(stats_dir; k=5)
         carbon_tokens = missing
         vocab_size = missing
         try
-            tok = load_tokenizer(tokenizer["name_or_path"])
-            vocab = pyconvert(Vector{String}, values(tok.get_vocab()))
-            ref_tok = tokenizer["encoding"] == "smiles" ? smirk : smirk_selfies
+            name_or_path = tokenizer["name_or_path"]
+            name_or_path = startswith(name_or_path, "smirk-gpe") ? "./" * name_or_path : name_or_path
+            tok = load_tokenizer(name_or_path)
+
+            # Extract full vocab 
             vocab_size = pyconvert(Int, length(tok))
+            pyvocab = tok.convert_ids_to_tokens(collect(range(0; length=vocab_size)))
+            vocab = map(token -> pyconvert(String, token, nothing), pyvocab)
+            vocab = filter(!isnothing, vocab)
+
+            # Count Carbon containing tokens
+            ref_tok = tokenizer["encoding"] == "smiles" ? smirk : smirk_selfies
             has_carbon(x) = has_element(ref_tok, x; element="C") || has_element(ref_tok, x; element="c")
             carbon_tokens = filter(has_carbon, vocab)
             n_carbon_tokens = length(carbon_tokens)
-        catch
+        catch e
+            @warn "Failed to get stats for $(tokenizer["name"])" e
         end
 
         # Get top-5 tokens
@@ -105,7 +113,7 @@ function tokenizer_summary(stats_dir; k=5)
     return DataFrame(rows)
 end
 
-function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_stats)
+function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_stats; k=5)
     fmt(μ, σ) = "\\($(format(round(μ; sigdigits=3))) \\pm $(format(round(σ; sigdigits=3)))\\)"
     tokenizers = JSON.parsefile(abspath(joinpath(stats_dir, "..", "tokenizers.json")))
 
@@ -127,8 +135,7 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
     leftjoin!(df, df_fertility; on=[:tokenizer, :dataset])
     sort!(df, [:tokenizer, :dataset])
 
-    k = 5
-    df_toks = tokenizer_summary(stats_dir; k)
+    df_toks = @show tokenizer_summary(stats_dir; k)
 
     tok_name = map(tokenizers) do tok
         if tok["source"] == "ours"
@@ -199,6 +206,7 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
     select!(df_out, Not("name_or_path"))
 
     fig_dir = joinpath(pkgdir(TokenizerStats), "fig")
+    mkpath(fig_dir)
     open(joinpath(fig_dir, "tokenizer_summary.tex"), "w") do fid
         header = """
             \\begin{landscape}
@@ -248,9 +256,9 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
                 $(row["cross_entropy_realspace"]) &
                 $(row["fertility_realspace"]) &
                 $(row["cross_entropy_molnet"]) &
-                $(row["info_loss_molnet"]) &
+                $(coalesce(row["info_loss_molnet"], "---")) &
                 $(row["cross_entropy_tmqm"]) &
-                $(row["info_loss_tmqm"]) \\\\
+                $(coalesce(row["info_loss_tmqm"], "---")) \\\\
             """
             write(fid, line)
         end

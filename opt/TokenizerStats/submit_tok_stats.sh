@@ -10,10 +10,7 @@ my_job_header
 cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 
 # Activate Environment
-module purge
-module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
 source ./activate
-export TOKENIZERS_PARALLELISM=false
 env
 
 # module load cuda/12.2.1

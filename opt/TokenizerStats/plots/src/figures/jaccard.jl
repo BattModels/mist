@@ -1,22 +1,20 @@
 function figure_jaccard(stats_dir)
     # Compare the vocabularies of different tokenizers
-    tokenizers = collect(keys(tokenizers_info(stats_dir)))
-    J, k = tokenizer_jaccard(tokenizers)
+    tokenizers = tokenizers_info(stats_dir)
+    J, k = tokenizer_jaccard(collect(keys(tokenizers)))
 
     # Reports stats
     @info "Jacard Index 90th percentile" quantile(filter(!=(1), vec(J)), 0.90)
-    @info "Top 10 Jacard Index" sort(unique(vec(J)))[end-10:end]
-    @info "Llama 3.1 v. GPT-4o" J[findfirst(==("meta-llama/Meta-Llama-3.1-8B"), k), findfirst(==("Xenova/gpt-4o"), k)]
 
     f = Figure(;
         size=72 .* (4.4, 3.5),
         figure_padding=(1, 1, 1, 5),
     )
-    k = map(k -> TOKENIZERS[k], k)
+    names = [tokenizers[name_or_path]["name"] for name_or_path in k]
     ax = Axis(f[1, 1];
         aspect=1,
-        xticks=(1:length(k), k),
-        yticks=(1:length(k), k),
+        xticks=(1:length(names), names),
+        yticks=(1:length(names), names),
         xticklabelrotation=pi / 4,
         xticklabelsize=6,
         yticklabelsize=6,
@@ -37,9 +35,9 @@ function tokenizer_jaccard(tokenizers::Vector{String})
         name_or_path = startswith(tokenizer, "smirk-gpe") ? "./" * tokenizer : tokenizer
         tok = TokenizerStats.load_tokenizer(name_or_path)
         vocab_size = pyconvert(Int, length(tok))
-        pytokens = map(id -> tok.decode([id]), range(0; length=vocab_size))
-        tokens = pyconvert(Vector{String}, pytokens)
-        return tokenizer => tokens
+        pytokens = tok.convert_ids_to_tokens(collect(range(0; length=vocab_size)))
+        tokens = map(token -> pyconvert(String, token, nothing), pytokens)
+        return tokenizer => filter(!isnothing, tokens)
     end |> Dict
     return tokenizer_jaccard(tok_tokens)
 end

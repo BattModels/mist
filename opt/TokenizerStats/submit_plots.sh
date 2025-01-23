@@ -1,10 +1,8 @@
 #!/bin/bash
 #SBATCH -p venkvis-cpu
-#SBATCH --cpus-per-task=8
-#SBATCH --ntasks=1
-#SBATCH --mem-per-cpu=1G
-#SBATCH --time 0:30:0
-
+#SBATCH --cpus-per-task 8
+#SBATCH --mem-per-cpu 1800M
+#SBATCH --time=0:20:00
 set -x
 my_job_header
 
@@ -15,8 +13,4 @@ cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 source ./activate
 env
 
-python src/atomic_oov.py $@
-
-exit_code=$?
-echo "`date`: done"
-exit $exit_code
+julia --color=no --startup-file=no --project=plots -e 'using SmirkPaperPlots; SmirkPaperPlots.main()'

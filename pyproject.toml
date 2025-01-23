@@ -23,7 +23,7 @@ jsonnet = "^0.20.0"
 scikit-learn= "^1.5.1"
 selfies= "^2.1.0"
 rdkit = "^2024.3.5"
-smirk = {git = "git@github.com:BattModels/smirk.git", rev = "8061286a219420571d606d98083dd900aaa21d02" }
+smirk = {git = "git@github.com:BattModels/smirk.git", rev = "8bfd76adba880d776ff547837400a5873ab975ea" }
 
 # Pin pytorch_lightning too: https://github.com/Lightning-AI/pytorch-lightning/issues/20000
 pytorch-lightning = "~2.3"

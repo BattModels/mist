@@ -9,7 +9,7 @@ using CairoMakie: CairoMakie
 using Colors: distinguishable_colors, weighted_color_mean, RGBA
 using Format: format
 using PythonCall: Py, pyconvert
-using StatsBase: StatsBase, mean, stderr, mean_and_std, AbstractWeights, Weights
+using StatsBase: StatsBase, mean, stderr, mean_and_std, quantile, AbstractWeights, Weights
 using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
 using JLD2: jldopen
 using JSON: JSON
@@ -84,13 +84,13 @@ function (@main)(stats_dir=joinpath(pkgdir(TokenizerStats), "stats"))
     dfp, dff, dft = transformer_models(stats_dir)
 
     # Tokenizer Summary
-    report_tokenizer_summary_stats(stats_dir, loss_stats, info_loss, token_usage)
+    report_tokenizer_summary_stats(stats_dir, loss_stats, info_loss, token_usage; k=3)
 
     with_theme(theme()) do
         # Token Usage
         savefig("token_usage", figure_token_usage(stats_dir))
         savefig("oov_rate", figure_oov_rate(stats_dir))
-        # savefig("jaccard", figure_jaccard())
+        savefig("jaccard", figure_jaccard(stats_dir))
 
         # Transformers vs. N-Grams
         df = ngram_vs_transformer_fits(stats_dir, loss_stats, dfp)
@@ -103,14 +103,7 @@ function (@main)(stats_dir=joinpath(pkgdir(TokenizerStats), "stats"))
 
         # N-Gram Analysis
         savefig("ngram_fits", figure_ngram_fits(loss_stats, stats_dir))
-        # savefig("ngram_unk_log_odds", figure_ngram_info_loss())
         savefig("kl_v_info_loss", figure_kl_v_info_loss(stats_dir, loss_stats, info_loss, df))
-        # savefig("info_loss_ref_tokenzier", figure_info_loss_ref_tokenizer(info_loss))
-
-        # savefig("ngrma_unk_log_odds_cobalt", figure_ngram_info_loss(;
-        #     smi="[Cl-][Co+2@OH1]([Cl-])([NH3])([NH3])([NH3])[NH3]",
-        #     token_colors=("[NH3]" => :magenta, "[Co+2@OH1]" => :turquoise, "[Cl-]" => :orange)
-        # ))
 
         # Example n-gram predictions
         compunds = [
