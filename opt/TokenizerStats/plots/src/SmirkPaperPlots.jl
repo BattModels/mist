@@ -18,6 +18,7 @@ using HypothesisTests: HypothesisTests, HypothesisTest, VarianceEqualityTest, pv
 using Distributions: Chisq, FDist, Normal
 using OrderedCollections: OrderedDict
 using CSV: CSV
+using Clustering: hclust
 
 using TokenizerStats
 using TokenizerStats: load_tokenizer, find

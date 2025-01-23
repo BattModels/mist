@@ -1,16 +1,24 @@
 function figure_jaccard(stats_dir)
     # Compare the vocabularies of different tokenizers
     tokenizers = tokenizers_info(stats_dir)
-    J, k = tokenizer_jaccard(collect(keys(tokenizers)))
+    J, names = tokenizer_jaccard(collect(keys(tokenizers)))
+    names = [tokenizers[name_or_path]["name"] for name_or_path in names]
+    figure_jaccard(J, names)
+end
+
+function figure_jaccard(J::Matrix, names::Vector{String})
+    # Cluster hierarchically
+    h = hclust(J; linkage=:single, branchorder=:optimal)
+    J = J[h.order, h.order]
+    names = names[h.order]
 
     # Reports stats
     @info "Jacard Index 90th percentile" quantile(filter(!=(1), vec(J)), 0.90)
 
     f = Figure(;
-        size=72 .* (4.4, 3.5),
+        size=72 .* (6, 5),
         figure_padding=(1, 1, 1, 5),
     )
-    names = [tokenizers[name_or_path]["name"] for name_or_path in k]
     ax = Axis(f[1, 1];
         aspect=1,
         xticks=(1:length(names), names),
@@ -19,13 +27,15 @@ function figure_jaccard(stats_dir)
         xticklabelsize=6,
         yticklabelsize=6,
     )
-    h = heatmap!(ax, J; colormap=:lajolla, colorrange=(0, 1))
+    h = heatmap!(ax, J; colormap=:lipari, colorrange=(0, 1))
     Colorbar(f[1, 2];
         tickformat="{:.0%}",
+        ticks=LinearTicks(6),
         label="Jaccard Index",
         colormap=h.colormap,
         colorrange=h.colorrange,
     )
+    colgap!(f.layout, 5)
     resize_to_layout!(f)
     return f
 end
