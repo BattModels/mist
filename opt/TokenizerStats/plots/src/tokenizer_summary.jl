@@ -1,33 +1,3 @@
-function has_element(smirk::Py, smiles::String; element::String="C")
-    smiles = replace(smiles, "▁" => "")
-    local tokens
-    try
-        tokens = pyconvert(Vector{String}, smirk.tokenize(smiles))
-    catch
-        # Smirk's support for unicode is limited, ignore errors
-        @debug "failed to tokenize" smiles
-        return false
-    end
-    any(==("[UNK]"), tokens) && return false # Don't count tokens smirk can't parse
-    if length(tokens) == 1 && tokens[1] == element
-        return true
-    elseif !occursin(r"^\[.*?]$", smiles)
-        return false # Non-bracketed token -> skip
-    end
-    n = 0
-    for i in 1:length(tokens)
-        gram = tokens[i:min(i + 1, length(tokens))]
-        if length(gram) == 1 && gram[1] == element
-            n += 1
-        elseif length(gram) == 2
-            if gram[1] == element && !islowercase(gram[2][1])
-                n += 1
-            end
-        end
-    end
-    return n == 1 # Don't count merged tokens
-end
-
 function top_k_tokens(ngram_file; k=5)
     # Load unigram statistics 
     unigram, tok = jldopen(ngram_file, "r") do data
@@ -66,38 +36,18 @@ end
 """ Compute the top-k tokens and number of carbon tokens for each tokenizer """
 function tokenizer_summary(stats_dir; k=5)
     # Tokenizer stats
-    smirk = load_tokenizer("smirk")
-    smirk_selfies = load_tokenizer("smirk-selfies")
     rows = []
     for tokenizer in JSON.parsefile(abspath(joinpath(stats_dir, "..", "tokenizers.json")))
-
-        # Count carbon containing tokens
-        n_carbon_tokens = missing
-        carbon_tokens = missing
-        vocab_size = missing
-        try
-            name_or_path = tokenizer["name_or_path"]
-            name_or_path = startswith(name_or_path, "smirk-gpe") ? "./" * name_or_path : name_or_path
-            tok = load_tokenizer(name_or_path)
-
-            # Extract full vocab 
-            vocab_size = pyconvert(Int, length(tok))
-            pyvocab = tok.convert_ids_to_tokens(collect(range(0; length=vocab_size)))
-            vocab = map(token -> pyconvert(String, token, nothing), pyvocab)
-            vocab = filter(!isnothing, vocab)
-
-            # Count Carbon containing tokens
-            ref_tok = tokenizer["encoding"] == "smiles" ? smirk : smirk_selfies
-            has_carbon(x) = has_element(ref_tok, x; element="C") || has_element(ref_tok, x; element="c")
-            carbon_tokens = filter(has_carbon, vocab)
-            n_carbon_tokens = length(carbon_tokens)
-        catch e
-            @warn "Failed to get stats for $(tokenizer["name"])" e
-        end
-
-        # Get top-5 tokens
         usage_file = joinpath(stats_dir, tokenizer["name_or_path"], "realspace", "usage.jld2")
-        top_tokens = isfile(usage_file) ? top_k_tokens(usage_file; k) : missing
+        if isfile(usage_file)
+            vocab_size = jldopen(usage_file) do data
+                return data["tokenizer"].vocab_size
+            end
+            top_tokens = top_k_tokens(usage_file; k)
+        else
+            vocab_size = missing
+            top_tokens = missing
+        end
 
         push!(rows, (;
             tokenizer=tokenizer["name_or_path"],
@@ -105,9 +55,7 @@ function tokenizer_summary(stats_dir; k=5)
             class=tokenizer["tokenizer_class"],
             encoding=tokenizer["encoding"],
             vocab_size,
-            carbon_tokens,
-            n_carbon_tokens,
-            top_tokens
+            top_tokens,
         ))
     end
     return DataFrame(rows)
@@ -161,8 +109,6 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
         "Encoding" => [x["encoding"] for x in tokenizers],
         "Class" => [x["tokenizer_class"] for x in tokenizers],
         "Vocab. Size" => df_toks[:, :vocab_size],
-        "Carbon Tokens Count" => df_toks[:, :n_carbon_tokens],
-        "Carbon Tokens" => df_toks[:, :carbon_tokens],
         "Top-$k" => df_toks[:, :top_tokens],
     )
 
@@ -212,7 +158,7 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
             \\begin{landscape}
             \\begin{table}
             \\resizebox{\\linewidth}{!}{%
-                \\begin{tabular}{llllccc|cc|cc|cc}
+                \\begin{tabular}{llllcc|cc|cc|cc}
                 &
                 &
                 &
@@ -227,8 +173,6 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
                 Domain &
                 Encoding &
                 Class &
-                Vocab Size &
-                Carbon Tokens &
                 Top-$k &
                 \\(H\\) &
                 Fertility &
@@ -250,8 +194,6 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
                 $(row["Domain"]) &
                 $(row["Encoding"]) &
                 $(row["Class"]) &
-                $(row["Vocab. Size"]) &
-                $(coalesce(row["Carbon Tokens Count"], "---")) &
                 $top_k_tokens &
                 $(row["cross_entropy_realspace"]) &
                 $(row["fertility_realspace"]) &
