@@ -108,7 +108,7 @@ function (@main)(stats_dir=joinpath(pkgdir(TokenizerStats), "stats"))
 
         # Example n-gram predictions
         compunds = [
-            "caffine" => "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
+            "caffeine" => "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
             "lsd" => "CCN(CC)C(=O)[C@H]1CN([C@@H]2Cc3c[nH]c4c3c(ccc4)C2=C1)C",
             "cortisol" => "O=C4\\C=C2/[C@]([C@H]1[C@@H](O)C[C@@]3([C@@](O)(C(=O)CO)CC[C@H]3[C@@H]1CC2)C)(C)CC4",
         ]

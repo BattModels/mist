@@ -113,7 +113,7 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
     )
 
     # Format for publication
-    replace!(df_out[!, "Class"], "smirk-gpe" => "GPE", "spe" => "SPE", "bpe" => "BPE", "unigram" => "Unigram", "atomwise" => "Atomwise")
+    replace!(df_out[!, "Class"], "smirk-gpe" => "GPE", "spe" => "SPE", "bpe" => "BPE", "unigram" => "Unigram", "atomwise" => "Atom-wise")
     replace!(df_out[!, "Domain"], "chemistry" => "Chemistry", "nlp" => "NLP", "nlp-science" => "NLP - Science", "nlp-matsci" => "NLP - Mat. Sci")
     replace!(df_out[!, "Encoding"], "selfies" => "SELFIES", "smiles" => "SMILES")
     df_out[!, "Top-$k"] = map(df_out[!, "Top-$k"]) do top_k_tokens
@@ -158,9 +158,7 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
             \\begin{landscape}
             \\begin{table}
             \\resizebox{\\linewidth}{!}{%
-                \\begin{tabular}{llllcc|cc|cc|cc}
-                &
-                &
+            \begin{tabular}{llllc|cc|cc|cc}
                 &
                 &
                 &
