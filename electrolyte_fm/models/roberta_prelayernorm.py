@@ -18,12 +18,8 @@ class RoBERTaPreLayerNorm(RoBERTa):
         self.config = RobertaPreLayerNormConfig(vocab_size=vocab_size, **model_kwargs)
 
     def configure_model(self):
-<<<<<<< HEAD
         if not hasattr(self, "model"):
             self.model = RobertaPreLayerNormForMaskedLM(config=self.config)
-=======
-        self.model = RobertaPreLayerNormForMaskedLM(config=self.config)
->>>>>>> 80ecab3 (fix: clean up commented code and explicitly cast targets to float in transform)
 
     def get_encoder(self):
         if not hasattr(self, "model"):

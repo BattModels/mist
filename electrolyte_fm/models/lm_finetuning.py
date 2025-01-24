@@ -34,24 +34,9 @@ def load_encoder(encoder: str | Path | torch.nn.Module, load_weights: bool = Tru
     else:
         from transformers import AutoModel
 
-<<<<<<< HEAD
         return AutoModel.from_pretrained(
             encoder, trust_remote_code=True, add_pooling_layer=False
         )
-=======
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return (self.std * x) + self.mean
-
-    def inverse(self, x: torch.Tensor) -> torch.Tensor:
-        return (x - self.mean) / self.std
-
-    def fit(self, ds) -> dict:
-        target = torch.stack([torch.tensor(x).float() for x in ds["target"]])
-        print(f"target: {target.shape}")
-        self.mean = target.mean(0).to(self.mean)
-        self.std = target.std(0).to(self.std) + self.eps
-        return self.state_dict()
->>>>>>> 80ecab3 (fix: clean up commented code and explicitly cast targets to float in transform)
 
 
 class LMFinetuning(LightningModule, DeepSpeedMixin):

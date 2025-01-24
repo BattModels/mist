@@ -123,6 +123,7 @@ class SaveConfigWithCkpts(Callback):
         model_cls = importlib.import_module(
             ".".join(import_path[:-1])
         ).__getattribute__(import_path[-1])
+
         assert import_path[-1] == model_cls.__name__
         model = model_cls(**model_config)
 
