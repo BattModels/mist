@@ -144,12 +144,12 @@ def evaluate_dataset(
                 if target:
                     stats["auroc"][name] = roc_auc_score(ds[target], ds[name])
 
-        else:
-            ds = ds.map(
-                lambda x: {name: scorer(x)}, input_columns=smi_column, batched=False
-            )
-            if target:
-                stats["auroc"][name] = roc_auc_score(ds[target], ds[name])
+        # else:
+        #     ds = ds.map(
+        #         lambda x: {name: scorer(x)}, input_columns=smi_column, batched=False
+        #     )
+        #     if target:
+        #         stats["auroc"][name] = roc_auc_score(ds[target], ds[name])
 
     # Score Molecules
     df = ds.to_pandas()
@@ -160,6 +160,7 @@ def evaluate_dataset(
 
 if __name__ == "__main__":
     syba = syba_scorer()
+    scscore = SCScorer()
     metrics = {
         "sascore": sascore,
         "syba": lambda smi: -syba.predict(smi),
@@ -193,9 +194,8 @@ if __name__ == "__main__":
         data_files=["https://ndownloader.figstatic.com/files/3917065"],
     )
     ds = ds["train"]
-    ds = ds.select_columns(["SMILES", "MA", "MA (est.)", "MA (mean est.)"])
-    ds = ds.map(lambda x: {"no_biosignature": x["MA"] <= 15}, batched=False)
-    stats = evaluate_dataset(metrics, ds, target="no_biosignature", smi_column="SMILES")
+    ds = ds.select_columns(["SMILES", "meanComplexity", "stdevComplexity"])
+    stats = evaluate_dataset(metrics, ds, smi_column="SMILES")
     with open("crowdsourced.json") as fid:
         json.dump(stats, fid, indent=4)
 
@@ -207,7 +207,8 @@ if __name__ == "__main__":
             "https://github.com/anoushka2000/electrolyte-fm/raw/refs/heads/assembly_index/opt/assembly_index/data/combined_results_ms.csv"
         ],
     )
-    ds = ds.select_columns(["SMILES", "meanComplexity", "stdevComplexity"])
+    ds = ds.select_columns(["SMILES", "MA", "MA (est.)", "MA (mean est.)"])
+    ds = ds.map(lambda x: {"biosignature": x["MA"] > 15}, batched=False)
     stats = evaluate_dataset(metrics, ds, smi_column="smiles")
     with open("assembly_index.json") as fid:
         json.dump(stats, fid, indent=4)
