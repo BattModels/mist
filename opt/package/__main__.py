@@ -136,6 +136,8 @@ def get_best_ckpt(ckpt_dir) -> str:
 @cli.command()
 def pretrained(ckpt: str, name: Optional[str] = None):
     """Export a pretrained model"""
+    if Path(ckpt).joinpath("config.json").is_file():
+        ckpt = get_best_ckpt(ckpt)
     model = SaveConfigWithCkpts.load(ckpt)
     name = name or ckpt.parent.parent.name
 
@@ -163,6 +165,8 @@ def export_finetuned(ckpt: str):
 def finetuned(ckpt: str, name: Optional[str] = None, safe: bool = True):
     """Export a finetuned model"""
     name = name or Path(ckpt).parent.parent.name
+    if Path(ckpt).joinpath("config.json").is_file():
+        ckpt = get_best_ckpt(ckpt)
     save_dir = create_save_directory(name, ckpt)
     model = export_finetuned(ckpt)
 
