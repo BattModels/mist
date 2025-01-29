@@ -10,7 +10,7 @@ transformers = "~4"
 datasets = "^2.20"
 torch = "~2.3"
 rdkit = "^2024.3.5"
-BRSAScore = {git = "https://github.com/snu-micc/BR-SAScore.git", rev = "8c3081d7ebe747eb538ae9a591e1d076d4a30f2d"}
+BRSAScore = {git = "https://github.com/snu-micc/BR-SAScore.git", rev = "d70b168d92ec3c4081ab610295b525d99f31990d"}
 syba = {git = "https://github.com/lich-uct/syba.git", rev = "30929eb2d3b9a03bef326a1f5180f26f55b19a29"}
 
 [build-system]

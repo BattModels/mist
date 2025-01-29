@@ -1,6 +1,7 @@
 import gzip
 from pathlib import Path
 from typing import Optional, List
+import json
 
 import torch
 from torch.nn import functional as F
@@ -26,8 +27,6 @@ def sascore(smiles: str) -> Optional[float]:
         return None
     return sascorer.calculateScore(mol)
 
-    mol = Chem.MolFromSmiles(smiles)
-
 
 def syba_scorer():
     # Directions for obtaining count files: https://github.com/lich-uct/syba/issues/6
@@ -46,19 +45,10 @@ def syba_scorer():
 
 
 class SynthAccessFM(torch.nn.Module):
-    def __init__(self, encoder: str, tokenizer: str = None, per_token=False):
+    def __init__(self, encoder, tokenizer, per_token: bool = False):
         super().__init__()
-        if Path(encoder).exists():
-            self.encoder = DeepSpeedMixin.load(encoder).model
-        else:
-            from transformers import AutoModel
-
-            self.encoder = AutoModelForMaskedLM.from_pretrained(
-                encoder, trust_remote_code=True
-            )
-
-        self.tokenizer = load_tokenizer(tokenizer or encoder)
-        self.collate_fn = DataCollatorWithPadding(self.tokenizer)
+        self.encoder = encoder
+        self.tokenizer = tokenizer
         self.per_token = per_token
 
     def forward(self, batch):
@@ -89,6 +79,18 @@ class SynthAccessFM(torch.nn.Module):
         with torch.no_grad():
             return self.forward(batch).to("cpu")
 
+    @classmethod
+    def from_checkpoint(cls, ckpt: str, **kwargs):
+        encoder = DeepSpeedMixin.load(ckpt).model
+        tokenizer = load_tokenizer(ckpt)
+        return cls(encoder, tokenizer, **kwargs)
+
+    @classmethod
+    def from_pretrained(cls, name_or_path: str, **kwargs):
+        encoder = AutoModelForMaskedLM.from_pretrained(name_or_path)
+        tokenizer = load_tokenizer(name_or_path)
+        return cls(encoder, tokenizer, **kwargs)
+
 
 def bascore(smiles: str) -> Optional[float]:
     pass
@@ -104,6 +106,7 @@ if __name__ == "__main__":
         ],
     )
     ds = ds.map(lambda x: {"is_hard": x["accessibility"] == "hs"}, batched=False)
+    ds = ds.select_columns(["smiles", "is_hard"])
     ds = encode_molecules(
         ds,
         "smiles",
@@ -140,11 +143,10 @@ if __name__ == "__main__":
     # FM
     ckpts = {
         "molformer": "ibm/MoLFormer-XL-both-10pct",
-        "mist-apt8adhv": "/home/awadell/scratch/mist_ckpt/apt8adhv/checkpoints/epoch=0-step=6100-val_loss=0.02.ckpt",
-        "mist-jico5kgk": "/home/awadell/scratch/mist_ckpt/jico5kgk/checkpoints/epoch=0-step=12800-val_loss=0.01.ckpt",
+        "mist-28znv46w": "models/mist-28znv46w",
     }
-    for id, ckpt_path in ckpts.items():
-        model = SynthAccessFM(ckpt_path).to("cuda")
+    for id, name_or_path in ckpts.items():
+        model = SynthAccessFM.from_pretrained(name_or_path).to("cuda")
         for encoding in ["smiles", "smiles-keukle", "smiles-canonical"]:
             name = f"{id}-{encoding}"
             ds = ds.map(
@@ -157,13 +159,12 @@ if __name__ == "__main__":
 
     # Score Molecules
     df = ds["train"].to_pandas()
-    df.to_csv("scores.csv")
+    stats = {"scores": df.to_dict("records")}
 
     # Score Predictions
-    stats = {}
     stats["auroc"] = {}
     for ref in scorers:
         stats["auroc"][ref] = roc_auc_score(df["is_hard"], df[ref])
 
-    for ref in scorers:
-        print(f"{ref}: {stats['auroc'][ref]:.3f}")
+    with open("scores.json", "w") as fid:
+        json.dump(stats, fid)
