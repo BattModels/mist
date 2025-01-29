@@ -1,15 +1,14 @@
 import gzip
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Callable
 import json
 
 import torch
 from torch.nn import functional as F
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from rdkit import Chem
 from rdkit.Contrib.SA_Score import sascorer
-from sklearn.feature_selection import r_regression
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, r2_score
 from syba.syba import SybaClassifier
 from transformers import AutoModelForMaskedLM, DataCollatorWithPadding
 
@@ -105,8 +104,18 @@ if __name__ == "__main__":
             "https://raw.githubusercontent.com/snu-micc/BR-SAScore/refs/heads/main/data/test_set.csv"
         ],
     )
+    ds = ds["train"].take(10)
     ds = ds.map(lambda x: {"is_hard": x["accessibility"] == "hs"}, batched=False)
     ds = ds.select_columns(["smiles", "is_hard"])
+
+
+def evaluate_dataset(
+    metrics: dict[str, Callable | str],
+    ds: Dataset,
+    target: str | None,
+    smi_column: str = "smiles",
+):
+    ds = ds.rename_column(smi_column, "smiles")
     ds = encode_molecules(
         ds,
         "smiles",
@@ -120,51 +129,85 @@ if __name__ == "__main__":
         encoding=MolEncoding.CANONICAL_SMILES,
     )
 
-    scorers = []
+    stats = {"auroc": {}} if target is not None else {}
+    for name, metric in metrics.items():
+        if isinstance(metric, str):
+            model = SynthAccessFM.from_pretrained(metric)  # .to("cuda")
+            continue
+            for encoding in ["smiles", "smiles-keukle", "smiles-canonical"]:
+                name = f"{metric}-{encoding}"
+                ds = ds.map(
+                    lambda x: {name: model.score(x[encoding])},
+                    batched=True,
+                    batch_size=64,
+                )
+                if target:
+                    stats["auroc"][name] = roc_auc_score(ds[target], ds[name])
 
-    # SAScore
-    ds = ds.map(lambda x: {"sascore": sascore(x["smiles"])}, batched=False)
-    scorers.append("sascore")
-
-    # SYBA
-    # Flip sign to get positive = hard to synthesize
-    syba = syba_scorer()
-    ds = ds.map(lambda x: {"syba": -syba.predict(x["smiles"])}, batched=False)
-    scorers.append("syba")
-
-    # SCScore
-    scscore = SCScorer()
-    scscore.restore()
-    ds = ds.map(
-        lambda x: {"scscore": scscore.get_score_from_smi(x["smiles"])[1]}, batched=False
-    )
-    scorers.append("scscore")
-
-    # FM
-    ckpts = {
-        "molformer": "ibm/MoLFormer-XL-both-10pct",
-        "mist-28znv46w": "models/mist-28znv46w",
-    }
-    for id, name_or_path in ckpts.items():
-        model = SynthAccessFM.from_pretrained(name_or_path).to("cuda")
-        for encoding in ["smiles", "smiles-keukle", "smiles-canonical"]:
-            name = f"{id}-{encoding}"
+        else:
             ds = ds.map(
-                lambda x: {name: model.score(x[encoding])},
-                batched=True,
-                batch_size=64,
+                lambda x: {name: scorer(x)}, input_columns=smi_column, batched=False
             )
-            scorers.append(name)
-        del model
+            if target:
+                stats["auroc"][name] = roc_auc_score(ds[target], ds[name])
 
     # Score Molecules
-    df = ds["train"].to_pandas()
-    stats = {"scores": df.to_dict("records")}
+    df = ds.to_pandas()
+    stats["scores"] = df.to_dict("records")
 
-    # Score Predictions
-    stats["auroc"] = {}
-    for ref in scorers:
-        stats["auroc"][ref] = roc_auc_score(df["is_hard"], df[ref])
+    return stats
 
-    with open("scores.json", "w") as fid:
-        json.dump(stats, fid)
+
+if __name__ == "__main__":
+    syba = syba_scorer()
+    metrics = {
+        "sascore": sascore,
+        "syba": lambda smi: -syba.predict(smi),
+        "scscore": lambda smi: scscore.get_score_from_smi(smi),
+        "chemberta": "seyonec/ChemBERTa-zinc-base-v1",
+        "molformer": "ibm/MoLFormer-XL-both-10pct",
+        "mist-28znv46w": "models/mist-28znv46w",
+        "mist-ti624ev1": "models/mist-ti624ev1",
+    }
+
+    # BA-SAScore's Dataset
+    ds = load_dataset(
+        "csv",
+        name="BA-SAScore",
+        data_files=[
+            "https://raw.githubusercontent.com/snu-micc/BR-SAScore/refs/heads/main/data/test_set.csv"
+        ],
+    )
+    ds = ds["train"]
+    ds = ds.map(lambda x: {"is_hard": x["accessibility"] == "hs"}, batched=False)
+    ds = ds.select_columns(["smiles", "is_hard"])
+
+    stats = evaluate_dataset(metrics, ds, target="is_hard", smi_column="smiles")
+    with open("ba-sascorer.json", "w") as fid:
+        json.dump(stats, fid, indent=4)
+
+    # Modeling a Crowdsourced Definition of Molecular Complexity
+    ds = load_dataset(
+        "csv",
+        name="figshare_3917065",
+        data_files=["https://ndownloader.figstatic.com/files/3917065"],
+    )
+    ds = ds["train"]
+    ds = ds.select_columns(["SMILES", "MA", "MA (est.)", "MA (mean est.)"])
+    ds = ds.map(lambda x: {"no_biosignature": x["MA"] <= 15}, batched=False)
+    stats = evaluate_dataset(metrics, ds, target="no_biosignature", smi_column="SMILES")
+    with open("crowdsourced.json") as fid:
+        json.dump(stats, fid, indent=4)
+
+    # Assembly Index
+    ds = load_dataset(
+        "csv",
+        name="combined_results_ms",
+        data_files=[
+            "https://github.com/anoushka2000/electrolyte-fm/raw/refs/heads/assembly_index/opt/assembly_index/data/combined_results_ms.csv"
+        ],
+    )
+    ds = ds.select_columns(["SMILES", "meanComplexity", "stdevComplexity"])
+    stats = evaluate_dataset(metrics, ds, smi_column="smiles")
+    with open("assembly_index.json") as fid:
+        json.dump(stats, fid, indent=4)
