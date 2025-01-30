@@ -164,10 +164,10 @@ if __name__ == "__main__":
         "scscore": lambda smi: scscore.get_score_from_smi(smi)[1],
         "chemberta": "seyonec/ChemBERTa-zinc-base-v1",
         "molformer": "ibm/MoLFormer-XL-both-10pct",
-        "mist-28znv46w": "models/mist-28znv46w",
-        "mist-ti624ev1": "models/mist-ti624ev1",
-        "mist-4yzwys2z": "models/mist-4yzwys2z",
     }
+    for file in Path("models").iterdir():
+        if file.is_dir():
+            metrics[file.name] = str(file)
 
     # BA-SAScore's Dataset
     ds = load_dataset(
