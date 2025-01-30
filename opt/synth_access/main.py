@@ -7,11 +7,13 @@ import torch
 from time import perf_counter
 from torch.nn import functional as F
 from datasets import Dataset, load_dataset
-from rdkit import Chem
+from rdkit import Chem, rdBase
 from rdkit.Contrib.SA_Score import sascorer
 from sklearn.metrics import roc_auc_score
+
 from syba.syba import SybaClassifier
-from transformers import AutoModel, AutoModelForMaskedLM, DataCollatorWithPadding
+from BRSAScore import SAScorer as BRSAScorer
+from transformers import AutoModelForMaskedLM, DataCollatorWithPadding
 
 from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
 from electrolyte_fm.models.model_utils import DeepSpeedMixin
@@ -19,6 +21,9 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 from electrolyte_fm.utils.cache import cached_download, extract_file
 
 from vendor.scscore.scscore import SCScorer
+
+# Suppress DeprecationWarnings for MorganGenerator
+rdBase.DisableLog("rdApp.warning")
 
 
 def sascore(smiles: str) -> Optional[float]:
@@ -78,7 +83,7 @@ class SynthAccessFM(torch.nn.Module):
     def score(self, smiles: List[str]) -> List[float]:
         batch = self.tokenizer(smiles, return_special_tokens_mask=True)
         batch = self.collate_fn(batch).to(self.encoder.device)
-        with torch.no_grad():
+        with torch.inference_mode():
             return self.forward(batch).to("cpu")
 
     @classmethod
@@ -98,6 +103,14 @@ class SynthAccessFM(torch.nn.Module):
 
 def bascore(smiles: str) -> Optional[float]:
     pass
+
+
+def get_accelerator():
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
 
 def evaluate_dataset(
@@ -127,7 +140,7 @@ def evaluate_dataset(
     stats["time"] = {}
     for name, metric in metrics.items():
         if isinstance(metric, str):
-            model = SynthAccessFM.from_pretrained(metric).to("cuda")
+            model = SynthAccessFM.from_pretrained(metric).to(get_accelerator())
             for encoding in ["smiles", "smiles-keukle", "smiles-canonical"]:
                 name = f"{metric}-{encoding}"
                 start = perf_counter()
@@ -135,6 +148,7 @@ def evaluate_dataset(
                     lambda x: {name: model.score(x[encoding])},
                     batched=True,
                     batch_size=64,
+                    desc=name,
                 )
                 stats["time"][name] = perf_counter() - start
                 if target:
@@ -142,7 +156,11 @@ def evaluate_dataset(
 
         else:
             start = perf_counter()
-            ds = ds.map(lambda x: {name: metric(x[smi_column])}, batched=False)
+            ds = ds.map(
+                lambda x: {name: metric(x[smi_column])},
+                batched=False,
+                desc=name,
+            )
             stats["time"][name] = perf_counter() - start
             if target:
                 stats["auroc"][name] = roc_auc_score(ds[target], ds[name])
@@ -158,12 +176,14 @@ if __name__ == "__main__":
     syba = syba_scorer()
     scscore = SCScorer().restore()
     scscore.restore()
+    ba_sascorer = BRSAScorer()
     metrics = {
-        "sascore": sascore,
-        "syba": lambda smi: -syba.predict(smi),
-        "scscore": lambda smi: scscore.get_score_from_smi(smi)[1],
-        "chemberta": "seyonec/ChemBERTa-zinc-base-v1",
-        "molformer": "ibm/MoLFormer-XL-both-10pct",
+        "SAScore": sascore,
+        "SyBA": lambda smi: -syba.predict(smi),
+        "SCScore": lambda smi: scscore.get_score_from_smi(smi)[1],
+        "BR-SAScore": lambda smi: ba_sascorer.calculateScore(smi)[0],
+        "MolFormer": "ibm/MoLFormer-XL-both-10pct",
+        "ChemBERTa": "seyonec/ChemBERTa-zinc-base-v1",
     }
     for file in Path("models").iterdir():
         if file.is_dir():
