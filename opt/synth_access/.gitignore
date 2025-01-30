@@ -1,4 +1,5 @@
 fig/
 poetry.lock
 models/
-scores.json
+data/
+*.json
