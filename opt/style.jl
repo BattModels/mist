@@ -13,7 +13,7 @@ function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
     return nothing
 end
 
-CAT_COLORS = cgrad(
+const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
         (99, 110, 250),
         (239, 85, 59),
@@ -29,6 +29,7 @@ CAT_COLORS = cgrad(
     10
 )
 
+const CONTINUOUS_COLORS = :lipari
 
 function theme()
     Theme(
@@ -40,7 +41,7 @@ function theme()
         ),
         fontsize=8pt,
         size=(246, 152),
-        figure_padding=(1, 15, 2, 2),
+        figure_padding=(2, 2, 2, 2),
         colormap=:lipari,
         CairoMakie=(;
             pt_per_unit=2,
@@ -89,13 +90,13 @@ function theme()
             spinewidth=0.5,
             tickwidth=0.5,
             ticksize=2,
-            labelsize=7pt,
-            ticklabelsize=6pt,
+            labelsize=6pt,
+            ticklabelsize=5pt,
             labelpadding=0pt,
             ticklabelpad=0pt,
         ),
         Scatter=(;
-            markersize=8pt,
+            markersize=5pt,
             marker=:x,
         ),
         ErrrorBar=(;
