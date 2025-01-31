@@ -16,8 +16,8 @@ function figure_embedding()
     f = Figure(; size=(3inch, 2inch))
     gl = GridLayout(f[1, 1])
     ax_aromatic = Axis(gl[1, 1])
-    ax_rings = Axis(gl[2, 1]; limits=(nothing, (-2, nothing)))
-    ax_condese = Axis(f[1, 2]; limits=(nothing, (1.0, nothing)))
+    ax_rings = Axis(gl[2, 1]; limits=(nothing, (-2.3, nothing)))
+    ax_condese = Axis(f[1, 2]; limits=(nothing, (0.8, nothing)))
     hidedecorations!(ax_aromatic)
     hidedecorations!(ax_rings)
     hidedecorations!(ax_condese)
@@ -29,6 +29,8 @@ function figure_embedding()
         color=levelcode.(aromaticity),
         colormap=MISTStyle.CAT_COLORS,
         colorrange=(1, 10),
+        marker=:circle,
+        markersize=3pt,
     )
     elements = map(enumerate(levels(aromaticity))) do (i, label)
         MarkerElement(
@@ -39,7 +41,7 @@ function figure_embedding()
         )
     end
     Legend(gl[1, 1], elements, labels.(elements);
-        labelsize=4pt,
+        labelsize=5pt,
         tellheight=false,
         tellwidth=false,
         padding=(1, 1, 1, 1),
@@ -47,7 +49,7 @@ function figure_embedding()
         patchlabelgap=0,
         rowgap=0,
         colgap=0,
-        orientation=:horizontal,
+        # orientation=:horizontal,
         halign=:right,
         valign=:bottom,
         alignmode=Outside(),
@@ -58,6 +60,8 @@ function figure_embedding()
     h = scatter!(ax_rings, df_benzene[!, "0"], df_benzene[!, "1"];
         color=df_benzene[!, "Number of Benzene"],
         colormap=MISTStyle.CONTINUOUS_COLORS,
+        marker=:circle,
+        markersize=3pt,
     )
     Colorbar(gl[3, 1], h;
         label="Number of Rings",
@@ -74,17 +78,19 @@ function figure_embedding()
         color=levelcode.(condense),
         colormap=MISTStyle.CAT_COLORS,
         colorrange=(1, 10),
+        marker=:circle,
+        markersize=3pt,
     )
     elements = map(enumerate(levels(condense))) do (i, label)
         MarkerElement(
-            markersize=4pt,
+            markersize=h.markersize,
             marker=h.marker,
             color=MISTStyle.CAT_COLORS[i],
             label=label
         )
     end
     Legend(f[1, 2], elements, labels.(elements);
-        labelsize=4pt,
+        labelsize=5pt,
         tellheight=false,
         tellwidth=false,
         padding=(1, 1, 1, 1),
@@ -92,7 +98,7 @@ function figure_embedding()
         patchlabelgap=0,
         rowgap=0,
         colgap=0,
-        # orientation=:horizontal,
+        orientation=:horizontal,
         halign=:right,
         valign=:bottom,
         alignmode=Outside(),
