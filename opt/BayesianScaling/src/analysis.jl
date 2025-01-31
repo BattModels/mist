@@ -31,6 +31,7 @@ function pretraining_runs(dir::AbstractString=WANDB_EXPORT_DIR)
             tags=string.(run["tags"]),
             created=DateTime(run["created"][1:23], Dates.ISODateTimeFormat),
             model_size=run["model"]["model_size"],
+            model_class=run["model"]["class_path"],
             d_model,
             ff_ratio,
             kv_size,

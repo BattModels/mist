@@ -22,6 +22,9 @@ using Distributions: UnivariateDistribution, support
 using TransformedLogDensities: TransformedLogDensity
 using TransformVariables: TransformVariables, as, as_real, as_positive_real, as_negative_real
 using ProgressBars: ProgressBar
+using Format: format
+using LogExpFunctions: xexpy
+using CategoricalArrays: categorical, levelcode
 
 Statistics.middle(x::ComponentVector, y::ComponentVector) = @. (x + y) / 2
 
@@ -35,11 +38,13 @@ include("utils.jl")
 
 # Bayesian Modeling of LLM loss curves
 include("ppl.jl")
+include("scaling.jl")
 include("models.jl")
 
 # Analysis of fitted curves
 include("checks.jl")
 include("plots.jl")
+include("figures/summary.jl")
 
 # Planning Tools for LLM Training Campaigns
 include("acquire.jl")

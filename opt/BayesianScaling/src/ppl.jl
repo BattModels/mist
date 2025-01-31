@@ -155,7 +155,6 @@ end
 
 function sample_chains(model; nchains=15, draws=1_000)
     d = dimension(model)
-    nchains *= ceil(Int, sqrt(d))
     raw_samples = Array{Float64}(undef, d, draws, nchains)
     reporter = DynamicHMC.NoProgressReport()
     Threads.@threads :dynamic for i in ProgressBar(1:nchains)
@@ -179,12 +178,29 @@ end
 
 mapchains(f, op, chains::AbstractArray{<:Real,3}) = mapreduce(f, op, eachslice(chains, dims=(1, 2)))
 
+function mapchains(f, chains::AbstractArray{<:Real,3}, x::Vector)
+    out = similar(chains, size(chains, 1), size(chains, 2), length(x))
+    for I in  CartesianIndices(axes(chains)[1:2])
+        θ = @view chains[I.I..., :]
+        for (rdx, x) in enumerate(x)
+            out[I, rdx] = f(x, θ)
+        end
+    end
+    return out
+end
+
+"""
+    chain = subsample(chains::AbstractArray{T,3}, n::Integer)
+
+Draw `n` samples from each chain in `chains` of size `(draws, chains, parameters)`
+"""
 function subsample(chains::AbstractArray{T,3}, n::Integer) where {T}
     s = similar(chains, n, 1, size(chains, 3))
-    indices = CartesianIndices((axes(chains, 1), axes(chains, 2)))
-    for i in 1:n
-        I = rand(indices).I
-        s[i, 1, :] .= chains[I..., :]
+    draws = CartesianIndices((axes(chains, 1), axes(chains, 2)))
+    for cdx in 1:n
+        i = rand(draws)
+        θ = @view chains[i.I..., :]
+        copyto!(selectdim(s, 1, cdx), θ)
     end
     if chains isa ComponentArray
         s = ComponentArray(s, chains.axes...)
@@ -193,9 +209,44 @@ function subsample(chains::AbstractArray{T,3}, n::Integer) where {T}
 end
 
 function subsample(chains::AbstractArray{T,3}, p::AbstractFloat=0.2) where {T}
-    ns = size(chains, 1) * size(chains, 2)
     @assert 0 < p <= 1 lazy"Expected p ∈ (0, 1], got $p"
+    ns = size(chains, 1) * size(chains, 2)
     n = ceil(Int, ns * p)
     return subsample(chains, n)
+end
+
+
+"""
+    μ, l, u = credible_interval(chains; p=0.95)
+
+Return the expectation of `chains` and the `p`-percentile credible interval
+"""
+function credible_interval(chains::AbstractArray{T,3}; p=0.95) where {T}
+    p = (1 - p) / 2
+    μ = vec(mean(chains; dims=(1, 2)))
+    l = similar(μ)
+    u = similar(l)
+    for (idx, chains) in enumerate(eachslice(chains; dims=3))
+        l[idx], u[idx] = quantile(chains, (p, 1-p))
+    end
+    return μ, l, u
+end
+function credible_interval(chains::AbstractMatrix{T}; p::AbstractFloat=0.95) where {T}
+    p  = (1-p)/2
+    return mean(chains), quantile(vec(chains), (p, 1-p))...
+end
+
+
+"""
+Compute `y/exp(E[log(ŷ) - log(P)])` where `y` is the response, `ŷ` is the expected response and `P` is a penalty term
+It's expected that `ŷ = f(x...) + P)`
+"""
+function penalty_residual(y::Vector{T}, y_hat::AbstractArray{T,3}, penalty::AbstractArray{T,3}) where {T <: Real}
+    mu = similar(y_hat)
+    for I in eachindex(IndexCartesian(), y_hat)
+        mu[I] = log(y_hat[I]) - penalty[I]
+    end
+    mu = vec(mean(mu; dims=(1, 2)))
+    return xexpy.(y, -mu)
 end
 

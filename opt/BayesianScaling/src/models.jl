@@ -1,22 +1,3 @@
-hoffman_scaling(N, D; A, B, α, β, E) = @. (A / N^α) + (B / D^β) + E
-function compute_optimal_model_size(flops; A, α, B, β)
-    G = @. ((α * A) / (β * B))^(1 / (α + β))
-    a = @. β / (α + β)
-    return @. G * (flops / 6)^a
-end
-function compute_optimal_data_size(flops; A, α, B, β)
-    G_inv = @. ((α * A) / (β * B))^(-1 / (α + β))
-    b = @. α / (α + β)
-    return @. G_inv * (flops / 6)^b
-end
-function compute_optimal_loss(C; A, α, B, β, E)
-    G = @. ((α * A) / (β * B))^(1 / (α + β))
-    a = @. β / (α + β)
-    b = @. α / (α + β)
-    d = @. C / 6
-    return @. E + A * (G * d^a)^(-α) + B * (inv(G) * d^b)^(-β)
-end
-
 struct HoffmanScaling{P,X}
     model::BayesModel{P,X}
 end
@@ -87,11 +68,11 @@ end
 
 function model_priors(::Type{HoffmanScaling})
     return (;
-        A=LogNormal(log(500), 2.0),
-        B=LogNormal(log(500), 2.0),
-        α=Uniform(0, 2),
-        β=Uniform(0, 2),
-        E=LogNormal(log(1e-3), 1),
+        A=LogNormal(log(500), 3.0),
+        B=LogNormal(log(500), 3.0),
+        α=Uniform(0, 3),
+        β=Uniform(0, 3),
+        E=LogNormal(log(10e-2), 2),
         sigma=LogNormal(-1, 2.0),
     )
 end
@@ -127,22 +108,15 @@ function model_priors(::Type{ShapedScaling})
         scaling=Base.structdiff(model_priors(HoffmanScaling), NamedTuple{(:sigma,)}),
         lr=(;
             ideal=(;
-                a=Normal(log(3.9e-5), 1),     # Reference log(LR)
-                b=Normal(0.5, 0.1),           # Scaling with effective batch size
-                c=Normal(0, 0.5),             # Scaling with model size
+                a=Normal(log(1.6e-4 / 32), 0.05),  # Reference log(LR) for 1024 batch size
+                b=Normal(0.5, 0.05),            # Sqrt scaling with effective batch size
+                c=Normal(0, 0.1),               # Scaling with model size (assume none)
             ),
             penalty=(Exponential(1.0),),
         ),
-        # beta=(;
-        #     ideal=(;
-        #         beta1=Uniform(0, 1),
-        #         beta2=Uniform(0, 1),
-        #     ),
-        #     penalty=(Exponential(1.0),),
-        # ),
-        ff_ratio=(LogNormal(log(4), log(2)), Exponential(1.0)),
-        kv_size=(LogNormal(log(64), 1), Exponential(1.0)),
-        aspect_ratio=(LogNormal(log(64), 2), Exponential(1.0)),
+        ff_ratio=(LogNormal(log(4), 0.5), Exponential(1.0)),
+        kv_size=(LogNormal(log(64), 0.1), Exponential(1.0)),
+        aspect_ratio=(LogNormal(log(64), 0.1), Exponential(1.0)),
         sigma=Exponential(1.0),
     )
 end
@@ -162,66 +136,59 @@ function (m::ShapedScaling)(θ)
     # Priors
     ℓ = logpdf_prior(m.priors.scaling, scaling)
     ℓ += logpdf_prior(m.priors.lr, lr)
-    # ℓ += logpdf_prior(m.priors.beta, beta)
     ℓ += logpdf_prior(m.priors.ff_ratio, ff_ratio)
     ℓ += logpdf_prior(m.priors.aspect_ratio, aspect_ratio)
     ℓ += logpdf_prior(m.priors.kv_size, kv_size)
 
     # Likelihood
-    ℓ += sum(m.runs) do run
-        min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
-        min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
-        # min_loss += beta_penalty(run.beta1, run.beta2, run.effective_batch_size; beta...)
-        min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
-        min_loss += harmonic_penalty(run.kv_size, kv_size...)
-        min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
-        return loglikelihood(LogNormal(min_loss, sigma), run.loss)
+    for idx in 1:length(m.runs)
+        run = m.runs[idx]
+        loss = expected_log_loss(m, θ, run)
+        ℓ += loglikelihood(LogNormal(loss, sigma), run.loss)
     end
     return ℓ
 end
 
-function sample_response(m::ShapedScaling, chains; nsamples=1_000)
+function expected_log_loss(::ShapedScaling, θ, run::NamedTuple)
+    (; scaling, lr, ff_ratio, aspect_ratio, kv_size) = θ
+    min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
+    min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
+    min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
+    min_loss += harmonic_penalty(run.kv_size, kv_size...)
+    min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
+    return min_loss
+end
+
+expected_loss(m::ShapedScaling, θ, run) = mean(LogNormal(expected_log_loss(m, θ, run), θ.sigma))
+function expected_loss(m::ShapedScaling, chains::AbstractArray{<:Number,3})
     nruns = length(m.runs)
-    y_hat = Array{Float64}(undef, nruns, nsamples)
-    indices = CartesianIndices((axes(chains, 1), axes(chains, 2)))
-    for (idx, run) in enumerate(m.runs)
-        for sdx in 1:nsamples
-            I = rand(indices).I
-            θ = chains[I..., :]
-            y_hat[idx, sdx] = expected_loss(m, θ, run)
+    y_hat = Array{Float64}(undef, size(chains, 1), size(chains, 2), nruns)
+    for I in CartesianIndices(axes(chains)[1:2])
+        θ = @view chains[I.I..., :]
+        for (rdx, run) in enumerate(m.runs)
+            loc = expected_log_loss(m, θ, run)
+            y_hat[I, rdx] = LogNormal(loc, θ.sigma) |> mean
         end
     end
     return y_hat
 end
 
-function sample_penalty(m::ShapedScaling, chains; nsamples=1_000)
+function expected_penalties(m::ShapedScaling, chains::AbstractArray{<:Number, 3})
     nruns = length(m.runs)
-    P = Array{Float64}(undef, nruns, nsamples, 4)
-    indices = CartesianIndices((axes(chains, 1), axes(chains, 2)))
-    for (idx, run) in enumerate(m.runs)
-        for sdx in 1:nsamples
-            I = rand(indices).I
-            θ = chains[I..., :]
-            p_lr = lamb_penalty(run.lr, run.model_size, run.effective_batch_size; θ[:lr]...)
-            p_ff = harmonic_penalty(run.ff_ratio, θ[:ff_ratio]...)
-            p_kv = harmonic_penalty(run.kv_size, θ[:kv_size]...)
-            p_aspect = harmonic_penalty(run.aspect_ratio, θ[:aspect_ratio]...)
-            P[idx, sdx, :] .= [p_lr, p_ff, p_kv, p_aspect]
+    lr = similar(chains, size(chains, 1), size(chains, 2), nruns)
+    ff = similar(lr)
+    kv = similar(lr)
+    aspect = similar(lr)
+    for I in CartesianIndices(axes(chains)[1:2])
+        θ = @view chains[I.I..., :]
+        for (rdx, run) in enumerate(m.runs)
+            lr[I, rdx] = lamb_penalty(run.lr, run.model_size, run.effective_batch_size; θ[:lr]...)
+            ff[I, rdx] = harmonic_penalty(run.ff_ratio, θ[:ff_ratio]...)
+            kv[I, rdx] = harmonic_penalty(run.kv_size, θ[:kv_size]...)
+            aspect[I, rdx] = harmonic_penalty(run.aspect_ratio, θ[:aspect_ratio]...)
         end
     end
-    return P
-end
-
-
-function expected_loss(::ShapedScaling, θ, run::NamedTuple)
-    (; scaling, lr, ff_ratio, aspect_ratio, kv_size, sigma) = θ
-    min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
-    min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
-    # min_loss += beta_penalty(run.beta1, run.beta2, run.effective_batch_size; beta...)
-    min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
-    min_loss += harmonic_penalty(run.kv_size, kv_size...)
-    min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
-    return exp(min_loss)
+    return (; lr, ff, kv, aspect)
 end
 
 function beta_penalty(beta1, beta2, eff_batch_size; ideal, penalty)
@@ -262,27 +229,31 @@ function lamb_penalty(lr, model_size, effective_batch_size; ideal, penalty)
     return geometric_penalty(lr, lr_0, penalty...)
 end
 
-function ideal_lr(model::ShapedScaling, chains::AbstractArray{T,3}, df::DataFrame) where {T}
-    lr = Array{T}(undef, nrow(df), size(chains)[1:2]...)
-    indices = CartesianIndices(axes(chains)[1:2])
-    for (rdx, row) in enumerate(eachrow(df))
-        for sdx in indices
-            I = sdx.I
-            lr[rdx, I...] = ideal_lr(model, chains[I..., :], row.model_size, row.effective_batch_size)
+function expected_lr_sensitivity(::ShapedScaling,  chains::AbstractArray{<:Real, 3}, ratios::Vector)
+    p = similar(chains, size(chains, 1), size(chains, 2), length(ratios))
+    for I in  CartesianIndices(axes(chains)[1:2])
+        θ = view(chains, I.I..., :lr)[:penalty]
+        for (i, lr_ratio) in enumerate(ratios)
+            p[I, i] = geometric_penalty(lr_ratio, one(lr_ratio), θ...) |> exp
         end
     end
-    return lr
+    return p
+
 end
 
-function ideal_lr(model::ShapedScaling, chains::AbstractArray{T,3}; model_size, effective_batch_size) where {T}
-    lr = Array{T}(undef, size(chains)[1:2]...)
-    for sdx in CartesianIndices(axes(lr))
-        lr[sdx] = ideal_lr(model, chains[sdx.I..., :], model_size, effective_batch_size)
+ideal_lr(model::ShapedScaling, chains::AbstractArray{T,3}) where {T} = ideal_lr(model, chains, model.runs)
+function ideal_lr(model::ShapedScaling, chains::AbstractArray{T,3}, runs::Vector) where {T}
+    return mapchains(chains, model.runs) do run, θ
+        ideal_lr(model, θ, run.model_size, run.effective_batch_size)
     end
-    return lr
 end
 
-function ideal_lr(::ShapedScaling, θ::ComponentVector, model_size, effective_batch_size)
+function harmonic_penalty_posterior(chains::AbstractArray{T,3}, x::Vector) where {T<:Real}
+    return mapchains((x, θ) -> harmonic_penalty(x, θ...), chains, x)
+end
+
+
+function ideal_lr(::ShapedScaling, θ::ComponentVector, model_size::Number, effective_batch_size::Number)
     (; a, b, c) = θ.lr.ideal
     return exp(a + b * log(effective_batch_size) + c * log(model_size))
 end
@@ -294,16 +265,16 @@ function ideal_lr!(lr::AbstractArray{T,2}, m, chains::AbstractArray{T,3}, args..
     return lr
 end
 
-function ideal_lr_map(m::ShapedScaling, chains::AbstractArray{T,3}, model_size, effective_batch_size; p=[0.025, 0.5, 0.975]) where {T}
-    lr_map = Array{T}(undef, length(p), length(model_size), length(effective_batch_size))
-    lr = Array{T}(undef, size(chains)[1:2]...)
+function ideal_lr_map(m::ShapedScaling, chains::AbstractArray{T,3}, model_size, effective_batch_size; p=0.95) where {T}
+    lr_interval = similar(chains, length(model_size), length(effective_batch_size), 3)
+    lr = similar(chains, size(chains)[1:2]...)
     for (mdx, ms) in enumerate(model_size)
         for (edx, ebs) in enumerate(effective_batch_size)
             ideal_lr!(lr, m, chains, ms, ebs)
-            lr_map[:, mdx, edx] .= quantile(lr, p)
+            lr_interval[mdx, edx, :] = [credible_interval(lr; p)...]
         end
     end
-    return lr_map
+    return lr_interval
 end
 
 

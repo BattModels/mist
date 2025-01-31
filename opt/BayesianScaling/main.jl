@@ -10,8 +10,7 @@ using Random
 using Enzyme
 using JLD2: jldsave
 using ADTypes: AutoForwardDiff
-
-# @static isinteractive() ? using GLMakie : using CairoMakie
+using CairoMakie
 
 RUNS_DIR = abspath(joinpath(pathof(BayesianScaling), "..", "..", "..", "..", ".cache", "wandb-export"))
 
@@ -141,9 +140,11 @@ function process_model(model, df)
 
     # Sample chaings
     y, yr = BayesianScaling.sample_chains(model)
+    @info "Finished sampling"
     jldsave(joinpath(outdir, "chains.jld2"); model, df, chains=y, chains_raw=yr)
 
-    # Save figures
+    # Check convergence
+    @info "generating figures"
     save_figures(outdir, model, df, y, yr)
 
 end
@@ -151,57 +152,25 @@ end
 function save_figures(outdir, model, df, chains, raw_chains)
     # Subsample for faster plotting
     mkpath(outdir)
-    chains = BayesianScaling.subsample(chains, 0.3)
+    chains = BayesianScaling.subsample(chains, 100)
 
     # Generate Plots
-    savefig(outdir, "scaling.pdf", BayesianScaling.plot_scaling(chains[:, :, :scaling], df))
-    savefig(outdir, "lr_map.pdf", BayesianScaling.plot_lr_map(m.ℓ.log_density_function, chains, df))
-    savefig(outdir, "compute_optimal.pdf", BayesianScaling.plot_compute_optimal(chains[:, :, :scaling], df))
-    savefig(outdir, "penalties.pdf", BayesianScaling.plot_penalty(model.ℓ.log_density_function, chains))
+    θ_scaling = selectdim(chains, 3, :scaling)
+    @sync begin
+        Threads.@spawn savefig(outdir, "scaling.pdf", BayesianScaling.plot_scaling(chains, df))
+        Threads.@spawn savefig(outdir, "lr_map.pdf", BayesianScaling.plot_lr_map(model.ℓ.log_density_function, chains, df))
+        Threads.@spawn savefig(outdir, "compute_optimal.pdf", BayesianScaling.plot_compute_optimal(θ_scaling, df))
+        Threads.@spawn savefig(outdir, "penalties.pdf", BayesianScaling.plot_penalty(model.ℓ.log_density_function, chains))
+        Threads.@spawn savefig(outdir, "summary.pdf", BayesianScaling.figure_ai4x(model.ℓ.log_density_function, chains))
 
-    # Bayesian Plots
-    for sym = [:scaling, :lr]
-        savefig(outdir, "raw_chains_$sym.pdf", BayesianScaling.plot_chains(raw_chains[:, :, sym]))
-        savefig(outdir, "raw_chains_covar_$sym.pdf", BayesianScaling.plot_chain_covariance(raw_chains[:, :, sym]))
+        # Bayesian Plots
+        for sym in [:scaling, :lr]
+            θ = selectdim(raw_chains, 3, sym)
+            Threads.@spawn savefig(outdir, "raw_chains_$sym.pdf", BayesianScaling.plot_chains(θ))
+            Threads.@spawn savefig(outdir, "raw_chains_covar_$sym.pdf", BayesianScaling.plot_chain_covariance(θ))
+        end
     end
 
     return outdir
 end
 
-function main(args)
-    dir = args[1]
-    outdir = mkpath(joinpath(@__DIR__, "out", string(uuid4())) * "/")
-    @info "Will save output to $outdir"
-
-    @info "Instantiating model"
-    df = load_dataset(dir)
-    model, df = init_training_progress(df)
-    open(joinpath(outdir, "dataset.json"), "w") do fid
-        JSON.print(fid, eachrow(df))
-    end
-
-    @info "Fitting model with $(Threads.nthreads()) chains"
-    Threads.@threads for i in 1:Threads.nthreads()
-        local_model = deepcopy(model)
-        results = mcmc_with_warmup(Random.default_rng(), local_model, 10_000; reporter=NoProgressReport())
-        posterior = BayesianScaling.transform_samples(local_model, results.posterior_matrix)
-        jldsave(joinpath(outdir, "chain-$i.jld2"); model=local_model, posterior, results...)
-        @info "finished chain $i"
-    end
-    return 0
-
-    # Generate plots
-    @info "Generating plots"
-    savefig(outdir, "parity.pdf", BayesianScaling.plot_parity(model, chains))
-    savefig(outdir, "scaling.pdf", BayesianScaling.plot_scaling(chains, df))
-    savefig(outdir, "lr_scaling.pdf", BayesianScaling.plot_best_lr(chains, df))
-    savefig(outdir, "chains.pdf", BayesianScaling.plot_chains(model, chains))
-    savefig(outdir, "chain_cov.pdf", BayesianScaling.plot_chain_covariance(model, chains))
-
-    @info "Done"
-    return 0
-end
-
-
-
-!isinteractive() && exit(main(ARGS))

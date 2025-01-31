@@ -160,9 +160,10 @@ function plot_lamb_lr_scale(chains::ComponentArray{<:Real,3}, model;
 
 end
 
+
 function plot_scaling(chains::AbstractArray{<:Real,3}, df;
-    N=logrange(1e5, 1e10; length=100),
-    C=logrange(1e10, 1e26; length=100)
+    N=logrange(1e5, 1e10; length=75),
+    C=logrange(1e10, 1e26; length=75)
 )
     f = Figure()
     N = collect(N)
@@ -171,40 +172,25 @@ function plot_scaling(chains::AbstractArray{<:Real,3}, df;
         yscale=log10,
         xscale=log10,
         limits=(extrema(C) ./ pf_day, extrema(N)),
-        xlabel="Compute Budget (PF-Days)",
-        ylabel="Model size",
+        xlabel="Compute Budget [PF-Days]",
+        ylabel="Model Size",
     )
 
-    loss = Matrix{Float32}(undef, length(C), length(N))
-    loss_std = similar(loss)
-    A = vec(chains[:, :, :A])
-    α = vec(chains[:, :, :α])
-    B = vec(chains[:, :, :B])
-    β = vec(chains[:, :, :β])
-    E = vec(chains[:, :, :E])
-    for (i, n) in enumerate(N)
-        for (j, c) in enumerate(C)
-            d = c / (6n)
-            l = hoffman_scaling(n, d; A, α, B, β, E)
-            loss[j, i] = median(l)
-            loss_std[j, i] = std(log.(l))
-        end
-    end
-    loss_low = min(minimum(df.loss), minimum(loss))
-    loss_high = maximum(df.loss)
-    levels = logrange(loss_low, loss_high; length=20)
-    h = contourf!(ax, C ./ pf_day, N, loss; levels, colorscale=log10)
-    contour!(ax, C ./ pf_day, N, loss_std;
+
+    loss_mean, loss_band = hoffman_compute_scaling(selectdim(chains, 3, :scaling), N, C)
+    levels = logrange(1e-3, 2; length=20)
+    h = contourf!(ax, C ./ pf_day, N, loss_mean'; levels, colorscale=log10)
+    rel_band = reshape(diff(loss_band; dims=1), size(loss_mean)) ./ loss_mean
+    contour!(ax, C ./ pf_day, N, rel_band';
         levels=10,
         labels=true,
         color=:red,
-        label="std of ln(Estimated Loss)"
     )
     cb = Colorbar(f[1, 2], h; label="Loss")
 
     # Add Empirical Loss
     model_flops = @. 6 * float(df.model_size) * float(df.data_size) / pf_day
-    sort!(df, :loss; rev=true)
+    sort!(df, [:loss, :model_size,]; rev=true)
     h = scatter!(ax, model_flops, df.model_size;
         color=df[:, :loss],
         colormap=cb.colormap,
@@ -212,21 +198,15 @@ function plot_scaling(chains::AbstractArray{<:Real,3}, df;
         colorscale=cb.scale,
         strokewidth=0.5,
         strokecolor=:black,
-        label="Empirical Data"
+        marker=:x,
     )
 
     # Add Compute Optimal Frontier
-    n_opt = Matrix{Float32}(undef, 3, length(C))
-    n_opt .= 1
-    for (i, c) in enumerate(C)
-        n_opt[:, i] .= quantile(compute_optimal_model_size(c; A, α, B, β), (0.025, 0.5, 0.975))
-    end
-    predictionband!(ax, C ./ pf_day, n_opt[2, :], n_opt[1, :], n_opt[3, :];
+    N_opt, N_band = compute_optimal_model_size(selectdim(chains, 3, :scaling), C)
+    predictionband!(ax, C ./ pf_day, N_opt, selectdim(N_band, 1, 1), selectdim(N_band, 1, 2);
         color=:black,
         band_color=(:slategray, 0.4),
-        label="Compute Optimal Frontier",
     )
-    Legend(f[2, 1], ax; tellwidth=false, tellheight=true, nbanks=2)
     return f
 end
 
@@ -298,19 +278,10 @@ end
 
 function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
     huber=nothing,
-    N=logrange(1e3, 1e12; length=200),
+    p=0.95,
     C=logrange(1e8, 1e26; length=200)
 )
-    loss_quantiles = Matrix{Float32}(undef, 3, length(C))
-    A = chains[:, :, :A]
-    α = chains[:, :, :α]
-    B = chains[:, :, :B]
-    β = chains[:, :, :β]
-    E = chains[:, :, :E]
-    for (i, c) in enumerate(C)
-        loss = compute_optimal_loss(c; A, α, B, β, E)
-        loss_quantiles[:, i] .= quantile(loss, (0.025, 0.5, 0.975))
-    end
+    μ, band = compute_optimal_loss(chains, C; p)
 
     # Setup Plots
     f = Figure()
@@ -322,7 +293,7 @@ function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
         xscale=log10,
         yscale=log10,
     )
-    predictionband!(ax, C ./ pf_day, loss_quantiles[2, :], loss_quantiles[1, :], loss_quantiles[3, :], label="95% Credible Interval")
+    predictionband!(ax, C ./ pf_day, μ, band[1, :], band[2, :])
 
     # Add Huber Fitted Model
     if !isnothing(huber)
@@ -339,7 +310,12 @@ function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
     end
 
     gl = GridLayout(f[1, 2])
+    A = selectdim(chains, 3, :A)
+    α = selectdim(chains, 3, :α)
+    B = selectdim(chains, 3, :B)
+    β = selectdim(chains, 3, :β)
     a = vec(@.(β / (α + β)))
+    G = @. ((α * A) / (β * B))^(1 / (α + β))
     bins = get_nbins(:scott, a)
 
     ax = Axis(gl[1, 1]; xlabel="a", limits=((0, 1), (0, nothing)))
@@ -350,7 +326,6 @@ function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
     hideydecorations!(ax)
     hist!(ax, log10.(vec(chains[:, :, :E])); bins)
 
-    G = @. ((α * A) / (β * B))^(1 / (α + β))
     ax = Axis(gl[3, 1]; xlabel="G", limits=(nothing, (0, nothing)))
     hideydecorations!(ax)
     hist!(ax, vec(log10.(G)); bins)
@@ -371,7 +346,7 @@ function plot_penalty(model, chains::AbstractArray{<:Real,3}, deviance=logrange(
     # Setup
     deviance = collect(deviance)
     y = StatsBase.response(model)
-    y_hat = sample_response(model, chains)
+    y_hat = expected_loss(model, chains)
 
     scatter_args = (;
         markersize=5,
@@ -408,7 +383,7 @@ function plot_penalty(model, chains::AbstractArray{<:Real,3}, deviance=logrange(
     return f
 end
 
-function plot_penalty(model::ShapedScaling, chains::AbstractArray{<:Real,3}; p=0.025)
+function plot_penalty(model::ShapedScaling, chains::AbstractArray{<:Real,3}; p=0.95)
 
     # Plot Expected Loss vs. Measured Loss
     f = Figure()
@@ -420,58 +395,62 @@ function plot_penalty(model::ShapedScaling, chains::AbstractArray{<:Real,3}; p=0
         limits=(limit, limit),
         aspect=1.0
     )
-    loss = StatsBase.response(model)
-    loss_hat = sample_response(model, chains)
-    p = [p, 0.5, 1 - p]
-    samplerange!(ax, loss, loss_hat; p)
 
-    # Sample Penalties
-    P = sample_penalty(model, chains)
-    df = DataFrame(model.runs)
+    # Sample model
+    chains = subsample(chains, 10)
+    loss = StatsBase.response(model)
+    loss_hat = expected_loss(model, chains)
+    P = expected_penalties(model, chains)
+
+    loss_mu, loss_low, loss_high = credible_interval(loss_hat; p)
+    rangebars!(ax, loss, loss_low, loss_high; color=:black, linewidth=0.5, direction=:x)
+    scatter!(ax, loss_mu, loss; color=:red, marker=:x, markersize=3)
 
     # LR Penalty
+    lr_ratios = logrange(1e-2, 1e2; length=50)
     ax = Axis(f[1, 2];
         xlabel="η/η₀",
-        xscale=log10,
-        limits=((1e-2, 1e2), nothing),
+        ylabel=L"y/\hat{y}",
+        xscale=log2,
+        yscale=log2,
+        limits=((1 / 128, 32), (0.25, 8)),
         aspect=1,
     )
-    chains = subsample(chains)
-    lr_ideal = ideal_lr(model, chains, df)
-    lr_ideal = vec(median(lr_ideal; dims=2))
-    lr_p = P[:, :, 1]
-    samplerange!(ax, df.lr ./ lr_ideal, df.loss; p)
+    lr = map(run -> run[:lr], model.runs)
+    lr_ideal = ideal_lr(model, chains)
+    lr_ideal = vec(mean(lr_ideal; dims=(1, 2)))
+    lr_resid = penalty_residual(loss, loss_hat, P.lr)
 
-    # FF Ratio Penalty
+    lr_sense = expected_lr_sensitivity(model, chains, lr_ratios)
+    scatter!(ax, lr ./ lr_ideal, lr_resid; marker=:x, color=:red)
+    predictionband!(ax, lr_ratios, credible_interval(lr_sense; p)...)
+
+    ff = logrange(1, 16; base=2, length=100)
     ax = Axis(f[2, 1];
-        xlabel="Feed Forward Ratio",
-        limits=((0, 8), nothing),
-        aspect=1,
+        xlabel="FF. Ratio",
+        ylabel="y/E[L']",
+        limits=((1,16), (0.125, 8))
     )
-    samplerange!(ax, df.ff_ratio, P[:, :, 2]; p)
-    # scatter!(ax, df.ff_ratio, @.(df.loss - exp(log(df.expected_loss) - df.ff_penalty)))
+    df = DataFrame(model.runs)
+    ff_resid = penalty_residual(loss, loss_hat, P.ff)
 
-    # FF Ratio Penalty
-    ax = Axis(f[2, 2];
-        xlabel="Aspect Ratio",
-        # limits=((0, 8), nothing),
-        aspect=1,
-    )
-    samplerange!(ax, df.aspect_ratio, P[:, :, 3]; p)
-
+    ff_resid = penalty_residual(loss, loss_hat, P.ff)
+    ff_sense = harmonic_penalty_posterior(selectdim(chains, 3, :ff_ratio), ff)
+    predictionband!(ax, ff, credible_interval(ff_sense; p)...)
+    scatter!(ax, df.ff_ratio, log.(ff_resid); color=:red)
 
     return f
 end
 
-function plot_lr_map(m, chains::AbstractArray{<:Real,3}, df::DataFrame;
+
+function plot_lr_map(m, chains::AbstractArray{<:Real,3}, df::DataFrame=DataFrame(m.runs);
     effective_batch_size=logrange(2^5, 2^25; length=20),
     model_size=logrange(1e5, 1e9; length=15),
     p=0.025
 )
-    chains = subsample(chains)
-    lr_quantiles = ideal_lr_map(m, chains, model_size, effective_batch_size; p=[p, 0.5, 1 - p])
-    lr_median = selectdim(lr_quantiles, 1, 2)
-    lr_band = abs.(selectdim(lr_quantiles, 1, 1) - selectdim(lr_quantiles, 1, 3)) ./ lr_median
+    chains = subsample(chains, 10)
+    lr_quantiles = ideal_lr_map(m, chains, model_size, effective_batch_size; p=0.95)
+    lr_mean = selectdim(lr_quantiles, 3, 1)
 
     f = Figure()
     gl = GridLayout(f[1, 1])
@@ -481,19 +460,19 @@ function plot_lr_map(m, chains::AbstractArray{<:Real,3}, df::DataFrame;
         ylabel="Model Size",
         yscale=log10,
     )
-    h_lr = contourf!(ax, effective_batch_size, model_size, lr_median';
+    h_lr = contourf!(ax, effective_batch_size, model_size, lr_mean';
         colormap=:roma,
     )
-    h_uq = contour!(ax, effective_batch_size, model_size, lr_band';
-        color=:red,
-        labels=true,
-        levels=10,
-    )
+    # h_uq = contour!(ax, effective_batch_size, model_size, lr_band';
+    #     color=:red,
+    #     labels=true,
+    #     levels=10,
+    # )
     Colorbar(gl[1, 2], h_lr; scale=log10, label="Learning Rate")
 
-    loss_hat = median(sample_response(m, chains); dims=2)
+    loss_hat = vec(mean(expected_loss(m, chains); dims=(1,2)))
     loss = StatsBase.response(m)
-    loss_residual = vec(@.(log10(loss) - log10(loss_hat)))
+    loss_residual = loss ./ loss_hat
     max_residula = maximum(abs, loss_residual)
 
 
