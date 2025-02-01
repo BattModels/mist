@@ -1,7 +1,7 @@
 using Makie
 using DataFrames
 using CairoMakie: CairoMakie
-using StatsBase: cor
+using StatsBase: cor, corspearman, corkendall
 using Clustering: hclust
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode, levels
@@ -9,11 +9,11 @@ using CategoricalArrays: categorical, levelcode, levels
 include("../style.jl")
 using .MISTStyle: MISTStyle, savefig, inch, pt
 
-function plot_score_correlation!(f, df)
+function plot_score_correlation!(f, df; correlation, kwargs...)
     columns = names(df)
     dist = Matrix{Float64}(undef, length(columns), length(columns))
     for I in eachindex(IndexCartesian(), dist)
-        dist[I] = cor(df[!, columns[I[1]]], df[!, columns[I[2]]])
+        dist[I] = correlation(df[!, columns[I[1]]], df[!, columns[I[2]]])
     end
 
     # Order entries by clustering
@@ -29,7 +29,7 @@ function plot_score_correlation!(f, df)
         yticklabelsize=5pt,
         aspect=DataAspect(),
     )
-    return heatmap!(ax, dist; colorrange=(0, 1), lowclip=:darkred)
+    return heatmap!(ax, dist; kwargs...)
 end
 
 function plot_auroc!(f, df)
@@ -47,7 +47,7 @@ function plot_auroc!(f, df)
     )
     h = barplot!(ax, levelcode.(df.name), df.auroc;
         dodge=levelcode.(df.dataset),
-        color = levelcode.(df.dataset),
+        color=levelcode.(df.dataset),
         colormap=MISTStyle.CAT_COLORS,
         colorrange=(1, 10)
     )
@@ -62,7 +62,7 @@ function plot_auroc!(f, df)
     return f, elements
 end
 
-function figure_interp_surprise()
+function figure_interp_surprise(; correlation=corspearman)
     # Crowdsourced
     df_crowd = DataFrame(JSON.parsefile("crowdsourced.json")["scores"])
     models = [
@@ -101,65 +101,61 @@ function figure_interp_surprise()
     auroc.dataset = replace.(auroc.dataset,
         "crowd" => "a) Sheridan et. al.",
         "ba" => "b) Chen et. al.",
-        "ma" => "c) Assembly Index"
-
-    )
+        "ma" => "c) Assembly Index")
     auroc.name = categorical(auroc.name)
     auroc.dataset = categorical(auroc.dataset)
 
 
-    f = with_theme(MISTStyle.theme()) do
-        f = Figure(;
-            size=(3inch, 3.2inch),
-            figure_padding=(2, 2, -10, 3),
-        )
-        # gl_crowd = GridLayout(f[1, 1])
-        gl = GridLayout(f[3, 1:2])
-        cb = Colorbar(gl[1,1];
-            vertical=false,
-            flipaxis=false,
-            lowclip=:darkred,
-            colorrange=(0, 1),
-            tellheight=true,
-            tellwidth=false,
-            label="Correlation",
-            labelsize=6pt,
-            ticklabelsize=5pt,
-            halign=:left,
-            valign=:top,
-        )
-        h_crowd = plot_score_correlation!(f[1,1], df_crowd)
-        h_ba = plot_score_correlation!(f[1, 2], df_ba)
-        h_ma = plot_score_correlation!(f[2, 1], df_ma)
-        h, elements = plot_auroc!(f[2, 2], auroc)
-        Legend(gl[1, 2], elements, map(x -> x.label[], elements);
-            labelsize=5pt,
-            tellheight=true,
-            tellwidth=true,
-            nbanks=2,
-            orientation=:horizontal,
-            halign=:center,
-            alignmode=Outside(),
-        )
-        colgap!(gl, 10)
+    f = Figure(;
+        size=(3inch, 3.2inch),
+        figure_padding=(2, 2, -10, 3),
+    )
+    # gl_crowd = GridLayout(f[1, 1])
+    gl = GridLayout(f[3, 1:2])
+    cb = Colorbar(gl[1, 1];
+        vertical=false,
+        flipaxis=false,
+        # lowclip=:darkred,
+        colorrange=(-1, 1),
+        colormap=:vik10,
+        tellheight=true,
+        tellwidth=false,
+        label=L"Spearman's $\rho$",
+        labelsize=6pt,
+        ticklabelsize=5pt,
+        halign=:left,
+        valign=:top,
+    )
+    kwargs = (; correlation, colorrange=cb.colorrange, colormap=cb.colormap)
+    h_crowd = plot_score_correlation!(f[1, 1], df_crowd; kwargs...)
+    h_ba = plot_score_correlation!(f[1, 2], df_ba; kwargs...)
+    h_ma = plot_score_correlation!(f[2, 1], df_ma; kwargs...)
+    h, elements = plot_auroc!(f[2, 2], auroc)
+    Legend(gl[1, 2], elements, map(x -> x.label[], elements);
+        labelsize=5pt,
+        tellheight=true,
+        tellwidth=true,
+        nbanks=2,
+        orientation=:horizontal,
+        halign=:center,
+        alignmode=Outside(),
+    )
+    colgap!(gl, 10)
 
-        label_kwargs = (;
-            fontsize=6pt,
-            font=:bold,
-            halign=:right,
-            tellheight=false,
-        )
-        Label(f[1, 1, TopLeft()], "a)"; padding=(0, 35, -2, 0), label_kwargs...)
-        Label(f[1, 2, TopLeft()], "b)"; padding=(0, 30, -2, 0), label_kwargs...)
-        Label(f[2, 1, TopLeft()], "c)"; padding=(0, 35, -2, 0), label_kwargs...)
-        Label(f[2, 2, TopLeft()], "d)"; padding=(0, 30, -2, 0), label_kwargs...)
+    label_kwargs = (;
+        fontsize=6pt,
+        font=:bold,
+        halign=:right,
+        tellheight=false,
+    )
+    Label(f[1, 1, TopLeft()], "a)"; padding=(0, 35, -2, 0), label_kwargs...)
+    Label(f[1, 2, TopLeft()], "b)"; padding=(0, 30, -2, 0), label_kwargs...)
+    Label(f[2, 1, TopLeft()], "c)"; padding=(0, 35, -2, 0), label_kwargs...)
+    Label(f[2, 2, TopLeft()], "d)"; padding=(0, 30, -2, 0), label_kwargs...)
 
-        rowgap!(f.layout, 3)
-        resize_to_layout!(f)
+    rowgap!(f.layout, 3)
+    resize_to_layout!(f)
 
-        return f
-    end
-    savefig("interp_surprise", f)
     return f
 end
 
