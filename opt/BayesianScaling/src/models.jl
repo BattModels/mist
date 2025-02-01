@@ -173,7 +173,7 @@ function expected_loss(m::ShapedScaling, chains::AbstractArray{<:Number,3})
     return y_hat
 end
 
-function expected_penalties(m::ShapedScaling, chains::AbstractArray{<:Number, 3})
+function expected_penalties(m::ShapedScaling, chains::AbstractArray{<:Number,3})
     nruns = length(m.runs)
     lr = similar(chains, size(chains, 1), size(chains, 2), nruns)
     ff = similar(lr)
@@ -229,9 +229,9 @@ function lamb_penalty(lr, model_size, effective_batch_size; ideal, penalty)
     return geometric_penalty(lr, lr_0, penalty...)
 end
 
-function expected_lr_sensitivity(::ShapedScaling,  chains::AbstractArray{<:Real, 3}, ratios::Vector)
+function expected_lr_sensitivity(::ShapedScaling, chains::AbstractArray{<:Real,3}, ratios::Vector)
     p = similar(chains, size(chains, 1), size(chains, 2), length(ratios))
-    for I in  CartesianIndices(axes(chains)[1:2])
+    for I in CartesianIndices(axes(chains)[1:2])
         θ = view(chains, I.I..., :lr)[:penalty]
         for (i, lr_ratio) in enumerate(ratios)
             p[I, i] = geometric_penalty(lr_ratio, one(lr_ratio), θ...) |> exp
