@@ -66,9 +66,9 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             if hasattr(self.encoder, "config") and hasattr(
                 self.encoder.config, "vocab_size"
             ):
-                assert self.encoder.config.vocab_size == vocab_size, (
-                    f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
-                )
+                assert (
+                    self.encoder.config.vocab_size == vocab_size
+                ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
 
         self.save_hyperparameters()
 

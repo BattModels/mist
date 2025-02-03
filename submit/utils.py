@@ -51,6 +51,7 @@ def get_best_ckpt(ckpt_dir) -> str:
     assert best is not None
     return str(best.resolve())
 
+
 def get_last_ckpt(path: Path) -> Path:
     """Return the path for the last checkpoint in a checkpoint directory"""
     last_step = None
@@ -72,6 +73,7 @@ def get_last_ckpt(path: Path) -> Path:
             last_step = step
 
     return str(last.resolve())
+
 
 def run_id_from_logs(log) -> Optional[str]:
     """Identify the run id from a log file"""

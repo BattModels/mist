@@ -3,7 +3,7 @@
     using JLD2: jldopen
     using OnlineStats: Series
 
-    # Create some stats 
+    # Create some stats
     ts = tracked_stats()
     s = Series(;
         fertility=ts.fertility,

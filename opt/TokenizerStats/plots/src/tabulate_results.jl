@@ -79,7 +79,7 @@ function transformer_models(
         on=:pretrained_id
     )
 
-    # Test Results 
+    # Test Results
     runs = []
     for file in readdir(joinpath(cache, "test"); join=true)
         data = JSON.parsefile(file)
@@ -315,5 +315,3 @@ function tmqm_finetune(stats_dir, dff, dft)
     df = innerjoin(df, dft; on=:id => :ckpt_id)
     return df
 end
-
-

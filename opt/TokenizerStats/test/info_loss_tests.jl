@@ -56,7 +56,7 @@
     mask[fld(length(code), 2)] = true
     @testset "single masked" check_information_loss(m, code, mask)
 
-    # Random mask 
+    # Random mask
     mask = rand(Bool, length(code))
     @testset "rand mask" check_information_loss(m, code, mask)
 end

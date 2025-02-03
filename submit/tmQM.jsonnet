@@ -19,23 +19,23 @@
         batch_size: 128,
         val_batch_size: 2 * self.batch_size,
         target_columns: [
-          "Electronic_E",
-          "Dispersion_E",
-          "Dipole_M",
-          "Metal_q",
-          "HL_Gap",
-          "HOMO_Energy",
-          "LUMO_Energy",
-          "Polarizability",
-        ]
-      }
+          'Electronic_E',
+          'Dispersion_E',
+          'Dipole_M',
+          'Metal_q',
+          'HL_Gap',
+          'HOMO_Energy',
+          'LUMO_Energy',
+          'Polarizability',
+        ],
+      },
     },
     model: {
       class_path: 'electrolyte_fm.models.LMFinetuning',
       init_args: {
         encoder_ckpt: 'ibm/MoLFormer-XL-both-10pct',
-        task: "regression",
-        metrics: ["mae", "rmse", "r2"],
+        task: 'regression',
+        metrics: ['mae', 'rmse', 'r2'],
         freeze_encoder: true,
         output_size: std.length($.train.data.init_args.target_columns),
 
@@ -57,6 +57,6 @@
           },
         },
       },
-    }
-  }
+    },
+  },
 }

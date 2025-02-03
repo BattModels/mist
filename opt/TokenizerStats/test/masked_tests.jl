@@ -17,4 +17,3 @@ end
     @test mc[1] == mc.code[1]
     @test mc[1:5] == mc.code[1:5]
 end
-

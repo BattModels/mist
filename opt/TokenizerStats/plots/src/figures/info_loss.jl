@@ -334,7 +334,7 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
         colorrange=h.colorrange[],
     )
 
-    # Check correlation 
+    # Check correlation
     @show t = HypothesisTests.CorrelationTest(df.avg_info_loss, df.test_loss)
     @show pvalue(t)
 

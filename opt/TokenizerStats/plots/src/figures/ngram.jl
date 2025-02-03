@@ -316,7 +316,7 @@ function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
         colormap,
     )
 
-    # Scatter Plot of Pretrain vs. Finetune 
+    # Scatter Plot of Pretrain vs. Finetune
     df = leftjoin(
         select(subset(df_pretrain, :ngram => ByRow(==(5))), :tokenizer, :avg_model_token_loss => :pretrain),
         select(subset(df_finetune, :ngram => ByRow(==(5))), :tokenizer, :avg_model_token_loss => :finetune);

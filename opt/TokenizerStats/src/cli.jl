@@ -204,4 +204,3 @@ function compact_ngrams(T::Type, ngrams::AbstractDict)
     Dict(T.(k) => Float32(v) for (k, v) in pairs(ngrams))
 end
 compact_ngrams(ngrams::AbstractDict) = compact_ngrams(UInt16, ngrams)
-

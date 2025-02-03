@@ -1,5 +1,5 @@
 function top_k_tokens(ngram_file; k=5)
-    # Load unigram statistics 
+    # Load unigram statistics
     unigram, tok = jldopen(ngram_file, "r") do data
         # Load tokenizer
         name = data["tokenizer"][:name]
@@ -217,4 +217,3 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
 
     return df_out
 end
-
