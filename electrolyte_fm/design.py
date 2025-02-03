@@ -79,6 +79,9 @@ class HyperSpace:
             )
         return designs
 
+    def gsd(self, r=1):
+        return self.get_design(pyDOE2.gsd(self.levels, r))
+
     @classmethod
     def from_fid(cls, fid):
         data = yaml.safe_load(fid)

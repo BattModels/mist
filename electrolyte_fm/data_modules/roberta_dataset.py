@@ -88,6 +88,10 @@ class RobertaDataSet(LightningDataModule):
             mlm=True,
         )
         ds = maybe_shard_dataset(self.trainer, self.dataset)
+        ds = ds.shuffle(
+            seed=42,
+            buffer_size=100 * max(self.val_batch_size, self.batch_size),
+        )
 
         # Transcode
         ds = encode_molecules(ds, "text", encoding=self.encoding)
