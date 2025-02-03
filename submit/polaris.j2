@@ -1,7 +1,11 @@
 #!/bin/sh
 {%- from "./utils.j2" import cliopts, export_env, export_job_config %}
 #PBS -N {{ jobname or "MIST" }}
+{%- if job_queue is defined %}
+#PBS -l select={{ nodes * job_queue.tasks }}:system=polaris
+{%- else %}
 #PBS -l select={{ nodes or 1 }}:system=polaris
+{%- endif %}
 #PBS -l place=scatter
 #PBS -l filesystems=eagle:home
 #PBS -l walltime={{ walltime or "00:20:00" }}
@@ -9,6 +13,10 @@
 #PBS -r y
 #PBS -q {{ queue or "debug" }}
 #PBS -A {{ account or "FoundEnergy" }}
+{%- if email is defined %}
+#PBS -M {{ email }}
+#PBS -m abe
+{%- endif %}
 set -x
 cd ${PBS_O_WORKDIR}
 
@@ -46,6 +54,14 @@ source ${PBS_O_WORKDIR}/activate
 echo "$(df -h /local/scratch)"
 export TMPDIR=/local/scratch
 
+{%- if job_queue is defined %}
+cat $PBS_NODEFILE
+unset MASTER_ADDR
+unset MASTER_PORT
+unset WORLD_SIZE
+python submit/fog.py scheduler --num-workers {{ job_queue.tasks }} {{ job_queue.queue }}
+
+{% else %}
 {% if deepspeed is defined %}
 # Write out deepspeed config
 cat > $TMPDIR/deepspeed.json<<EOF
@@ -66,3 +82,5 @@ nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
     python3 train.py fit
+
+{%- endif %}
