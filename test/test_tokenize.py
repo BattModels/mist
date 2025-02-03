@@ -176,10 +176,7 @@ def test_mlm_tokenizer(smile_tokenizer):
 )
 def test_spe_setup():
     try:
-        from electrolyte_fm.tokenize.spe import (
-            PreTrainedSPETokenizer,
-            pretrained_spe_tokenizer,
-        )
+        from electrolyte_fm.tokenize.spe import pretrained_spe_tokenizer
     except ImportError:
         pytest.skip("SmilesPE not installed")
 

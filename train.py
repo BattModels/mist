@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import timedelta
 
-import _jsonnet as jsonnet  # Unused, but otherwise we get glibc errors on delta 🫠
+import _jsonnet as jsonnet  # noqa: F401 Unused, but otherwise we get glibc errors on delta 🫠
 import torch
 from jsonargparse import lazy_instance
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint

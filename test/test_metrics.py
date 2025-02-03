@@ -1,11 +1,10 @@
 from itertools import chain, repeat
-from typing import Union, Optional
+from typing import Union
 
 import pytest
 import torch
 from torchmetrics import Metric, Accuracy
 from torchmetrics import MetricCollection as TmMetricCollection
-from torchmetrics.regression import MeanSquaredError
 from torchmetrics.wrappers import BootStrapper, ClasswiseWrapper
 
 from electrolyte_fm.utils.metrics import (

@@ -4,12 +4,10 @@ import torch
 from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.wrappers import BootStrapper
-from torchmetrics.wrappers.abstract import WrapperMetric
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 from torchmetrics.classification import (
     AUROC,
     AveragePrecision,
-    Accuracy,
     BinaryStatScores,
 )
 from torchmetrics.regression import (

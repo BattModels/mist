@@ -4,12 +4,11 @@ import gzip
 import logging
 import re
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable
 
 import pandas as pd
 import typer
 from datasets import Dataset, DatasetDict
-from openbabel import pybel
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds, rdmolfiles, rdmolops
 

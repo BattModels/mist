@@ -3,7 +3,6 @@ import time
 import logging
 import subprocess
 import json
-import shutil
 import argparse
 from pathlib import Path
 from typing import Optional, Any

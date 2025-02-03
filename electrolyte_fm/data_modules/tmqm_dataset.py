@@ -1,14 +1,11 @@
-import gzip
-import re
 from pathlib import Path
-from typing import Iterable, Optional
-import logging
+from typing import Optional
 
 from lightning import LightningDataModule
 import torch
 
 from torch.utils.data import DataLoader
-from datasets import load_dataset, Dataset
+from datasets import load_dataset
 from transformers import DataCollatorWithPadding
 
 from ..utils.tokenizer import load_tokenizer

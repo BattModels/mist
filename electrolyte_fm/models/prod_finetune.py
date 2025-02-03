@@ -2,7 +2,7 @@
 import torch
 import json
 from pathlib import Path
-from transformers import AutoModel, AutoConfig, AutoTokenizer, DataCollatorWithPadding
+from transformers import AutoModel, AutoConfig, DataCollatorWithPadding
 from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
 from electrolyte_fm.models.normalize import get_normalizer
 

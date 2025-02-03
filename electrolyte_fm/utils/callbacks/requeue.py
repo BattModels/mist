@@ -1,7 +1,6 @@
 import logging
 import os
 import signal
-import sys
 from pathlib import Path
 from shutil import which
 from subprocess import PIPE, STDOUT, Popen, run

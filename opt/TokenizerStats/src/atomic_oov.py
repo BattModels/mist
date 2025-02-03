@@ -3,12 +3,11 @@ import concurrent.futures
 import itertools
 import json
 import logging
-from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import chain, islice
 from pathlib import Path
-from typing import Any, Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 import selfies
 from build_vocab import (

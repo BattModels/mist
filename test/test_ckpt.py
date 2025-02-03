@@ -1,15 +1,9 @@
 import json
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from unittest import mock
 
 import pytest
-import torch
-from lightning.pytorch import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.cli import LightningArgumentParser, LightningCLI
 from lightning.pytorch.demos.boring_classes import BoringDataModule, BoringModel
-from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizerBase
 
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer

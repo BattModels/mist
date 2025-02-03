@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, Mock
 from lightning.pytorch import Trainer
 from lightning.pytorch.demos.boring_classes import BoringDataModule, BoringModel
 
-import train
 from electrolyte_fm.utils.callbacks import Requeue
 from train import cli_main
 
