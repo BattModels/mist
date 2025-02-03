@@ -172,10 +172,10 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         metrics: List[str] = ["auroc"],
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
-        target_columns: Optional[List[str]] = None,
         transform: Optional[str] = None,
         tokenizer: Optional[str] = None,
         bootstrap: Union[bool, int] = False,
+        target_columns: Optional[List[str]] = None,
         track_oov: bool = True,
     ) -> None:
         super().__init__()
