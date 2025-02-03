@@ -1,10 +1,12 @@
 import json
 import re
+import traceback
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 import logging
 
 import wandb
+from wandb.apis.public import Run
 from datasets import fingerprint
 
 logging.basicConfig(level=logging.INFO)
@@ -19,32 +21,29 @@ def model_size(d_model: int, d_ff: int, n_layers: int) -> int:
     return attention_qkv + project + ff
 
 
-def get_entry(config: dict, *entry_path):
-    if len(entry_path) > 1:
-        path = entry_path[0]
-        if path in config:
-            val = get_entry(config[path], *entry_path[1:])
+def get_entry(config: dict | str | None, *entry_path: str):
+    if isinstance(config, dict):
+        if len(entry_path) > 1:
+            if (path := entry_path[0]) in config:
+                val = get_entry(config[path], *entry_path[1:])
+                if val is not None:
+                    return val
+
+            elif "init_args" in config:
+                return get_entry(config["init_args"], *entry_path)
+        else:
+            val = config.get(entry_path, None)
             if val is not None:
                 return val
+            elif "init_args" in config:
+                return config["init_args"].get(*entry_path, None)
+            return None
 
-        elif "init_args" in config:
-            # print(f"init_args: {",".join(entry_path)}, {config}")
-            return get_entry(config["init_args"], *entry_path)
-    elif config is None:
-        return None
-    elif isinstance(config, str):
-        return None
-    else:
-        # print(f"getting {entry_path} from {config}")
-        val = config.get(*entry_path, None)
-        if val is not None:
-            return val
-        elif "init_args" in config:
-            return config["init_args"].get(*entry_path, None)
-        return None
+    # Otherwise, return None
+    return None
 
 
-def get_cluster(hostname: str) -> str:
+def get_cluster(hostname: str) -> Optional[str]:
     if hostname == "localhost":
         return "h001"
     elif hostname.startswith("lh"):
@@ -59,7 +58,7 @@ def get_cluster(hostname: str) -> str:
         return None
 
 
-def summary_metric(run, key, type="last", best=None):
+def summary_metric(run: Run, key, type="last", best=None):
     value = run.summary_metrics.get(key, None)
     if value is None:
         return None
@@ -76,7 +75,7 @@ def summary_metric(run, key, type="last", best=None):
     return x
 
 
-def system_metrics(run):
+def system_metrics(run: Run):
     df = run.history(stream="system")
     mean = df.mean().to_dict()
     std = df.std().to_dict()
@@ -87,8 +86,20 @@ def system_metrics(run):
     return stats
 
 
-def run_summary(run):
+def metric_traces(run: Run, x_axis: str, metrics: dict[str, str]) -> dict[str, list]:
+    records = run.scan_history(keys=[x_axis, *metrics.keys()])
+    out = {k: [] for k in ["step", *metrics.values()]}
+    for sample in records:
+        out["step"].append(sample[x_axis])
+        for k, v in metrics.items():
+            out[v].append(sample[k])
+
+    return out
+
+
+def run_summary(run: Run):
     config = run.config
+    assert isinstance(run.metadata, dict)
     stats = {
         "id": run.id,
         "name": run.name,
@@ -159,7 +170,7 @@ def run_summary(run):
     return stats
 
 
-def pretraining_summary(run):
+def pretraining_summary(run: Run):
     config = run.config
     row = run_summary(run)
     row["model"].update(
@@ -173,6 +184,9 @@ def pretraining_summary(run):
     row["data"].update({"path": get_entry(config, "cli", "data", "path")})
     row["model"]["model_size"] = model_size(
         row["model"]["d_model"], row["model"]["d_ff"], row["model"]["n_layers"]
+    )
+    row["metric_traces"] = metric_traces(
+        run, "trainer/global_step", {"val/loss_epoch": "val_loss"}
     )
     return row
 
@@ -211,7 +225,7 @@ def something(x, default):
     return x if x is not None else default
 
 
-def finetuning_summary(run):
+def finetuning_summary(run: Run):
     row = run_summary(run)
     config = run.config
     row["model"].update(
@@ -376,7 +390,7 @@ def export_runs(export_map: dict, cache: Path, runs, name: str = None):
         except KeyboardInterrupt:
             raise
         except Exception:
-            logging.error("failed to export %s", run.id)
+            logging.error("failed to export %s: %s", run.id, traceback.format_exc())
             continue
 
 
