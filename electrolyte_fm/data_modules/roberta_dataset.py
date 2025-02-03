@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -88,7 +89,10 @@ class RobertaDataSet(LightningDataModule):
             mlm=True,
         )
         ds = maybe_shard_dataset(self.trainer, self.dataset)
-        ds = ds.shuffle(seed=42)
+        ds = ds.shuffle(
+            seed=42,
+            buffer_size=100 * max(self.val_batch_size, self.batch_size),
+        )
 
         # Transcode
         ds = encode_molecules(ds, "text", encoding=self.encoding)
@@ -155,7 +159,13 @@ class RobertaDataSet(LightningDataModule):
         return state
 
     def load_state_dict(self, state: dict):
-        assert self.path == Path(state["path"])
+        if self.path != Path(state["path"]):
+            logging.warning(
+                "mis-matched paths when resuming dataloader: %s vs. %s",
+                self.path,
+                state["path"],
+            )
+        # assert self.path == Path(state["path"])
         assert self.vocab_size == state["vocab_size"]
         for dl in ["train_dataset", "val_dataset", "test_dataset"]:
             if dl in state and hasattr(self, dl):

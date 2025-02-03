@@ -74,27 +74,32 @@ class MyLightningCLI(LightningCLI):
 
 def cli_main(args=None):
     monitor = "val/loss_epoch"
+    val_loss_ckpt = ModelCheckpoint(
+        filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.3f}",
+        monitor=monitor,
+        save_top_k=2,
+        verbose=True,
+        save_last="link",
+        enable_version_counter=True,
+        auto_insert_metric_name=False,
+    )
+    val_loss_ckpt.CHECKPOINT_NAME_LAST = "best"
+    step_ckpt = ModelCheckpoint(
+        filename="epoch={epoch}-step={step}",
+        monitor="step",
+        verbose=True,
+        mode="max",
+        save_top_k=2,
+        save_last=True,
+        train_time_interval=timedelta(minutes=15),
+        auto_insert_metric_name=False,
+    )
+    step_ckpt.CHECKPOINT_NAME_LAST = "last"
     callbacks = [
         ThroughputMonitor(),
-        ModelCheckpoint(
-            filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
-            monitor=monitor,
-            save_top_k=2,
-            verbose=True,
-            save_last="link",
-            enable_version_counter=True,
-            auto_insert_metric_name=False,
-        ),
-        ModelCheckpoint(
-            filename="epoch={epoch}-step={step}",
-            monitor="step",
-            verbose=True,
-            mode="max",
-            save_top_k=2,
-            save_last=False,
-            train_time_interval=timedelta(minutes=30),
-            auto_insert_metric_name=False,
-        ),
+        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
+        val_loss_ckpt,
+        step_ckpt,
         LearningRateMonitor("step"),
     ]
 
@@ -118,7 +123,8 @@ def cli_main(args=None):
             "logger": logger,
             "precision": "16-mixed",
             "strategy": "deepspeed",
-            "use_distributed_sampler": False,  # Handled by DataModule (Needed as Iterable)
+            # Handled by DataModule (Needed as Iterable)
+            "use_distributed_sampler": False,
         },
         save_config_callback=SaveConfigWithCkpts,
         save_config_kwargs={"overwrite": True},

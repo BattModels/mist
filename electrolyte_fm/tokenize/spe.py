@@ -22,6 +22,9 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
 
         with codecs.open(str(spe_file), "r") as fid:
             self._tokenizer = SPE_Tokenizer(fid)
+
+        self._merges_file = Path(spe_file)
+
         super().__init__(**kwargs)
 
     def __repr__(self):
@@ -102,6 +105,11 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
         token_ids = [token_ids] if isinstance(token_ids, int) else token_ids
         tokens = [self._convert_id_to_token(id) for id in token_ids]
         return "".join(tokens)
+
+    def save_pretrained(self, save_directory: str, **kwargs):
+        Path(save_directory).mkdir(exist_ok=True, parents=True)
+        Path(save_directory, "vocab.json").write_text(json.dumps(self._vocab))
+        Path(save_directory, "spe_merges.txt").write_text(self._spe_file.read_text())
 
 
 def process_vocab(vocab_list: list[str]) -> dict[str, int]:
