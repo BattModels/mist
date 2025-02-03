@@ -157,7 +157,8 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         from .cache import cached_github_archive
 
         # https://huggingface.co/ibm/materials.smi-ted/blob/752e5015d4a22e0ce6ffa259673dccb23ee5a936/smi-ted/inference/smi_ted_large/load.py#L1
-        regex = "(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+        # Changed to raw string (`\\\\` => `\\`) to avoid invalid escape warnings on `\[` etc.
+        regex = r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
         vocab_file = cached_github_archive(
             "ibm/materials",
             "0b965c92eac8c64c1e33b910b58b74da3a3d688b",
