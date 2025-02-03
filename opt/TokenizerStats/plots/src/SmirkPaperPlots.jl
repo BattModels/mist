@@ -68,8 +68,8 @@ end
 function savefig(name::String, f::Figure; dpi=300)
     fig_dir = joinpath(pkgdir(TokenizerStats), "fig")
     mkpath(fig_dir)
-    save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1)
-    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch)
+    save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1, backend=CairoMakie)
+    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=CairoMakie)
     return nothing
 end
 

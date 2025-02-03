@@ -18,6 +18,7 @@ function figure_ngram_vs_transformer(stats_dir, df)
         limits=(nothing, (0, nothing)),
         ylabel="Transformer [nats/token]",
         xticklabelrotation=0.4,
+        xgridvisible=false,
         xticks,
     )
     h = barplot!(ax, levelcode.(df.tokenizer), df.val_loss;
@@ -33,8 +34,6 @@ function figure_ngram_vs_transformer(stats_dir, df)
     Legend(f[1, 1], ds_elements, map(e -> e.label, ds_elements);
         tellheight=false, tellwidth=false, orientation=:vertical,
         framevisible=true,
-        patchstrokecolor=:black,
-        patchstrokewidth=1,
         margin=(2, 2, 2, 2),
         padding=3,
         valign=:top,
@@ -112,6 +111,7 @@ function figure_tf_finetune(stats_dir, dff, dft)
         xticklabelrotation=0.4,
         yticks=LinearTicks(5),
         ytickformat="{:.0%}",
+        xgridvisible=false,
     )
     h = _finetune_results!(ax, dfr.dataset, dfr.test_loss, dfr.tokenizer;
         std=dfr.test_loss_std,

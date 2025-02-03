@@ -318,7 +318,7 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
         marker=df.marker
     )
 
-    ax = Axis(f[1, 2];
+    ax_info = Axis(f[1, 2];
         limits=(nothing, (0, 1)),
         ylabel="tmQM Test R2",
         xlabel="Information Loss [nats/molecule]",
@@ -327,7 +327,7 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
     )
 
     df = subset(df, :dataset => ByRow(==("tmQM")))
-    scatter!(ax, df.avg_info_loss, df.test_loss;
+    scatter!(ax_info, df.avg_info_loss, df.test_loss;
         marker=df.marker,
         color=levelcode.(df.dataset),
         colormap=h.colormap[],

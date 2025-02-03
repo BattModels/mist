@@ -3,8 +3,9 @@ function theme()
         rowgap=2,
         colgap=2,
         fonts=(;
-            :regular => findfont("Helvetica", "Regular"),
-            :bold => findfont("Helvetica", "Bold"),
+            :regular => "Times New Roman Regular",
+            :bold => "Times New Roman Bold",
+            :italic => "Times New Roman Italic",
         ),
         fontsize=8pt,
         size=(246, 152),
