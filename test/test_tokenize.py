@@ -15,7 +15,6 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 SMILE_TOKENIZER = [
     "smirk",
-    "SmilesPE/SPE_ChEMBL",
     "ibm/MoLFormer-XL-both-10pct",
 ]
 
