@@ -1,13 +1,13 @@
+import argparse
 import concurrent.futures
 import itertools
 import json
 import logging
-from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from itertools import chain, islice
 from pathlib import Path
-from typing import Any, Optional
+from typing import Callable, Iterable, Optional
 
 import selfies
 from build_vocab import (
@@ -216,7 +216,7 @@ def chiral_extended():
     )
 
 
-ATOM_DATASETS = {
+DATASETS: dict[str, Callable[[], Iterable[Atom | str]]] = {
     "elements": elements,
     "rings": rings,
     "bonds": bonds,
@@ -237,16 +237,27 @@ ATOM_DATASETS = {
         include_isotopes(include_charge(elements())),
         chirality=chiral_extended(),
     ),
+    "tmQM": lambda: tmqm_dataset(),
 }
 
 for subset in MOLNET_DATASET.keys():
     name = f"MoleculeNet/{subset}"
-    ATOM_DATASETS[name] = lambda subset=subset: molecularnet(subset)
+    DATASETS[name] = lambda subset=subset: molecularnet(subset)
 
 
-TOKENIZERS = json.loads(
-    Path(__file__).parent.parent.joinpath("tokenizers.json").read_text()
-)
+def tmqm_dataset(path: Optional[str] = None):
+    if path is not None:
+        path = Path(path)
+    else:
+        path = Path(__file__).parent.parent.parent.joinpath("tmQM")
+
+    ds = load_dataset(
+        "arrow",
+        name="tmQM",
+        data_files=[str(path.joinpath("data/*/*.arrow"))],
+    )
+    for obs in ds["train"]:
+        yield obs["smiles"]
 
 
 def build_atom_generator(name):
@@ -278,72 +289,102 @@ def filter_and_count_nones(iterator):
 
 def tabulate_tokenizer(
     tok: PreTrainedTokenizerBase,
-    datasets: dict[str, Any],
+    dataset: Callable[[], Iterable[Atom | str]],
     encoding: str = "smiles",
-    name: str = "",
 ) -> dict:
-    out = dict()
-    for ds_name, iter in datasets.items():
-        unk_token_id = tok.unk_token_id
-        nobs = 0
-        n_oov = 0
-        n_failed_encode = 0
-        oov_samples = set()
+    unk_token_id = tok.unk_token_id
+    nobs = 0
+    n_oov = 0
+    n_failed_encode = 0
+    oov_samples = set()
 
-        # Encode molecules
-        if encoding == "smiles":
-            ds = (str(x) for x in iter())
-        elif encoding == "selfies":
-            ds = safe_selfies(iter())
+    # Encode molecules
+    if encoding == "smiles":
+        ds = (str(x) for x in dataset())
+    elif encoding == "selfies":
+        ds = safe_selfies(dataset())
 
-        for batch in batched(ds, 1000):
-            batch, failed_encode = filter_and_count_nones(batch)
-            n_failed_encode += failed_encode
+    for batch in batched(ds, 1000):
+        batch, failed_encode = filter_and_count_nones(batch)
+        n_failed_encode += failed_encode
 
+        # Fast tokenizers can be used directly
+        if hasattr(tok, "is_fast") and tok.is_fast:
             batch_input_ids = tok(batch)["input_ids"]
-            # Tests are in test/test_tokenizer.py::test_oov_tokens
-            # to ensure that unk_token_id is correctly emitted by
-            # tokenizers
-            for smi, obs in zip(batch, batch_input_ids):
-                if unk_token_id in obs:
-                    n_oov += 1
-                    if len(oov_samples) < 20:
-                        oov_samples.add(smi)
-                nobs += 1
+        else:
+            batch_input_ids = [tok(smi)["input_ids"] for smi in batch]
 
-        out[ds_name] = {
-            "nobs": nobs,
-            "oov": n_oov,
-            "oov_samples": list(oov_samples),
-            "failed_encode": n_failed_encode,
-        }
-        LOG.info("%s - %s: %d/%d", name, ds_name, n_oov, nobs)
-    return out
+        # Tests are in test/test_tokenizer.py::test_oov_tokens
+        # to ensure that unk_token_id is correctly emitted by
+        # tokenizers
+        for smi, obs in zip(batch, batch_input_ids):
+            if unk_token_id in obs:
+                n_oov += 1
+                if len(oov_samples) < 20:
+                    oov_samples.add(smi)
+            nobs += 1
+
+    return {
+        "nobs": nobs,
+        "oov": n_oov,
+        "oov_samples": list(oov_samples),
+        "failed_encode": n_failed_encode,
+    }
 
 
-def process_tokenizer(tokenizer: dict):
+def process_tokenizer(dataset_name: str, tokenizer: dict[str, str]) -> dict:
     tok = load_tokenizer(tokenizer["name_or_path"])
-    LOG.info("processing %s", tokenizer["name"])
-    return tokenizer["name_or_path"], tabulate_tokenizer(
-        tok, ATOM_DATASETS, tokenizer["encoding"], name=tokenizer["name"]
-    )
+    dataset = DATASETS[dataset_name]
+    LOG.info("processing %s for %s", dataset_name, tokenizer["name"])
+    return tabulate_tokenizer(tok, dataset, tokenizer["encoding"])
 
 
 if __name__ == "__main__":
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = {
-            executor.submit(process_tokenizer, tokenizer): tokenizer["name"]
-            for tokenizer in TOKENIZERS
-        }
-        out = defaultdict(lambda: defaultdict(dict))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("name_or_path", type=str)
+    parser.add_argument("--name", type=str, default=None)
+    parser.add_argument("--encoding", type=str, default=None)
+    parser.add_argument("--workers", type=int, default=None)
+    parser.add_argument("-d", "--dataset", type=str, default=None, action="append")
+    parser.add_argument("--output", type=argparse.FileType("w"), default="-")
+    args = parser.parse_args()
 
+    # Lookup tokenizer information
+    tokenizer = {
+        "name": args.name,
+        "name_or_path": args.name_or_path,
+        "encoding": args.encoding,
+    }
+    tokenizers = Path(__file__).parent.parent.joinpath("tokenizers.json").read_text()
+    for tok in json.loads(tokenizers):
+        if tok["name_or_path"] == args.name_or_path:
+            tokenizer["name"] = args.name or tok["name"]
+            tokenizer["encoding"] = args.encoding or tok["encoding"]
+            break
+
+    # Fallback to defaults
+    tokenizer["name"] = tokenizer["name"] or tokenizer["name_or_path"]
+    tokenizer["encoding"] = tokenizer["encoding"] or "smiles"
+    logging.debug("using tokenizer %s", tokenizer)
+
+    # Process datasets in parallel
+    datasets = args.dataset or DATASETS.keys()
+    with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
+        futures = {
+            executor.submit(process_tokenizer, dataset, tokenizer): dataset
+            for dataset in datasets
+        }
+
+        out = {}
         for future in concurrent.futures.as_completed(futures):
             name = futures[future]
             try:
-                _, result = future.result()
-                out[name] = result
+                out[name] = future.result()
             except Exception as e:
                 LOG.error("Error processing %s: %s", name, e)
 
-    with open("stats-atomic.json", "w") as fid:
-        json.dump(out, fid)
+    # Dump results
+    if args.output.name != "<stdout>":
+        Path(args.output.name).parent.mkdir(parents=True, exist_ok=True)
+
+    json.dump(out, args.output)

@@ -4,11 +4,11 @@ from tempfile import TemporaryDirectory
 
 import pytest
 from datasets import Dataset
-from lightning.pytorch import LightningDataModule, Trainer
+from lightning.pytorch import LightningDataModule
 
 from electrolyte_fm.data_modules import (
-    PropertyPredictionDataModule,
     RobertaDataSet,
+    tmQMDataModule,
 )
 from electrolyte_fm.data_modules.molnet_dataset import strip_unk_tokens
 from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
@@ -71,6 +71,17 @@ def test_encoding(encoding):
         {"text": ["CC(=O)O", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "CCCC"]}
     )
     encode_molecules(ds, "text", encoding=MolEncoding(encoding))
+
+
+def has_tmQm():
+    return Path(__file__).parent.parent.joinpath("opt", "tmQM", "data").exists()
+
+
+@pytest.mark.parametrize("encoding", ["smiles", "selfies", "smiles-canonical"])
+@pytest.mark.skipif(has_tmQm(), reason="Skipping tmQM tests")
+def test_tmQM_dataset(fake_dataset, encoding):
+    dm = tmQMDataModule(fake_dataset, "smirk", encoding=encoding)
+    check_datamodule(dm)
 
 
 def test_strip_unknown_tokens():

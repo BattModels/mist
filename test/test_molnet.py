@@ -8,7 +8,7 @@ import pytest
 from datasets import DatasetDict, load_dataset
 from lightning import LightningDataModule
 
-from electrolyte_fm.data_modules import MolNetDataModule, PropertyPredictionDataModule
+from electrolyte_fm.data_modules import MolNetDataModule
 from electrolyte_fm.data_modules.molnet_dataset import _URLS as MOLNET_URLS
 
 MOLNET_CONFIG = Path(__file__).parent.parent.joinpath(

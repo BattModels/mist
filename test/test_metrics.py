@@ -1,11 +1,10 @@
 from itertools import chain, repeat
-from typing import Union, Optional
+from typing import Union
 
 import pytest
 import torch
 from torchmetrics import Metric, Accuracy
 from torchmetrics import MetricCollection as TmMetricCollection
-from torchmetrics.regression import MeanSquaredError
 from torchmetrics.wrappers import BootStrapper, ClasswiseWrapper
 
 from electrolyte_fm.utils.metrics import (
@@ -96,8 +95,9 @@ def test_masked_metric(name):
     metric = get_metric(name, "binary")
     preds = torch.rand(2, 3)
     targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
+    input_ids = torch.randint(0, 3, (2, 3))
     mask = torch.tensor([[False, False, True], [True, False, False]])
-    masked_metric_update(metric, preds, targets, mask)
+    masked_metric_update(metric, preds, targets, mask, input_ids)
     out_init = metric.compute()
     if name == "crosstab":
         assert isinstance(out_init, dict)
@@ -109,14 +109,14 @@ def test_masked_metric(name):
     metric.reset()
     targets[1, 0] = 1
     assert mask[1, 0]
-    masked_metric_update(metric, preds, targets, mask)
+    masked_metric_update(metric, preds, targets, mask, input_ids)
     out_targets = metric.compute()
     assert out_targets == out_init
 
     # Repeat, changing the masked prediction
     metric.reset()
     preds[1, 0] = 0.3
-    masked_metric_update(metric, preds, targets, mask)
+    masked_metric_update(metric, preds, targets, mask, input_ids)
     assert out_init == metric.compute()
 
 

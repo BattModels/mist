@@ -7,7 +7,6 @@ from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 
 from ..utils.metrics import (
-    MetricCollection,
     OOVMetric,
     bootstrap_collection,
     get_metrics,
@@ -78,6 +77,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             output_size=output_size,
             dropout=dropout,
         )
+        self.task = task
         if task == "binary":
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
         elif task == "regression":
@@ -166,6 +166,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             batch["target_mask"],
             batch["input_ids"],
             batch.get("is_oov", None),
+            int_cast=self.task == "binary",
         )
         return loss
 
@@ -193,6 +194,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             batch["target_mask"],
             batch["input_ids"],
             batch.get("is_oov", None),
+            int_cast=self.task == "binary",
         )
         return loss
 
@@ -215,11 +217,12 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         )
         masked_metric_update(
             self.test_metrics,
-            preds,
-            batch["target"],
+            preds.to(dtype=torch.float32),
+            batch["target"].to(dtype=torch.float32),
             batch["target_mask"],
             batch["input_ids"],
             batch.get("is_oov", None),
+            int_cast=self.task == "binary",
         )
         return loss
 

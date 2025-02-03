@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from transformers import DataCollatorForLanguageModeling
 
 from ..utils.tokenizer import load_tokenizer
-from .utils import MolEncoding, encode_molecules
+from .utils import MolEncoding, encode_molecules, is_fast
 
 
 def maybe_shard_dataset(trainer, ds):
@@ -78,7 +78,7 @@ class RobertaDataSet(LightningDataModule):
             },
             keep_in_memory=False,
             streaming=True,
-            save_infos=True,
+            save_infos=False,
         )
         return self._dataset
 
@@ -100,7 +100,7 @@ class RobertaDataSet(LightningDataModule):
         # Tokenize
         ds = ds.map(
             self.tokenizer,
-            batched=True,
+            batched=is_fast(self.tokenizer),
             input_columns="text",
             remove_columns="text",
         )
@@ -160,7 +160,7 @@ class RobertaDataSet(LightningDataModule):
 
     def load_state_dict(self, state: dict):
         if self.path != Path(state["path"]):
-            logging.warn(
+            logging.warning(
                 "mis-matched paths when resuming dataloader: %s vs. %s",
                 self.path,
                 state["path"],

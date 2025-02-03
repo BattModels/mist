@@ -1,24 +1,23 @@
 module TokenizerStats
 
-using DataFrames
-using Makie
 using PythonCall: Py, pyimport, pyconvert, @pyconst
 using ArgParse: ArgParseSettings, parse_args, @add_arg_table!
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
 using LinearAlgebra: normalize
-using StatsBase: StatsBase, Histogram, fit, AbstractWeights, Weights, nobs, mean, std
+using StatsBase: StatsBase, Histogram, fit, nobs, mean, std
 using MPI: MPI
-using BSON: BSON
+using JLD2: JLD2, jldopen
 using JSON: JSON
 using SHA: SHA
+using Dates: now
 using SparseArrays: sparse
-using LogExpFunctions: logsumexp, log1pexp
+using LogExpFunctions: logsumexp, log1pexp, xexpy
 using Serialization: serialize, deserialize
-using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
+using NVTX: @annotate
 
 function find(dir, pattern)
     found = String[]
-    for (root, dirs, files) in walkdir(dir)
+    for (root, _, files) in walkdir(dir)
         for file in files
             path = joinpath(root, file)
             if match(pattern, path) !== nothing
@@ -29,56 +28,38 @@ function find(dir, pattern)
     return found
 end
 
-load_tokenizer(args...; kwargs...) = @pyconst(pyimport("electrolyte_fm.utils.tokenizer")).load_tokenizer(args...; kwargs...)
+@annotate load_tokenizer(args...; kwargs...) = @pyconst(pyimport("electrolyte_fm.utils.tokenizer")).load_tokenizer(args...; kwargs...)
 function split_dataset_by_node(args...; kwargs...)
     m = @pyconst(pyimport("datasets.distributed"))
     return m.split_dataset_by_node(args...; kwargs...)
 end
 
-function molnet_config(name::AbstractString)
-    file = joinpath(@__DIR__, "..", "..", "..", "submit", "moleculenet_tasks.libsonnet")
-    evaluate_file = @pyconst(pyimport("_jsonnet")).evaluate_file
-    config = JSON.parse(pyconvert(String, evaluate_file(file)))
-    return config[name]
-end
-
-function molnet(name::AbstractString; tokenizer="smirk", canonical::Bool=false)
-    @assert !canonical "molnet datamodule doesn't support cannonical"
-    config = molnet_config(name)
+function molnet(name::AbstractString; tokenizer="smirk", encoding::String="smiles")
     data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
-    dm = data_modules.MolNetDataModule(name,
-        tokenizer=tokenizer,
-        target_columns=config["target_columns"],
-        strip_unk_tokens=false,
-        batch_size=1,
-        val_batch_size=1,
-        include_smiles=true,
-    )
+    target_columns = String[]
+    dm = data_modules.MolNetDataModule(name; tokenizer, encoding, target_columns, include_encoding=true)
     dm.prepare_data()
-    dm.setup("fit")
     return dm
 end
 
-function pretrain(path::AbstractString; tokenizer="smirk", canonical::Bool=false)
+function tmqm(path::AbstractString; tokenizer="smirk", encoding::String="smiles")
     data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
-    dm = data_modules.RobertaDataSet(
-        path,
-        tokenizer,
-        batch_size=1,
-        val_batch_size=1,
-        canonical
-    )
+    dm = data_modules.tmQMDataModule(path, tokenizer; encoding, include_encoding=true)
     dm.prepare_data()
-    dm.setup("fit")
+    return dm
+end
+
+function pretrain(path::AbstractString; tokenizer="smirk", encoding::String="smiles")
+    data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
+    dm = data_modules.RobertaDataSet(path, tokenizer; encoding)
+    dm.prepare_data()
     return dm
 end
 
 include("ngrams.jl")
+include("serialize.jl")
 include("collect.jl")
 include("finetune.jl")
 include("cli.jl")
-
-include("analysis.jl")
-include("plotting.jl")
 
 end

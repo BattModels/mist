@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock
 
 import torch
-from lightning.pytorch import LightningModule, Trainer
+from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.demos.boring_classes import BoringDataModule, BoringModel
 

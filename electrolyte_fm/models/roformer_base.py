@@ -1,5 +1,4 @@
 import torch
-from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from transformers import RoFormerConfig, RoFormerForMaskedLM
 

@@ -70,6 +70,11 @@ class PreTrainedSPETokenizer(PreTrainedTokenizerBase):
     def _convert_id_to_token(self, token: int):
         return self._ids_to_vocab.get(token, self.unk_token)
 
+    def convert_ids_to_tokens(self, tokens: int | list[int]):
+        if isinstance(tokens, int):
+            return self._convert_id_to_token(tokens)
+        return [self._convert_id_to_token(token) for token in tokens]
+
     def _batch_encode_plus(
         self, batch_text_or_text_pairs: list[str], **kwargs
     ) -> BatchEncoding:

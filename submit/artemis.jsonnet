@@ -5,7 +5,7 @@
   train: {
     data: {
       init_args: {
-        path: '/nfs/turbo/coe-venkvis/mist/realspace_v4_dev/',
+        path: '/nfs/turbo/coe-venkvis/mist/realspace_v4_dev2/',
       },
     },
     trainer: {

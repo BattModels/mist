@@ -58,14 +58,24 @@ end
 end
 
 @testitem "ngram/condgram" begin
-    using TokenizerStats: condgram, ngram
-    @test condgram((1, 2, 3)) == (1, 2)
-    @test condgram([1, 2, 3, 4], 3, 2) == (2,)
-    @test condgram([1, 2, 3, 4], 4, 2) == (3,)
-    @test condgram([1, 2, 3, 4], 4, 3) == (2, 3)
-    @test condgram([1, 2, 3, 4], 2, 3) == (1,)
-    @test ngram(collect(1:4), 2, 3) == (1, 2)
-    @test ngram(collect(1:4), 3, 3) == (1, 2, 3)
+    using TokenizerStats: condgram, condgram_backward, ngram
+    @testset "condgram" begin
+        @test condgram((1, 2, 3)) == (1, 2)
+        @test condgram([1, 2, 3, 4], 3, 2) == (2,)
+        @test condgram([1, 2, 3, 4], 4, 2) == (3,)
+        @test condgram([1, 2, 3, 4], 4, 3) == (2, 3)
+        @test condgram([1, 2, 3, 4], 2, 3) == (1,)
+    end
+    @testset "condgram_backward" begin
+        @test condgram_backward((1, 2, 3)) == (2, 3)
+        @test condgram_backward([1, 2, 3, 4], 3, 3) == (4,)
+        @test condgram_backward([1, 2, 3, 4], 4, 3) == tuple()
+        @test condgram_backward([1, 2, 3, 4], 1, 3) == (2, 3)
+    end
+    @testset "ngram" begin
+        @test ngram(collect(1:4), 2, 3) == (1, 2)
+        @test ngram(collect(1:4), 3, 3) == (1, 2, 3)
+    end
 end
 
 @testitem "gram_odds" setup = [NGramModelSetup] begin
@@ -92,6 +102,18 @@ end
         m = NGramModel(randngram(), 11; special_tokens=[9, 10])
         check_odds(m)
     end
+end
+
+@testitem "masked match" begin
+    using TokenizerStats: masked_match
+    mask = -100
+    @test masked_match((1, 2, 3), (1, 2, 3); mask) == true
+    @test masked_match((1, 3, 3), (1, 2, 3); mask) == false
+    @test masked_match((1, 2, 3), (1, 2); mask) == true
+    @test masked_match((2, 3), (1, 2); mask) == false
+    @test masked_match((1, mask, 3), (1, 5, 3); mask) == true
+    @test masked_match((1, mask, 3), (1, mask, 3); mask) == true
+    @test masked_match((1, mask, 5), (1, mask, 3); mask) == false
 end
 
 @testitem "fb_log_probability" setup = [NGramModelSetup] begin
@@ -123,36 +145,16 @@ end
     end
 end
 
-@testitem "info loss" setup = [NGramModelSetup] begin
-    using TokenizerStats: NGramModel, information_loss
+@testitem "cross_entropy_loss" setup = [NGramModelSetup] begin
+    using TokenizerStats: NGramModel, cross_entropy, log_probability
     m = NGramModel(randngram(), 9)
     code = rand(1:8, 32)
-    mask = code .== 4
-    mask[1] = true
-    i, P, Q = information_loss(m, code, mask)
-    @test i isa Float64 && 0 < i
-    @test P isa Matrix{Float64} && Q isa Matrix{Float64}
-    @test size(P) == size(Q) == (m.vocab_size, length(code))
-
-    @testset "P == Q" begin
-        mask .= false
-        i, P, Q = information_loss(m, code, mask)
-        @test i == 0
-        @test P == Q
-    end
-end
-
-@testitem "autoregressive_kld" setup = [NGramModelSetup] begin
-    using TokenizerStats: NGramModel, autoregressive_kld, autoregressive_log_prob, cross_entropy
-    m = NGramModel(randngram(), 9)
-    code = rand(1:8, 32)
-    loss = zeros(length(m))
     for N in 1:length(m)
-        loss[N] = autoregressive_kld(m, code; N)
-        ℓ = autoregressive_log_prob(m, code; N)
-        @test loss[N] ≈ cross_entropy(ℓ, code) rtol = 1e-4
+        loss = cross_entropy(m, code; N)
+        @test loss > 0
+        ℓ = log_probability(m, code; N)
+        @test loss ≈ cross_entropy(ℓ, code) rtol = 1e-4
     end
-    @test all(>(0), loss)
 end
 
 @testitem "unk token information loss" setup = [NGramModelSetup] begin
@@ -210,7 +212,58 @@ end
         @test out == sparse([1, 9, 10], [1, 4, 5], trues(3), length(ref), length(smi))
     end
     @testset "mismatched" begin
-        @test_throws ErrorException align_unknown(["hello", "world"], ["hello", "foo"])
+        @test_logs (:error, "Alignment failed") begin
+            @test_throws ErrorException begin
+                align_unknown(["hello", "world"], ["hello", "foo"])
+            end
+        end
+    end
+    @testset "false alignment" begin
+        ref = string.(collect("C[Ni@TB12]123")) # Fragment of a real SMILES from tmQM
+        smi = ["C", "[UNK]", "1", "2", "3"]
+        out = check_commutative(ref, smi)
+        @test out == sparse([1, 11, 12, 13], [1, 3, 4, 5], trues(4), length(ref), length(smi))
+    end
+end
+
+@testitem "Tricky Alignments" begin
+    using TokenizerStats: load_tokenizer, compute_unknown_mask
+    using PythonCall: pyconvert
+
+    ref_tok = load_tokenizer("character")
+    function check_mask(tok, ref_tok, smi, expected; ref=nothing)
+        @testset "check mask: $smi" begin
+            mask = compute_unknown_mask(tok, ref_tok, smi)
+            @test length(mask) == length(ref_tok.encode(smi))
+            @test mask == expected
+        end
+    end
+    @testset "MoLFormer" begin
+        tok = load_tokenizer("ibm/MoLFormer-XL-both-10pct-oov")
+        check_mask(tok, ref_tok, "C[Pt@H]C", [0, 1, 1, 1, 1, 1, 1, 0])
+        check_mask(tok, ref_tok, "CCl", [0, 0, 0])
+        check_mask(tok, ref_tok, "CCy", [0, 0, 1])
+        check_mask(tok, ref_tok, "C[Ni@TB12]123", [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0])
+    end
+    @testset "SMILYAPE" begin
+        tok = load_tokenizer("mikemayuare/SMILYAPE")
+        check_mask(tok, ref_tok, "C[Pt@H]C", [0, 1, 0, 1, 1, 1, 1, 0])
+        check_mask(tok, ref_tok, "CCl", [0, 0, 0])
+        check_mask(tok, ref_tok, "CCy", [0, 0, 1])
+        check_mask(tok, ref_tok, "C[Ni@TB12]123", [0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0])
+    end
+    @testset "SELFormer" begin
+        tok = load_tokenizer("HUBioDataLab/SELFormer")
+        check_mask(tok, ref_tok, "[C][Pt@H1][C]", [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+        check_mask(tok, ref_tok, "[C][Cl]", zeros(7))
+        check_mask(tok, ref_tok, "CCy", [0, 0, 1])
+    end
+    @testset "4o" begin
+        ref_tok = load_tokenizer("Xenova/gpt-4o")
+        tok = load_tokenizer("sagawa/ReactionT5-product-prediction")
+        check_mask(tok, ref_tok, "C[Pt@H]C", falses(7))
+        check_mask(tok, ref_tok, "CCy", [0, 1])
+        check_mask(tok, ref_tok, "C[Ni@TB12]123", [0, 0, 0, 0, 1, 0, 0, 0]) # Misses the B
     end
 end
 

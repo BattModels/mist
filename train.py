@@ -3,7 +3,7 @@ import logging
 import os
 from datetime import timedelta
 
-import _jsonnet as jsonnet  # Unused, but otherwise we get glibc errors on delta 🫠
+import _jsonnet as jsonnet  # noqa: F401 Unused, but otherwise we get glibc errors on delta 🫠
 import torch
 from jsonargparse import lazy_instance
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -97,6 +97,7 @@ def cli_main(args=None):
     step_ckpt.CHECKPOINT_NAME_LAST = "last"
     callbacks = [
         ThroughputMonitor(),
+        SpikeDetection(atol=0.3, warmup=200, finite_only=False),
         val_loss_ckpt,
         step_ckpt,
         LearningRateMonitor("step"),

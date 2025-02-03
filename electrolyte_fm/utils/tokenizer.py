@@ -157,13 +157,33 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         from .cache import cached_github_archive
 
         # https://huggingface.co/ibm/materials.smi-ted/blob/752e5015d4a22e0ce6ffa259673dccb23ee5a936/smi-ted/inference/smi_ted_large/load.py#L1
-        regex = "(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+        # Changed to raw string (`\\\\` => `\\`) to avoid invalid escape warnings on `\[` etc.
+        regex = r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
         vocab_file = cached_github_archive(
-            "ibm/materials-smi",
+            "ibm/materials",
             "0b965c92eac8c64c1e33b910b58b74da3a3d688b",
             "models/smi_ted/finetune/smi_ted_light/bert_vocab_curated.txt",
         )
         return regex_smiles_tokenizer(vocab_from_words(vocab_file), regex)
+
+    elif name == "ibm/materials.selfies-ted":
+        from transformers import AutoTokenizer
+        from tokenizers import Regex
+        from tokenizers.pre_tokenizers import Split
+        from tokenizers.normalizers import Strip
+
+        tok_tf = AutoTokenizer.from_pretrained(
+            name,
+            trust_remote_code=True,
+            revision="9d70548517a368f9c1aff0f5140d74b593bc2b38",
+        )
+        # By default, there's not normalizer
+        tok_tf.backend_tokenizer.normalizer = Strip()
+
+        # By default, splits on whitespace, so providing raw selfies strings results in nothing being tokenized
+        tok_tf.backend_tokenizer.pre_tokenizer = Split(Regex(r"\[[^\]]+]"), "isolated")
+
+        return tok_tf
 
     elif name.startswith("lbnlp/MatBERT"):
         from transformers import BertTokenizerFast
@@ -184,6 +204,53 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
         tok = BertTokenizerFast(vocab, do_lower_case=do_lower_case)
         ensure_special_tokens(tok)
+        return tok
+
+    elif name in ["mikemayuare/SELFYAPE", "mikemayuare/SMILYAPE"]:
+        from apetokenizer.ape_tokenizer import APETokenizer
+        from .cache import cached_download
+
+        # Download vocab from HuggingFace
+        version = {
+            "mikemayuare/SMILYAPE": "72d036ca2592c429d8326ba860da00f2673e287e",
+            "mikemayuare/SELFYAPE": "406a3c298e9acdfc9aa4f7c75e401df9d9d926d1",
+        }
+        vocab_file = cached_download(
+            f"https://huggingface.co/{name}/resolve/{version[name]}/tokenizer.json",
+            name + "/tokenizer.json",
+        )
+
+        tok = APETokenizer()
+        tok.load_vocabulary(vocab_file)
+        ensure_special_tokens(tok)
+
+        # Set unk_token_id (Not set by APETokenizer)
+        tok.unk_token_id = tok.convert_tokens_to_ids(tok.unk_token)
+
+        # Bind tokenize method
+        def tokenize(self, text: str) -> list[str]:
+            return self.convert_ids_to_tokens(self.encode(text))
+
+        tok.tokenize = tokenize.__get__(tok)
+
+        # Bind get_vocab method
+        def get_vocab(self):
+            return self.vocabulary
+
+        tok.get_vocab = get_vocab.__get__(tok)
+
+        @property
+        def all_special_tokens(self) -> list[str]:
+            return list(self.special_tokens.keys())
+
+        tok.all_special_tokens = all_special_tokens.__get__(tok)
+
+        @property
+        def all_special_ids(self) -> list[int]:
+            return list(self.special_tokens.values())
+
+        tok.all_special_ids = all_special_ids.__get__(tok)
+
         return tok
 
     elif (
@@ -259,6 +326,9 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
 
 def ensure_special_tokens(tok: PreTrainedTokenizerBase):
+    if tok.unk_token and tok.mask_token and tok.pad_token:
+        return  # Special tokens already added
+
     tok.add_special_tokens(
         {
             "unk_token": tok.unk_token or match_special_tokens(tok, "[UNK]", "<unk>"),

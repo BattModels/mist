@@ -1,2 +1,11 @@
+logs
+logs/
+.CondaPkg/
+!tokenizers.json
 stats/
-stats-*/
+stats
+models/
+models
+smirk-gpe-*
+smirk-gpe-*/
+fig/

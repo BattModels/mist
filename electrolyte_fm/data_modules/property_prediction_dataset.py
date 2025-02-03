@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 
-from datasets import Dataset, load_dataset
+from datasets import load_dataset
 
 from ..utils.tokenizer import load_tokenizer
 from .molnet_dataset import MolNetDataModule

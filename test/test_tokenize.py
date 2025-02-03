@@ -15,7 +15,6 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 SMILE_TOKENIZER = [
     "smirk",
-    "SmilesPE/SPE_ChEMBL",
     "ibm/MoLFormer-XL-both-10pct",
 ]
 
@@ -65,6 +64,14 @@ def test_well_behaved_tokenizer(name):
     assert tokenizer.mask_token_id is not None
     assert tokenizer.pad_token_id is not None
     assert tokenizer.unk_token_id not in code["input_ids"]
+
+    for special in [tokenizer.mask_token, tokenizer.pad_token, tokenizer.unk_token]:
+        assert special in tokenizer.all_special_tokens
+        assert tokenizer.encode(special)[0] in tokenizer.all_special_ids
+
+    vocab = tokenizer.get_vocab()
+    assert vocab[tokenizer.mask_token] == tokenizer.mask_token_id
+
     check_encoding(tokenizer, ["CCO", "C-C-O", "CC(C)C(=O)C(C)C"])
 
 
@@ -168,10 +175,7 @@ def test_mlm_tokenizer(smile_tokenizer):
 )
 def test_spe_setup():
     try:
-        from electrolyte_fm.tokenize.spe import (
-            PreTrainedSPETokenizer,
-            pretrained_spe_tokenizer,
-        )
+        from electrolyte_fm.tokenize.spe import pretrained_spe_tokenizer
     except ImportError:
         pytest.skip("SmilesPE not installed")
 

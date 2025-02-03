@@ -1,0 +1,11 @@
+[tool.poetry]
+package-mode = false
+authors = ["Alexius Wadell <awadell@umich.edu>"]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.14"
+rdkit = "^2024.3.5"
+openbabel-wheel = "^3.1.1.20"
+pandas = "^2.2.3"
+datasets = "^3.1.0"
+typer = "^0.12.5"

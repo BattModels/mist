@@ -3,7 +3,6 @@ import re
 import shutil
 import subprocess
 import sys
-from copy import deepcopy
 from importlib.metadata import version
 from pathlib import Path
 from typing import Optional
@@ -60,7 +59,7 @@ def save_tokenizer(save_dir: Path, ckpt: str):
     tokenizer = load_tokenizer(str(ckpt))
     try:
         tokenizer.save_pretrained(save_dir, legacy_format=False, push_to_hub=False)
-    except:
+    except ValueError:
         tokenizer.save_pretrained(save_dir)
 
 

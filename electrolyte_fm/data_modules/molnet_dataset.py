@@ -1,12 +1,8 @@
-import json
 import logging
-from pathlib import Path
-from statistics import mean
-from typing import Dict, List, Optional, Union
+from typing import Optional
 
 import torch
 from datasets import Dataset, DatasetDict, load_dataset
-from datasets.distributed import split_dataset_by_node
 from lightning import LightningDataModule
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from sklearn.model_selection import GroupShuffleSplit
@@ -15,7 +11,7 @@ from transformers import DataCollatorWithPadding
 
 from ..utils.tokenizer import load_tokenizer
 from .roberta_dataset import maybe_shard_dataset
-from .utils import MolEncoding, encode_molecules
+from .utils import MolEncoding, encode_molecules, is_fast
 
 _URLS = {
     "qm8": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm8.csv",
@@ -98,7 +94,7 @@ class MolNetDataModule(LightningDataModule):
             data_files=[_URLS[self.name]],
             split="train",
             keep_in_memory=False,
-            save_infos=True,
+            save_infos=False,
         )  # type: ignore
 
         if self.name == "qm8":
@@ -143,20 +139,26 @@ class MolNetDataModule(LightningDataModule):
         ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
 
         # Remove extraneous columns and tokenize smiles
-        targets = self.target_columns
-        ds = ds.map(
-            collate_target,
-            batched=False,
-            fn_kwargs={"target_columns": targets},
-            remove_columns=targets,
-        )
+        if targets := self.target_columns:
+            ds = ds.map(
+                collate_target,
+                batched=False,
+                fn_kwargs={"target_columns": targets},
+                remove_columns=targets,
+            )
 
-        # Save training dataset for target transformations
-        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
-        ds = ds.select_columns([self.smi_column, "target", "target_mask"])
+            # Save training dataset for target transformations
+            self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+            ds = ds.select_columns([self.smi_column, "target", "target_mask"])
+        else:
+            ds = ds.select_columns([self.smi_column])
 
         # Tokenize
-        ds = ds.map(self.tokenizer, batched=True, input_columns=self.smi_column)
+        ds = ds.map(
+            self.tokenizer,
+            batched=is_fast(self.tokenizer),
+            input_columns=self.smi_column,
+        )
         if not self.include_encoding:
             ds = ds.remove_columns(self.smi_column)
 
@@ -169,10 +171,11 @@ class MolNetDataModule(LightningDataModule):
         token_inpus = ["input_ids", "attention_mask"]
         token_inpus = [{k: v for k, v in x.items() if k in token_inpus} for x in batch]
         output = self.token_collator(batch)
-        output["target"] = torch.stack([torch.tensor(x["target"]) for x in batch])
-        output["target_mask"] = torch.stack(
-            [torch.tensor(x["target_mask"]) for x in batch]
-        )
+        if self.target_columns:
+            output["target"] = torch.stack([torch.tensor(x["target"]) for x in batch])
+            output["target_mask"] = torch.stack(
+                [torch.tensor(x["target_mask"]) for x in batch]
+            )
 
         return output
 

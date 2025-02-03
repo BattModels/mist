@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 import logging
 
 import wandb
@@ -90,6 +90,7 @@ def run_summary(run):
         "created": run.metadata["startedAt"],
         "gpu": run.metadata["gpu"],
         "commit": run.metadata["git"]["commit"],
+        "runtime": run.summary["_runtime"],
         "optimizer": {
             "class_path": get_entry(config, "cli", "model", "optimizer", "class_path"),
             "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
@@ -186,6 +187,11 @@ def get_ckpt_id(ckpt):
     return None
 
 
+def something(x, default):
+    """Return x if not None, otherwise default"""
+    return x if x is not None else default
+
+
 def finetuning_summary(run):
     row = run_summary(run)
     config = run.config
@@ -194,6 +200,9 @@ def finetuning_summary(run):
             "encoder_ckpt": get_entry(config, "cli", "model", "encoder_ckpt"),
             "task": get_entry(config, "cli", "model", "task"),
             "metrics": get_entry(config, "cli", "model", "metrics"),
+            "freeze_encoder": something(
+                get_entry(config, "cli", "model", "freeze_encoder"), True
+            ),
         }
     )
 
@@ -347,11 +356,9 @@ def export_runs(export_map: dict, cache: Path, runs, name: str = None):
                 json.dump(stats, fid)
         except KeyboardInterrupt:
             raise
-        except:
+        except Exception:
             logging.error("failed to export %s", run.id)
-            raise
-        # except TypeError:
-        #     logging.error("failed to export %s", run.id)
+            continue
 
 
 if __name__ == "__main__":

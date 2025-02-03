@@ -4,12 +4,10 @@ import torch
 from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.wrappers import BootStrapper
-from torchmetrics.wrappers.abstract import WrapperMetric
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 from torchmetrics.classification import (
     AUROC,
     AveragePrecision,
-    Accuracy,
     BinaryStatScores,
 )
 from torchmetrics.regression import (
@@ -351,12 +349,16 @@ def masked_metric_update(
     preds: torch.FloatTensor,
     targets: Union[torch.IntTensor, torch.FloatTensor],
     mask: torch.BoolTensor,
-    *args,
+    input_ids: torch.IntTensor,
+    is_oov: Optional[torch.BoolTensor] = None,
+    int_cast: bool = False,
 ):
     """Update metrics, masking out targets as needed"""
     targets = targets.masked_fill(mask, IGNORE_INDEX)
+    if int_cast:
+        targets = targets.int()
     if isinstance(metrics, OOVMetric):
-        metrics.update(preds, targets, *args)
+        metrics.update(preds, targets, input_ids, is_oov)
     else:
         metrics.update(preds, targets)
 

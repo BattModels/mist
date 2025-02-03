@@ -9,8 +9,13 @@
 #SBATCH --constraint="scratch"
 #SBATCH --cpus-per-task 16
 #SBATCH --mem-per-cpu 4G
-{%- if resubmit %}
-#SBATCH --signal=SIGUSR1@90
+{%- if job_array is defined %}
+#SBATCH --array={{ job_array.spec }}
+{%- endif %}
+{%- if requeue %}
+#SBATCH --signal=USR1@90
+#SBATCH --requeue
+#SBATCH --open-mode=append
 {%- endif %}
 
 # Training script for delta
@@ -38,18 +43,36 @@ export PL_DEEPSPEED_CONFIG_PATH="$TMPDIR/deepspeed.json"
 export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
 {%- endif %}
 
+{% if job_array is defined %}
+export PL_CONFIG=$TMPDIR/lightning_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.json
+sed "${SLURM_ARRAY_TASK_ID}q;d" {{ job_array.file }} > $PL_CONFIG
+export JOB_CONFIG=$(cat $PL_CONFIG)
+{% else %}
+
 {{- export_job_config( __config__ ) }}
 
 # Write out  lightning config
 export PL_CONFIG=$TMPDIR/lightning.json
 cat > ${PL_CONFIG}<<EOF
-{% if test is defined %}
+{%- if test is defined %}
 {{ {"test": test } | tojson }}
 {% else %}
 {{ {"fit": train } | tojson }}
 {%- endif %}
 EOF
+{%- endif %}
+
 sbcast --force ${PL_CONFIG} ${PL_CONFIG}
+
+{% if requeue -%}
+# Look for a requeue checkpoint
+ckpt="./mist/requeue/${SLURM_JOB_ID}"
+if [ -d "$ckpt" ]; then
+    export PL_FIT__CKPT_PATH="$ckpt"
+    export WANDB_ID="$(basename $(dirname $(realpath $ckpt)))"
+    export WANDB_RESUME="must"
+fi
+{%- endif %}
 
 srun \
 ${PWD}/submit/set_node_rank \
