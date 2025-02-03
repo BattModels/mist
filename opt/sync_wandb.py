@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import json
 import re
 import traceback
@@ -307,11 +308,12 @@ def identify_metrics(run):
             if metric.startswith("mae") and "_" in metric and "channel" not in metric:
                 # Depreciate channel naming
                 entry["channel"] = entry["metric"].split("_", maxsplit=1)[1]
-                assert entry["channel"] in [
-                    "mean",
-                    *target_columns,
-                ], f"{entry['channel']} not in {target_columns} or `mean`"
-                entry["metric"] = "mae"
+                if entry["channel"] in ["mean", *target_columns]:
+                    entry["metric"] = "mae"
+                else:
+                    # Unknown channel -> Skip
+                    logging.warning("Unable to parse metric %s for %s", metric, run.id)
+                    continue
 
             elif not any([metric.startswith(c) for c in metrics]):
                 # If no metric is specified, assume MAE
