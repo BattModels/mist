@@ -44,14 +44,14 @@ end
 
 function tmqm(path::AbstractString; tokenizer="smirk", encoding::String="smiles")
     data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
-    dm = data_modules.tmQMDataModule(path, tokenizer; encoding, include_encoding=true)
+    dm = data_modules.tmQMDataModule(path; tokenizer, encoding, include_encoding=true)
     dm.prepare_data()
     return dm
 end
 
 function pretrain(path::AbstractString; tokenizer="smirk", encoding::String="smiles")
     data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
-    dm = data_modules.RobertaDataSet(path, tokenizer; encoding)
+    dm = data_modules.RobertaDataSet(path; tokenizer, encoding)
     dm.prepare_data()
     return dm
 end
