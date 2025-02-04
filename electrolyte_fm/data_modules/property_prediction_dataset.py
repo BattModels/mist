@@ -27,7 +27,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         smi_column: str = "smiles",
         target_columns: Optional[List[str]] = None,
         val_batch_size: Optional[int] = None,
-        encoding: str | MolEncoding = MolEncoding.SMILES,
+        encoding: str = MolEncoding.SMILES.value,
         include_encoding: bool = False,
     ):
         super().__init__()
