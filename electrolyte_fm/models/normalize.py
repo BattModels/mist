@@ -1,7 +1,11 @@
 from typing import Optional, List, Union
 
 import torch
+<<<<<<< HEAD
 from datasets import IterableDataset
+=======
+from typing import Any, Dict
+>>>>>>> 0ce01bb (fix: move transform state loading fix to class)
 from sklearn.preprocessing import PowerTransformer as _PowerTransformer
 from torch.masked import MaskedTensor
 
@@ -118,6 +122,12 @@ class Standardize(AbstractNormalizer):
         self.mean = target.mean(0).get_data().to(self.mean)
         self.std = target.std(0).get_data().to(self.std) + self.eps
         return self.state_dict()
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        if "transform.mean" in state_dict.keys():
+            state_dict["transform.mean"] = state_dict["transform.mean"].view(1)
+            state_dict["transform.std"] = state_dict["transform.std"].view(1)
+        super(torch.nn.Module, self).load_state_dict(state_dict)
 
 
 class LogTransform(Standardize):

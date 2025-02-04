@@ -177,6 +177,10 @@ class SaveConfigWithCkpts(Callback):
             logging.info("loaded %s", file)
             model.load_state_dict(state["module"], strict=True, assign=True)
 
+<<<<<<< HEAD
+=======
+        model.load_state_dict(state, strict=False, assign=True)
+>>>>>>> 0ce01bb (fix: move transform state loading fix to class)
         return model
 
 
