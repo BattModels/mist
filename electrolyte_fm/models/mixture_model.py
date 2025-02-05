@@ -1,73 +1,12 @@
 import torch
-from torch import nn
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 from torchmetrics import MeanAbsoluteError
 
-from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
-from ..utils.metrics import TokenCounter
-from itertools import chain
-from pathlib import Path
-from typing import List, Optional
-
-import pytorch_lightning as pl
-from torchmetrics import Metric
-
-from ..utils.metrics import (
-    OOVMetric,
-    get_metric,
-    masked_loss,
-    masked_metric_update,
-)
-from .model_utils import record_summary_stats
-from ..utils.tokenizer import load_tokenizer
+from .model_utils import DeepSpeedMixin, LoggingMixin
 from .normalize import Standardize
-
-
-class MixturePredictionTaskHead(nn.Module):
-    def __init__(
-        self, embed_dim: int, output_size: int = 1, dropout: float = 0.2
-    ) -> None:
-        super().__init__()
-        embed_dim += 1  # Temperature appended to embedding
-        self.desc_skip_connection = True
-        self.fcs = []
-
-        self.fc1 = nn.Linear(embed_dim, embed_dim)
-        self.dropout1 = nn.Dropout(dropout)
-        self.relu1 = nn.GELU()
-        self.fc2 = nn.Linear(embed_dim, embed_dim)
-        self.dropout2 = nn.Dropout(dropout)
-        self.relu2 = nn.GELU()
-        self.final = nn.Linear(embed_dim, output_size)
-
-    def forward(self, emb):
-        x_out = self.fc1(emb)
-        x_out = self.dropout1(x_out)
-        x_out = self.relu1(x_out)
-
-        if self.desc_skip_connection is True:
-            x_out = x_out + emb
-
-        z = self.fc2(x_out)
-        z = self.dropout2(z)
-        z = self.relu2(z)
-        if self.desc_skip_connection is True:
-            z = self.final(z + x_out)
-        else:
-            z = self.final(z)
-        return z
-
-
-def metric_update(
-    metrics: Metric,
-    preds: torch.Tensor,
-    targets: torch.Tensor,
-    *args,
-):
-    """Update metrics"""
-    metrics.update(preds, targets, *args)
+from .prediction_task_head import PredictionTaskHead
 
 
 class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
@@ -87,7 +26,7 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
-        self.task_network = MixturePredictionTaskHead(
+        self.task_network = PredictionTaskHead(
             embed_dim=hidden_size,
             output_size=output_size,
             dropout=dropout,
@@ -107,7 +46,7 @@ class MixtureModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.transform.load_state_dict(state)
 
     def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
-        pred_unscaled = self.task_network(batch["embedding"]).flatten()
+        pred_unscaled = self.task_network(batch["embedding"])
         if transform:
             return self.transform.forward(pred_unscaled)
         return pred_unscaled
