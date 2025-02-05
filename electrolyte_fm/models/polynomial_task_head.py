@@ -1,4 +1,3 @@
-import math
 import torch
 from torch import nn
 
@@ -12,6 +11,7 @@ class PolynomialPredictionTaskHead(nn.Module):
     ) -> None:
         super().__init__()
         self.polynomial_order = polynomial_order
+        assert n_components == 2, "Only binary mixtures are supported"
         self.n_components = n_components
         embed_dim += 1  # Temperature appended to embedding
 
@@ -68,15 +68,14 @@ class RKPredictionTaskHead(PolynomialPredictionTaskHead):
             x_i = batch[f"composition_{i}"]
             for j in range(i + 1, self.n_components):
                 x_j = batch[f"composition_{j}"]
+                x_ix_j = torch.mul(x_i, x_j)
+                difference = torch.abs((x_i - x_j))
                 for k in range(self.polynomial_order):
-                    x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
                     RK_summation = torch.mul(
-                        torch.mul((-1.0) ** k, RK_coeffients[:, k]),
-                        torch.pow((x_i - x_j), k),
+                        RK_coeffients[:, k], torch.pow(difference, k)
                     )
                     P_m += torch.mul(x_ix_j, RK_summation).view(-1, 1)
-
-        return P_m  # [batch_size, 1]
+        return P_m
 
 
 class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
@@ -121,7 +120,6 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
         )
 
         concat_embedding = torch.hstack(concat_embedding)
-
         coeffients = self.coeffients(concat_embedding)
 
         # binary excess term
@@ -129,14 +127,10 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
         x_j = batch["composition_1"]
         x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
 
-        x = 1 - 2 * x_j
+        x = torch.abs(1 - 2 * x_j)
 
         for m in range(self.polynomial_order):
-            summation = torch.mul(
-                torch.mul((-1.0) ** m, coeffients[:, m]),
-                self.legendre_poly(m, x),
-            )
-
+            summation = torch.mul(coeffients[:, m], self.legendre_poly(m, x))
             P_m += torch.mul(x_ix_j, summation).view(-1, 1)
 
         return P_m  # [batch_size, 1]
@@ -189,14 +183,10 @@ class ChebyshevPredictionTaskHead(PolynomialPredictionTaskHead):
         x_i = batch["composition_0"]
         x_j = batch["composition_1"]
         x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
-        x = 1 - 2.0 * x_j
+        x = torch.abs(1 - 2.0 * x_j)
 
         for m in range(self.polynomial_order):
-            summation = torch.mul(
-                torch.mul((-1.0) ** m, coeffients[:, m]),
-                self.chebyshev_poly(m, x),
-            )
-
+            summation = torch.mul(coeffients[:, m], self.chebyshev_poly(m, x))
             P_m += torch.mul(x_ix_j, summation).view(-1, 1)
 
         return P_m  # [batch_size, 1]
