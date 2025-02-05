@@ -1,29 +1,14 @@
-import re
-from math import floor
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import torch
-from lightning import LightningDataModule
 from datasets import Dataset, load_dataset
+from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from transformers import DataCollatorWithPadding, PreTrainedModel
 
-from ..models.model_utils import DeepSpeedMixin
 from ..utils.tokenizer import load_tokenizer
-from .utils import MolEncoding, encode_molecules
-
-
-def load_encoder(name_or_path: str):
-    if Path(name_or_path).exists():
-        return DeepSpeedMixin.load(name_or_path).get_encoder()
-    else:
-        from transformers import AutoModel
-
-        return AutoModel.from_pretrained(
-            name_or_path,
-            trust_remote_code=True,
-        )
+from .utils import MolEncoding, load_encoder
 
 
 def extract_hidden_state(

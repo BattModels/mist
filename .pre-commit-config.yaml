@@ -45,12 +45,8 @@ repos:
     rev: v0.5.4
     hooks:
       - id: ruff
-<<<<<<< HEAD
         args:
           - --fix
-=======
-        args: [ --fix , check, --select, I, --fix]
->>>>>>> 79932aa (feat: add import sorting to pre-commit)
       - id: ruff-format
   -   repo: https://github.com/PyCQA/autoflake
       rev: v2.0.0
