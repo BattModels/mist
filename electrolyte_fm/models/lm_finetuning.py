@@ -19,6 +19,22 @@ from .normalize import get_normalizer
 from .prediction_task_head import PredictionTaskHead
 
 
+def load_encoder(encoder: str | Path | torch.nn.Module):
+    if isinstance(encoder, torch.nn.Module):
+        return encoder
+    elif (
+        Path(encoder).exists()
+        and Path(encoder).parent.parent.joinpath("config.json").is_file()
+    ):
+        return DeepSpeedMixin.load(encoder).get_encoder()
+    else:
+        from transformers import AutoModel
+
+        return AutoModel.from_pretrained(
+            encoder, trust_remote_code=True, add_pooling_layer=False
+        )
+
+
 class LMFinetuning(LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on multiple tasks.
@@ -51,24 +67,16 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         self.freeze_encoder = freeze_encoder
 
         # Load Encoder Model
-        if Path(encoder_ckpt).exists():
-            self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
-        else:
-            from transformers import AutoModel
-
-            self.encoder = AutoModel.from_pretrained(
-                encoder_ckpt,
-                trust_remote_code=True,
-            )
+        self.encoder = load_encoder(encoder_ckpt)
 
         # Validate the vocab size
         if vocab_size is not None:
             if hasattr(self.encoder, "config") and hasattr(
                 self.encoder.config, "vocab_size"
             ):
-                assert (
-                    self.encoder.config.vocab_size == vocab_size
-                ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
+                assert self.encoder.config.vocab_size == vocab_size, (
+                    f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
+                )
 
         self.save_hyperparameters()
 
