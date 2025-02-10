@@ -28,7 +28,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         self,
         output_size: int,
         encoder_ckpt: str,
-        freeze_encoder: bool = False,
+        freeze_encoder: bool | str = False,
         dropout: float = 0.2,
         vocab_size: Optional[int] = None,
         task: str = "binary",
@@ -256,6 +256,10 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         learnable_params = self.task_network.parameters()
         if not self.freeze_encoder:
             learnable_params = chain(learnable_params, self.encoder.parameters())
+        elif self.freeze_encoder == "encoder":
+            learnable_params = chain(
+                learnable_params, self.encoder.embeddings.parameters()
+            )
 
         optimizer = self.optimizer(learnable_params)
         if schedule := self.lr_schedule:
