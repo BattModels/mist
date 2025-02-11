@@ -80,7 +80,7 @@ def has_tmQm():
 @pytest.mark.parametrize("encoding", ["smiles", "selfies", "smiles-canonical"])
 @pytest.mark.skipif(has_tmQm(), reason="Skipping tmQM tests")
 def test_tmQM_dataset(fake_dataset, encoding):
-    dm = tmQMDataModule(fake_dataset, "smirk", encoding=encoding)
+    dm = tmQMDataModule(fake_dataset, tokenizer="smirk", encoding=encoding)
     check_datamodule(dm)
 
 

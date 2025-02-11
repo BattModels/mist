@@ -1,6 +1,8 @@
 from enum import Enum
-from typing import Optional
+from typing import Optional, TypeVar
 from rdkit import Chem
+from datasets import Dataset, DatasetDict, IterableDatasetDict
+from datasets.distributed import split_dataset_by_node
 
 
 def is_fast(tokenizer):
@@ -8,6 +10,18 @@ def is_fast(tokenizer):
     if hasattr(tokenizer, "is_fast"):
         return tokenizer.is_fast
     return False
+
+
+AbstractDataset = TypeVar("AbstractDataset", Dataset, DatasetDict, IterableDatasetDict)
+
+
+def maybe_shard_dataset(trainer, ds: AbstractDataset) -> AbstractDataset:
+    """Maybe shard a dataset across trainer ranks, if appropriate"""
+    if isinstance(ds, (DatasetDict, IterableDatasetDict)):
+        return ds.__class__({k: maybe_shard_dataset(trainer, v) for k, v in ds.items()})
+    if trainer is None:
+        return ds
+    return split_dataset_by_node(ds, trainer.global_rank, trainer.world_size)
 
 
 class MolEncoding(Enum):
@@ -20,12 +34,12 @@ class MolEncoding(Enum):
 
 
 def encode_molecules(
-    ds,
+    ds: AbstractDataset,
     input_column: str,
     output_column: Optional[str] = None,
     encoding: MolEncoding = MolEncoding.SMILES,
     **kwargs,
-):
+) -> AbstractDataset:
     """Convert SMILES encoding in `input_column` to desired `encoding` and save to `output_column`.
     Defaulting to overwriting the input column. Additional kwargs are passed to the encoding function
     and `ds.map`

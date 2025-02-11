@@ -2,30 +2,20 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from datasets import DatasetDict, IterableDataset, IterableDatasetDict, load_dataset
-from datasets.distributed import split_dataset_by_node
+from datasets import IterableDataset, load_dataset
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from transformers import DataCollatorForLanguageModeling
 
 from ..utils.tokenizer import load_tokenizer
-from .utils import MolEncoding, encode_molecules, is_fast
-
-
-def maybe_shard_dataset(trainer, ds):
-    """Maybe shard a dataset across trainer ranks, if appropriate"""
-    if isinstance(ds, (DatasetDict, IterableDatasetDict)):
-        return ds.__class__({k: maybe_shard_dataset(trainer, v) for k, v in ds.items()})
-    if trainer is None:
-        return ds
-    return split_dataset_by_node(ds, trainer.global_rank, trainer.world_size)
+from .utils import MolEncoding, maybe_shard_dataset, encode_molecules, is_fast
 
 
 class RobertaDataSet(LightningDataModule):
     def __init__(
         self,
         path: str,
-        tokenizer: str,
+        tokenizer: str = "smirk",
         mlm_probability=0.15,
         batch_size: int = 64,
         val_batch_size=None,

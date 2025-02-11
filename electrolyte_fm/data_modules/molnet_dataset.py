@@ -1,17 +1,10 @@
 import logging
-from typing import Optional
 
-import torch
 from datasets import Dataset, DatasetDict, load_dataset
-from lightning import LightningDataModule
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from sklearn.model_selection import GroupShuffleSplit
-from torch.utils.data import DataLoader
-from transformers import DataCollatorWithPadding
 
-from ..utils.tokenizer import load_tokenizer
-from .roberta_dataset import maybe_shard_dataset
-from .utils import MolEncoding, encode_molecules, is_fast
+from .property_prediction_dataset import PropertyPredictionDataModule
 
 _URLS = {
     "qm8": "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/qm8.csv",
@@ -30,63 +23,27 @@ _URLS = {
 }
 
 
-class MolNetDataModule(LightningDataModule):
+class MolNetDataModule(PropertyPredictionDataModule):
     def __init__(
         self,
         name: str = "bace",
         split: str = "random",
-        tokenizer: str = "smirk",
-        batch_size: int = 64,
-        num_workers: int = 1,
-        prefetch_factor: int = 4,
-        smi_column: Optional[str] = None,
-        target_columns: list[str] = ["Class"],
-        val_batch_size: Optional[int] = None,
-        encoding: Optional[str | MolEncoding] = None,
-        include_encoding: bool = False,
+        **kwargs,
     ):
-        super().__init__()
+        # Set default smi_column
+        kwargs["smi_column"] = kwargs.get(
+            "smi_column", "smiles" if name != "bace" else "mol"
+        )
 
         self.name = name
-        assert name in _URLS, f"Unknown MoleculeDataset {name}"
-        self.include_encoding = include_encoding
-
-        # Set encoding
-        if "selfies" in tokenizer:
-            encoding = encoding or "selfies"
-        else:
-            encoding = encoding or "smiles"
-        self.encoding = MolEncoding(encoding)
-
-        if smi_column is None and name == "bace":
-            self.smi_column = "mol"
-        else:
-            self.smi_column = smi_column or "smiles"
-
-        assert self.smi_column is not None
-        self.tokenizer = load_tokenizer(tokenizer)
-        self.vocab_size = len(self.tokenizer)
         self.split = split
-
-        self.target_columns = target_columns
-        self.strip_unk_tokens = strip_unk_tokens
-
-        self.batch_size = batch_size
-        self.val_batch_size = val_batch_size or batch_size
-        self.num_workers = num_workers
-        self.prefetch_factor = prefetch_factor
-        self.hparams["vocab_size"] = self.vocab_size
-        self.save_hyperparameters(logger=False)
+        super().__init__(**kwargs)
 
     def prepare_data(self):
         # Fetch data from the head node
         self.dataset
 
-    @property
-    def dataset(self):
-        if hasattr(self, "__dataset"):
-            return self.__dataset
-
+    def _get_dataset(self):
         # Load the dataset
         ds: Dataset = load_dataset(
             "csv",
@@ -122,111 +79,11 @@ class MolNetDataModule(LightningDataModule):
 
         # Spit into train/val/test
         if self.split == "scaffold":
-            ds = scaffold_split(ds, self.smi_column)
+            return scaffold_split(ds, self.smi_column)
         elif self.split == "random":
-            ds = train_val_test_split(ds)
+            return train_val_test_split(ds)
         else:
             raise ValueError(f"Unknown split {self.split}")
-
-        # Cache the dataset
-        self.__dataset = ds
-        return self.__dataset
-
-    def setup(self, stage: str) -> None:
-        # Load datasets, checking for splits
-        ds = self.dataset
-        ds = maybe_shard_dataset(self.trainer, ds)
-        ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
-
-        # Remove extraneous columns and tokenize smiles
-        if targets := self.target_columns:
-            ds = ds.map(
-                collate_target,
-                batched=False,
-                fn_kwargs={"target_columns": targets},
-                remove_columns=targets,
-            )
-
-            # Save training dataset for target transformations
-            self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
-            ds = ds.select_columns([self.smi_column, "target", "target_mask"])
-        else:
-            ds = ds.select_columns([self.smi_column])
-
-        # Tokenize
-        ds = ds.map(
-            self.tokenizer,
-            batched=is_fast(self.tokenizer),
-            input_columns=self.smi_column,
-        )
-        if not self.include_encoding:
-            ds = ds.remove_columns(self.smi_column)
-
-        self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
-        self.val_dataset: Dataset = ds["validation"]
-        self.test_dataset: Dataset = ds["test"]
-        self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
-
-    def data_collator(self, batch):
-        token_inpus = ["input_ids", "attention_mask"]
-        token_inpus = [{k: v for k, v in x.items() if k in token_inpus} for x in batch]
-        output = self.token_collator(batch)
-        if self.target_columns:
-            output["target"] = torch.stack([torch.tensor(x["target"]) for x in batch])
-            output["target_mask"] = torch.stack(
-                [torch.tensor(x["target_mask"]) for x in batch]
-            )
-
-        return output
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            collate_fn=self.data_collator,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            prefetch_factor=self.prefetch_factor,
-            pin_memory=True,
-            persistent_workers=True,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            collate_fn=self.data_collator,
-            batch_size=self.val_batch_size,
-            num_workers=self.num_workers,
-            prefetch_factor=self.prefetch_factor,
-            pin_memory=True,
-            persistent_workers=True,
-        )
-
-    def test_dataloader(self):
-        return DataLoader(
-            self.test_dataset,
-            collate_fn=self.data_collator,
-            batch_size=self.val_batch_size,
-            num_workers=self.num_workers,
-            prefetch_factor=self.prefetch_factor,
-        )
-
-
-def collate_target(x, target_columns):
-    """Stack multiple target columns into a single vector,
-    recording unknown elements to be masked out during training
-    """
-    target = []
-    mask = []
-    for k in target_columns:
-        v = x[k]
-        if v is None:
-            target.append(torch.tensor(0))  # Placeholder, should be masked out
-            mask.append(torch.tensor(True))
-        else:
-            target.append(torch.tensor(v))
-            mask.append(torch.tensor(False))
-
-    return {"target": torch.stack(target), "target_mask": torch.stack(mask)}
 
 
 def train_val_test_split(ds, **kwargs):
@@ -255,7 +112,7 @@ def scaffold_hash(smi: str) -> str:
 def scaffold_split(ds: Dataset, smi_column):
     # Hash scaffolds and then bin into groups, maintains the scaffold split
     # but reduces the compute
-    ds = ds.map(
+    df = ds.map(
         lambda x: {"scaffold": scaffold_hash(x)},
         input_columns=smi_column,
         batched=False,
@@ -264,20 +121,20 @@ def scaffold_split(ds: Dataset, smi_column):
     # Split
     train, other = next(
         GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42).split(
-            ds.index, groups=ds["scaffold"].values
+            df.index, groups=df["scaffold"].values
         )
     )
-    ds_other = ds.iloc[other]
+    df_other = df.iloc[other]
     val, test = next(
         GroupShuffleSplit(n_splits=1, test_size=0.5, random_state=42).split(
-            ds_other, groups=ds.iloc[other]["scaffold"]
+            df_other, groups=df.iloc[other]["scaffold"]
         )
     )
     return DatasetDict(
         {
-            "train": Dataset.from_pandas(ds.iloc[train], preserve_index=False),
-            "validation": Dataset.from_pandas(ds_other.iloc[val], preserve_index=False),
-            "test": Dataset.from_pandas(ds_other.iloc[test], preserve_index=False),
+            "train": Dataset.from_pandas(df.iloc[train], preserve_index=False),
+            "validation": Dataset.from_pandas(df_other.iloc[val], preserve_index=False),
+            "test": Dataset.from_pandas(df_other.iloc[test], preserve_index=False),
         }
     )
 
