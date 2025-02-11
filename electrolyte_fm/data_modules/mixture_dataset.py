@@ -162,7 +162,7 @@ class HiddenStateDataModule(LightningDataModule):
             [torch.tensor(x["target"], dtype=float) for x in batch]
         )
         output["target_mask"] = torch.stack(
-            [torch.tensor(x["target_mask"], dtype=float) for x in batch]
+            [torch.tensor(x["target_mask"], dtype=bool) for x in batch]
         )
         return output
 
@@ -329,7 +329,7 @@ class ComponentDataModule(LightningDataModule):
             [torch.tensor(x["target"], dtype=float) for x in batch]
         )
         output["target_mask"] = torch.stack(
-            [torch.tensor(x["target_mask"], dtype=float) for x in batch]
+            [torch.tensor(x["target_mask"], dtype=bool) for x in batch]
         )
         output["temperature"] = torch.stack(
             [torch.tensor(x["temperature"], dtype=float) for x in batch]
