@@ -55,21 +55,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         if hasattr(self, "__dataset"):
             return self.__dataset
 
-<<<<<<< HEAD
         self.__dataset = self._get_dataset()
-=======
-        # Load the dataset
-        self.__dataset = load_dataset(
-            "csv",
-            name=str(self.path.name),
-            data_files={
-                "train": str(self.path.joinpath("train.csv")),
-                "validation": str(self.path.joinpath("val.csv")),
-                "test": str(self.path.joinpath("test.csv")),
-            },
-            keep_in_memory=True,
-        )
->>>>>>> f7ac96d (fix: property predicition dataset loads from dir)
         return self.__dataset
 
     @abstractmethod
