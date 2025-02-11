@@ -161,6 +161,9 @@ class HiddenStateDataModule(LightningDataModule):
         output["target"] = torch.stack(
             [torch.tensor(x["target"], dtype=float) for x in batch]
         )
+        output["target_mask"] = torch.stack(
+            [torch.tensor(x["target_mask"], dtype=float) for x in batch]
+        )
         return output
 
     def train_dataloader(self):
@@ -198,10 +201,7 @@ def collate_components_and_environment(
     include_temperature,
     tokenizer,
     n_components,
-<<<<<<< HEAD
-=======
     encoder: PreTrainedModel = None,
->>>>>>> 57a9ce9 (feat: rk, chebyshev and legendre basis)
     collate: DataCollatorWithPadding = None,
 ):
     target = args[-1]
@@ -329,7 +329,7 @@ class ComponentDataModule(LightningDataModule):
             [torch.tensor(x["target"], dtype=float) for x in batch]
         )
         output["target_mask"] = torch.stack(
-            [torch.tensor(x["target_mask"], dtype=bool) for x in batch]
+            [torch.tensor(x["target_mask"], dtype=float) for x in batch]
         )
         output["temperature"] = torch.stack(
             [torch.tensor(x["temperature"], dtype=float) for x in batch]
