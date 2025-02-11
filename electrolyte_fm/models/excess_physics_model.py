@@ -1,36 +1,24 @@
+from itertools import chain
+from pathlib import Path
+from typing import Optional
+
 import torch
-from torch import nn
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 from torchmetrics import MeanAbsoluteError
-import math
-from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
-from ..utils.metrics import TokenCounter
-from itertools import chain
-from pathlib import Path
-from typing import List, Optional
 
-import pytorch_lightning as pl
-from torchmetrics import Metric
-
-from ..utils.metrics import (
-    OOVMetric,
-    get_metric,
-    masked_loss,
-    masked_metric_update,
-)
-from .model_utils import record_summary_stats
 from ..utils.tokenizer import load_tokenizer
+from .model_utils import DeepSpeedMixin, LoggingMixin
 from .normalize import Standardize
 from .polynomial_task_head import (
-    RKPredictionTaskHead,
-    LegendrePredictionTaskHead,
     ChebyshevPredictionTaskHead,
+    LegendrePredictionTaskHead,
+    RKPredictionTaskHead,
 )
 
 
-class MixtureModelWithPhysics(LightningModule, DeepSpeedMixin, LoggingMixin):
+class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
     """
     PyTorch Lightning module for mixture property prediction.
     """
