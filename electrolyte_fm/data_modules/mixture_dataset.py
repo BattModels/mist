@@ -22,6 +22,7 @@ def extract_hidden_state(
     mix_embedding = None
 
     target = args[-1]
+    target_mask = [True if t is None else False for t in target]
 
     if temperature:
         temperature = args[-2]
@@ -58,7 +59,7 @@ def extract_hidden_state(
                 mix_embedding += update
     temperature = (torch.tensor(temperature) - 273) / (400 - 273)
     mix_embedding = torch.hstack((temperature.view(-1, 1), mix_embedding))
-    return {"embedding": mix_embedding, "target": target}
+    return {"embedding": mix_embedding, "target": target, "target_mask": target_mask}
 
 
 class HiddenStateDataModule(LightningDataModule):
@@ -148,11 +149,11 @@ class HiddenStateDataModule(LightningDataModule):
             remove_columns=input_columns,
         )
 
-        self.train_dataset: Dataset = ds["train"].shuffle()
+        self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
 
-        self.target_dataset = ds["train"].select_columns(["target"])
+        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
     def collator(self, batch):
         output = {}
@@ -204,15 +205,13 @@ def collate_components_and_environment(
     collate: DataCollatorWithPadding = None,
 ):
     target = args[-1]
+    target_mask = [True if t is None else False for t in target]
 
     if include_temperature:
         temperature = args[-2]
         temperature = (torch.tensor(temperature) - 273) / (400 - 273)
 
-    output = {
-        "target": target,
-        "temperature": temperature,
-    }
+    output = {"target": target, "temperature": temperature, "target_mask": target_mask}
 
     for i in range(n_components):
         idx = 2 * i
@@ -328,6 +327,9 @@ class ComponentDataModule(LightningDataModule):
 
         output["target"] = torch.stack(
             [torch.tensor(x["target"], dtype=float) for x in batch]
+        )
+        output["target_mask"] = torch.stack(
+            [torch.tensor(x["target_mask"], dtype=bool) for x in batch]
         )
         output["temperature"] = torch.stack(
             [torch.tensor(x["temperature"], dtype=float) for x in batch]

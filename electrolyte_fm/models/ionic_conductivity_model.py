@@ -1,13 +1,13 @@
 from itertools import chain
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import torch
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
-from torchmetrics import MeanAbsoluteError
 
+from ..utils.metrics import get_metrics, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
 from .normalize import Standardize
@@ -29,6 +29,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         dropout: float = 0.1,
         n_components: int = 38,
         optimizer: OptimizerCallable = torch.optim.AdamW,
+        metrics: List[str] = ["mae", "rmse", "mape"],
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
         super().__init__()
@@ -62,7 +63,17 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
 
         self.task_network = ArrheniusTaskHead(embed_dim=hidden_size)
         self.lossfn = torch.nn.MSELoss(reduction="mean")
-        self.metric = MeanAbsoluteError()
+
+        metrics = get_metrics(
+            metrics,
+            "regression",
+            num_outputs=1,
+            target_channels="ln k",
+        )
+        self.train_metrics = metrics.clone(prefix="train/")
+        self.val_metrics = metrics.clone(prefix="val/")
+        self.test_metrics = metrics.clone(prefix="test/")
+
         self.transform = Standardize(1)
 
     def on_fit_start(self):
@@ -76,7 +87,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.transform.load_state_dict(state)
 
     def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
-        combination_embedding = None
+        mix_embedding = None
         for i in range(self.n_components):
             embedding = self.encoder(
                 batch[f"input_ids_{i}"],
@@ -84,14 +95,18 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 return_dict=True,
                 output_hidden_states=True,
             ).last_hidden_state.mean(axis=1)
-            batch[f"embedding_{i}"] = torch.mul(
-                batch[f"composition_{i}"], embedding.float()
+
+            embedding = torch.stack(
+                [
+                    torch.mul(embedding[j, :], batch[f"composition_{i}"][j])
+                    for j in range(embedding.shape[0])
+                ]
             )
-            if combination_embedding in None:
-                combination_embedding = embedding
+            if mix_embedding is None:
+                mix_embedding = embedding
             else:
-                combination_embedding += embedding
-        pred_unscaled = self.task_network(combination_embedding)
+                mix_embedding += embedding
+        pred_unscaled = self.task_network(mix_embedding, batch["temperature"])
         if transform:
             return self.transform.forward(pred_unscaled)
         return pred_unscaled
@@ -121,35 +136,48 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             prog_bar=True,
             sync_dist=True,
         )
-        self.metric.update(preds, batch["target"])
-        self.log(
-            "train/mae",
-            value=self.metric.compute(),
-            on_epoch=True,
-            sync_dist=True,
+
+        masked_metric_update(
+            self.train_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
         )
         return loss
 
     def on_train_epoch_end(self):
-        self.metric.reset()
+        self.log_dict(
+            self.train_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.train_metrics.reset()
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         preds, loss = self._scaled_pred_loss(batch)
         self.log(
-            "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
-        )
-
-        self.metric.update(preds, batch["target"])
-        return loss
-
-    def on_validation_epoch_end(self):
-        self.log(
-            "val/mae",
-            value=self.metric.compute(),
+            "val/loss",
+            loss,
+            on_step=True,
             on_epoch=True,
             sync_dist=True,
         )
-        self.metric.reset()
+
+        masked_metric_update(
+            self.val_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
+        )
+        return loss
+
+    def on_validation_epoch_end(self):
+        self.log_dict(
+            self.val_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.val_metrics.reset()
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         preds, loss = self._scaled_pred_loss(batch)
@@ -158,11 +186,55 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             loss,
             on_step=True,
             on_epoch=True,
-            prog_bar=True,
             sync_dist=True,
         )
-        self.log("test/mae", self.metric)
+        masked_metric_update(
+            self.test_metrics,
+            preds.to(dtype=torch.float32),
+            batch["target"].to(dtype=torch.float32),
+            batch["target_mask"],
+        )
         return loss
+
+    def on_test_epoch_end(self):
+        self.log_dict(
+            self.test_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.test_metrics.reset()
+
+    def predict_step(self, batch, *args):
+        mix_embedding = None
+        for i in range(self.n_components):
+            embedding = self.encoder(
+                batch[f"input_ids_{i}"],
+                attention_mask=batch[f"attention_mask_{i}"],
+                return_dict=True,
+                output_hidden_states=True,
+            ).last_hidden_state.mean(axis=1)
+
+            embedding = torch.stack(
+                [
+                    torch.mul(embedding[j, :], batch[f"composition_{i}"][j])
+                    for j in range(embedding.shape[0])
+                ]
+            )
+            if mix_embedding is None:
+                mix_embedding = embedding
+            else:
+                mix_embedding += embedding
+
+        pred_unscaled = self.task_network(mix_embedding, batch["temperature"])
+        preds = self.transform.forward(pred_unscaled)
+
+        out = {"embedding": embedding, "prediction": preds}
+
+        for key in ["target", "is_oov"]:
+            if key in batch.keys():
+                out[key] = batch[key]
+
+        return out
 
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()
