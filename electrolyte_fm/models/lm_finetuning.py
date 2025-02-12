@@ -60,41 +60,23 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         super().__init__()
 
         self.task = task
+        self.output_size = output_size
         self.dropout = dropout
         self.encoder_ckpt = encoder_ckpt
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
 
-        # Load Encoder Model
-        self.encoder = load_encoder(encoder_ckpt)
-
-        # Validate the vocab size
-        if vocab_size is not None:
-            if hasattr(self.encoder, "config") and hasattr(
-                self.encoder.config, "vocab_size"
-            ):
-                assert self.encoder.config.vocab_size == vocab_size, (
-                    f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
-                )
-
-        self.save_hyperparameters()
-
-        self.task_network = PredictionTaskHead(
-            embed_dim=self.encoder.config.hidden_size,
-            output_size=output_size,
-            dropout=dropout,
-        )
-        self.task = task
-        if task == "binary":
+        if self.task == "binary":
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
-        elif task == "regression":
+        elif self.task == "regression":
             self.lossfn = torch.nn.MSELoss(reduction="none")
             transform = transform or "standardize"
         else:
-            raise ValueError(f"Unknown task type {task}")
+            raise ValueError(f"Unknown task type {self.task}")
+        self.transform = get_normalizer(transform, self.output_size).eval()
 
-        self.transform = get_normalizer(transform, output_size).eval()
+        self.save_hyperparameters()
 
         # Additional Metrics
         metrics = get_metrics(
@@ -117,6 +99,14 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             self.train_metrics = metrics.clone(prefix="train/")
             self.val_metrics = metrics.clone(prefix="val/")
             self.test_metrics = metrics.clone(prefix="test/")
+
+    def configure_model(self):
+        self.encoder = load_encoder(self.encoder_ckpt)
+        self.task_network = PredictionTaskHead(
+            embed_dim=self.encoder.config.hidden_size,
+            output_size=self.output_size,
+            dropout=self.dropout,
+        )
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
