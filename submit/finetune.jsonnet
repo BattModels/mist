@@ -18,6 +18,8 @@ function(dataset='bace') {
         val_batch_size: 2 * self.batch_size,
         tokenizer: $.train.model.init_args.encoder_ckpt,
         target_columns: molnet_tasks[dataset].target_columns,
+        num_workers: 4,
+        prefetch_factor: 8,
       },
     },
     model: {
