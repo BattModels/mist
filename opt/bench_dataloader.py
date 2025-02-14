@@ -2,13 +2,12 @@ import json
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Optional
-from random import randint
 
 import _jsonnet as jsonnet
 import numpy as np
 from lightning import LightningDataModule
 
-from electrolyte_fm.data_modules import MolNetDataModule, tmQMDataModule
+from electrolyte_fm.data_modules import MolNetDataModule
 from submit.utils import dict_product
 
 
