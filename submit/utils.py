@@ -1,12 +1,12 @@
-import re
-import logging
 import json
-from pathlib import Path
+import logging
+import re
 from itertools import product
-from typing import Optional, Any
+from pathlib import Path
+from typing import Any, Generator, Optional
 
 
-def dict_product(d: dict[str, list[Any]]) -> dict[str, Any]:
+def dict_product(d: dict[str, list[Any]]) -> Generator[dict[str, Any], None, None]:
     """Yield the product of `d`'s values"""
     keys = d.keys()
     for element in product(*d.values()):

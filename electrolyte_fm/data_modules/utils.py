@@ -30,7 +30,7 @@ class MolEncoding(Enum):
     SMILES = "smiles"
     SELFIES = "selfies"
     CANONICAL_SMILES = "smiles-canonical"
-    KEUKLE_SMILES = "smiles-keukle"
+    KEKULE = "smiles-kekule"
 
 
 def encode_molecules(
@@ -57,7 +57,7 @@ def encode_molecules(
     elif encoding == MolEncoding.CANONICAL_SMILES:
         return encode_canonical_smiles(ds, input_column, output_column, **kwargs)
 
-    elif encoding == MolEncoding.KEUKLE_SMILES:
+    elif encoding == MolEncoding.KEKULE:
         return encode_keukle(ds, input_column, output_column, **kwargs)
 
     else:
