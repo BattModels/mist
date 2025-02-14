@@ -3,7 +3,8 @@ import json
 import re
 import traceback
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Mapping
+from math import nan, isnan
 import logging
 
 import wandb
@@ -23,8 +24,8 @@ def model_size(d_model: int, d_ff: int, n_layers: int) -> int:
 
 
 def get_entry(config: dict | str | None, *entry_path: str):
-    if isinstance(config, dict):
-        if len(entry_path) > 1:
+    if isinstance(config, Mapping):
+        if len(entry_path) >= 1:
             if (path := entry_path[0]) in config:
                 val = get_entry(config[path], *entry_path[1:])
                 if val is not None:
@@ -41,7 +42,7 @@ def get_entry(config: dict | str | None, *entry_path: str):
             return None
 
     # Otherwise, return None
-    return None
+    return config if len(entry_path) == 0 else None
 
 
 def get_cluster(hostname: str) -> Optional[str]:
@@ -137,10 +138,13 @@ def run_summary(run: Run):
             "step": run.summary["trainer/global_step"],
             "tokens": run.summary.get("total_tokens_step", None),
             "masked_tokens": run.summary.get("total_masked_tokens_step", None),
+            "limit_val_batches": get_entry(
+                config, "cli", "trainer", "limit_val_batches"
+            ),
         },
         "job_config": {
-            "nodes": get_entry(config, "job_config", "nodes"),
-            "gpues_per_node": get_entry(config, "job_config", "gpus_per_node"),
+            "nodes": get_entry(config, "n_nodes"),
+            "gpus_per_node": get_entry(config, "n_gpus_per_node"),
             "container": get_entry(config, "job_config", "container"),
             "env": get_entry(config, "job_config", "env"),
         },
@@ -160,13 +164,29 @@ def run_summary(run: Run):
         },
     }
 
+    # Record world_size
+    world_size = (stats["job_config"]["nodes"] or nan) * (
+        stats["job_config"]["gpus_per_node"] or nan
+    )
+    stats["job_config"]["world_size"] = nan2none(world_size)
+
     # Populate Effective Batch Size
     macro_batch_size = stats["trainer"]["macro_batch_size"]
+    stats["data"]["val_batch_size"] = (
+        get_entry(config, "cli", "data", "val_batch_size")
+        or stats["data"]["batch_size"]
+    )
     gas = stats["trainer"]["gas"]
     if macro_batch_size is not None and gas is not None:
         stats["trainer"]["effective_batch_size"] = macro_batch_size * gas
     else:
         stats["trainer"]["effective_batch_size"] = None
+
+    limit_val_batches = stats["trainer"]["limit_val_batches"] or nan
+    val_batch_size = stats["data"]["val_batch_size"] or nan
+    stats["trainer"]["effective_val_epoch"] = nan2none(
+        limit_val_batches * val_batch_size * world_size
+    )
 
     return stats
 
@@ -224,6 +244,10 @@ def get_ckpt_id(ckpt):
 def something(x, default):
     """Return x if not None, otherwise default"""
     return x if x is not None else default
+
+
+def nan2none(x):
+    return x if not isnan(x) else None
 
 
 def finetuning_summary(run: Run):
