@@ -72,7 +72,7 @@ function model_priors(::Type{HoffmanScaling})
         B=LogNormal(log(500), 3.0),
         α=Uniform(0, 3),
         β=Uniform(0, 3),
-        E=LogNormal(log(10e-2), 2),
+        E=LogNormal(log(1e-3), 2),
         sigma=LogNormal(-1, 2.0),
     )
 end
@@ -108,7 +108,7 @@ function model_priors(::Type{ShapedScaling})
         scaling=Base.structdiff(model_priors(HoffmanScaling), NamedTuple{(:sigma,)}),
         lr=(;
             ideal=(;
-                a=Normal(log(1.6e-4 / 32), 0.05),  # Reference log(LR) for 1024 batch size
+                a=LogNormal(log(1.6e-4 / 32), 0.5),  # Reference log(LR) for 1024 batch size
                 b=Normal(0.5, 0.05),            # Sqrt scaling with effective batch size
                 c=Normal(0, 0.1),               # Scaling with model size (assume none)
             ),
@@ -152,7 +152,8 @@ end
 function expected_log_loss(::ShapedScaling, θ, run::NamedTuple)
     (; scaling, lr, ff_ratio, aspect_ratio, kv_size) = θ
     min_loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
-    min_loss += lamb_penalty(run.lr, run.model_size, run.effective_batch_size; lr...)
+    lr_size = haskey(run, :model_size_lr) ? run.model_size_lr : run.model_size
+    min_loss += lamb_penalty(run.lr, lr_size, run.effective_batch_size; lr...)
     min_loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
     min_loss += harmonic_penalty(run.kv_size, kv_size...)
     min_loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
@@ -182,7 +183,8 @@ function expected_penalties(m::ShapedScaling, chains::AbstractArray{<:Number,3})
     for I in CartesianIndices(axes(chains)[1:2])
         θ = @view chains[I.I..., :]
         for (rdx, run) in enumerate(m.runs)
-            lr[I, rdx] = lamb_penalty(run.lr, run.model_size, run.effective_batch_size; θ[:lr]...)
+            lr_size = haskey(run, :model_size_lr) ? run.model_size_lr : run.model_size
+            lr[I, rdx] = lamb_penalty(run.lr, lr_size, run.effective_batch_size; θ[:lr]...)
             ff[I, rdx] = harmonic_penalty(run.ff_ratio, θ[:ff_ratio]...)
             kv[I, rdx] = harmonic_penalty(run.kv_size, θ[:kv_size]...)
             aspect[I, rdx] = harmonic_penalty(run.aspect_ratio, θ[:aspect_ratio]...)
@@ -225,7 +227,7 @@ end
 
 function lamb_penalty(lr, model_size, effective_batch_size; ideal, penalty)
     (; a, b, c) = ideal
-    lr_0 = a + b * log(effective_batch_size) + c * log(model_size) |> exp
+    lr_0 = exp(log(a) + b * log(effective_batch_size) + c * log(model_size))
     return geometric_penalty(lr, lr_0, penalty...)
 end
 
@@ -255,7 +257,7 @@ end
 
 function ideal_lr(::ShapedScaling, θ::ComponentVector, model_size::Number, effective_batch_size::Number)
     (; a, b, c) = θ.lr.ideal
-    return exp(a + b * log(effective_batch_size) + c * log(model_size))
+    return exp(log(a) + b * log(effective_batch_size) + c * log(model_size))
 end
 
 function ideal_lr!(lr::AbstractArray{T,2}, m, chains::AbstractArray{T,3}, args...) where {T}

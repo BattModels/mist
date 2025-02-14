@@ -34,6 +34,29 @@ function Makie.plot!(plt::SampleRange)
     return plt
 end
 
+"""
+    loghist(x; scale, kwargs...)
+
+Like `hist` but rescale bins to `logrange` if `scale` is `log10`
+"""
+@recipe(LogHist, x) do scene
+    Theme(
+        scale=log10,
+        bins=Makie.inherit(scene, (:Hist, :bins), 15)
+    )
+end
+function Makie.plot!(plt::LogHist)
+    bins = lift(plt.x, plt.scale, plt.bins) do x, scale, bins
+        _scale_bins(scale, bins, x)
+    end
+    attrs = Makie.shared_attributes(plt, Makie.Hist)
+    attrs[:bins] = bins
+    hist!(plt, plt.x; attrs...)
+    return plt
+end
+_scale_bins(scale, bins, x) = bins
+_scale_bins(scale::typeof(log10), bins::Int, x) = logrange(extrema(x)...; length=bins+1)
+
 function plot_best_lr(chains::AbstractArray{<:Real,3}, df=missing;
     N=logrange(1e2, 1e10; length=200),
     lr=logrange(1e-5, 3e-3; length=100)
@@ -102,6 +125,7 @@ function plot_best_lr(chains::AbstractArray{<:Real,3}, df=missing;
 
     Legend(f[2, 1], ax; tellwidth=false, tellheight=true, nbanks=2)
 
+    resize_to_layout!(f)
     return f
 end
 
@@ -156,8 +180,8 @@ function plot_lamb_lr_scale(chains::ComponentArray{<:Real,3}, model;
     )
 
 
+    resize_to_layout!(f)
     return f
-
 end
 
 
@@ -207,29 +231,10 @@ function plot_scaling(chains::AbstractArray{<:Real,3}, df;
         color=:black,
         band_color=(:slategray, 0.4),
     )
+
+    resize_to_layout!(f)
     return f
 end
-
-# function plot_parity(df, chains::AbstractArray{<:Real,3}; p=0.025, huber=nothing)
-#     f = Figure()
-#     ax = Axis(f[1, 1];
-#         yscale=log10,
-#         xscale=log10,
-#         ylabel="Predicted Loss",
-#         xlabel="Measured Loss",
-#     )
-#     # scatter!(ax, y, model.args.loss)
-#     y_loss = map(minimum, model.args.loss)
-#     rangebars!(ax, y_loss, yq[1, :], yq[3, :]; color=:blue, linewidth=1, label="95% Credible Interval")
-#
-#     # Plot Parity line
-#     n = 100
-#     ll = minimum(yq)
-#     uu = maximum(yq)
-#     lines!(ax, range(ll, uu; length=n), range(ll, uu; length=n), color=:red)
-#     axislegend(ax, position=:rb)
-#     return f
-# end
 
 function plot_acquisition(chains, aq, df;
     N=logrange(1e5, 1e12; length=20),
@@ -254,6 +259,8 @@ function plot_acquisition(chains, aq, df;
     h = contourf!(ax, D, N, acqustion)
     scatter!(ax, df.data_size, df.model_size; color=df.min_val_loss, colorscale=log10)
     Colorbar(f[1, 2], h; label="Acquisition Function")
+
+    resize_to_layout!(f)
     return f
 end
 
@@ -273,7 +280,6 @@ function replace_domain_error(f, x)
     end
     return x
 end
-
 
 
 function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
@@ -322,85 +328,45 @@ function plot_compute_optimal(chains::AbstractArray{<:Real,3}, df=missing;
     hideydecorations!(ax)
     hist!(ax, a; bins)
 
-    ax = Axis(gl[2, 1]; xlabel="log10(E)", limits=(nothing, (0, nothing)))
+    ax = Axis(gl[2, 1]; xlabel="E", limits=(nothing, (0, nothing)), xscale=log10)
     hideydecorations!(ax)
-    hist!(ax, log10.(vec(chains[:, :, :E])); bins)
+    E = vec(selectdim(chains, 3, :E))
+    loghist!(ax, E; bins, scale=ax.xscale)
 
-    ax = Axis(gl[3, 1]; xlabel="G", limits=(nothing, (0, nothing)))
+    ax = Axis(gl[3, 1]; xlabel="G", limits=(nothing, (0, nothing)), xscale=log10)
     hideydecorations!(ax)
-    hist!(ax, vec(log10.(G)); bins)
+    loghist!(ax, vec(G); bins, scale=ax.xscale)
+    colgap!(gl, 10)
 
+    resize_to_layout!(f)
     return f
 end
 
-function plot_penalty(model, chains::AbstractArray{<:Real,3}, deviance=logrange(1e-2, 1e2; length=100))
-
-    f = Figure()
-    ax_lr = Axis(f[1, 1]; xlabel="η/η_eff", ylabel="Penalty", xscale=log10, aspect=1)
-    ax_ff = Axis(f[1, 2]; xlabel="Feed Forward Ratio", xscale=log2, aspect=1)
-    ax_aspect = Axis(f[1, 3]; xlabel="Aspect Ratio", xscale=log2, aspect=1)
-    hideydecorations!(ax_ff; grid=false)
-    hideydecorations!(ax_aspect; grid=false)
-    linkyaxes!(ax_lr, ax_ff, ax_aspect)
-
-    # Setup
-    deviance = collect(deviance)
-    y = StatsBase.response(model)
-    y_hat = expected_loss(model, chains)
-
-    scatter_args = (;
-        markersize=5,
-        marker=:x,
-        color=:blue,
-    )
-
-    # Plot LR Penalty and Measured Penalty
-    lr_0 = vec(chains[:, :, :lr_0])
-    lr_n = vec(chains[:, :, :lr_n])
-    lr_p = vec(chains[:, :, :lr_p])
-    p_lr = median(lr_p) .* log.(deviance) .^ 2
-    lr_eff = @. lr_0' - lr_n' * log(model.args.model_size)
-    lr_eff, lr_dev = _emperical_penalty(y, model.args.lr, y_hat, lr_p, exp.(lr_eff))
-    scatter!(ax_lr, lr_dev, lr_eff; scatter_args...)
-    penaltyband!(ax_lr, lr_p, ones(length(lr_p)), deviance; color=:red)
-
-    # FF Ratio
-    ff_ratio_0 = vec(chains[:, :, :ff_ratio_0])
-    ff_ratio_p = vec(chains[:, :, :ff_ratio_p])
-    ff_eff, _ = _emperical_penalty(y, model.args.ff_ratio, y_hat, ff_ratio_p, ff_ratio_0)
-    scatter!(ax_ff, model.args.ff_ratio, ff_eff; scatter_args...)
-    x = collect(logrange(extrema(model.args.ff_ratio)...; length=length(deviance)))
-    penaltyband!(ax_ff, ff_ratio_p, ff_ratio_0, x; color=:red)
-
-    # Aspect Ratio
-    aspect_ratio_0 = vec(chains[:, :, :aspect_ratio_0])
-    aspect_ratio_p = vec(chains[:, :, :aspect_ratio_p])
-    aspect_eff, _ = _emperical_penalty(y, model.args.aspect_ratio, y_hat, aspect_ratio_p, aspect_ratio_0)
-    scatter!(ax_aspect, model.args.aspect_ratio, aspect_eff; scatter_args...)
-    x = collect(logrange(extrema(model.args.aspect_ratio)...; length=length(deviance)))
-    penaltyband!(ax_aspect, aspect_ratio_p, aspect_ratio_0, x; color=:red)
-
-    return f
+function parity_limits(x, y; margin=0.02)
+    xl, xu = extrema(x)
+    yl, yu = extrema(y)
+    l = min(xl, yl) * (1 - margin)
+    u = min(xu, yu) * (1 + margin)
+    return ((l, u), (l,u))
 end
 
-function plot_penalty(model::ShapedScaling, chains::AbstractArray{<:Real,3}; p=0.95)
+function plot_penalty(model, chains::AbstractArray{<:Real,3}; p=0.95)
 
     # Plot Expected Loss vs. Measured Loss
     f = Figure()
-    limit = (1e-2, 1)
-    ax = Axis(f[1, 1];
-        xlabel="Expected Loss",
-        ylabel="Measured Loss",
-        xscale=log10, yscale=log10,
-        limits=(limit, limit),
-        aspect=1.0
-    )
 
     # Sample model
     chains = subsample(chains, 10)
     loss = StatsBase.response(model)
     loss_hat = expected_loss(model, chains)
     P = expected_penalties(model, chains)
+
+    ax = Axis(f[1:2, 1];
+        xlabel="Expected Loss",
+        ylabel="Measured Loss",
+        xscale=log10, yscale=log10,
+        limits=parity_limits(loss, loss_hat),
+    )
 
     loss_mu, loss_low, loss_high = credible_interval(loss_hat; p)
     rangebars!(ax, loss, loss_low, loss_high; color=:black, linewidth=0.5, direction=:x)
@@ -413,8 +379,6 @@ function plot_penalty(model::ShapedScaling, chains::AbstractArray{<:Real,3}; p=0
         ylabel=L"y/\hat{y}",
         xscale=log2,
         yscale=log2,
-        limits=((1 / 128, 32), (0.25, 8)),
-        aspect=1,
     )
     lr = map(run -> run[:lr], model.runs)
     lr_ideal = ideal_lr(model, chains)
@@ -426,10 +390,9 @@ function plot_penalty(model::ShapedScaling, chains::AbstractArray{<:Real,3}; p=0
     predictionband!(ax, lr_ratios, credible_interval(lr_sense; p)...)
 
     ff = logrange(1, 16; base=2, length=100)
-    ax = Axis(f[2, 1];
+    ax = Axis(f[2, 2];
         xlabel="FF. Ratio",
         ylabel="y/E[L']",
-        limits=((1,16), (0.125, 8))
     )
     df = DataFrame(model.runs)
     ff_resid = penalty_residual(loss, loss_hat, P.ff)
@@ -439,6 +402,7 @@ function plot_penalty(model::ShapedScaling, chains::AbstractArray{<:Real,3}; p=0
     predictionband!(ax, ff, credible_interval(ff_sense; p)...)
     scatter!(ax, df.ff_ratio, log.(ff_resid); color=:red)
 
+    resize_to_layout!(f)
     return f
 end
 
@@ -448,7 +412,6 @@ function plot_lr_map(m, chains::AbstractArray{<:Real,3}, df::DataFrame=DataFrame
     model_size=logrange(1e5, 1e9; length=15),
     p=0.025
 )
-    chains = subsample(chains, 10)
     lr_quantiles = ideal_lr_map(m, chains, model_size, effective_batch_size; p=0.95)
     lr_mean = selectdim(lr_quantiles, 3, 1)
 
@@ -463,18 +426,12 @@ function plot_lr_map(m, chains::AbstractArray{<:Real,3}, df::DataFrame=DataFrame
     h_lr = contourf!(ax, effective_batch_size, model_size, lr_mean';
         colormap=:roma,
     )
-    # h_uq = contour!(ax, effective_batch_size, model_size, lr_band';
-    #     color=:red,
-    #     labels=true,
-    #     levels=10,
-    # )
     Colorbar(gl[1, 2], h_lr; scale=log10, label="Learning Rate")
 
-    loss_hat = vec(mean(expected_loss(m, chains); dims=(1,2)))
+    loss_hat = vec(mean(expected_loss(m, chains); dims=(1, 2)))
     loss = StatsBase.response(m)
     loss_residual = loss ./ loss_hat
     max_residula = maximum(abs, loss_residual)
-
 
     h_emp = scatter!(ax, df.effective_batch_size, df.model_size;
         color=loss_residual,
@@ -491,19 +448,19 @@ function plot_lr_map(m, chains::AbstractArray{<:Real,3}, df::DataFrame=DataFrame
     ideal = selectdim(chains, 3, idx)
     gl = GridLayout(f[1, 2])
 
-    for (idx, xlabel) in enumerate(["ln(a)", "Eff. Batch Size", "Model Size"])
-        ax = Axis(gl[idx, 1]; xlabel, limits=(nothing, (0, nothing)))
+    for (idx, xlabel) in enumerate([L"\eta_0", "Eff. Batch Size", "Model Size"])
+        ax = Axis(gl[idx, 1];
+            xlabel,
+            limits=(nothing, (0, nothing)),
+            xscale=(idx == 1 ? log10 : identity),
+        )
         x = vec(selectdim(ideal, 3, idx))
-        bins = get_nbins(:scott, x)
-        hist!(ax, x; bins)
+        loghist!(ax, x; bins=get_nbins(:scott, x), scale=ax.xscale)
         hideydecorations!(ax)
     end
 
-
+    resize_to_layout!(f)
     return f
-
-
-
 end
 
 function _emperical_penalty(y::Vector, x::Vector, y_hat::Matrix, p, x0::AbstractVecOrMat)
@@ -527,12 +484,6 @@ function _emperical_penalty(y::Vector, x::Vector, y_hat::Matrix, p, x0::Abstract
     return y_eff, exp.(d_mag)
 end
 
-function penaltyband!(ax, p, x0, x; kwargs...)
-    p = @. p' * logsqdev(x, x0')
-    q = slice_quantile(p', (0.025, 0.5, 0.975); dims=2)
-    predictionband!(ax, x, q[2, :], q[1, :], q[3, :]; kwargs...)
-end
-
 """ Return indices for a nearly square grid of `n` plots """
 function layout_indices(n::Int)
     nc = max(floor(Int, sqrt(n)), 1)
@@ -541,9 +492,9 @@ function layout_indices(n::Int)
     return CartesianIndices((nr, nc))
 end
 
-function plot_residual_correlations(model, chains, df; p=0.25)
-    y = StatsBase.response(model)
-    y_hat = BayesianScaling.sample_response(model, chains)
+function plot_residual_correlations(model, chains::AbstractArray{T,3}, df::DataFrame) where {T}
+    y = mean(expected_loss(model, chains); dims=(1, 2)) |> vec
+    y_hat = StatsBase.response(model)
     error = @. log(y) - log(y_hat)
     rescor = residual_correlations(error, df)
 
@@ -552,26 +503,29 @@ function plot_residual_correlations(model, chains, df; p=0.25)
     sort!(cols; by=x -> first(rescor[x]))
 
     f = Figure()
-    error_q = quantile(error', (p, 1 - p))
+    ax = Axis(f[1, 1];
+        xlabel="Residuals Quantiles",
+        ylabel="Expected-Residual Quantiles",
+        aspect=1,
+    )
+    σ = mean(selectdim(chains, 3, :sigma))
+    qqplot!(ax, error, Normal(0, σ); qqline=:identity)
+
+
+    # Plot Correlations
+    gl = GridLayout(f[1, 2])
     indices = layout_indices(length(cols))
     for (c, idx) in zip(cols, indices)
         x = df[!, c]
-        # if c == "min_val_loss" || (0 < minimum(x) && 2 <= -(-(extrema(log10.(x))...)))
-        xscale = log10
-        # else
-        #     xscale = identity
-        # end
-
-        ax = Axis(f[idx.I...];
-            xlabel=c,
-            ylabel="Log-Residuals",
-            xscale,
-        )
+        ax = Axis(gl[idx.I...]; xlabel=c, ylabel="Log-Residuals")
+        hideydecorations!(ax)
+        hidexdecorations!(ax)
         idx.I[2] != 1 && hideydecorations!(ax)
-        rangebars!(ax, x, error_q[1, :], error_q[2, :])
+        scatter!(ax, x, error)
     end
     linkyaxes!(f.content...)
     colgap!(f.layout, 20)
+    resize_to_layout!(f)
 
     return f
 end
@@ -597,7 +551,6 @@ function plot_chain_covariance(chains::ComponentArray{<:Real,3}; nbins=:scott)
     params = ComponentArrays.labels(chains[1, 1, :])
     nparams = size(chains, 3)
     nsamples = prod(size(chains)[1:2])
-    bins = ceil(Int, sqrt(nsamples) / 15)
     for (i, px) in enumerate(params)
         vx = vec(selectdim(chains, 3, i))
         nbins_x = get_nbins(nbins, vx)
@@ -610,12 +563,21 @@ function plot_chain_covariance(chains::ComponentArray{<:Real,3}; nbins=:scott)
             else
                 hexbin!(ax, vx, vy; bins=(nbins_x, nbins_y))
             end
-            i != 1 && hideydecorations!(ax)
-            j != nparams && hidexdecorations!(ax)
+
+            # Just show the labels
+            hideydecorations!(ax)
+            hidexdecorations!(ax)
+            if i == 1
+                ax.ylabelvisible = true
+            end
+            if j == nparams
+                ax.xlabelvisible = true
+            end
         end
     end
     rowgap!(f.layout, 5)
     colgap!(f.layout, 5)
+    resize_to_layout!(f)
     return f
 end
 
@@ -646,6 +608,8 @@ function plot_chains(chains::AbstractArray{<:Real,3}; nbins=:scott)
             xlabel="step",
             ylabel=p,
             limits=((0, nsamples), nothing),
+            yticklabelsvisible = false,
+            yticksvisible = false,
         )
         push!(chain_axes, ax)
         ax_hist = Axis(fchain[1, 2];
@@ -672,6 +636,7 @@ function plot_chains(chains::AbstractArray{<:Real,3}; nbins=:scott)
     linkxaxes!(chain_axes...)
     colgap!(gl, 5)
     rowgap!(gl, 5)
+    resize_to_layout!(f)
     return f
 end
 
@@ -713,5 +678,7 @@ function plot_training_progress(model, chains)
     lines!(ax, loss_trace; color=:red)
     lines!(ax, expected_loss; color=:blue)
     lines!(ax, best_loss; color=:green)
+    resize_to_layout!(f)
     return f
 end
+

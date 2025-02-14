@@ -82,15 +82,15 @@ function init_logdensity_model(m, adtype=:Enzyme)
 end
 
 """
-    y = transform_samples(t, x::AbstractMatrix)
+    y = transform_samples(t, x::AbstractMatrix{T, 3})
 
 Apply the transform `t` to each column of `x` and return a `ComponentArray` of the transformed samples.
 """
-function transform_samples(t::TransformVariables.AbstractTransform, x::AbstractMatrix)
+function transform_samples(t::TransformVariables.AbstractTransform, x::AbstractArray{T,3}) where {T<:Real}
     y = similar(x)
-    for idx in axes(x, 2)
-        xs = selectdim(x, 2, idx)
-        ys = selectdim(y, 2, idx)
+    ax = ComponentArrays.Axis(t)
+    y = ComponentArray(y, FlatAxis(), FlatAxis(), ax)
+    for (xs, ys) in zip(eachslice(x; dims=(1, 2)), eachslice(y; dims=(1, 2)))
         transform!(ys, t, xs)
     end
     return y
@@ -153,36 +153,49 @@ function ComponentArrays.Axis(t::TransformVariables.ArrayTransformation)
     end
 end
 
-function sample_chains(model; nchains=15, draws=1_000)
+function sample_chains(ℓ; nchains=15, draws=1_000, adtype=:Enzyme)
+    model = init_logdensity_model(ℓ, adtype)
     d = dimension(model)
-    raw_samples = Array{Float64}(undef, d, draws, nchains)
     reporter = DynamicHMC.NoProgressReport()
+    posterior = Vector{Matrix{Float64}}(undef, nchains)
     Threads.@threads :dynamic for i in ProgressBar(1:nchains)
-        result = DynamicHMC.mcmc_with_warmup(Random.default_rng(), model, draws; reporter)
-        raw_samples[:, :, i] .= result.posterior_matrix
+        posterior[i] = mcmc_with_warmup(Random.default_rng(), model, draws; reporter).posterior_matrix
     end
-    rs = reshape(raw_samples, :, draws * nchains)
-    @assert size(rs, 1) == d
-    y = transform_samples(model.ℓ.transformation, rs)
-
-    # Permute to (draws, nchains, d)
-    y = permutedims(reshape(y, d, draws, nchains), (2, 3, 1))
-    yr = permutedims(raw_samples, (2, 3, 1))
+    y_raw = stack(posterior'; dims=2)
+    @assert size(y_raw) == (draws, nchains, d)
+    y = transform_samples(model.ℓ.transformation, y_raw)
 
     # Add ComponentVectors to the chains
     ax = ComponentArrays.Axis(model.ℓ.transformation)
     y = ComponentArray(y, FlatAxis(), FlatAxis(), ax)
-    yr = ComponentArray(yr, FlatAxis(), FlatAxis(), ax)
-    return y, yr
+    y_raw = ComponentArray(y_raw, FlatAxis(), FlatAxis(), ax)
+    return y, y_raw
+end
+
+"""
+    save_results(model, chains, raw_chains; outdir)
+
+Save the model and sample chains to the output directory
+"""
+function save_results(model, chains, raw_chains; outdir=joinpath(pkgdir(@__MODULE__), "out"))
+    model_name = string(uuid4())
+    outdir = joinpath(outdir, model_name)
+    mkpath(outdir)
+    metadata = (;
+        git=readchomp(`git describe --all --long --dirty`),
+        timestamp=string(Dates.now()),
+    )
+    jldsave(joinpath(outdir, "chains.jld2"); model, chains, raw_chains, metadata)
+    return outdir
 end
 
 mapchains(f, op, chains::AbstractArray{<:Real,3}) = mapreduce(f, op, eachslice(chains, dims=(1, 2)))
 
 function mapchains(f, chains::AbstractArray{<:Real,3}, x::Vector)
     out = similar(chains, size(chains, 1), size(chains, 2), length(x))
-    for I in  CartesianIndices(axes(chains)[1:2])
-        θ = @view chains[I.I..., :]
+    for I in CartesianIndices(axes(chains)[1:2])
         for (rdx, x) in enumerate(x)
+        θ = @view chains[I.I..., :]
             out[I, rdx] = f(x, θ)
         end
     end
@@ -227,21 +240,21 @@ function credible_interval(chains::AbstractArray{T,3}; p=0.95) where {T}
     l = similar(μ)
     u = similar(l)
     for (idx, chains) in enumerate(eachslice(chains; dims=3))
-        l[idx], u[idx] = quantile(chains, (p, 1-p))
+        l[idx], u[idx] = quantile(chains, (p, 1 - p))
     end
     return μ, l, u
 end
 function credible_interval(chains::AbstractMatrix{T}; p::AbstractFloat=0.95) where {T}
-    p  = (1-p)/2
-    return mean(chains), quantile(vec(chains), (p, 1-p))...
+    p = (1 - p) / 2
+    return mean(chains), quantile(vec(chains), (p, 1 - p))...
 end
 
 
 """
 Compute `y/exp(E[log(ŷ) - log(P)])` where `y` is the response, `ŷ` is the expected response and `P` is a penalty term
-It's expected that `ŷ = f(x...) + P)`
+It's expected that `ŷ = f(x...) × P`
 """
-function penalty_residual(y::Vector{T}, y_hat::AbstractArray{T,3}, penalty::AbstractArray{T,3}) where {T <: Real}
+function penalty_residual(y::Vector{T}, y_hat::AbstractArray{T,3}, penalty::AbstractArray{T,3}) where {T<:Real}
     mu = similar(y_hat)
     for I in eachindex(IndexCartesian(), y_hat)
         mu[I] = log(y_hat[I]) - penalty[I]

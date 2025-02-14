@@ -23,8 +23,6 @@ function sample_posterior(f, chains, args::Real...)
     return f(args...; x...)
 end
 
-extract_param(chain, name) = chain[:, name, :]
-
 function sample_posterior(f, chains, args::Vector...)
     names = Tuple(chains.name_map[:parameters])
     v = map(names) do name
@@ -54,36 +52,3 @@ function non_embedding_size(d_model, d_ff, n_layers; d_attn=d_model)
     return attention_qkv + project + ff
 end
 
-function sample_response(model, chains; obsdim=1, dist=(μ, σ) -> LogNormal(log(μ), σ))
-    y = selectdim(stack(generated_quantities(model, chains)), 2, 1)
-    y_out = similar(y)
-    σ² = chains[:, :σ², :]
-    for odx in axes(y, 1)
-        y_obs = selectdim(y, 1, odx)
-        y_obs_out = selectdim(y_out, 1, odx)
-        @. y_obs_out = rand(dist(y_obs, σ²))
-    end
-    return y_out
-end
-
-""" Compute quantiles for each column of `x` at `p` """
-function slice_quantile(x, p=(0.5,); dims=1)
-    slices = eachslice(x; dims)
-    q = similar(x, length(p), size(slices)...)
-    for idx = eachindex(slices)
-        q[:, idx] .= quantile(slices[idx], p)
-    end
-    return q
-end
-
-function load_chains(dir; name=r"chain-(\d+).jld2", field="posterior")
-    chains = Vector{Array{Float64,2}}()
-    for file in readdir(dir; join=true)
-        m = match(name, file)
-        isnothing(m) && continue
-        jldopen(file) do h5
-            push!(chains, permutedims(h5[field])) # Want (Draws, Params)
-        end
-    end
-    return stack(chains; dims=2) # Wand (Draws, Chains, Params)
-end

@@ -1,20 +1,13 @@
 """
 Compute correlations between the model's residuals and other possibly explanatory variables
 """
-function residual_correlations(model, chains, df)
-    y = first(model.args)
-    y_hat = sample_response(model, chains)
-    return residual_correlations(y .- y_hat, df)
-end
-
-function residual_correlations(error, df)
+function residual_correlations(error::Vector, df)
     # Compute correlations between the residuals
     cols = names(df, eltype.(eachcol(df)) .<: Real)
     rescor = Dict{eltype(cols),Any}()
     for col in cols
-        cor = StatsBase.corspearman(error, df[!, col])
-        rescor[col] = (; μ=mean(cor), σ=std(cor))
+        rescor[col] = StatsBase.corspearman(error, float.(df[!, col]))
     end
-    @info rescor
     return rescor
 end
+

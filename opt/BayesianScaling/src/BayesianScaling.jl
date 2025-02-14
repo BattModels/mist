@@ -14,7 +14,7 @@ using Optimization: OptimizationProblem, OptimizationFunction, solve
 using OptimizationOptimJL: LBFGS
 using ADTypes: AutoForwardDiff
 using JLD2: jldopen
-using DynamicHMC: DynamicHMC
+using DynamicHMC: DynamicHMC, stack_posterior_matrices, mcmc_with_warmup
 using ComponentArrays: ComponentArrays, ComponentArray, ComponentVector, FlatAxis
 using LogDensityProblemsAD: ADgradient, ADGradientWrapper
 using LogDensityProblems: LogDensityProblems, dimension
@@ -25,6 +25,7 @@ using ProgressBars: ProgressBar
 using Format: format
 using LogExpFunctions: xexpy
 using CategoricalArrays: categorical, levelcode
+
 
 Statistics.middle(x::ComponentVector, y::ComponentVector) = @. (x + y) / 2
 
