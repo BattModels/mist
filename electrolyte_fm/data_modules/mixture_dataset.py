@@ -209,7 +209,6 @@ def collate_components_and_environment(
 
     if include_temperature:
         temperature = torch.tensor(args[-2])
-        # temperature = (torch.tensor(temperature) - 273) / (400 - 273)
 
     output = {"target": target, "temperature": temperature, "target_mask": target_mask}
 

@@ -45,6 +45,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.lr_schedule = lr_schedule
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
         self.n_components = n_components
+        self.temperature_normalization = (273, 400)
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
@@ -101,7 +102,8 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.transform.load_state_dict(state)
 
     def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
-        temperature = batch["temperature"]
+        mn, mx = self.temperature_normalization
+        temperature = (batch["temperature"] - mn) / (mx - mn)
         for i in range(self.n_components):
             embedding = self.encoder(
                 batch[f"input_ids_{i}"],
