@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -188,5 +189,59 @@ class ChebyshevPredictionTaskHead(PolynomialPredictionTaskHead):
         for m in range(self.polynomial_order):
             summation = torch.mul(coeffients[:, m], self.chebyshev_poly(m, x))
             P_m += torch.mul(x_ix_j, summation).view(-1, 1)
+
+        return P_m  # [batch_size, 1]
+
+
+class BezierPredictionTaskHead(PolynomialPredictionTaskHead):
+    def __init__(
+        self,
+        embed_dim: int,
+        polynomial_order: int = 4,  # This can also be seen as the order of the Bézier curve (n+1 control points)
+        n_components: int = 2,
+    ) -> None:
+        super().__init__(
+            embed_dim=embed_dim,
+            polynomial_order=polynomial_order,
+            n_components=n_components,
+        )
+
+    def bezier_curve(self, t, control_points):
+        """Compute the Bézier curve point for parameter t and given control points."""
+        n = len(control_points) - 1
+        return sum(
+            self.bernstein_poly(t, i, n) * control_points[i] for i in range(n + 1)
+        )
+
+    def bernstein_poly(self, t, i, n):
+        """Calculate the Bernstein polynomial of n, i as a part of Bézier."""
+        return F.comb(n, i) * (t**i) * ((1 - t) ** (n - i))
+
+    def forward(self, batch):
+        P_m = 0
+
+        # Linear mixing term
+        for i in range(self.n_components):
+            P_i = self.single_substance_property(batch[f"embedding_{i}"])
+            P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
+
+        # Predict control points
+        concat_embedding = torch.hstack(
+            [batch[f"embedding_{i}"] for i in range(self.n_components)]
+        )
+        control_points = self.coeffients(concat_embedding).view(
+            -1, self.polynomial_order + 1, -1
+        )
+
+        # Binary excess term
+        x_i = batch["composition_0"]
+        x_j = batch["composition_1"]
+        x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
+        ts = torch.abs(1 - 2.0 * x_j)  # Acts like the parameter t in Bézier
+
+        for idx in range(control_points.shape[0]):
+            control_pts = control_points[idx]
+            bezier_sum = self.bezier_curve(ts[idx].unsqueeze(0), control_pts)
+            P_m += torch.mul(x_ix_j[idx], bezier_sum).view(-1, 1)
 
         return P_m  # [batch_size, 1]
