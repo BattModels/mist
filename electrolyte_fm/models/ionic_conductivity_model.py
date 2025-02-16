@@ -74,18 +74,6 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.val_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
 
-        self.transform = Standardize(1)
-
-    def on_fit_start(self):
-        """Standardized training data"""
-        if self.global_rank == 0:
-            assert self.trainer.datamodule.target_dataset is not None
-            ds = self.trainer.datamodule.target_dataset
-            state = self.transform.fit(ds)
-
-        state = self.trainer.strategy.broadcast(state)
-        self.transform.load_state_dict(state)
-
     def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
         mix_embedding = None
         for i in range(self.n_components):
@@ -107,8 +95,6 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             else:
                 mix_embedding += embedding
         pred_unscaled = self.task_network(mix_embedding, batch["temperature"])
-        if transform:
-            return self.transform.forward(pred_unscaled)
         return pred_unscaled
 
     def setup(self, stage: str) -> None:
@@ -121,9 +107,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         """Compute loss before transforming the model's predictions"""
         preds = self.forward(batch, transform=False)
         target = batch["target"]
-        target = self.transform.inverse(target)
         loss = self.lossfn(preds, target)
-        preds = self.transform.forward(preds)
         return preds, loss
 
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
@@ -225,8 +209,8 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             else:
                 mix_embedding += embedding
 
-        pred_unscaled = self.task_network(mix_embedding, batch["temperature"])
-        preds = self.transform.forward(pred_unscaled)
+        preds = self.task_network(mix_embedding, batch["temperature"])
+        # preds = self.transform.forward(pred_unscaled)
 
         out = {"embedding": embedding, "prediction": preds}
 

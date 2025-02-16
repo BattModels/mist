@@ -1,3 +1,6 @@
+import numpy as np
+import torch
+
 from .prediction_task_head import PredictionTaskHead
 
 
@@ -19,7 +22,9 @@ class ArrheniusTaskHead(PredictionTaskHead):
         z = self.dropout2(z)
         z = self.relu2(z)
 
-        R = 8.314  # ideal gas constant in J/K.mol
+        R = 8.63e-5
+        e = np.exp(1)
+        C = np.log10(e) / R
         ln_A = z[:, 0]
         Ea = z[:, 1]
-        return ln_A - Ea / (R * temperature)
+        return ln_A - C * Ea / temperature

@@ -57,7 +57,7 @@ def extract_hidden_state(
                 mix_embedding = update
             else:
                 mix_embedding += update
-    temperature = (torch.tensor(temperature) - 273) / (400 - 273)
+    temperature = torch.tensor(temperature)
     mix_embedding = torch.hstack((temperature.view(-1, 1), mix_embedding))
     return {"embedding": mix_embedding, "target": target, "target_mask": target_mask}
 
@@ -208,8 +208,8 @@ def collate_components_and_environment(
     target_mask = [True if t is None else False for t in target]
 
     if include_temperature:
-        temperature = args[-2]
-        temperature = (torch.tensor(temperature) - 273) / (400 - 273)
+        temperature = torch.tensor(args[-2])
+        # temperature = (torch.tensor(temperature) - 273) / (400 - 273)
 
     output = {"target": target, "temperature": temperature, "target_mask": target_mask}
 
