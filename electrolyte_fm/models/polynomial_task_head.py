@@ -1,3 +1,5 @@
+from enum import Enum
+
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -213,9 +215,14 @@ class BezierPredictionTaskHead(PolynomialPredictionTaskHead):
             self.bernstein_poly(t, i, n) * control_points[i] for i in range(n + 1)
         )
 
+    def comb(self, n, k):
+        n = torch.tensor(n)
+        k = torch.tensor(k)
+        return torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1).exp()
+
     def bernstein_poly(self, t, i, n):
         """Calculate the Bernstein polynomial of n, i as a part of Bézier."""
-        return F.comb(n, i) * (t**i) * ((1 - t) ** (n - i))
+        return self.comb(n, i) * (t**i) * ((1 - t) ** (n - i))
 
     def forward(self, batch):
         P_m = 0
@@ -226,12 +233,12 @@ class BezierPredictionTaskHead(PolynomialPredictionTaskHead):
             P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
 
         # Predict control points
-        concat_embedding = torch.hstack(
-            [batch[f"embedding_{i}"] for i in range(self.n_components)]
+        concat_embedding = tuple(
+            batch[f"embedding_{i}"] for i in range(self.n_components)
         )
-        control_points = self.coeffients(concat_embedding).view(
-            -1, self.polynomial_order + 1, -1
-        )
+        concat_embedding = torch.hstack(concat_embedding)
+        control_points = self.coeffients(concat_embedding)
+        # Shape: [embed_dim, polynomial_order]
 
         # Binary excess term
         x_i = batch["composition_0"]
@@ -245,3 +252,22 @@ class BezierPredictionTaskHead(PolynomialPredictionTaskHead):
             P_m += torch.mul(x_ix_j[idx], bezier_sum).view(-1, 1)
 
         return P_m  # [batch_size, 1]
+
+
+class PolynomialHead(Enum):
+    """Enumeration of supported polynomial heads."""
+
+    RK = "rk"
+    CHEBYSHEV = "chebyshev"
+    LEGENDRE = "legendre"
+    BEZIER = "bezier"
+
+    def get_class(self):
+        if self == PolynomialHead.RK:
+            return RKPredictionTaskHead
+        elif self == PolynomialHead.CHEBYSHEV:
+            return ChebyshevPredictionTaskHead
+        elif self == PolynomialHead.LEGENDRE:
+            return LegendrePredictionTaskHead
+        elif self == PolynomialHead.BEZIER:
+            return BezierPredictionTaskHead

@@ -1,6 +1,6 @@
 from itertools import chain
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import torch
 from lightning import LightningModule
@@ -8,14 +8,11 @@ from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 from torchmetrics import MeanAbsoluteError
 
+from ..utils.metrics import get_metrics, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
 from .normalize import Standardize
-from .polynomial_task_head import (
-    ChebyshevPredictionTaskHead,
-    LegendrePredictionTaskHead,
-    RKPredictionTaskHead,
-)
+from .polynomial_task_head import PolynomialHead
 
 
 class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
@@ -33,8 +30,9 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         dropout: float = 0.1,
         n_components: int = 2,
         polynomial_order: int = 4,
-        basis: str = "rk",
+        basis: str | PolynomialHead = PolynomialHead.RK,
         optimizer: OptimizerCallable = torch.optim.AdamW,
+        metrics: List[str] = ["mae", "rmse", "mape"],
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
         super().__init__()
@@ -46,6 +44,8 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
         self.n_components = n_components
         self.temperature_normalization = (273, 400)
+        self.basis = PolynomialHead(basis)
+        self.transform = Standardize(1)
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
@@ -67,29 +67,24 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                     self.encoder.config.vocab_size == vocab_size
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
 
-        if basis == "rk":
-            task_network = RKPredictionTaskHead(
-                embed_dim=hidden_size,
-                polynomial_order=polynomial_order,
-                n_components=n_components,
-            )
-        elif basis == "legendre":
-            task_network = LegendrePredictionTaskHead(
-                embed_dim=hidden_size,
-                polynomial_order=polynomial_order,
-                n_components=n_components,
-            )
-        elif basis == "chebyshev":
-            task_network = ChebyshevPredictionTaskHead(
-                embed_dim=hidden_size,
-                polynomial_order=polynomial_order,
-                n_components=n_components,
-            )
+        task_head_args = {
+            "embed_dim": hidden_size,
+            "polynomial_order": polynomial_order,
+            "n_components": n_components,
+        }
 
-        self.task_network = task_network
+        self.task_network = self.basis.get_class()(**task_head_args)
         self.lossfn = torch.nn.MSELoss(reduction="mean")
-        self.metric = MeanAbsoluteError()
-        self.transform = Standardize(1)
+
+        metrics = get_metrics(
+            metrics,
+            "regression",
+            num_outputs=1,
+            target_channels="ln k",
+        )
+        self.train_metrics = metrics.clone(prefix="train/")
+        self.val_metrics = metrics.clone(prefix="val/")
+        self.test_metrics = metrics.clone(prefix="test/")
 
     def on_fit_start(self):
         """Standardized training data"""
@@ -113,10 +108,10 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             ).last_hidden_state.mean(axis=1)
             embedding = torch.hstack((temperature.view(-1, 1), embedding))
             batch[f"embedding_{i}"] = embedding.float()
-        pred_unscaled = self.task_network(batch).flatten()
+        pred = self.task_network(batch)
         if transform:
-            return self.transform.forward(pred_unscaled)
-        return pred_unscaled
+            pred = self.transform.forward(pred)
+        return pred.flatten()  # needed since poly eval results in [batch_size, 1]
 
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
@@ -143,35 +138,48 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             prog_bar=True,
             sync_dist=True,
         )
-        self.metric.update(preds, batch["target"])
-        self.log(
-            "train/mae",
-            value=self.metric.compute(),
-            on_epoch=True,
-            sync_dist=True,
+
+        masked_metric_update(
+            self.train_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
         )
         return loss
 
     def on_train_epoch_end(self):
-        self.metric.reset()
+        self.log_dict(
+            self.train_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.train_metrics.reset()
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         preds, loss = self._scaled_pred_loss(batch)
         self.log(
-            "val/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist=True
-        )
-
-        self.metric.update(preds, batch["target"])
-        return loss
-
-    def on_validation_epoch_end(self):
-        self.log(
-            "val/mae",
-            value=self.metric.compute(),
+            "val/loss",
+            loss,
+            on_step=True,
             on_epoch=True,
             sync_dist=True,
         )
-        self.metric.reset()
+
+        masked_metric_update(
+            self.val_metrics,
+            preds,
+            batch["target"],
+            batch["target_mask"],
+        )
+        return loss
+
+    def on_validation_epoch_end(self):
+        self.log_dict(
+            self.val_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.val_metrics.reset()
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
         preds, loss = self._scaled_pred_loss(batch)
@@ -183,8 +191,21 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             prog_bar=True,
             sync_dist=True,
         )
-        self.log("test/mae", self.metric)
+        masked_metric_update(
+            self.test_metrics,
+            preds.to(dtype=torch.float32),
+            batch["target"].to(dtype=torch.float32),
+            batch["target_mask"],
+        )
         return loss
+
+    def on_test_epoch_end(self):
+        self.log_dict(
+            self.test_metrics.compute(),
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.test_metrics.reset()
 
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()
