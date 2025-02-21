@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from .prediction_task_head import PredictionTaskHead
+
 
 class PolynomialPredictionTaskHead(nn.Module):
     def __init__(
@@ -11,29 +13,20 @@ class PolynomialPredictionTaskHead(nn.Module):
         embed_dim: int,
         polynomial_order: int = 4,
         n_components: int = 2,
+        include_linear_mixing: bool = False,
     ) -> None:
         super().__init__()
         self.polynomial_order = polynomial_order
         assert n_components == 2, "Only binary mixtures are supported"
         self.n_components = n_components
         embed_dim += 1  # Temperature appended to embedding
+        self.include_linear_mixing = include_linear_mixing
 
         # predict property for single substance in mixture (P_i)
-        self.single_substance_property = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim),
-            nn.GELU(),
-            nn.Linear(embed_dim, embed_dim),
-            nn.GELU(),
-            nn.Linear(embed_dim, 1),
-        )
+        self.single_substance_property = PredictionTaskHead(embed_dim=embed_dim)
 
-        self.coeffients = nn.Sequential(
-            nn.Linear(self.n_components * embed_dim, embed_dim),
-            nn.GELU(),
-            nn.Linear(embed_dim, embed_dim),
-            nn.GELU(),
-            nn.Linear(embed_dim, polynomial_order),
-        )
+        # predict polyn coefficients
+        self.coeffients = PredictionTaskHead(embed_dim=embed_dim)
 
     def forward(self, batch):
         raise NotImplementedError
@@ -45,26 +38,29 @@ class RKPredictionTaskHead(PolynomialPredictionTaskHead):
         embed_dim: int,
         polynomial_order: int = 4,
         n_components: int = 2,
+        include_linear_mixing: bool = False,
     ) -> None:
         super().__init__(
             embed_dim=embed_dim,
             polynomial_order=polynomial_order,
             n_components=n_components,
+            include_linear_mixing=include_linear_mixing,
         )
 
     def forward(self, batch):
         P_m = 0
 
-        # linear mixing term
-        for i in range(self.n_components):
-            P_i = self.single_substance_property(batch[f"embedding_{i}"])
-            P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
+        if self.include_linear_mixing:
+            # linear mixing term
+            for i in range(self.n_components):
+                P_i = self.single_substance_property(batch[f"embedding_{i}"])
+                P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
 
-        concat_embedding = tuple(
-            batch[f"embedding_{i}"] for i in range(self.n_components)
-        )
-        concat_embedding = torch.hstack(concat_embedding)
-        RK_coeffients = self.coeffients(concat_embedding)
+            concat_embedding = tuple(
+                batch[f"embedding_{i}"] for i in range(self.n_components)
+            )
+            concat_embedding = torch.hstack(concat_embedding)
+            RK_coeffients = self.coeffients(concat_embedding)
 
         # excess term
         for i in range(self.n_components):
@@ -113,10 +109,11 @@ class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
     def forward(self, batch):
         P_m = 0
 
-        # linear mixing term
-        for i in range(self.n_components):
-            P_i = self.single_substance_property(batch[f"embedding_{i}"])
-            P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
+        if self.include_linear_mixing:
+            # linear mixing term
+            for i in range(self.n_components):
+                P_i = self.single_substance_property(batch[f"embedding_{i}"])
+                P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
 
         concat_embedding = tuple(
             batch[f"embedding_{i}"] for i in range(self.n_components)
@@ -170,10 +167,11 @@ class ChebyshevPredictionTaskHead(PolynomialPredictionTaskHead):
     def forward(self, batch):
         P_m = 0
 
-        # linear mixing term
-        for i in range(self.n_components):
-            P_i = self.single_substance_property(batch[f"embedding_{i}"])
-            P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
+        if self.include_linear_mixing:
+            # linear mixing term
+            for i in range(self.n_components):
+                P_i = self.single_substance_property(batch[f"embedding_{i}"])
+                P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
 
         # predict polynomial coefficients
         concat_embedding = tuple(
@@ -199,7 +197,7 @@ class BezierPredictionTaskHead(PolynomialPredictionTaskHead):
     def __init__(
         self,
         embed_dim: int,
-        polynomial_order: int = 4,  # This can also be seen as the order of the Bézier curve (n+1 control points)
+        polynomial_order: int = 4,  # = order of Bézier curve (n+1 control points)
         n_components: int = 2,
     ) -> None:
         super().__init__(
@@ -208,17 +206,30 @@ class BezierPredictionTaskHead(PolynomialPredictionTaskHead):
             n_components=n_components,
         )
 
-    def bezier_curve(self, t, control_points):
-        """Compute the Bézier curve point for parameter t and given control points."""
-        n = len(control_points) - 1
-        return sum(
-            self.bernstein_poly(t, i, n) * control_points[i] for i in range(n + 1)
+        self.parametric_var = torch.tensor(
+            [i * (1 / 3) for i in range(self.polynomial_order)]
+        ).view(self.polynomial_order, 1)
+        embed_dim += 1  # include temperature
+        self.mlp_AB = PredictionTaskHead(
+            embed_dim=n_components * embed_dim,
         )
+
+        self.mlp_BA = PredictionTaskHead(
+            embed_dim=n_components * embed_dim,
+        )
+
+        self.berstein_basis = self.compute_basis(self.parametric_var)
+
+    def compute_basis(self, t):
+        n = self.polynomial_order
+        return torch.hstack([self.bernstein_poly(t, i, n - 1) for i in range(n)])
 
     def comb(self, n, k):
         n = torch.tensor(n)
         k = torch.tensor(k)
-        return torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1).exp()
+        return torch.exp(
+            torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
+        )
 
     def bernstein_poly(self, t, i, n):
         """Calculate the Bernstein polynomial of n, i as a part of Bézier."""
@@ -227,29 +238,45 @@ class BezierPredictionTaskHead(PolynomialPredictionTaskHead):
     def forward(self, batch):
         P_m = 0
 
-        # Linear mixing term
-        for i in range(self.n_components):
-            P_i = self.single_substance_property(batch[f"embedding_{i}"])
-            P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
+        if self.include_linear_mixing:
+            # Linear mixing term
+            for i in range(self.n_components):
+                P_i = self.single_substance_property(batch[f"embedding_{i}"])
+                P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
 
-        # Predict control points
-        concat_embedding = tuple(
-            batch[f"embedding_{i}"] for i in range(self.n_components)
+        # Predict properties fixed parametric points
+
+        embedding_AB = torch.hstack(
+            tuple(batch[f"embedding_{i}"] for i in range(self.n_components))
         )
-        concat_embedding = torch.hstack(concat_embedding)
-        control_points = self.coeffients(concat_embedding)
-        # Shape: [embed_dim, polynomial_order]
+        embedding_BA = torch.hstack(
+            tuple(
+                batch[f"embedding_{self.n_components - i}"]
+                for i in range(1, self.n_components + 1)
+            )
+        )
 
-        # Binary excess term
-        x_i = batch["composition_0"]
-        x_j = batch["composition_1"]
-        x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
-        ts = torch.abs(1 - 2.0 * x_j)  # Acts like the parameter t in Bézier
+        P1 = self.mlp_AB(
+            embedding_AB
+        )  # Value of property at x = 1/3, Size([batch_size, 1]
+        P2 = self.mlp_BA(
+            embedding_BA
+        )  # Value of property at x = 2/3, Size([batch_size, 1]
 
-        for idx in range(control_points.shape[0]):
-            control_pts = control_points[idx]
-            bezier_sum = self.bezier_curve(ts[idx].unsqueeze(0), control_pts)
-            P_m += torch.mul(x_ix_j[idx], bezier_sum).view(-1, 1)
+        batch_size = embedding_BA.size()[0]
+        B = torch.tile(self.berstein_basis, (batch_size, 1, 1))
+        P = torch.tile(torch.zeros_like(self.parametric_var), (batch_size, 1, 1))
+        P[:, 1, :] = P1
+        P[:, 2, :] = P2
+        c = torch.linalg.solve(B, P)  # Size([batch_size, polynomial_order, 1])
+        c = c.to(embedding_BA.device)  # linalg.solve moves tensor to cpu
+
+        # Binary excess term at input composition
+        B_k = self.compute_basis(batch["composition_0"].view(-1, 1)).unsqueeze(
+            1
+        )  # Shape: (batch_size, 1, n)
+
+        P_m += torch.bmm(B_k, c).squeeze(1)  # Shape: (batch_size, 1, m)
 
         return P_m  # [batch_size, 1]
 
