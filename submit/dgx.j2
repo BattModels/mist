@@ -60,6 +60,7 @@ cat > ${PL_CONFIG}<<EOF
 EOF
 {% endif %}
 sbcast -fp ${PL_CONFIG} ${PL_CONFIG}
+cat ${PL_CONFIG}
 
 {%- if requeue %}
 # Look for a requeue checkpoint
@@ -72,15 +73,14 @@ fi
 {%- endif %}
 
 srun --mpi=pmix \
---container-image {{ container }} \
---container-mounts /lustre/fs0,/tmp \
---container-workdir ${PWD} \
---container-readonly \
---export=ALL \
+$(which apptainer) run \
+--bind /lustre/fs0,/tmp \
+--nv \
+{{ container }} \
 ${PWD}/submit/set_node_rank \
 {%- if nsys is defined %}
 nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
-    /mist/.venv/bin/python ${PWD}/train.py
+    python ${PWD}/train.py --config ${PL_CONFIG}
 {%- endif %}

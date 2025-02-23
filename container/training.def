@@ -1,0 +1,38 @@
+Bootstrap: docker
+From: nvcr.io/nvidia/pytorch:{{ NGC_VERSION }}
+
+%arguments
+    NGC_VERSION=25.01-py3
+    POETRY_VERSION=1.8.3
+    PROJECT_DIR=/mist
+
+%files
+    pyproject.toml {{ PROJECT_DIR }}/pyproject.toml
+    poetry.lock {{ PROJECT_DIR }}/poetry.lock
+    README.md {{ PROJECT_DIR }}/README.md
+
+%post
+    apt-get update
+    apt-get install -y python3-venv cargo
+
+    # Install Poetry
+    export POETRY_HOME=/opt/poetry
+    export POETRY_VERSION={{ POETRY_VERSION }}
+    export POETRY_VIRTUALENVS_IN_PROJECT=1
+    export POETRY_VIRTUALENVS_CREATE=1 \
+    export POETRY_NO_INTERACTION=1
+    export POETRY_CACHE_DIR=/tmp/poetry_cache
+    curl -sSL https://install.python-poetry.org | python3 -
+
+    # Setup SSH
+    export SSH_AUTH_SOCK={{ SSH_AUTH_SOCK }}
+    mkdir -p -m 0600 ~/.ssh
+    ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+
+    # Install project
+    $POETRY_HOME/bin/poetry install --compile --no-root --all-extras --directory {{ PROJECT_DIR }}
+    rm -rf $POETRY_CACHE_DIR
+
+%runscript
+    source {{ PROJECT_DIR }}/.venv/bin/activate
+    exec $@
