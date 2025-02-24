@@ -80,6 +80,9 @@ ${PWD}/submit/set_node_rank \
 nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
+{%- if container is defined %}
+apptainer exec --nv --bind /tmp,/projects,/scratch,/sw {{ container }} \
+{%- endif %}
 {%- if test is defined %}
     python3 train.py test
 {%- else %}

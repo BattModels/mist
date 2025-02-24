@@ -12,11 +12,14 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         from smirk import SmirkTokenizerFast
 
         if name == "smirk":
-            return SmirkTokenizerFast(is_smiles=True)
+            return SmirkTokenizerFast()
         elif name == "smirk-selfies":
             from smirk import SmirkSelfiesFast
 
             return SmirkSelfiesFast()
+
+        elif name == "smirk-cls":
+            return SmirkTokenizerFast(template="[CLS] $0 [SEP]")
 
         raise unk_name
 

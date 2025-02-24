@@ -3,7 +3,9 @@ import logging
 import re
 from itertools import product
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, Generator, Optional
+from unittest.mock import patch
 
 
 def dict_product(d: dict[str, list[Any]]) -> Generator[dict[str, Any], None, None]:
@@ -104,3 +106,25 @@ def get_tokenizer(ckpt: str) -> str:
 
     logging.debug("tokenizer: %s -> %s", ckpt, tokenizer)
     return tokenizer
+
+
+def check_config(config: dict, stage="train"):
+    """Validate a run config successfully parses"""
+
+    # This only works for scrips run from the root directory
+    # It's a bit of a hack, but seeing as this is for validating configs from
+    # one-off sweep scripts, it's okay
+    from train import MyLightningCLI, cli_main
+
+    # Override the instantiator to avoid instantiating the model
+    def dont_instantiate(self):
+        return None
+
+    # Temporarily path MyLightningCLI.instantiate_classes to not instantiate the model
+    with patch.object(MyLightningCLI, "instantiate_classes", dont_instantiate):
+        with NamedTemporaryFile("w") as f:
+            json.dump(config[stage], f)
+            f.flush()
+
+            # TODO: Suppress `Seed set to..` message
+            cli_main(args=["--config", f.name])

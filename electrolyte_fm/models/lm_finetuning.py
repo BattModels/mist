@@ -19,6 +19,22 @@ from .normalize import get_normalizer
 from .prediction_task_head import PredictionTaskHead
 
 
+def load_encoder(encoder: str | Path | torch.nn.Module):
+    if isinstance(encoder, torch.nn.Module):
+        return encoder
+    elif (
+        Path(encoder).exists()
+        and Path(encoder).parent.parent.joinpath("config.json").is_file()
+    ):
+        return DeepSpeedMixin.load(encoder).get_encoder()
+    else:
+        from transformers import AutoModel
+
+        return AutoModel.from_pretrained(
+            encoder, trust_remote_code=True, add_pooling_layer=False
+        )
+
+
 class LMFinetuning(LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on multiple tasks.
@@ -28,7 +44,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         self,
         output_size: int,
         encoder_ckpt: str,
-        freeze_encoder: bool = False,
+        freeze_encoder: bool | str = False,
         dropout: float = 0.2,
         vocab_size: Optional[int] = None,
         task: str = "binary",
@@ -44,49 +60,23 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         super().__init__()
 
         self.task = task
+        self.output_size = output_size
         self.dropout = dropout
         self.encoder_ckpt = encoder_ckpt
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
 
-        # Load Encoder Model
-        if Path(encoder_ckpt).exists():
-            self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
-        else:
-            from transformers import AutoModel
-
-            self.encoder = AutoModel.from_pretrained(
-                encoder_ckpt,
-                trust_remote_code=True,
-            )
-
-        # Validate the vocab size
-        if vocab_size is not None:
-            if hasattr(self.encoder, "config") and hasattr(
-                self.encoder.config, "vocab_size"
-            ):
-                assert (
-                    self.encoder.config.vocab_size == vocab_size
-                ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
-
-        self.save_hyperparameters()
-
-        self.task_network = PredictionTaskHead(
-            embed_dim=self.encoder.config.hidden_size,
-            output_size=output_size,
-            dropout=dropout,
-        )
-        self.task = task
-        if task == "binary":
+        if self.task == "binary":
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
-        elif task == "regression":
+        elif self.task == "regression":
             self.lossfn = torch.nn.MSELoss(reduction="none")
             transform = transform or "standardize"
         else:
-            raise ValueError(f"Unknown task type {task}")
+            raise ValueError(f"Unknown task type {self.task}")
+        self.transform = get_normalizer(transform, self.output_size).eval()
 
-        self.transform = get_normalizer(transform, output_size).eval()
+        self.save_hyperparameters()
 
         # Additional Metrics
         metrics = get_metrics(
@@ -109,6 +99,14 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             self.train_metrics = metrics.clone(prefix="train/")
             self.val_metrics = metrics.clone(prefix="val/")
             self.test_metrics = metrics.clone(prefix="test/")
+
+    def configure_model(self):
+        self.encoder = load_encoder(self.encoder_ckpt)
+        self.task_network = PredictionTaskHead(
+            embed_dim=self.encoder.config.hidden_size,
+            output_size=self.output_size,
+            dropout=self.dropout,
+        )
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
@@ -256,6 +254,10 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         learnable_params = self.task_network.parameters()
         if not self.freeze_encoder:
             learnable_params = chain(learnable_params, self.encoder.parameters())
+        elif self.freeze_encoder == "encoder":
+            learnable_params = chain(
+                learnable_params, self.encoder.embeddings.parameters()
+            )
 
         optimizer = self.optimizer(learnable_params)
         if schedule := self.lr_schedule:

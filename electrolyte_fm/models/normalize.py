@@ -1,10 +1,12 @@
+from typing import Optional
+
 import torch
-from torch.masked import MaskedTensor
 from datasets import IterableDataset
 from sklearn.preprocessing import PowerTransformer as _PowerTransformer
+from torch.masked import MaskedTensor
 
 
-def get_normalizer(transform: str, num_outputs: int) -> torch.nn.Module:
+def get_normalizer(transform: Optional[str], num_outputs: int) -> torch.nn.Module:
     if transform in ["standardize", Standardize.__name__]:
         return Standardize(num_outputs)
     elif transform in ["power_transform", PowerTransform.__name__]:
