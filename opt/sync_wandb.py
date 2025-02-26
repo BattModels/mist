@@ -2,6 +2,7 @@
 import json
 import re
 import traceback
+import subprocess
 from pathlib import Path
 from typing import Optional, Union, Mapping
 from math import nan, isnan
@@ -97,6 +98,24 @@ def metric_traces(run: Run, x_axis: str, metrics: dict[str, str]) -> dict[str, l
             out[v].append(sample[k])
 
     return out
+
+
+def has_hotfix(run: Run, commit: str | list[str]) -> bool:
+    """Return true if the run has all of the listed commits"""
+    if isinstance(commit, list):
+        return all([has_hotfix(run, c) for c in commit])
+    assert isinstance(commit, str)
+
+    run_commit = run.metadata["git"]["commit"]
+    assert isinstance(run_commit, str)
+
+    # Check if run_commit has commit as an ancestor
+    o = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, run_commit],
+        shell=True,
+        capture_output=True,
+    )
+    return o.returncode == 0
 
 
 def run_summary(run: Run):
@@ -346,6 +365,12 @@ def identify_metrics(run):
             else:
                 pass
 
+        # Check for invalid rmse
+        if entry["metric"] == "rmse" and not has_hotfix(
+            run, "369d6164d74238b89c9798ce5b3c914b2501739a"
+        ):
+            continue  # Skip invalid rmse records
+
         # Unpack metric
         if isinstance(v, (float, int)):
             entry["type"] = "last"
@@ -422,6 +447,9 @@ def export_runs(export_map: dict, cache: Path, runs, name: str = None):
 
 if __name__ == "__main__":
     api = wandb.Api()
+
+    # Check git history is up to date
+    subprocess.run(["git", "fetch", "--all"], check=True)
 
     # Create cache
     cache_path = Path(__file__).parent.parent.joinpath(".cache", "wandb-export")
