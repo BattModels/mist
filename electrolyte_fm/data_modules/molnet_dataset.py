@@ -31,9 +31,10 @@ class MolNetDataModule(PropertyPredictionDataModule):
         **kwargs,
     ):
         # Set default smi_column
-        kwargs["smi_column"] = kwargs.get(
-            "smi_column", "smiles" if name != "bace" else "mol"
+        kwargs["smi_column"] = (
+            kwargs.get("smi_column", None) or "smiles" if name != "bace" else "mol"
         )
+        assert isinstance(kwargs["smi_column"], str)
 
         self.name = name
         self.split = split
