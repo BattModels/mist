@@ -8,12 +8,8 @@ fast enough that there is no real reason to use GPUs (via tf) instead of CPUs (v
 - Modified by Alexius Wadell to download model if not provided
 """
 
-import math
-import sys
-import random
 from pathlib import Path
 import numpy as np
-import time
 import rdkit.Chem as Chem
 import rdkit.Chem.AllChem as AllChem
 import json
@@ -30,15 +26,19 @@ FP_rad = 2
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+
 def download_model(path: Path, url: str = None) -> Path:
     from urllib.request import urlopen
-    url = url or "https://github.com/connorcoley/scscore/raw/refs/heads/master/models/full_reaxys_model_1024bool/model.ckpt-10654.as_numpy.json.gz"
+
+    url = (
+        url
+        or "https://github.com/connorcoley/scscore/raw/refs/heads/master/models/full_reaxys_model_1024bool/model.ckpt-10654.as_numpy.json.gz"
+    )
     with urlopen(url) as fid:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as out:
             out.write(fid.read())
     return path
-
 
 
 class SCScorer:
@@ -53,7 +53,9 @@ class SCScorer:
     def restore(self, weight_path=None, FP_rad=FP_rad, FP_len=FP_len):
         # Download default model if not provided
         if weight_path is None:
-            weight_path = Path(Path(__file__).parent, "models", "full_reaxys_model_1024bool.json.gz")
+            weight_path = Path(
+                Path(__file__).parent, "models", "full_reaxys_model_1024bool.json.gz"
+            )
             if not weight_path.exists():
                 download_model(weight_path)
 

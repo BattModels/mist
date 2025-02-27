@@ -158,4 +158,3 @@ function figure_interp_surprise(; correlation=corspearman)
 
     return f
 end
-
