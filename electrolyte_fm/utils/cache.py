@@ -50,7 +50,9 @@ def cached_download(url: str, path: Path) -> Path:
     if not cached_file.exists():
         import urllib
 
-        with urllib.request.urlopen(url) as fid:
+        user_agent = "Wget/1.19.5"  # Pretend to be wget
+        req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+        with urllib.request.urlopen(req) as fid:
             cached_file.parent.mkdir(parents=True, exist_ok=True)
             with open(cached_file, "wb") as out:
                 out.write(fid.read())
