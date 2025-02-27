@@ -294,7 +294,7 @@ def get_metric(name: str, task_type: str, **kwargs) -> Metric:
     elif name == "mape" and task_type == "regression":
         m = MeanAbsolutePercentageError(**kwargs)
     elif name == "rmse" and task_type == "regression":
-        m = MeanSquaredError(squared=True, **kwargs)
+        m = MeanSquaredError(squared=False, **kwargs)
     elif name == "pearson" and task_type == "regression":
         m = PearsonCorrCoef(**kwargs)
     elif name == "r2" and task_type == "regression":
