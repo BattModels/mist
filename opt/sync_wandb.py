@@ -1,10 +1,15 @@
+#!/usr/bin/env python
 import json
 import re
+import traceback
+import subprocess
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union, Mapping
+from math import nan, isnan
 import logging
 
 import wandb
+from wandb.apis.public import Run
 from datasets import fingerprint
 
 logging.basicConfig(level=logging.INFO)
@@ -19,32 +24,29 @@ def model_size(d_model: int, d_ff: int, n_layers: int) -> int:
     return attention_qkv + project + ff
 
 
-def get_entry(config: dict, *entry_path):
-    if len(entry_path) > 1:
-        path = entry_path[0]
-        if path in config:
-            val = get_entry(config[path], *entry_path[1:])
+def get_entry(config: dict | str | None, *entry_path: str):
+    if isinstance(config, Mapping):
+        if len(entry_path) >= 1:
+            if (path := entry_path[0]) in config:
+                val = get_entry(config[path], *entry_path[1:])
+                if val is not None:
+                    return val
+
+            elif "init_args" in config:
+                return get_entry(config["init_args"], *entry_path)
+        else:
+            val = config.get(entry_path, None)
             if val is not None:
                 return val
+            elif "init_args" in config:
+                return config["init_args"].get(*entry_path, None)
+            return None
 
-        elif "init_args" in config:
-            # print(f"init_args: {",".join(entry_path)}, {config}")
-            return get_entry(config["init_args"], *entry_path)
-    elif config is None:
-        return None
-    elif isinstance(config, str):
-        return None
-    else:
-        # print(f"getting {entry_path} from {config}")
-        val = config.get(*entry_path, None)
-        if val is not None:
-            return val
-        elif "init_args" in config:
-            return config["init_args"].get(*entry_path, None)
-        return None
+    # Otherwise, return None
+    return config if len(entry_path) == 0 else None
 
 
-def get_cluster(hostname: str) -> str:
+def get_cluster(hostname: str) -> Optional[str]:
     if hostname == "localhost":
         return "h001"
     elif hostname.startswith("lh"):
@@ -59,7 +61,7 @@ def get_cluster(hostname: str) -> str:
         return None
 
 
-def summary_metric(run, key, type="last", best=None):
+def summary_metric(run: Run, key, type="last", best=None):
     value = run.summary_metrics.get(key, None)
     if value is None:
         return None
@@ -76,8 +78,49 @@ def summary_metric(run, key, type="last", best=None):
     return x
 
 
-def run_summary(run):
+def system_metrics(run: Run):
+    df = run.history(stream="system")
+    mean = df.mean().to_dict()
+    std = df.std().to_dict()
+    stats = {}
+    for k in mean.keys():
+        stats[k] = {"mean": mean[k], "std": std[k]}
+
+    return stats
+
+
+def metric_traces(run: Run, x_axis: str, metrics: dict[str, str]) -> dict[str, list]:
+    records = run.scan_history(keys=[x_axis, *metrics.keys()])
+    out = {k: [] for k in ["step", *metrics.values()]}
+    for sample in records:
+        out["step"].append(sample[x_axis])
+        for k, v in metrics.items():
+            out[v].append(sample[k])
+
+    return out
+
+
+def has_hotfix(run: Run, commit: str | list[str]) -> bool:
+    """Return true if the run has all of the listed commits"""
+    if isinstance(commit, list):
+        return all([has_hotfix(run, c) for c in commit])
+    assert isinstance(commit, str)
+
+    run_commit = run.metadata["git"]["commit"]
+    assert isinstance(run_commit, str)
+
+    # Check if run_commit has commit as an ancestor
+    o = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, run_commit],
+        shell=True,
+        capture_output=True,
+    )
+    return o.returncode == 0
+
+
+def run_summary(run: Run):
     config = run.config
+    assert isinstance(run.metadata, dict)
     stats = {
         "id": run.id,
         "name": run.name,
@@ -114,10 +157,13 @@ def run_summary(run):
             "step": run.summary["trainer/global_step"],
             "tokens": run.summary.get("total_tokens_step", None),
             "masked_tokens": run.summary.get("total_masked_tokens_step", None),
+            "limit_val_batches": get_entry(
+                config, "cli", "trainer", "limit_val_batches"
+            ),
         },
         "job_config": {
-            "nodes": get_entry(config, "job_config", "nodes"),
-            "gpues_per_node": get_entry(config, "job_config", "gpus_per_node"),
+            "nodes": get_entry(config, "n_nodes"),
+            "gpus_per_node": get_entry(config, "n_gpus_per_node"),
             "container": get_entry(config, "job_config", "container"),
             "env": get_entry(config, "job_config", "env"),
         },
@@ -127,20 +173,44 @@ def run_summary(run):
             "val_loss_best": summary_metric(run, "val/loss_epoch", "best", best="min"),
             "train_loss_best": summary_metric(run, "val/loss_step", "best", best="min"),
         },
+        "system": {
+            "train_throughput": summary_metric(
+                run, "stats/train_batch_throughput_epoch"
+            ),
+            "val_throughput": summary_metric(run, "stats/val_batch_throughput", "mean"),
+            "train_batch_time": summary_metric(run, "stats/train_batch_time_epoch"),
+            **system_metrics(run),
+        },
     }
+
+    # Record world_size
+    world_size = (stats["job_config"]["nodes"] or nan) * (
+        stats["job_config"]["gpus_per_node"] or nan
+    )
+    stats["job_config"]["world_size"] = nan2none(world_size)
 
     # Populate Effective Batch Size
     macro_batch_size = stats["trainer"]["macro_batch_size"]
+    stats["data"]["val_batch_size"] = (
+        get_entry(config, "cli", "data", "val_batch_size")
+        or stats["data"]["batch_size"]
+    )
     gas = stats["trainer"]["gas"]
     if macro_batch_size is not None and gas is not None:
         stats["trainer"]["effective_batch_size"] = macro_batch_size * gas
     else:
         stats["trainer"]["effective_batch_size"] = None
 
+    limit_val_batches = stats["trainer"]["limit_val_batches"] or nan
+    val_batch_size = stats["data"]["val_batch_size"] or nan
+    stats["trainer"]["effective_val_epoch"] = nan2none(
+        limit_val_batches * val_batch_size * world_size
+    )
+
     return stats
 
 
-def pretraining_summary(run):
+def pretraining_summary(run: Run):
     config = run.config
     row = run_summary(run)
     row["model"].update(
@@ -154,6 +224,9 @@ def pretraining_summary(run):
     row["data"].update({"path": get_entry(config, "cli", "data", "path")})
     row["model"]["model_size"] = model_size(
         row["model"]["d_model"], row["model"]["d_ff"], row["model"]["n_layers"]
+    )
+    row["metric_traces"] = metric_traces(
+        run, "trainer/global_step", {"val/loss_epoch": "val_loss"}
     )
     return row
 
@@ -192,7 +265,11 @@ def something(x, default):
     return x if x is not None else default
 
 
-def finetuning_summary(run):
+def nan2none(x):
+    return x if not isnan(x) else None
+
+
+def finetuning_summary(run: Run):
     row = run_summary(run)
     config = run.config
     row["model"].update(
@@ -274,11 +351,12 @@ def identify_metrics(run):
             if metric.startswith("mae") and "_" in metric and "channel" not in metric:
                 # Depreciate channel naming
                 entry["channel"] = entry["metric"].split("_", maxsplit=1)[1]
-                assert entry["channel"] in [
-                    "mean",
-                    *target_columns,
-                ], f"{entry['channel']} not in {target_columns} or `mean`"
-                entry["metric"] = "mae"
+                if entry["channel"] in ["mean", *target_columns]:
+                    entry["metric"] = "mae"
+                else:
+                    # Unknown channel -> Skip
+                    logging.warning("Unable to parse metric %s for %s", metric, run.id)
+                    continue
 
             elif not any([metric.startswith(c) for c in metrics]):
                 # If no metric is specified, assume MAE
@@ -286,6 +364,12 @@ def identify_metrics(run):
                 entry["metric"] = "mae"
             else:
                 pass
+
+        # Check for invalid rmse
+        if entry["metric"] == "rmse" and not has_hotfix(
+            run, "369d6164d74238b89c9798ce5b3c914b2501739a"
+        ):
+            continue  # Skip invalid rmse records
 
         # Unpack metric
         if isinstance(v, (float, int)):
@@ -357,12 +441,15 @@ def export_runs(export_map: dict, cache: Path, runs, name: str = None):
         except KeyboardInterrupt:
             raise
         except Exception:
-            logging.error("failed to export %s", run.id)
+            logging.error("failed to export %s: %s", run.id, traceback.format_exc())
             continue
 
 
 if __name__ == "__main__":
     api = wandb.Api()
+
+    # Check git history is up to date
+    subprocess.run(["git", "fetch", "--all"], check=True)
 
     # Create cache
     cache_path = Path(__file__).parent.parent.joinpath(".cache", "wandb-export")
