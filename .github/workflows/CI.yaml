@@ -11,14 +11,23 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           python-version: 3.11.8
+<<<<<<< HEAD
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+=======
+          cache: poetry
+>>>>>>> 5b359dc (wip: rework sae to inject coders into the model)
       - name: Install deploy key for BattModels/smirk
         uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 #v0.9.0
         with:
           ssh-private-key: ${{ secrets.SMIRK_PRIVATE_KEY }}
+<<<<<<< HEAD
       - name: install project
         run: uv sync --all-extras --dev
       - name: pytest
         run: uv run pytest
+=======
+      - run: poetry install
+      - run: source activate && pytest -m "not gpu"
+>>>>>>> 5b359dc (wip: rework sae to inject coders into the model)

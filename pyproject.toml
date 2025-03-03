@@ -55,6 +55,9 @@ testpaths = ["test"]
 pythonpath = [".", "test"]
 addopts = "--color yes"
 
+[tool.pytest.ini_options.markers]
+gpu = "tests that require a GPU to run"
+
 [tool.ruff.lint]
 ignore = ["F401"]
 
