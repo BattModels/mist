@@ -24,10 +24,19 @@ IGNORE_INDEX = -100
 
 
 class SafeR2Score(R2Score):
+    def __init__(self, *args, num_outputs=None, **kwargs):
+        self.num_outputs = num_outputs
+        super().__init__(*args, **kwargs)
+
     def compute(self):
         if self.total < 2:
+            if self.num_outputs is not None:
+                x = [float("nan") for _ in range(self.num_outputs)]
+            else:
+                x = float("nan")
+
             return torch.tensor(
-                float("nan"),
+                x,
                 device=self.total.device,
                 dtype=self.sum_error.dtype,
             )
@@ -185,7 +194,7 @@ class ClasswiseWrapper(TmClasswiseWrapper):
 
         # Handle singletons
         if x.ndim == 0:
-            assert self.labels is None or len(self.labels) == 1
+            assert self.labels is None or len(self.labels) == 1, f"{self}: {x}"
             x = [x]
 
         if self.labels is None:
@@ -300,7 +309,7 @@ def get_metric(name: str, task_type: str, **kwargs) -> Metric:
     elif name == "r2" and task_type == "regression":
         multioutput = (
             "uniform_average"
-            if kwargs.pop("num_outputs", None) is None
+            if kwargs.get("num_outputs", None) is None
             else "raw_values"
         )
         m = SafeR2Score(multioutput=multioutput, **kwargs)
