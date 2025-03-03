@@ -52,8 +52,8 @@ def record_summary_stats(logger, metrics: MetricCollection):
 
 
 def record_loss_summary_stats(logger):
-    define_metric = logger.experiment.define_metric
     if isinstance(logger, WandbLogger):
+        define_metric = logger.experiment.define_metric
         for m in ["train/loss", "val/loss", "test/loss"]:
             for s in ["", "_step", "_epoch"]:
                 define_metric(m + s, summary="last,best,min", goal="minimize")

@@ -101,12 +101,13 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             self.test_metrics = metrics.clone(prefix="test/")
 
     def configure_model(self):
-        self.encoder = load_encoder(self.encoder_ckpt)
-        self.task_network = PredictionTaskHead(
-            embed_dim=self.encoder.config.hidden_size,
-            output_size=self.output_size,
-            dropout=self.dropout,
-        )
+        if not hasattr(self, "encoder"):
+            self.encoder = load_encoder(self.encoder_ckpt)
+            self.task_network = PredictionTaskHead(
+                embed_dim=self.encoder.config.hidden_size,
+                output_size=self.output_size,
+                dropout=self.dropout,
+            )
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
@@ -244,7 +245,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         preds = self.transform.forward(preds)
 
         out = {"embedding": embedding, "prediction": preds}
-        for key in ["target", "is_oov"]:
+        for key in ["target", "is_oov", "input_ids", "target_mask"]:
             if key in batch.keys():
                 out[key] = batch[key]
 

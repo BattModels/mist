@@ -102,6 +102,7 @@ class PropertyPredictionDataModule(LightningDataModule):
             output["target_mask"] = torch.stack(
                 [torch.tensor(x["target_mask"]) for x in batch]
             )
+            assert output["target"].shape == output["target_mask"].shape
 
         return output
 
