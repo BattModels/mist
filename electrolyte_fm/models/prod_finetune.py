@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from transformers import AutoModel, AutoConfig, DataCollatorWithPadding
 from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
-from electrolyte_fm.models.normalize import get_normalizer
+from electrolyte_fm.models.normalize import AbstractNormalizer
 
 
 def save_model(model, save_directory, safe_serialization=False):
@@ -48,10 +48,7 @@ class MISTFinetuned(torch.nn.Module):
                 "output_size": self.task_network.final.out_features,
                 "dropout": self.task_network.dropout1.p,
             },
-            "transform": {
-                "class": self.transform.__class__.__name__,
-                "num_outputs": self.task_network.final.out_features,
-            },
+            "transform": self.transform.to_config(),
             "channels": self.channels,
         }
 
@@ -75,7 +72,7 @@ class MISTFinetuned(torch.nn.Module):
         ).from_dict(config["encoder"])
         encoder = AutoModel.from_config(encoder_config, add_pooling_layer=False)
         task_network = PredictionTaskHead(**config["task_network"])
-        transform = get_normalizer(
+        transform = AbstractNormalizer.get(
             config["transform"]["class"], config["transform"]["num_outputs"]
         )
 
@@ -139,7 +136,9 @@ class MISTMultiTask(torch.nn.Module):
         task_networks = []
         transforms = []
         for tc in config["task_networks"]:
-            transforms.append(get_normalizer(tc.pop("transform"), tc["output_size"]))
+            transforms.append(
+                AbstractNormalizer.get(tc.pop("transform"), tc["output_size"])
+            )
             task_networks.append(PredictionTaskHead(**tc))
 
         model = MISTMultiTask(encoder, task_networks, transforms, config["channels"])
