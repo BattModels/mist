@@ -3,8 +3,9 @@ using MCMCDiagnosticTools: ess_rhat
 using Enzyme: Enzyme
 using Dates: DateTime
 using BayesianScaling: BayesianScaling, ShapedScaling, init_logdensity_model, sample_chains
+using Distributions: Normal, LogNormal
 using Makie: with_theme
-using Setfiled: @set!
+using Setfield: @set!
 
 GIT_ROOT = readchomp(`git rev-parse --show-toplevel`)
 
@@ -25,6 +26,7 @@ Threads.@threads :dynamic for eval_batch in [1e3, 1e4, 1e5, 1e6]
     )
     df = select(df,
         :model_size,
+        :d_model,
         :tokenizer,
         :val_loss_smooth => :loss,
         [:effective_batch_size, :max_steps] => ByRow(*) => :data_size,
@@ -40,7 +42,15 @@ Threads.@threads :dynamic for eval_batch in [1e3, 1e4, 1e5, 1e6]
         :tokenizer => ByRow(==("smirk")),
     )
     m = ShapedScaling(df)
-    @set! m.priors.scaling.E =
-        outdir = process_model(ShapedScaling(df), df)
+
+    # LR scaling with Model size used in Attention is All You Need
+    # Rescale base LR to match MoLFormer's base LR
+    # Vaswani, A. et al. 2017. Attention Is All You Need. arXiv:1706.03762 [cs]. (Dec. 2017).
+    df.model_size_lr = df.d_model
+    @set! m.priors.lr.ideal.c = Normal(-0.5, 0.2)
+    lr_a = 1.64e-4 * sqrt(768) / sqrt(1024)
+    @set! m.priors.lr.ideal.a = LogNormal(log(lr_a), 0.8)
+
+    outdir = process_model(m, df)
     @info "saved" eval_batch outdir
 end

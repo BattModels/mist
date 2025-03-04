@@ -256,7 +256,7 @@ end
 ideal_lr(model::ShapedScaling, chains::AbstractArray{T,3}) where {T} = ideal_lr(model, chains, model.runs)
 function ideal_lr(model::ShapedScaling, chains::AbstractArray{T,3}, runs::Vector) where {T}
     return mapchains(chains, model.runs) do run, θ
-        ideal_lr(model, θ, run.model_size, run.effective_batch_size)
+        ideal_lr(model, θ; model_size=run.model_size, effective_batch_size=run.effective_batch_size)
     end
 end
 
@@ -265,7 +265,7 @@ function harmonic_penalty_posterior(chains::AbstractArray{T,3}, x::Vector) where
 end
 
 
-function ideal_lr(::ShapedScaling, θ::ComponentVector, model_size::Number, effective_batch_size::Number)
+function ideal_lr(::ShapedScaling, θ::ComponentVector; model_size::Number, effective_batch_size::Number)
     (; a, b, c) = θ.lr.ideal
     return exp(log(a) + b * log(effective_batch_size) + c * log(model_size))
 end

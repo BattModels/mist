@@ -9,10 +9,11 @@ using DataFrames
 using Distributions: Distributions, Distribution, Normal, Uniform, LogNormal, MvLogNormal, MvNormal, Exponential, truncated, logpdf, loglikelihood, convolve
 using MLUtils: splitobs
 using JSON: JSON
-using StatsBase: StatsBase, quantile, sample, mean_and_std, autocor, ecdf, aic, bic
+using StatsBase: StatsBase, quantile, sample, mean_and_std, autocor, ecdf, aic, bic, loglikelihood
 using Random: Random, shuffle!, AbstractRNG
 using Optimization: OptimizationProblem, OptimizationFunction, solve
 using OptimizationOptimJL: LBFGS
+using OnlineStats: OnlineStats, OnlineStat, KHist, fit!
 using ADTypes: AutoForwardDiff
 using JLD2: jldopen, jldsave
 using DynamicHMC: DynamicHMC, stack_posterior_matrices, mcmc_with_warmup

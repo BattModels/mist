@@ -255,6 +255,14 @@ function credible_interval(chains::AbstractMatrix{T}; p::AbstractFloat=0.95) whe
     return mean(chains), quantile(vec(chains), (p, 1 - p))...
 end
 
+function credible_interval(p=0.90)
+    p = (1 - p) / 2
+    return OnlineStats.Series(
+        OnlineStats.Mean(),
+        OnlineStats.P2Quantile(p),
+        OnlineStats.P2Quantile(1 - p),
+    )
+end
 
 """
 Compute `y/exp(E[log(ŷ) - log(P)])` where `y` is the response, `ŷ` is the expected response and `P` is a penalty term
@@ -280,7 +288,7 @@ function StatsBase.bic(model, chains::AbstractChains{T}) where {T}
     ℓ_mle = maximum(θ -> loglikelihood(model, θ), eachslice(chains; dims=(1, 2)))
     k = dimension(model)
     n = length(features(model))
-    return 2 * (k*log(n) - ℓ_mle)
+    return 2 * (k * log(n) - ℓ_mle)
 end
 
 """
@@ -304,8 +312,8 @@ function kbnsum(s, c, x)
     end
     return t, c
 end
-kbnsum(sc::NTuple{2, T}, x::T) where {T} = kbnsum(first(sc), last(sc), x)
-kbnsum(sc::NTuple{2, T}) where {T} = sum(sc)
+kbnsum(sc::NTuple{2,T}, x::T) where {T} = kbnsum(first(sc), last(sc), x)
+kbnsum(sc::NTuple{2,T}) where {T} = sum(sc)
 kbnsum(::Type{T}) where {T} = (zero(T), zero(T))
 
 function waic(model, chains::AbstractChains{T}) where {T}
@@ -315,7 +323,7 @@ function waic(model, chains::AbstractChains{T}) where {T}
     logS = log(S)
     invS = inv(S)
     for y in features(model)
-        ml =  (T(-Inf), zero(T))    # Expected Likelihood over samples
+        ml = (T(-Inf), zero(T))    # Expected Likelihood over samples
         mll = kbnsum(T)             # Expected Log Likelihood over samples
         for I = CartesianIndices(axes(chains)[1:2])
             θ = chains[I.I..., :]

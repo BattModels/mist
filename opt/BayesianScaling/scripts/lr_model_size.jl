@@ -54,7 +54,7 @@ m = ShapedScaling(df)
 lr_a = 1.64e-4 * sqrt(768) / sqrt(1024)
 @set! m.priors.lr.ideal.a = LogNormal(log(lr_a), 0.8)
 
-o = process_model(m, df)
+o = process_model(m, d4)
 @info "Saved log(lr) ∝ d_model^c" o
 
 
