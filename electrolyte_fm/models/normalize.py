@@ -1,4 +1,4 @@
-from typing import Optional, List, Union, Self
+from typing import Optional, List, Union
 
 import torch
 from datasets import IterableDataset
