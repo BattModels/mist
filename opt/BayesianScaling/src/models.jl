@@ -129,24 +129,34 @@ function ShapedScaling(df::DataFrame)
 end
 
 StatsBase.response(m::ShapedScaling) = map(run -> run.loss, m.runs)
+features(m::ShapedScaling) = m.runs
+LogDensityProblems.dimension(m::ShapedScaling) = TransformVariables.dimension(transform_support(m))
+
+function logpdf_prior(m::ShapedScaling, θ)
+    ℓ = logpdf_prior(m.priors.scaling, θ.scaling)
+    ℓ += logpdf_prior(m.priors.lr, θ.lr)
+    ℓ += logpdf_prior(m.priors.ff_ratio, θ.ff_ratio)
+    ℓ += logpdf_prior(m.priors.aspect_ratio, θ.aspect_ratio)
+    ℓ += logpdf_prior(m.priors.kv_size, θ.kv_size)
+    return ℓ
+end
+
+LogDensityProblems.logdensity(m::ShapedScaling, θ) = m(θ)
 
 function (m::ShapedScaling)(θ)
-    (; scaling, lr, ff_ratio, aspect_ratio, kv_size, sigma) = θ
-
-    # Priors
-    ℓ = logpdf_prior(m.priors.scaling, scaling)
-    ℓ += logpdf_prior(m.priors.lr, lr)
-    ℓ += logpdf_prior(m.priors.ff_ratio, ff_ratio)
-    ℓ += logpdf_prior(m.priors.aspect_ratio, aspect_ratio)
-    ℓ += logpdf_prior(m.priors.kv_size, kv_size)
-
-    # Likelihood
+    ℓ = logpdf_prior(m, θ)
+    σ = θ.sigma
     for idx in 1:length(m.runs)
         run = m.runs[idx]
         loss = expected_log_loss(m, θ, run)
-        ℓ += loglikelihood(LogNormal(loss, sigma), run.loss)
+        ℓ += loglikelihood(LogNormal(loss, σ), run.loss)
     end
     return ℓ
+end
+
+function StatsBase.loglikelihood(m::ShapedScaling, y, θ)
+    loss = expected_log_loss(m, θ, y)
+    return loglikelihood(LogNormal(loss, θ.sigma), y.loss)
 end
 
 function expected_log_loss(::ShapedScaling, θ, run::NamedTuple)

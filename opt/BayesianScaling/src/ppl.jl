@@ -1,3 +1,6 @@
+const AbstractChains{T} = AbstractArray{T,3} where {T}
+
+
 struct BayesModel{P,X}
     priors::P
     covariates::X
@@ -23,7 +26,7 @@ function logpdf_prior(priors::Tuple{Vararg{<:Distribution}}, θ)
     end
 end
 
-logpdf_prior(prior::Distribution, θ) = logpdf(prior, θ)
+logpdf_prior(prior::Distribution, θ::Number) = logpdf(prior, θ)
 
 """
     logpdf_prior_vec(priors::NamedTuple, θ::AbstractVector)
@@ -43,6 +46,11 @@ sample_priors(m::BayesModel) = sample_priors(m.priors)
 sample_priors(m::NamedTuple) = NamedTuple{keys(m)}(map(sample_priors, values(m)))
 sample_priors(m::Tuple{Vararg{<:Distribution}}) = map(sample_priors, m)
 sample_priors(m::Distribution) = rand(m)
+
+features(m::BayesModel) = m.covariates
+features(m::TransformedLogDensity) = features(m.log_density_function)
+
+StatsBase.loglikelihood(m, θ::AbstractVector{T}) where {T} = sum(y -> loglikelihood(m, y, θ), features(m))
 
 function evaluate_model_prior(model, n=100)
     ℓ = 0
@@ -189,13 +197,11 @@ function save_results(model, chains, raw_chains; outdir=joinpath(pkgdir(@__MODUL
     return outdir
 end
 
-mapchains(f, op, chains::AbstractArray{<:Real,3}) = mapreduce(f, op, eachslice(chains, dims=(1, 2)))
-
 function mapchains(f, chains::AbstractArray{<:Real,3}, x::Vector)
     out = similar(chains, size(chains, 1), size(chains, 2), length(x))
     for I in CartesianIndices(axes(chains)[1:2])
         for (rdx, x) in enumerate(x)
-        θ = @view chains[I.I..., :]
+            θ = @view chains[I.I..., :]
             out[I, rdx] = f(x, θ)
         end
     end
@@ -263,3 +269,91 @@ function penalty_residual(y::Vector{T}, y_hat::AbstractArray{T,3}, penalty::Abst
     return xexpy.(y, -mu)
 end
 
+
+function StatsBase.aic(model, chains::AbstractChains{T}) where {T}
+    ℓ_mle = maximum(θ -> loglikelihood(model, θ), eachslice(chains; dims=(1, 2)))
+    k = dimension(model)
+    return 2 * (k - ℓ_mle)
+end
+
+function StatsBase.bic(model, chains::AbstractChains{T}) where {T}
+    ℓ_mle = maximum(θ -> loglikelihood(model, θ), eachslice(chains; dims=(1, 2)))
+    k = dimension(model)
+    n = length(features(model))
+    return 2 * (k*log(n) - ℓ_mle)
+end
+
+"""
+Deviance Information Criterion of a Bayesian model
+"""
+function dic(model, chains::AbstractChains{T}) where {T}
+    slices = eachslice(chains; dims=(1, 2))
+    θ_bayes = mean(slices)
+    lpd = loglikelihood(model, θ_bayes)
+    elpd = mean(θ -> loglikelihood(model, θ), slices)
+    p_dic = 2 * (lpd - elpd)
+    return 2 * (p_dic - lpd)
+end
+
+function kbnsum(s, c, x)
+    t = s + x
+    if abs(s) >= abs(x)
+        c += (s - t) + x
+    else
+        c += (x - t) + s
+    end
+    return t, c
+end
+kbnsum(sc::NTuple{2, T}, x::T) where {T} = kbnsum(first(sc), last(sc), x)
+kbnsum(sc::NTuple{2, T}) where {T} = sum(sc)
+kbnsum(::Type{T}) where {T} = (zero(T), zero(T))
+
+function waic(model, chains::AbstractChains{T}) where {T}
+    p_waic = kbnsum(T)
+    lppd = kbnsum(T)
+    S = size(chains, 1) * size(chains, 2)
+    logS = log(S)
+    invS = inv(S)
+    for y in features(model)
+        ml =  (T(-Inf), zero(T))    # Expected Likelihood over samples
+        mll = kbnsum(T)             # Expected Log Likelihood over samples
+        for I = CartesianIndices(axes(chains)[1:2])
+            θ = chains[I.I..., :]
+            ℓ = loglikelihood(model, y, θ)
+            ml = LogExpFunctions._logsumexp_onepass_op(ℓ - logS, ml)
+            mll = kbnsum(mll, ℓ)
+        end
+
+        # Accumulate into p_waic and lppd
+        lppd_sample = LogExpFunctions._logsumexp_onepass_result(ml)
+        kbnsum(mll) * invS
+        p_waic = kbnsum(p_waic, lppd_sample)
+        p_waic = kbnsum(p_waic, -kbnsum(mll) * invS)
+        lppd = kbnsum(lppd, lppd_sample)
+    end
+
+    lppd = kbnsum(lppd)
+    p_waic = kbnsum(p_waic)
+    return 2 * (p_waic - lppd)
+end
+
+function score_model(model, chains::AbstractChains)
+    return (;
+        aic=aic(model, chains),
+        dic=dic(model, chains),
+        waic=waic(model, chains),
+        bic=bic(model, chains)
+    )
+end
+
+function sample_model_score(model, chains; n=0.1)
+    sc = subsample(chains, n)
+    return score_model(model, sc)
+end
+
+function sample_model_score(outdir::String; kwargs...)
+    data = jldopen(joinpath(outdir, "chains.jld2"), "r")
+    model = data["model"]
+    chains = data["chains"]
+    return sample_model_score(model, chains; kwargs...)
+end

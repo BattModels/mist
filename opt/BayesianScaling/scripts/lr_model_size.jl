@@ -4,6 +4,8 @@ using Enzyme: Enzyme
 using Dates: DateTime
 using BayesianScaling: BayesianScaling, ShapedScaling, init_logdensity_model, sample_chains
 using Makie: with_theme
+using Distributions: Normal, LogNormal
+using Setfield: @set!
 
 GIT_ROOT = readchomp(`git rev-parse --show-toplevel`)
 
@@ -38,8 +40,8 @@ dropmissing!(df)
 subset!(df, :loss => ByRow(x -> x < 2.0))
 
 # Run baseline model
-@info "Runing log(lr) ∝ model_size^c"
-process_model(ShapedScaling(df), df)
+o = process_model(ShapedScaling(df), df)
+@info "Saved log(lr) ∝ model_size^c" o
 
 # Again but model lr base using d_model
 df.model_size_lr = df.d_model
@@ -48,11 +50,11 @@ m = ShapedScaling(df)
 # LR scaling with Model size used in Attention is All You Need
 # Rescale base LR to match MoLFormer's base LR
 # Vaswani, A. et al. 2017. Attention Is All You Need. arXiv:1706.03762 [cs]. (Dec. 2017).
-m.priors.lr.ideal.c = Normal(-0.5, 0.2)
+@set! m.priors.lr.ideal.c = Normal(-0.5, 0.2)
 lr_a = 1.64e-4 * sqrt(768) / sqrt(1024)
-m.priors.lr.ideal.a = LogNormal(log(lr_a), 0.8)
+@set! m.priors.lr.ideal.a = LogNormal(log(lr_a), 0.8)
 
-@info "Runing log(lr) ∝ d_model^c"
-process_model(m)
+o = process_model(m, df)
+@info "Saved log(lr) ∝ d_model^c" o
 
 

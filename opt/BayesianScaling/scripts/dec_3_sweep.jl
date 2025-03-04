@@ -4,6 +4,7 @@ using Enzyme: Enzyme
 using Dates: DateTime
 using BayesianScaling: BayesianScaling, ShapedScaling, init_logdensity_model, sample_chains
 using Makie: with_theme
+using Setfiled: @set!
 
 GIT_ROOT = readchomp(`git rev-parse --show-toplevel`)
 
@@ -18,6 +19,7 @@ Threads.@threads :dynamic for eval_batch in [1e3, 1e4, 1e5, 1e6]
     subset!(df,
         :tokenizer => ByRow(==("smirk")),
         :created => ByRow(<=(DateTime(2025, 1))),
+        :tags => ByRow(tags -> "dec-3-sweep" in tags),
         [:step, :max_steps] => ByRow((s, ms) -> s / ms > 0.8);
         skipmissing=true,
     )
@@ -37,6 +39,8 @@ Threads.@threads :dynamic for eval_batch in [1e3, 1e4, 1e5, 1e6]
         :loss => ByRow(x -> 1e-6 < x < 1.0),
         :tokenizer => ByRow(==("smirk")),
     )
-
-    process_model(ShapedScaling(df), df)
+    m = ShapedScaling(df)
+    @set! m.priors.scaling.E =
+        outdir = process_model(ShapedScaling(df), df)
+    @info "saved" eval_batch outdir
 end

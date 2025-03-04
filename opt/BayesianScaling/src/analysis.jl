@@ -13,7 +13,7 @@ end
 
 function design(m, chains; d_model=768, ff_ratio=4, n_layers=8, kv_size=64, gpus=32, gas=16, batch_size=128)
     N = non_embedding_size(d_model, ff_ratio * d_model, n_layers)
-    scaling = selectdim(chains, 3:scaling)
+    scaling = selectdim(chains, 3, :scaling)
     A = selectdim(scaling, 3, :A)
     α = selectdim(scaling, 3, :α)
     B = selectdim(scaling, 3, :B)
@@ -27,13 +27,44 @@ function design(m, chains; d_model=768, ff_ratio=4, n_layers=8, kv_size=64, gpus
     effective_batch_size = batch_size * gas * gpus
     S = D ./ effective_batch_size
 
-    lr = ideal_lr(m, chains; model_size=N, effective_batch_size)
-
-    loss = Array{Float64}(undef, size(chains)[1:2]...)
+    p = 0.9
+    lr_dist = credible_interval(p)
+    loss_dist = credible_interval(p)
+    S_dist = credible_interval(p)
+    C_dist = credible_interval(p)
     aspect_ratio = d_model / n_layers
-    for sdx in CartesianIndices(axes(loss))
-        run = (; model_size=N, data_size=rand(D), lr=rand(lr), effective_batch_size, ff_ratio, aspect_ratio, kv_size)
-        loss[sdx] = expected_loss(m, chains[sdx.I..., :], run)
+    effective_batch_size = batch_size * gas * gpus
+    for I in CartesianIndices(axes(chains)[1:2])
+        θ = chains[I.I..., :]
+
+        # Compute-optimal budget
+        A = θ.scaling.A
+        α = θ.scaling.α
+        B = θ.scaling.B
+        β = θ.scaling.β
+        G = ((α * A) / (β * B))^(1 / (α + β))
+        a = β / (α + β)
+        C = 6 * (N / G)^(1 / a)
+        D = C / (6 * N)
+        S = D / effective_batch_size
+        fit!(S_dist, S)
+        fit!(C_dist, C)
+
+        lr = ideal_lr(m, θ; model_size=N, effective_batch_size)
+        fit!(lr_dist, lr)
+
+        # Estimate the model's loss
+        run = (;
+            model_size=N,
+            data_size=D,
+            lr,
+            effective_batch_size,
+            ff_ratio,
+            aspect_ratio,
+            kv_size,
+        )
+        loss = expected_loss(m, θ, run)
+        fit!(loss_dist, loss)
     end
 
     println("Non-Embedding Parameters: $N")
@@ -42,18 +73,18 @@ function design(m, chains; d_model=768, ff_ratio=4, n_layers=8, kv_size=64, gpus
     println("\tn_attn $(Int(d_model / kv_size))")
     println("\tn_layers: $n_layers")
     println("\tkv_size: $kv_size")
-    report_dist("FLOPS", vec(C))
-    report_dist("Number of Steps", vec(S))
-    report_dist("Number of Samples", vec(D))
-    report_dist("Learning Rate", vec(lr))
-    report_dist("Loss", vec(loss))
+    report_dist("PF-Days", C_dist; factor=inv(pf_day))
+    report_dist("Number of Steps", S_dist)
+    report_dist("Number of Samples", S_dist; factor=effective_batch_size)
+    report_dist("Learning Rate", lr_dist)
+    report_dist("Loss", loss_dist)
 end
 
-function report_dist(label::AbstractString, dist::AbstractVector; p=0.025)
-    l, m, u = quantile(dist, [p, 0.5, 1 - p])
-    lr = round(l, sigdigits=3)
-    m = round(m, sigdigits=3)
-    ur = round(u, sigdigits=3)
+function report_dist(label::AbstractString, dist::OnlineStat; p=0.025, factor=1)
+    m, l, u = OnlineStats.value(dist)
+    lr = round(l * factor, sigdigits=3)
+    m = round(m * factor, sigdigits=3)
+    ur = round(u * factor, sigdigits=3)
     if lr == ur
         range = round((u - l) / 2, sigdigits=3)
         uq = "±$range"
