@@ -1,4 +1,4 @@
-hoffman_scaling(N, D; A, B, α, β, E) = @. (A / N^α) + (B / D^β) + E
+hoffman_scaling(N, D; A, B, α, β, E) = (A / N^α) + (B / D^β) + E
 function compute_optimal_model_size(flops; A, α, B, β)
     G = @. ((α * A) / (β * B))^(1 / (α + β))
     a = @. β / (α + β)

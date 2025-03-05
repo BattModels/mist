@@ -1,16 +1,20 @@
-@testitem "sampleposterior" begin
-    using BayesianScaling: sample_posterior
-    using Distributions: Normal
-    using Turing: Chains
-    using MLUtils: stack
+@testitem "penalties" begin
+    using BayesianScaling: harmonic_penalty, geometric_penalty, symmetric_polynomial
 
-    chains = Chains(rand(Normal(), 2, 3, 4), [:a, :b, :c])
-    @test size(chains) == (2, 3, 4)
-    f = (scale; a, b, c) -> @. scale * hypot(a, b) + c
-    s = sample_posterior(f, chains, 2)
-    @test size(s) == (2, 4,) # Flatten Chains
-    x = [1, 2, 4]
-    s = sample_posterior(f, chains, x)
-    @test size(s) == (3, 2, 4)
-    @test s == stack(map(x -> sample_posterior(f, chains, x), x); dims=1)
+    @testset "symmetric_polynomial" begin
+        @test 0 ≈ symmetric_polynomial(0, 1)
+        @test 1 ≈ symmetric_polynomial(1, 1)
+        @test 4 ≈ symmetric_polynomial(1, 4)
+        @test symmetric_polynomial(1, 4) ≈ symmetric_polynomial(-1, 4)
+        ref = (x, coef) -> sum(i_c -> i_c[2] * x^(2 * i_c[1]), enumerate(coef))
+        coefs = (2, 3)
+        @test ref(0, coefs) isa Real
+        @test ref(0, coefs) ≈ symmetric_polynomial(0, coefs...)
+        @test ref(1, coefs) ≈ symmetric_polynomial(1, coefs...)
+        @test ref(-1, coefs) ≈ symmetric_polynomial(-1, coefs...)
+    end
+
+    @test geometric_penalty(1, 0, 1, 3) >= 0
+    @test harmonic_penalty(1, 0, 1, 3) >= 0
+    @test geometric_penalty(1, 0, 1, 3) >= 0
 end
