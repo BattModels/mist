@@ -64,6 +64,8 @@ end
 
 @kwdef struct ShapedScaling
     lr_model_size::Symbol = :model_size
+    geometric_penalty::Bool = true
+    harmonic_shape_penalty::Bool = true
 end
 
 function priors(::Type{ShapedScaling})
@@ -85,21 +87,26 @@ function priors(::Type{ShapedScaling})
 end
 
 function init_model(f::ShapedScaling, df; priors=priors(HoffmanScaling))
-    cols = [:model_size, :data_size, :lr, :ff_ratio, :aspect_ratio, :kv_size, :effective_batch_size, :beta1, :beta2]
+    cols = [:model_size, :data_size, :lr, :ff_ratio, :aspect_ratio, :kv_size, :effective_batch_size]
     observations = NamedTuple.(eachrow(df[!, cols]))
     response = df[:, :loss]
     return BayesianRegression(f, priors, response, observations, LogNormal())
 end
 
 function (m::ShapedScaling)(run, θ)
-    (; scaling, lr, ff_ratio, aspect_ratio, kv_size) = θ
-    loss = hoffman_scaling(run.model_size, run.data_size; scaling...) |> log
+    (; scaling, ff_ratio, aspect_ratio, kv_size) = θ
+    loss = hoffman_scaling(run.model_size, run.data_size; scaling...)
     lr_opt = ideal_lr(m, θ, run)
-    loss += geometric_penalty(run.lr, lr_opt, θ.lr.penalty...)
-    loss += harmonic_penalty(run.ff_ratio, ff_ratio...)
-    loss += harmonic_penalty(run.kv_size, kv_size...)
-    loss += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
-    return exp(loss)
+
+    # Compute Penalties
+    P = geometric_penalty(run.lr, lr_opt, θ.lr.penalty...)
+    sp = m.harmonic_shape_penalty ? harmonic_penalty : geometric_penalty
+    P += sp(run.ff_ratio, ff_ratio...)
+    P += sp(run.kv_size, kv_size...)
+    P += sp(run.aspect_ratio, aspect_ratio...)
+
+    # Estimate model loss
+    return m.geometric_penalty ? xexpy(loss, P) : loss + P
 end
 
 function ideal_lr(m::ShapedScaling, θ, run)

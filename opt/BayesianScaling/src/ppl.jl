@@ -280,15 +280,17 @@ end
 
 Save the model and sample chains to the output directory
 """
-function save_results(model, chains, raw_chains; outdir=joinpath(pkgdir(@__MODULE__), "out"))
-    model_name = string(uuid4())
-    outdir = joinpath(outdir, model_name)
+function save_results(model, chains; outdir=nothing, kwargs...)
+    if outdir === nothing
+        model_name = string(uuid4())
+        outdir = joinpath(outdir, model_name)
+    end
     mkpath(outdir)
     metadata = (;
         git=readchomp(`git describe --all --long --dirty`),
         timestamp=string(Dates.now()),
     )
-    jldsave(joinpath(outdir, "chains.jld2"); model, chains, raw_chains, metadata)
+    jldsave(joinpath(outdir, "chains.jld2"); model, chains, metadata, kwargs...)
     return outdir
 end
 

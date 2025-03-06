@@ -14,7 +14,6 @@ function average_last(x::Vector; n::Number=1)
 end
 
 
-
 function pretraining_runs(dir::AbstractString; smoothed_eval_batch=1e6)
     row = []
     for file in find(joinpath(dir, "pretraining"), r".*\.json")

@@ -42,9 +42,6 @@ include("plots.jl")
 # include("figures/summary.jl")
 
 # Planning Tools for LLM Training Campaigns
-# include("acquire.jl")
-# include("plan.jl")
-
-# include("analysis.jl")
+include("analysis.jl")
 
 end
