@@ -55,7 +55,7 @@ function Makie.plot!(plt::LogHist)
     return plt
 end
 _scale_bins(scale, bins, x) = bins
-_scale_bins(scale::typeof(log10), bins::Int, x) = logrange(extrema(x)...; length=bins+1)
+_scale_bins(scale::typeof(log10), bins::Int, x) = logrange(extrema(x)...; length=bins + 1)
 
 function plot_best_lr(chains::AbstractArray{<:Real,3}, df=missing;
     N=logrange(1e2, 1e10; length=200),
@@ -129,62 +129,6 @@ function plot_best_lr(chains::AbstractArray{<:Real,3}, df=missing;
     return f
 end
 
-function plot_lamb_lr_scale(chains::ComponentArray{<:Real,3}, model;
-    p=0.025,
-    N=logrange(1e5, 1e10; length=100),
-    batch_size=logrange(1e3, 1e6; length=100),
-)
-
-    f = Figure()
-    ax = Axis(f[1, 1];
-        xlabel="Effective Batch Size",
-        ylabel="Model Size (Non-Embedding)",
-        xscale=log10,
-        yscale=log10,
-        limits=(extrema(batch_size), extrema(N)),
-    )
-    N = collect(N)
-    batch_size = collect(batch_size)
-    a = vec(chains[:, :, :a])
-    b = vec(chains[:, :, :b])
-    c = vec(chains[:, :, :c])
-    lamb_lr = Matrix{Float32}(undef, length(batch_size), length(N))
-    uq = similar(lamb_lr)
-    for (i, n) in enumerate(N)
-        for (j, bs) in enumerate(batch_size)
-            lr = @. exp(a + b * log(bs) + c * log(n))
-            lamb_lr[j, i] = median(lr)
-            uq[j, i] = std(lr) ./ lamb_lr[j, i]
-        end
-    end
-    h = contourf!(ax, batch_size, N, lamb_lr;
-        levels=10,
-        colormap=:viridis,
-        colorscale=log10,
-    )
-    contour!(ax, batch_size, N, uq; levels=5, color=:red, labels=true)
-    Colorbar(f[1, 2], h; label="Learning Rate")
-
-    lr_ideal = map(model.runs) do run
-        lr = @. exp(a + b * log(run.effective_batch_size) + c * log(run.model_size))
-        return median(lr)
-    end
-    ax = Axis(f[1, 3];
-        xscale=log10, yscale=log10,
-        limits=((1e-5, 1e-1), (1e-5, 1e-1)),
-        aspect=1,
-    )
-    scatter!(ax, [run.lr for run in model.runs], lr_ideal;
-        color=[run.loss for run in model.runs],
-        colorscale=log10,
-    )
-
-
-    resize_to_layout!(f)
-    return f
-end
-
-
 function plot_scaling(chains::AbstractArray{<:Real,3}, df;
     N=logrange(1e5, 1e10; length=75),
     C=logrange(1e10, 1e26; length=75)
@@ -236,33 +180,6 @@ function plot_scaling(chains::AbstractArray{<:Real,3}, df;
     return f
 end
 
-function plot_acquisition(chains, aq, df;
-    N=logrange(1e5, 1e12; length=20),
-    D=logrange(1e6, 10e15; length=20)
-)
-    acqustion = Matrix{Float32}(undef, length(D), length(N))
-    N = collect(N)
-    D = collect(D)
-    for (i, d) in enumerate(D)
-        for (j, n) in enumerate(N)
-            acqustion[i, j] = aq(chains, n, d)
-        end
-    end
-    f = Figure()
-    ax = Axis(f[1, 1];
-        xscale=log10,
-        yscale=log10,
-        limits=(extrema(D), extrema(N)),
-        xlabel="Data Size [Obs.]",
-        ylabel="Model Size (Non-Embedding)",
-    )
-    h = contourf!(ax, D, N, acqustion)
-    scatter!(ax, df.data_size, df.model_size; color=df.min_val_loss, colorscale=log10)
-    Colorbar(f[1, 2], h; label="Acquisition Function")
-
-    resize_to_layout!(f)
-    return f
-end
 
 dist_tf(::Any) = identity
 dist_tf(::LogNormal) = log10
@@ -347,7 +264,7 @@ function parity_limits(x, y; margin=0.02)
     yl, yu = extrema(y)
     l = min(xl, yl) * (1 - margin)
     u = min(xu, yu) * (1 + margin)
-    return ((l, u), (l,u))
+    return ((l, u), (l, u))
 end
 
 function plot_penalty(model, chains::AbstractArray{<:Real,3}; p=0.95)
@@ -407,129 +324,6 @@ function plot_penalty(model, chains::AbstractArray{<:Real,3}; p=0.95)
 end
 
 
-function plot_lr_map(m, chains::AbstractArray{<:Real,3}, df::DataFrame=DataFrame(m.runs);
-    effective_batch_size=logrange(2^5, 2^25; length=20),
-    model_size=logrange(1e5, 1e9; length=15),
-    p=0.025
-)
-    lr_quantiles = ideal_lr_map(m, chains, model_size, effective_batch_size; p=0.95)
-    lr_mean = selectdim(lr_quantiles, 3, 1)
-
-    f = Figure()
-    gl = GridLayout(f[1, 1])
-    ax = Axis(gl[1, 1];
-        xlabel="Effective Batch Size",
-        xscale=log2,
-        ylabel="Model Size",
-        yscale=log10,
-    )
-    h_lr = contourf!(ax, effective_batch_size, model_size, lr_mean';
-        colormap=:roma,
-    )
-    Colorbar(gl[1, 2], h_lr; scale=log10, label="Learning Rate")
-
-    loss_hat = vec(mean(expected_loss(m, chains); dims=(1, 2)))
-    loss = StatsBase.response(m)
-    loss_residual = loss ./ loss_hat
-    max_residula = maximum(abs, loss_residual)
-
-    h_emp = scatter!(ax, df.effective_batch_size, df.model_size;
-        color=loss_residual,
-        colormap=:vik,
-        colorrange=(-max_residula, max_residula),
-        marker=:x,
-        glowcolor=:black,
-        glowwidth=3,
-    )
-    Colorbar(gl[2, 1], h_emp; label="Residual Loss", flipaxis=false, vertical=false)
-
-    # Plot LR Scaling Distribution
-    idx = ComponentArrays.label2index(chains[1, 1, :], "lr.ideal")
-    ideal = selectdim(chains, 3, idx)
-    gl = GridLayout(f[1, 2])
-
-    for (idx, xlabel) in enumerate([L"\eta_0", "Eff. Batch Size", "Model Size"])
-        ax = Axis(gl[idx, 1];
-            xlabel,
-            limits=(nothing, (0, nothing)),
-            xscale=(idx == 1 ? log10 : identity),
-        )
-        x = vec(selectdim(ideal, 3, idx))
-        loghist!(ax, x; bins=get_nbins(:scott, x), scale=ax.xscale)
-        hideydecorations!(ax)
-    end
-
-    resize_to_layout!(f)
-    return f
-end
-
-function _emperical_penalty(y::Vector, x::Vector, y_hat::Matrix, p, x0::AbstractVecOrMat)
-    # Check shapes
-    @assert length(y) == length(x) == size(y_hat, 1)
-    @assert size(y_hat, 2) == length(p)
-    if x0 isa AbstractVector
-        @assert length(x0) == length(p)
-        x0 = x0'
-    else
-        @assert size(x0) == size(y_hat)
-    end
-
-    d_mag = @. log(x) - log(x0)
-    d = d_mag .^ 2
-    penalty = vec(p)' .* d
-    y_eff = y .- vec(median(y_hat .- penalty; dims=2))
-    d_mag = vec(median(d_mag; dims=2))
-    @assert y_eff isa Vector && d_mag isa Vector
-    @assert length(y_eff) == length(y) == length(d_mag)
-    return y_eff, exp.(d_mag)
-end
-
-""" Return indices for a nearly square grid of `n` plots """
-function layout_indices(n::Int)
-    nc = max(floor(Int, sqrt(n)), 1)
-    nr = cld(n, nc)
-    @assert nc * nr >= n
-    return CartesianIndices((nr, nc))
-end
-
-function plot_residual_correlations(model, chains::AbstractArray{T,3}, df::DataFrame) where {T}
-    y = mean(expected_loss(model, chains); dims=(1, 2)) |> vec
-    y_hat = StatsBase.response(model)
-    error = @. log(y) - log(y_hat)
-    rescor = residual_correlations(error, df)
-
-    # Sort by correlations
-    cols = collect(keys(rescor))
-    sort!(cols; by=x -> first(rescor[x]))
-
-    f = Figure()
-    ax = Axis(f[1, 1];
-        xlabel="Residuals Quantiles",
-        ylabel="Expected-Residual Quantiles",
-        aspect=1,
-    )
-    σ = mean(selectdim(chains, 3, :sigma))
-    qqplot!(ax, error, Normal(0, σ); qqline=:identity)
-
-
-    # Plot Correlations
-    gl = GridLayout(f[1, 2])
-    indices = layout_indices(length(cols))
-    for (c, idx) in zip(cols, indices)
-        x = df[!, c]
-        ax = Axis(gl[idx.I...]; xlabel=c, ylabel="Log-Residuals")
-        hideydecorations!(ax)
-        hidexdecorations!(ax)
-        idx.I[2] != 1 && hideydecorations!(ax)
-        scatter!(ax, x, error)
-    end
-    linkyaxes!(f.content...)
-    colgap!(f.layout, 20)
-    resize_to_layout!(f)
-
-    return f
-end
-
 """
     get_nbins(method::Symbol, x)
     get_nbins(nbins::Int, ::Any)
@@ -546,22 +340,36 @@ function get_nbins(::Val{:scott}, x)
     return max(nbins, 2)
 end
 
+function rescale(x)
+    lb, ub = extrema(x)
+    scale = inv(ub - lb)
+    return @. (x - lb) * scale
+end
+
 function plot_chain_covariance(chains::ComponentArray{<:Real,3}; nbins=:scott)
-    f = Figure()
+    f = Figure(; size=96 .* (3.42, 3.42))
     params = ComponentArrays.labels(chains[1, 1, :])
     nparams = size(chains, 3)
-    nsamples = prod(size(chains)[1:2])
     for (i, px) in enumerate(params)
-        vx = vec(selectdim(chains, 3, i))
-        nbins_x = get_nbins(nbins, vx)
+        vx = vec(selectdim(chains, 3, i)) |> rescale
+        vx_lims = extrema(vx)
+        nbins_x = 3 * get_nbins(nbins, vx)
         for (j, py) in enumerate(params)
-            ax = Axis(f[j, i]; ylabel=py, xlabel=px)
-            vy = vec(selectdim(chains, 3, j))
-            nbins_y = get_nbins(nbins, vy)
+            vy = vec(selectdim(chains, 3, j)) |> rescale
+            vy_lims = extrema(vy)
+            ax = Axis(f[j, i]; ylabel=py, xlabel=px, limits=(vx_lims, vy_lims))
+            nbins_y = 3 * get_nbins(nbins, vy)
             if i == j
-                hist!(ax, vx; bins=nbins_x)
+                density!(ax, vx)
+                ax.limits[] = (nothing, (0, nothing))
+            elseif i > j
+                hexbin!(ax, vx, vy;
+                    bins=(nbins_x, nbins_y),
+                    colorscale=Makie.Symlog10(1),
+                    threshold=0,
+                )
             else
-                hexbin!(ax, vx, vy; bins=(nbins_x, nbins_y))
+                datashader!(ax, Point2f.(zip(vx, vy)))
             end
 
             # Just show the labels
@@ -575,109 +383,59 @@ function plot_chain_covariance(chains::ComponentArray{<:Real,3}; nbins=:scott)
             end
         end
     end
-    rowgap!(f.layout, 5)
-    colgap!(f.layout, 5)
+    rowgap!(f.layout, 3)
+    colgap!(f.layout, 3)
     resize_to_layout!(f)
     return f
 end
 
-function plot_chains(chains::AbstractArray{<:Real,3}; nbins=:scott)
-    f = Figure()
-    params = ComponentArrays.labels(chains[1, 1, :])
-    nparams = size(chains, 3)
-    nsamples = size(chains, 1)
+""" Plot MCMC chains against each other to assess convergence """
+function plot_chains(chains::AbstractChains)
 
     # Setup grid
-    if nparams <= 5
-        n_row = nparams
-        n_col = 1
-    else
-        n_col = div(nparams, 6)
-        n_row = ceil(Int, nparams / n_col)
-    end
-    gl = GridLayout(f[1, 1], n_row, n_col)
-    indices = CartesianIndices((n_row, n_col))
+    n_samples, n_chains, n_params = size(chains)
+    f = Figure(; size=96 .* (4, n_params * 0.75))
+    gl = GridLayout(f[1, 1], n_params, 1)
 
     # Plot Chains
-    gl = GridLayout(f[1, 1])
     chain_axes = []
-    for (i, p) in enumerate(params)
+    labels = ComponentArrays.labels(chains[1, 1, :])
+    for (i, label) in enumerate(labels)
         samples = selectdim(chains, 3, i)
-        fchain = GridLayout(gl[indices[i].I...])
-        ax = Axis(fchain[1, 1];
-            xlabel="step",
-            ylabel=p,
-            limits=((0, nsamples), nothing),
-            yticklabelsvisible = false,
-            yticksvisible = false,
+        is_last = i == n_params
+        ax = Axis(gl[i, 1];
+            xlabel="Iteration",
+            ylabel=string(label),
+            limits=((0, n_samples), nothing),
+            yticklabelsvisible=false,
+            yticksvisible=false,
+            ygridvisible=false,
+            xgridvisible=true,
+            xticksvisible=is_last,
+            xticklabelsvisible=is_last,
+            xlabelvisible=is_last,
         )
         push!(chain_axes, ax)
-        ax_hist = Axis(fchain[1, 2];
+        ax_hist = Axis(gl[i, 2];
             limits=((0, nothing), nothing)
         )
         hidedecorations!(ax_hist)
-        if indices[i].I[1] != n_row
-            hidexdecorations!(ax)
-        end
-        colgap!(fchain, 5)
-        colsize!(fchain, 2, Relative(0.2))
-
         linkyaxes!(ax, ax_hist)
         for chain in eachslice(samples; dims=2)
             h = lines!(ax, chain; linewidth=1)
-            hist!(ax_hist, vec(chain),
-                bins=get_nbins(nbins, chain),
-                normalization=:pdf,
-                direction=:x,
-                color=h.color,
+            density!(ax_hist, vec(chain),
+                direction=:y,
+                color=@lift(Makie.alphacolor($(h.color), 0.5 / n_chains)),
+                linestyle=h.linestyle,
+                strokecolor=h.color,
+                strokewidth=1,
             )
         end
     end
     linkxaxes!(chain_axes...)
-    colgap!(gl, 5)
+    colsize!(gl, 1, Relative(0.8))
+    colgap!(gl, 3)
     rowgap!(gl, 5)
-    resize_to_layout!(f)
-    return f
-end
-
-function plot_training_progress(model, chains)
-    f = Figure()
-    del = 1e-4
-    ax = Axis(f[1, 1];
-        xlabel="Relative Training Progress",
-        ylabel="Validation Loss",
-        limits=((0, 1), (1e-3, 1.0)),
-        xscale=identity,
-        yscale=log10,
-    )
-
-    out = reduce((s...) -> cat(s...; dims=3), generated_quantities(model, chains))
-    @assert size(out, 2) == 2
-    mu = view(out, :, 1, :)
-    mu_hoffman = view(out, :, 2, :)
-    sl = Slider(f[1, 2], range=1:size(mu, 1), horizontal=false, tellwidth=true,)
-    loss_trace = lift(sl.value) do idx
-        loss = model.args.loss[idx]
-        step = model.args.step[idx]
-        Point2.(step, loss)
-    end
-    expected_loss = lift(sl.value) do idx
-        step = range(0, 1; length=100)
-        a = vec(chains[:, Symbol("loss_trace_a[$idx]"), :])
-        b = vec(chains[:, Symbol("loss_trace_b[$idx]"), :])
-        mu_step = median(step_log_loss.(step', mu[idx, :], a, b); dims=1) |> vec .|> exp
-        Point2.(step, mu_step)
-    end
-    best_loss = lift(sl.value) do idx
-        step = range(0, 1; length=100)
-        a = vec(chains[:, Symbol("loss_trace_a[$idx]"), :])
-        b = vec(chains[:, Symbol("loss_trace_b[$idx]"), :])
-        mu_step = median(step_log_loss.(step', mu_hoffman[idx, :], a, b); dims=1) |> vec .|> exp
-        Point2.(step, mu_step)
-    end
-    lines!(ax, loss_trace; color=:red)
-    lines!(ax, expected_loss; color=:blue)
-    lines!(ax, best_loss; color=:green)
     resize_to_layout!(f)
     return f
 end
