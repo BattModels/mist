@@ -1,9 +1,7 @@
-from datasets import features
-from numpy import zeros_like
 import pytest
 import torch
 from transformers import (
-    AutoModel,
+    AutoModelForMaskedLM,
     AutoTokenizer,
     DataCollatorWithPadding,
     RobertaPreLayerNormConfig,
@@ -11,18 +9,15 @@ from transformers import (
     RobertaPreLayerNormModel,
 )
 
-# from electrolyte_fm.data_modules.sae_dataset import (
-#     HiddenStateDataModule,
-#     extract_hidden_state,
-# )
-from electrolyte_fm.models.model_utils import load_encoder
 from electrolyte_fm.models.sae import (
     AbstractSAE,
     GatedSAE,
     InjectedCoder,
     SparsifiedModel,
     TiedBiasSAE,
-    avg_l0_norm,
+    VanillaSAE,
+    TopKSAE,
+    topk,
 )
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
@@ -30,11 +25,15 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 def get_default_device():
     if torch.cuda.is_available():
         return torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        return torch.device("mps")
     else:
         return torch.device("cpu")
 
 
 DEVICE = get_default_device()
+
+SAE_CLASSES = [GatedSAE, TiedBiasSAE, VanillaSAE, TopKSAE]
 
 
 @pytest.fixture()
@@ -51,10 +50,18 @@ def roberta_tokenzier():
     return RobertaPreLayerNormForMaskedLM(config).to(DEVICE), tokenizer
 
 
-@pytest.mark.parametrize("sae_cls", [GatedSAE, TiedBiasSAE])
+def test_topk():
+    x = torch.rand(8, 4, 20)
+    assert ((x > 0).sum(-1) > 5).all()
+    x_hat = topk(x, 5)
+    assert ((x_hat > 0).sum(-1) == 5).all()
+
+
+@pytest.mark.parametrize("sae_cls", SAE_CLASSES)
 class TestSAE:
     B = 3
     H = 4
+    T = 8
     E = 2
 
     @classmethod
@@ -63,16 +70,25 @@ class TestSAE:
 
     @property
     def feature_shape(self):
-        return (self.B, self.H * self.E)
+        return (self.B, self.T, self.H * self.E)
 
     def input(self):
-        return torch.rand(self.B, self.H)
+        return torch.rand(self.B, self.T, self.H)
 
     def test_init(self, sae_cls):
         sae = sae_cls(hidden_size=self.H, expansion=self.E)
         for p in sae.parameters():
             assert p.isfinite().all()
             assert not p.isnan().any()
+
+    def test_encode(self, sae_cls):
+        sae = sae_cls(hidden_size=self.H, expansion=self.E)
+        x = self.input()
+        f = sae.encode(x)
+        assert f.shape == self.feature_shape
+        x_hat = sae.decode(f)
+        assert x_hat.shape == x.shape
+        assert sae.forward(x).equal(x_hat)
 
     def test_forward(self, sae_cls: AbstractSAE):
         sae = sae_cls(hidden_size=self.H, expansion=self.E)
@@ -93,109 +109,111 @@ class TestSAE:
         assert y.isfinite().all()
 
 
-# def test_avg_l0_norm():
-#     x = torch.tensor([[1, 0, 0], [0, 5, 0]])
-#     assert avg_l0_norm(x) == 1
-#     assert avg_l0_norm(x.T).isclose(torch.tensor(1 / 3))
-
-
-# def test_dataloader():
-#     ckpt_path = "ibm/MoLFormer-XL-both-10pct"
-#     path = "/lustre/fs0/awadell/realspace"
-#     dm = HiddenStateDataModule(ckpt_path, path)
-#     dm.prepare_data()
-#     dm.setup("fit")
-#     for batch in dm.train_dataloader():
-#         assert isinstance(batch, torch.Tensor)
-#         assert batch.shape == (dm.batch_size, 768)
-#         assert not batch.requires_grad
-#         break
-
-
-def test_injected_coder(roberta_tokenzier):
-    roberta, _ = roberta_tokenzier
-    hidden_size = roberta.config.hidden_size
-    sae = TiedBiasSAE(hidden_size=hidden_size, expansion=2)
-    injected = InjectedCoder(roberta.base_model.encoder.layer[2], sae)
+@pytest.mark.parametrize("sae_cls", SAE_CLASSES)
+def test_injected_coder(sae_cls):
+    hidden_size = 64
+    model = torch.nn.Linear(hidden_size, hidden_size)
+    sae = sae_cls(hidden_size=hidden_size, expansion=2)
+    injected = InjectedCoder(model, sae).to(DEVICE)
     injected.eval()
     assert isinstance(injected, InjectedCoder)
     dense_model = injected.dense_model
     assert not injected.training and not dense_model.training
-    x = torch.rand(1, 5, hidden_size, device=DEVICE)
+    x = torch.rand(2, 5, hidden_size, device=DEVICE)
 
     # Check dense
-    y_ref = dense_model(x)[0]
+    y_ref = dense_model(x)
     injected.state = "dense"
-    y_dense = injected(x)[0]
-    print(y_ref, y_dense)
+    y_dense = injected(x)
+    assert y_dense.shape == y_ref.shape
     assert y_dense.equal(y_ref)
 
     # Check null
     injected.state = "null"
-    y_null = injected(x)[0]
-    assert y_null.equal(x)
+    y_null = injected(x)
+    assert y_null.shape == y_ref.shape
+    assert y_null.equal(torch.zeros_like(y_dense))
 
     # Check sparse
     injected.state = "sparse"
-    y_sparse = injected(x)[0]
+    y_sparse = injected(x)
     assert y_sparse.shape == y_dense.shape
 
 
-def test_instrumented(roberta_tokenzier):
-    model = AutoModel.from_pretrained(
+def test_instrumented():
+    model = AutoModelForMaskedLM.from_pretrained(
         "ibm/MoLFormer-XL-both-10pct", trust_remote_code=True
     )
     tokenizer = AutoTokenizer.from_pretrained(
         "ibm/MoLFormer-XL-both-10pct", trust_remote_code=True
     )
-    model, tokenizer = roberta_tokenzier
     hidden_size = model.config.hidden_size
     sae = TiedBiasSAE(hidden_size=hidden_size, expansion=2)
-    sparse_model = SparsifiedModel.from_huggingface(model, sae, layer=2).to(DEVICE)
+    sparse_model = SparsifiedModel.from_huggingface(model, sae, layer=0).to(DEVICE)
     model = model.to(DEVICE)
     sparse_model.eval()
-    model.eval()
+    assert not model.training
+    assert not sae.training
+    assert not model.training
 
-    batch = tokenizer("CNCCC")
-    input_ids = torch.tensor(batch["input_ids"]).to(DEVICE)
-    y = model(input_ids)[0]
-    assert y.equal(model(input_ids)[0])
-    print(y)
+    batch = tokenizer(["CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "C1=CC2=C(C=C1O)C(=CN2)CCN"])
+    collate = DataCollatorWithPadding(tokenizer)
+    batch = collate(batch)
+    batch = {
+        k: v.to(DEVICE)
+        for k, v in batch.items()
+        if k in ["input_ids", "attention_mask"]
+    }
+    batch["return_dict"] = True
+    y = model(**batch).logits
 
+    assert all([coder.state == "sparse" for coder in sparse_model.coders])
     with sparse_model.nullcoders() as sparse_model:
-        y_null = sparse_model(input_ids)[0]
-        print(y_null)
+        assert all([coder.state == "null" for coder in sparse_model.coders])
+        y_null = sparse_model(**batch).logits
+        assert y_null.shape == y.shape
+        assert y_null.device == y.device
+        assert y_null.dtype == y.dtype
 
     with sparse_model.sparse(False) as sparse_model:
-        y_dense = sparse_model(input_ids)[0]
-        print(y_dense)
+        assert all([coder.state == "dense" for coder in sparse_model.coders])
+        y_dense = sparse_model(**batch).logits
+        assert y_dense.shape == y.shape
+        assert y_dense.device == y.device
+        assert y_dense.dtype == y.dtype
         assert y_dense.equal(y)
 
-    assert False
+    rc = sparse_model.loss_recovered(target=batch["input_ids"], **batch)
+    assert isinstance(rc, torch.Tensor) and rc.shape == ()
+    assert rc.isfinite() and not rc.isnan()
+    assert rc <= 1
 
 
 def test_sparse_model(roberta_tokenzier):
     roberta, tokenizer = roberta_tokenzier
-    sae = GatedSAE(hidden_size=roberta.config.hidden_size, expansion=2)
+    sae = TiedBiasSAE(hidden_size=roberta.config.hidden_size, expansion=2)
     sparse_model = SparsifiedModel.from_huggingface(roberta, sae, layer=2).to(DEVICE)
     robert = sparse_model.model.base_model
     assert isinstance(robert, RobertaPreLayerNormModel)
-    assert isinstance(robert.encoder.layer[2], InjectedCoder)
-    assert robert.encoder.layer[2] is sparse_model.coders[0]
+    assert isinstance(robert.encoder.layer[2].output.dense, InjectedCoder)
+    assert robert.encoder.layer[2].output.dense is sparse_model.coders[0]
 
     collate = DataCollatorWithPadding(tokenizer)
     batch = collate([tokenizer("CNCCC")])
-    input_ids = batch["input_ids"].to(DEVICE)
-    attention_mask = batch["attention_mask"].to(DEVICE)
-    y_sparse = sparse_model.forward(input_ids, attention_mask)
+    batch = {
+        "input_ids": batch["input_ids"].to(DEVICE),
+        "attention_mask": batch["attention_mask"].to(DEVICE),
+        "return_dict": True,
+    }
+    y_sparse = sparse_model(**batch).logits
     robert.eval()
-    y_dense = roberta(input_ids, attention_mask)[0]
+    y_dense = roberta(**batch).logits
     assert y_sparse.shape == y_dense.shape
     assert y_sparse.shape == (1, 5, len(tokenizer))
 
     # Check null features
     with sparse_model.nullcoders() as model:
-        y_null = model.forward(input_ids, attention_mask)
+        y_null = model(**batch).logits
         assert y_null.shape == y_sparse.shape
 
     # Check dense features
@@ -203,8 +221,8 @@ def test_sparse_model(roberta_tokenzier):
         # Run model in eval model to be deterministic
         model.eval()
         robert.eval()
-        y_dense = roberta(input_ids, attention_mask)[0]
-        y_dense_context = model.forward(input_ids, attention_mask)
+        y_dense = roberta(**batch).logits
+        y_dense_context = model(**batch).logits
         robert.train()
         model.train()
         assert y_dense_context.shape == y_dense.shape
@@ -216,46 +234,16 @@ def test_sparse_model(roberta_tokenzier):
     assert len(dict(sparse_model.sparse_named_parameters())) > 0
 
     # Check_gradient
-    y, loss = sparse_model.forward_with_loss(input_ids, attention_mask)
+    out, loss = sparse_model.forward_with_loss(**batch)
+    # assert out.logits.equal(y_sparse)
     loss.backward()
-    for k, v in sparse_model.sparse_named_parameters():
+    for _, v in sparse_model.sparse_named_parameters():
         assert v.grad is not None
         assert (v.grad != 0).any()
 
     # Check Recovered Loss
     rc = sparse_model.loss_recovered(
-        input_ids, input_ids, attention_mask, sparse_output=y_sparse
+        **batch, target=batch["input_ids"], sparse_output=y_sparse
     )
-    print(rc)
     assert isinstance(rc, torch.Tensor) and rc.shape == ()
     assert rc.isfinite() and not rc.isnan()
-    assert False
-
-
-# def test_extract_hidden_state():
-#     ckpt_path = "ibm/MoLFormer-XL-both-10pct"
-#     encoder = load_encoder(ckpt_path)
-#     d_model = 768
-#     tok = load_tokenizer(ckpt_path)
-#     smiles = [
-#         "CCC(=O)OC1(C(CC2C1(CC(C3(C2CC(C4=CC(=O)C=CC43C)F)F)O)C)C)C(=O)SCF",
-#         "CNCCC(c1ccccc1)Oc2ccc(cc2)C(F)(F)F",
-#     ]
-#     tokens = [tok(smi) for smi in smiles]
-#     input_ids = [x["input_ids"] for x in tokens]
-#     attention_mask = [x["attention_mask"] for x in tokens]
-#     batch = extract_hidden_state(
-#         input_ids,
-#         attention_mask,
-#         encoder=encoder,
-#         collate=DataCollatorWithPadding(tok),
-#         layer=0.5,
-#     )
-#     assert "hidden_state" in batch
-#     assert batch["hidden_state"].shape == (len(smiles), d_model)
-
-
-# def test_wrapped_sae():
-#     encoder = load_encoder("ibm/MoLFormer-XL-both-10pct")
-#     coder = GatedSAE(hidden_size=768, expansion=4)
-#     model = WrappedSAE(encoder, coder, 2)
