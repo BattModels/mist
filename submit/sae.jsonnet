@@ -6,13 +6,20 @@
       class_path: 'electrolyte_fm.models.LightningSAE',
       init_args: {
         name_or_path: 'ibm/MoLFormer-XL-both-10pct',
-        sae_type: 'gated',
-        expansion: 4,
-        l1_coef: 1e-5,
+        sae: {
+          class_path: 'electrolyte_fm.models.sae.VanillaSAE',
+          init_args: {
+            hidden_size: 768,
+            expansion: 4,
+            l1_coef: 1e-5,
+          },
+        },
         optimizer: {
           class_path: 'torch.optim.AdamW',
           init_args: {
-            lr: 5e-4,
+            lr: 5,
+            beta: [0.9, 0.999],
+            weight_decay: 0,
           },
         },
         lr_schedule: {
@@ -42,6 +49,8 @@
       precision: '32',
       enable_progress_bar: false,
       strategy: 'auto',
+      gradient_clip_val: 1,
+      gradient_clip_algorithm: 'norm',
     },
   },
   env: {

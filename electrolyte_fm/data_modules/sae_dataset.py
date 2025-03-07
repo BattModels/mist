@@ -1,10 +1,7 @@
-import re
 from math import floor
 from pathlib import Path
 from typing import Optional, Union
 
-import nvtx
-import torch
 import pytorch_lightning as pl
 import torch
 from datasets import Dataset, load_dataset
@@ -30,14 +27,13 @@ def extract_hidden_state(
     batch = batch.to(encoder.device)
 
     # Disable gradients
-    with nvtx.annotate("encoder"):
-        with torch.inference_mode():
-            enc = encoder(
-                batch["input_ids"],
-                attention_mask=batch["attention_mask"],
-                return_dict=True,
-                output_hidden_states=True,
-            )
+    with torch.inference_mode():
+        enc = encoder(
+            batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            return_dict=True,
+            output_hidden_states=True,
+        )
 
     if isinstance(layer, float):
         layer = floor(len(enc["hidden_states"]) * layer)
@@ -51,7 +47,6 @@ def extract_hidden_state(
     return {"hidden_state": hidden_state}
 
 
-@nvtx.annotate()
 def flatten_hidden_states(hs, attention_mask, device="cpu"):
     hs = hs.to(device)
     hidden_state = []
@@ -64,7 +59,6 @@ def flatten_hidden_states(hs, attention_mask, device="cpu"):
     return hidden_state
 
 
-@nvtx.annotate()
 def collate_hidden_states(hidden_states):
     return {"hidden_state": torch.cat(hidden_states, dim=0)}
 
@@ -200,6 +194,5 @@ class HiddenStateDataModule(pl.LightningDataModule):
         )
 
     @classmethod
-    @nvtx.annotate()
     def collate_fn(cls, batch):
         return torch.stack([x["hidden_state"] for x in batch]).detach()
