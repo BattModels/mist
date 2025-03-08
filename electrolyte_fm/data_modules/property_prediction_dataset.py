@@ -28,6 +28,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         target_columns: Optional[List[str]] = None,
         val_batch_size: Optional[int] = None,
         encoding: str = MolEncoding.SMILES.value,
+        additonal_columns: Optional[List[str]] = None,
         include_encoding: bool = False,
     ):
         super().__init__()
@@ -38,6 +39,7 @@ class PropertyPredictionDataModule(LightningDataModule):
 
         self.smi_column = smi_column
         self.target_columns = target_columns
+        self.additonal_columns = additonal_columns or []
         self.encoding = MolEncoding(encoding)
         self.include_encoding = include_encoding
 
@@ -77,9 +79,11 @@ class PropertyPredictionDataModule(LightningDataModule):
 
             # Save training dataset for target transformations
             self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
-            ds = ds.select_columns([self.smi_column, "target", "target_mask"])
+            ds = ds.select_columns(
+                [self.smi_column, "target", "target_mask", *self.additonal_columns]
+            )
         else:
-            ds = ds.select_columns([self.smi_column])
+            ds = ds.select_columns([self.smi_column, *self.additonal_columns])
 
         # Tokenize
         ds = ds.map(

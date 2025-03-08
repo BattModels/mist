@@ -33,6 +33,16 @@ class MolEncoding(Enum):
     KEKULE = "smiles-kekule"
 
 
+def filter_invalid_smi(
+    ds: AbstractDataset, input_column: str, **kwargs
+) -> AbstractDataset:
+    def is_valid(x: dict):
+        mol = Chem.MolFromSmiles(x[input_column])
+        return mol is not None
+
+    return ds.filter(is_valid, batched=False, **kwargs)
+
+
 def encode_molecules(
     ds: AbstractDataset,
     input_column: str,

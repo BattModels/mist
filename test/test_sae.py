@@ -1,8 +1,11 @@
 import pytest
 import torch
+import torch.nn.functional as F
 from transformers import (
+    AutoModel,
     AutoModelForMaskedLM,
     AutoTokenizer,
+    DataCollatorForLanguageModeling,
     DataCollatorWithPadding,
     RobertaPreLayerNormConfig,
     RobertaPreLayerNormForMaskedLM,
@@ -15,9 +18,10 @@ from electrolyte_fm.models.sae import (
     InjectedCoder,
     SparsifiedModel,
     TiedBiasSAE,
-    VanillaSAE,
     TopKSAE,
+    VanillaSAE,
     topk,
+    hf_cross_entropy,
 )
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
@@ -55,6 +59,37 @@ def test_topk():
     assert ((x > 0).sum(-1) > 5).all()
     x_hat = topk(x, 5)
     assert ((x_hat > 0).sum(-1) == 5).all()
+
+
+@pytest.mark.gpu
+def test_hf_crossentropy():
+    name = "ibm/MoLFormer-XL-both-10pct"
+    model = AutoModelForMaskedLM.from_pretrained(name, trust_remote_code=True).to(
+        DEVICE
+    )
+    tok = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
+    batch = [
+        tok(smi)
+        for smi in [
+            "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
+            "CN3[C@H]1CC[C@@H]3C[C@@H](C1)OC(=O)C(CO)c2cc",
+        ]
+    ]
+    collate = DataCollatorForLanguageModeling(tok, mlm=False)
+    # collate = DataCollatorWithPadding(tok)
+    batch = collate(batch)
+    batch = {k: v.to(DEVICE) for k, v in batch.items()}
+    model.eval()
+    out = model(
+        batch["input_ids"],
+        attention_mask=batch["attention_mask"],
+        return_dict=True,
+    )
+    logits = out.logits
+    vocab_size = model.config.vocab_size
+    loss_ref = F.cross_entropy(logits.view(-1, vocab_size), batch["labels"].view(-1))
+    loss = hf_cross_entropy(logits, batch["labels"])
+    assert loss == loss_ref
 
 
 @pytest.mark.parametrize("sae_cls", SAE_CLASSES)
@@ -156,13 +191,16 @@ def test_instrumented():
     assert not sae.training
     assert not model.training
 
-    batch = tokenizer(["CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "C1=CC2=C(C=C1O)C(=CN2)CCN"])
-    collate = DataCollatorWithPadding(tokenizer)
+    batch = [
+        tokenizer(smi)
+        for smi in ["CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "C1=CC2=C(C=C1O)C(=CN2)CCN"]
+    ]
+    collate = DataCollatorForLanguageModeling(tokenizer, mlm=False)
     batch = collate(batch)
     batch = {
         k: v.to(DEVICE)
         for k, v in batch.items()
-        if k in ["input_ids", "attention_mask"]
+        if k in ["input_ids", "attention_mask", "labels"]
     }
     batch["return_dict"] = True
     y = model(**batch).logits
@@ -175,6 +213,7 @@ def test_instrumented():
         assert y_null.device == y.device
         assert y_null.dtype == y.dtype
 
+    assert all([not coder.dense.training for coder in sparse_model.coders])
     with sparse_model.sparse(False) as sparse_model:
         assert all([coder.state == "dense" for coder in sparse_model.coders])
         y_dense = sparse_model(**batch).logits
