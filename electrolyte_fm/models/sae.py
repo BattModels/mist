@@ -33,7 +33,11 @@ def hf_cross_entropy(logits: torch.Tensor, target: torch.Tensor):
     elif not isinstance(logits, torch.Tensor):
         logits = logits.logits
 
-    return F.cross_entropy(logits.view(-1, logits.shape[-1]), target.view(-1))
+    return F.cross_entropy(
+        logits.view(-1, logits.shape[-1]),
+        target.view(-1),
+        ignore_index=-100,
+    )
 
 
 class AbstractSAE(nn.Module):
