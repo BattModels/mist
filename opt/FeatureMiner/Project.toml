@@ -4,8 +4,18 @@ version = "0.1.0"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 OnlineStats = "a15396b6-48d5-5d58-9928-6d29437db91e"
 OnlineStatsBase = "925886fa-5bf2-5e8e-b522-a9147a512338"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+
+[compat]
+CSV = "0.10.15"
+DataFrames = "1.7.0"
+LinearAlgebra = "1.11.0"
+Makie = "0.22.2"
