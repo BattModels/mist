@@ -120,7 +120,8 @@ ELEMENT_FEATURES = {
         "n",
         "o",
         "p",
-        "s" "se",
+        "s",
+        "se",
         "as",
     ],
 }

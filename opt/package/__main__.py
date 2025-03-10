@@ -150,7 +150,8 @@ def pretrained(ckpt: str, name: Optional[str] = None):
 
 def export_finetuned(ckpt: str):
     model = SaveConfigWithCkpts.load(ckpt)
-    model_config = json.loads(Path(ckpt, "..", "..", "config.json").read_text())
+    config_file = Path(ckpt).parent.parent.joinpath("config.json")
+    model_config = json.loads(config_file.read_text())
     return MISTFinetuned(
         model.encoder,
         model.task_network,

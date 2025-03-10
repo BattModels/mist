@@ -35,8 +35,8 @@ class MISTFinetuned(torch.nn.Module):
         self.transform = transform
         self.channels = channels
 
-    def forward(self, input):
-        hs = self.encoder(input["input_ids"]).last_hidden_state
+    def forward(self, **kwargs):
+        hs = self.encoder(**kwargs).last_hidden_state
         y = self.task_network(hs)
         return self.transform.forward(y)
 
@@ -62,14 +62,14 @@ class MISTFinetuned(torch.nn.Module):
         batch = tokenizer(smi)
         collate_fn = DataCollatorWithPadding(tokenizer)
         batch = collate_fn(batch).to(self.encoder.device)
-        out = self(batch)
+        out = self(**batch)
         if self.channels is None:
             return out
         return {k: out[:, idx].cpu().detach() for idx, k in enumerate(self.channels)}
 
     @classmethod
-    def from_pretrained(self, save_directory: str):
-        config = json.loads(Path(save_directory, "config.json").read_text())
+    def from_pretrained(cls, name_or_path: str) -> "MISTFinetuned":
+        config = json.loads(Path(name_or_path, "config.json").read_text())
         encoder_config = AutoConfig.for_model(
             config["encoder"]["model_type"]
         ).from_dict(config["encoder"])
@@ -80,8 +80,8 @@ class MISTFinetuned(torch.nn.Module):
         )
 
         # Instantiate model
-        model = MISTFinetuned(encoder, task_network, transform, config["channels"])
-        load_model(model, save_directory)
+        model = cls(encoder, task_network, transform, config["channels"])
+        load_model(model, name_or_path)
         return model
 
 
