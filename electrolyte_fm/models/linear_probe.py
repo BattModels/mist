@@ -57,10 +57,11 @@ class LightningProbe(pl.LightningModule):
         # Remove hooks from model (not picklable))
         for hook in state_dict.pop("_hooks_installed", {}).values():
             hook.remove()
-        state_dict["_hooks_installed"] = {}
+        state_dict.pop("_hooks_installed", None)
+        state_dict["_prob_points"] = self._probe_points
 
         # Don't save activations
-        state_dict["_activations"] = {}
+        state_dict.pop("_activations", None)
 
     def named_probes(self):
         yield from zip(self._probe_points, self._probes)

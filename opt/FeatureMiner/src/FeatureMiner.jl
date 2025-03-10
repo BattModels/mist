@@ -1,11 +1,12 @@
 module FeatureMiner
 
 using ArgParse
-using PythonCall: Py, pyimport
+using DataFrames
+using PythonCall: Py, pyimport, pyconvert, @pyconst
 using OnlineStats: OnlineStats, KHist, Variance, Series, fit!
 using OnlineStatsBase: OnlineStatsBase, OnlineStat, EqualWeight, smooth, bessel, nobs
 using StatsBase: StatsBase
-
+using LinearAlgebra: norm, dot
 
 function FeatureExtractor(ckpt_path::String)
     cls = pyimport("electrolyte_fm.models.sae.FeatureExtractor")
@@ -22,8 +23,40 @@ function split_dataset_by_node(dataset::Py, rank::Int, size::Int)
     return m.split_dataset_by_node(dataset, rank, size)
 end
 
+function load_linear_probes(ckpt)
+    torch = @pyconst(pyimport("torch"))
+    data = torch.load(ckpt; map_location=torch.device("cpu"))
+
+    # Extract weights
+    probe_weights = Dict()
+    for (k, v) in data["state_dict"].items()
+        if pyconvert(Bool, k.startswith("_probes"))
+            probe_weights[pyconvert(String, k)] = pyconvert(Array, v)
+        end
+    end
+
+    # Collate probes
+    probes = []
+    location = pyconvert(String, data["hyper_parameters"]["probes"]["init_args"]["location"])
+    for idx in range(0; length=fld(length(probe_weights), 2))
+        push!(probes, (;
+            weight=probe_weights["_probes.$idx.weight"],
+            bias=probe_weights["_probes.$idx.bias"],
+            location=location,
+            layer=idx,
+        ))
+    end
+
+    meta = (;
+        name_or_path=pyconvert(String, data["hyper_parameters"]["model"]["init_args"]["name_or_path"]),
+    )
+
+    return probes, meta
+end
+
 include("identification.jl")
 include("stats.jl")
+include("lipinski.jl")
 
 end
 
