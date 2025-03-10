@@ -2,7 +2,7 @@ module FeatureMiner
 
 using ArgParse
 using DataFrames
-using PythonCall: Py, pyimport, pyconvert, @pyconst
+using PythonCall: Py, pyimport, pyconvert, @pyconst, GIL
 using OnlineStats: OnlineStats, KHist, Variance, Series, fit!
 using OnlineStatsBase: OnlineStatsBase, OnlineStat, EqualWeight, smooth, bessel, nobs
 using StatsBase: StatsBase
@@ -38,17 +38,22 @@ function load_linear_probes(ckpt)
     # Collate probes
     probes = []
     location = pyconvert(String, data["hyper_parameters"]["probes"]["init_args"]["location"])
+    hidden_size = pyconvert(Int, data["hyper_parameters"]["probes"]["init_args"]["hidden_size"])
     for idx in range(0; length=fld(length(probe_weights), 2))
         push!(probes, (;
             weight=probe_weights["_probes.$idx.weight"],
             bias=probe_weights["_probes.$idx.bias"],
-            location=location,
+            location,
+            hidden_size,
             layer=idx,
         ))
     end
 
     meta = (;
         name_or_path=pyconvert(String, data["hyper_parameters"]["model"]["init_args"]["name_or_path"]),
+        dataset=pyconvert(String, data["datamodule_hyper_parameters"]["init_args"]["name_or_path"]),
+        encoding=pyconvert(String, data["datamodule_hyper_parameters"]["init_args"]["encoding"]),
+        tokenizer=pyconvert(String, data["datamodule_hyper_parameters"]["init_args"]["tokenizer"]),
     )
 
     return probes, meta

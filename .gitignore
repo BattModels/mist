@@ -36,9 +36,15 @@ spack.lock
 
 # Output files
 *.json
+<<<<<<< HEAD
 *.jsonl
 *.bson
 *.png
 *.pdf
 *.h5
 *.csv
+=======
+*.tar.xz
+*.tar.gz
+*.tar
+>>>>>>> 41f0134 (add layerwise similarity and submission script)
