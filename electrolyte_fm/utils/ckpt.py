@@ -1,9 +1,10 @@
+import logging
 import importlib
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Optional
+from pathlib import Path
 
 import torch
 from jsonargparse import Namespace
@@ -114,8 +115,7 @@ class SaveConfigWithCkpts(Callback):
                     config["lightning_module"],
                     class_path=config.get("class_path", None),
                 )
-                if "vocab_size" in config["datamodule"]:
-                    model_config["vocab_size"] = config["datamodule"]["vocab_size"]
+                model_config["vocab_size"] = config["datamodule"]["vocab_size"]
 
             else:
                 cls_name, model_config = norm_class_config(config)
@@ -151,9 +151,15 @@ class SaveConfigWithCkpts(Callback):
         config_path = config_path or checkpoint_dir.parent.parent.joinpath(
             "model_hparams.json"
         )
+<<<<<<< HEAD
         assert (
             checkpoint_dir.exists()
         ), f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
+=======
+        assert checkpoint_dir.exists(), (
+            f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
+        )
+>>>>>>> 2c78388 (initial run over linear probes)
         assert config_path.is_file(), f"Missing model config file {config_path}"
 
         model = SaveConfigWithCkpts.instantiate(config_path, max_position_embeddings)
@@ -172,6 +178,14 @@ class SaveConfigWithCkpts(Callback):
             model.load_state_dict(state["state_dict"], strict=True, assign=True)
             return model
 
+<<<<<<< HEAD
+=======
+        if checkpoint_dir.is_file():
+            state = torch.load(checkpoint_dir)
+            model.load_state_dict(state["state_dict"], strict=True, assign=True)
+            return model
+
+>>>>>>> 2c78388 (initial run over linear probes)
         # Load model weights from the checkpoint
         try:
             from deepspeed.utils.zero_to_fp32 import (
@@ -179,9 +193,12 @@ class SaveConfigWithCkpts(Callback):
             )
 
             state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
+<<<<<<< HEAD
             if max_position_embeddings is not None:
                 state = adjust_state_position_embeddings(state, max_position_embeddings)
 
+=======
+>>>>>>> 2c78388 (initial run over linear probes)
             model.load_state_dict(state, strict=False, assign=True)
         except FileNotFoundError:
             logging.error(
@@ -189,11 +206,16 @@ class SaveConfigWithCkpts(Callback):
                 checkpoint_dir,
             )
             file = Path(checkpoint_dir, "checkpoint", "mp_rank_00_model_states.pt")
+<<<<<<< HEAD
             state = torch.load(file, map_location=map_location)
             logging.info("loaded %s", file)
             if max_position_embeddings is not None:
                 state = adjust_state_position_embeddings(state, max_position_embeddings)
 
+=======
+            state = torch.load(file)
+            logging.info("loaded %s", file)
+>>>>>>> 2c78388 (initial run over linear probes)
             model.load_state_dict(state["module"], strict=True, assign=True)
 
         return model
@@ -239,21 +261,6 @@ def get_ckpt_tokenizer(path: str | Path) -> str:
         return config["data"]["tokenizer"]
     except KeyError:
         return config["data"]["init_args"]["tokenizer"]
-
-
-def get_hidden_size(name_or_path: str) -> int:
-    config_path = Path(name_or_path).parent.parent.joinpath("config.json")
-    if Path(config_path).is_file():
-        with open(config_path, "r") as fid:
-            config = json.load(fid)
-        return config["model"]["init_args"]["hidden_size"]
-
-    # Special Case models
-    elif name_or_path.startswith("ibm/MoLFormer-XL-both-10pct"):
-        return 768
-
-    else:
-        raise ValueError(f"Could not find hidden size for {name_or_path}")
 
 
 def norm_class_config(config: dict, class_path: Optional[str] = None) -> (str, dict):

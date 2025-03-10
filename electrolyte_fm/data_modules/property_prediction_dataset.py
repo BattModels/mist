@@ -38,7 +38,9 @@ class PropertyPredictionDataModule(LightningDataModule):
     ):
         super().__init__()
 
-        self.tokenizer = load_tokenizer(tokenizer)
+        self.tokenizer = (
+            load_tokenizer(tokenizer) if isinstance(tokenizer, str) else tokenizer
+        )
         self.token_collator = DataCollatorWithPadding(self.tokenizer)
         self.vocab_size = len(self.tokenizer)
         self.truncation = truncation

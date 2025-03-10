@@ -1,5 +1,5 @@
 from math import sqrt, floor
-from typing import Callable, Optional, Literal, override
+from typing import Callable, Optional, Literal
 from contextlib import contextmanager
 
 import lightning.pytorch as pl
@@ -31,7 +31,7 @@ def hf_cross_entropy(logits: torch.Tensor, target: torch.Tensor):
     if isinstance(logits, tuple):
         logits = logits[0]
     elif not isinstance(logits, torch.Tensor):
-        logits = logits.logits
+        logits = logits.last_hidden_state
 
     return F.cross_entropy(
         logits.view(-1, logits.shape[-1]),
@@ -456,7 +456,7 @@ class LightningSAE(pl.LightningModule):
                 logdict[f"{stage}/recovered_loss"] = self.sparse_model.loss_recovered(
                     target,
                     input_ids,
-                    attention_mask,
+                    attention_mask=attention_mask,
                     lossfn=self.lossfn,
                     sparse_output=y,
                 )

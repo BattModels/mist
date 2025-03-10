@@ -27,7 +27,7 @@ class LipinskiDataModule(PropertyPredictionDataModule):
         assert isinstance(kwargs["smi_column"], str)
         kwargs["additonal_columns"] = [
             "probe_target",
-            *kwargs.get("additonal_columns", []),
+            *(kwargs.get("additonal_columns", None) or []),
         ]
         super().__init__(**kwargs)
         assert self.encoding != MolEncoding.SELFIES

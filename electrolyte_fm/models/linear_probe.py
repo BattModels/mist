@@ -1,18 +1,35 @@
-from typing import Iterable
+import logging
+from typing import Iterable, Dict, Any, Callable
 from collections import defaultdict
+from jsonargparse import lazy_instance
 import torch
 from torch import nn
 from torch.nn import functional as F
 import lightning.pytorch as pl
 from lightning.pytorch.cli import OptimizerCallable, LRSchedulerCallable
 from fnmatch import fnmatchcase
+from torchmetrics import AUROC
+
+
+def per_layer_probe(
+    hidden_size: int, features: int, n_layers: int, location: str = "output"
+) -> dict[str, nn.Module]:
+    probes = {}
+    template: str = "*.encoder.layer.{layer}.{location}"
+    for layer in range(n_layers):
+        hook_name = template.format(layer=layer, location=location)
+        probes[hook_name] = nn.Linear(hidden_size, features)
+    return probes
+
+
+ProbeConfigCallable = Callable[Any, dict[str, nn.Module]]
 
 
 class LightningProbe(pl.LightningModule):
     def __init__(
         self,
         model: nn.Module,
-        probes: dict[str, nn.Module],
+        probes: ProbeConfigCallable = per_layer_probe,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ):
@@ -21,83 +38,134 @@ class LightningProbe(pl.LightningModule):
         self.model = model
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
+        self.save_hyperparameters()
         self.hookpoints = self._identify_hookpoints(probes.keys())
+
+        # Setup probes
         self._probes = nn.ModuleList(probes.values())
         self._probe_points = list(probes.keys())
-        self.activations = dict()
+        self._hooks_installed = dict()
+        self._activations = {}
 
-    @property
-    def probes(self):
+        # Add metrics
+        self.val_metrics = nn.ModuleList(
+            AUROC(task="binary", thresholds=100) for probe in self._probe_points
+        )
+
+    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        state_dict = checkpoint["state_dict"]
+        # Remove hooks from model (not picklable))
+        for hook in state_dict.pop("_hooks_installed", {}).values():
+            hook.remove()
+        state_dict["_hooks_installed"] = {}
+
+        # Don't save activations
+        state_dict["_activations"] = {}
+
+    def named_probes(self):
         yield from zip(self._probe_points, self._probes)
 
-    def _identify_hookpoints(self, hooks: Iterable[str]):
+    def _identify_hookpoints(self, probe_locs: Iterable[str]):
         hooks: set[str] = set()
         for name, _ in self.model.named_modules():
-            if any((fnmatchcase(name, hook) for hook in hooks)):
-                hooks.add(name)
+            for loc in probe_locs:
+                if fnmatchcase(name, loc):
+                    hooks.add(name)
 
         hooks = list(hooks)
         hooks.sort()
         return hooks
 
-    def _install_hooks(self, results: dict[str, torch.Tensor]):
+    def _install_hooks(self):
         for name in self.hookpoints:
+            if name not in self._hooks_installed:
+                hook = self._create_act_hook(name, self._activations)
+                self._hooks_installed[name] = self.model.get_submodule(
+                    name
+                ).register_forward_hook(hook)
+                logging.debug(f"Installed hook for %s", name)
 
-            def hook(module: nn.Module, input, output: torch.Tensor):
-                assert isinstance(output, torch.Tensor)
-                results[name] = output
-                return None
+        return self._activations
 
-            self.model.get_submodule(name).register_forward_hook(hook)
+    @staticmethod
+    def _create_act_hook(name: str, results: dict):
+        def hook(module: nn.Module, input, output: torch.Tensor):
+            assert isinstance(output, torch.Tensor)
+            results[name] = output[:, 0, :].detach()
+            return None
 
-    def on_train_start(self):
-        self.model.to(self.device)
-        self._install_hooks(self.activations)
+        return hook
 
-    def forward(self, batch: dict):
+    def forward(self, *args, **kwargs):
         self.model.eval()
+        activations = self._install_hooks()
         with torch.no_grad():
-            self.model(batch)
+            self.model(*args, **kwargs)
         out = defaultdict(dict)
-        for name, probe in self.probs.items():
+        for name, probe in self.named_probes():
             for hook in self.hookpoints:
-                if fnmatchcase(name, hook):
-                    act = self.activations[hook]
+                if fnmatchcase(hook, name):
+                    act = activations[hook]
                     out[name][hook] = probe(act)
 
         return out
 
     def forward_fit(self, batch: dict):
         self.model.eval()
+        activations = self._install_hooks()
         target = batch.pop("probe_target")
         self.model(**batch)
-        loss = torch.tensor(0.0)
+        loss = []
         out = {}
-        for name, probe in self.probs.items():
-            probe_loss = torch.tensor(0.0)
+        for name, probe in self.named_probes():
+            probe_loss = []
             for hook in self.hookpoints:
-                if fnmatchcase(name, hook):
-                    act = self.activations[hook]
+                if fnmatchcase(hook, name):
+                    act = activations[hook].detach()
                     y = probe(act)
-                    probe_loss += F.binary_cross_entropy_with_logits(y, target)
+                    probe_loss.append(
+                        F.binary_cross_entropy_with_logits(y, target.to(dtype=y.dtype))
+                    )
 
-            out[f"{name}-probe-loss"] = probe_loss
-            loss += probe_loss
+            out[f"{name}-probe-loss"] = sum(probe_loss)
+            loss.append(sum(probe_loss))
 
-        out["loss"] = loss
+        out["loss"] = sum(loss) / len(loss)
         return out
 
     def training_step(self, batch):
-        out = self.forward_fit(batch)
-        self.log_dict({f"train/{k}": v for k, v in out.items()})
-        return out["loss"]
-
-    def validation_step(self, batch):
         out = self.forward_fit(batch)
         self.log_dict(
             {f"train/{k}": v for k, v in out.items()}, on_step=False, on_epoch=True
         )
         return out["loss"]
+
+    def validation_step(self, batch):
+        target = batch.pop("probe_target")
+        out = self.forward(**batch)
+        metrics = {}
+        loss = []
+        for probe, probe_metrics in zip(self._probe_points, self.val_metrics):
+            probe_pred = []
+            for hook in self.hookpoints:
+                if fnmatchcase(hook, probe):
+                    probe_pred.append(out[probe][hook])
+
+            probe_pred = torch.stack(probe_pred)
+            probe_pred = probe_pred.view(-1, probe_pred.shape[-1])
+            probe_loss = F.binary_cross_entropy_with_logits(
+                probe_pred,
+                target.to(dtype=probe_pred.dtype),
+            )
+            probe_metrics.update(probe_pred, target)
+            metrics[f"val/{probe}-loss"] = probe_loss
+            metrics[f"val/{probe}-auroc"] = probe_metrics
+            loss.append(probe_loss)
+
+        metrics["val/loss"] = sum(loss) / len(loss)
+        self.log_dict(metrics, on_step=False, on_epoch=True)
+
+        return metrics["val/loss"]
 
     def configure_optimizers(self):
         optimizer = self.optimizer(self._probes.parameters())
@@ -110,24 +178,91 @@ class LightningProbe(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    from transformers import AutoModelForMaskedLM
-    from ..data_modules.lipinski_dataset import LipinskiDataModule
-    from lightning.pytorch import Trainer
-
-    name_or_path = "ibm/MoLFormer-XL-both-10pct"
-    model = AutoModelForMaskedLM.from_pretrained(name_or_path, trust_remote_code=True)
-    dm = LipinskiDataModule(
-        name_or_path="hiv",
-        tokenizer=name_or_path,
-        encoding="smiles-canonical",
-        num_workers=4,
+    import smirk
+    import json
+    from jsonargparse import lazy_instance
+    from lightning.pytorch.cli import (
+        LightningCLI,
+        LightningArgumentParser,
+        _InstantiatorFn,
+        _get_module_type,
     )
-    hidden_size = model.config.hidden_size
-    probes = {
-        f"*.encoder.layer.{layer}.output": nn.Linear(hidden_size, 5)
-        for layer in range(hidden_size)
-    }
-    lm = LightningProbe(model, probes)
+    from lightning.pytorch.loggers import WandbLogger
+    from lightning.pytorch.callbacks import ModelCheckpoint
 
-    trainer = Trainer()
-    trainer.fit(lm, datamodule=dm)
+    logging.basicConfig(level=logging.INFO)
+
+    def mlm_from_pretrained(name_or_path: str) -> nn.Module:
+        from transformers import AutoModelForMaskedLM
+
+        return AutoModelForMaskedLM.from_pretrained(
+            name_or_path, trust_remote_code=True
+        )
+
+    class MyLightningCLI(LightningCLI):
+        def add_arguments_to_parser(self, parser: LightningArgumentParser):
+            parser.add_argument(
+                "--tags",
+                type=list,
+                help="Tags for WandB logger",
+                default=[],
+            )
+            parser.link_arguments("tags", "trainer.logger.init_args.tags")
+
+        def _add_instantiators(self) -> None:
+            self.config_dump = json.loads(
+                self.parser.dump(
+                    self.config, skip_link_targets=False, skip_none=False, format="json"
+                )
+            )
+            if "subcommand" in self.config:
+                self.config_dump = self.config_dump[self.config.subcommand]
+
+            self.parser.add_instantiator(
+                _InstantiatorFn(cli=self, key="model"),
+                _get_module_type(self._model_class),
+                subclasses=self.subclass_mode_model,
+            )
+            self.parser.add_instantiator(
+                _InstantiatorFn(cli=self, key="data"),
+                _get_module_type(self._datamodule_class),
+                subclasses=self.subclass_mode_data,
+            )
+
+    cli = MyLightningCLI(
+        LightningProbe,
+        save_config_callback=None,
+        seed_everything_default=42,
+        trainer_defaults={
+            "logger": lazy_instance(
+                WandbLogger, project="linear-probes", save_code=True
+            ),
+            "max_epochs": 1000,
+        },
+        parser_kwargs={"parser_mode": "jsonnet"},
+        run=False,
+    )
+    trainer: pl.Trainer = cli.trainer
+    model: LightningProbe = cli.model
+    ckpts = []
+    for probe, _ in model.named_probes():
+        probe_name = probe.replace(".", "-").replace("*", "star")
+        monitor = f"val/{probe}-loss"
+        auroc = f"val/{probe}-auroc"
+        ckpts.append(
+            ModelCheckpoint(
+                monitor=monitor,
+                save_top_k=1,
+                save_weights_only=True,
+                auto_insert_metric_name=False,
+                filename=probe_name
+                + "--epoch-{epoch}--loss-{"
+                + monitor
+                + ":.3f}--auroc-{"
+                + auroc
+                + ":.3f}",
+            )
+        )
+    trainer.callbacks.extend(ckpts)
+
+    trainer.fit(model, cli.datamodule)
