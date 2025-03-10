@@ -38,3 +38,6 @@ spack.lock
 
 # outputs
 *.json
+*.tar.xz
+*.tar.gz
+*.tar
