@@ -128,3 +128,38 @@ def check_config(config: dict, stage="train"):
 
             # TODO: Suppress `Seed set to..` message
             cli_main(args=["--config", f.name])
+
+
+def test_config(ckpt_config: dict) -> dict:
+    ckpt_config["tags"].append("test")
+    for tag in ["finetuning", "pretraining"]:
+        try:
+            ckpt_config["tags"].remove(tag)
+        except ValueError:
+            pass
+
+    ckpt_config.pop("ckpt_path", None)
+    config = {
+        "test": {
+            "model": ckpt_config["model"],
+            "data": ckpt_config["data"],
+            "tags": ckpt_config["tags"],
+        },
+    }
+
+    config["test"]["model"]["init_args"]["target_columns"] = config["test"]["data"][
+        "init_args"
+    ]["target_columns"]
+    config["test"]["model"]["init_args"]["bootstrap"] = 100
+
+    # Add channel wise metrics
+    metrics = config["test"]["model"]["init_args"].pop("metrics")
+    metrics_new = set()
+    for metric in metrics:
+        if metric in ["crosstab", "r2"] or metric.endswith("-channel"):
+            metrics_new.add(metric)
+        else:
+            metrics_new |= {metric, f"{metric}-channel"}
+    config["test"]["model"]["init_args"]["metrics"] = list(metrics_new)
+
+    return config

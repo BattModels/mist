@@ -50,7 +50,8 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         )
 
     def configure_model(self):
-        self.model = RobertaForMaskedLM(config=self.config)
+        if not hasattr(self, "model"):
+            self.model = RobertaForMaskedLM(config=self.config)
 
     def get_encoder(self):
         if not hasattr(self, "model"):
