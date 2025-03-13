@@ -64,6 +64,18 @@ def encode_molecules(
         raise RuntimeError(f"Unknown encoding: {encoding}")
 
 
+def random_smiles(smi: str, encoding: MolEncoding = MolEncoding.SMILES) -> str:
+    mol = Chem.MolFromSmiles(smi)
+    if mol is None:
+        return smi
+    elif encoding == MolEncoding.SMILES:
+        return Chem.MolToSmiles(mol, doRandom=True)
+    elif encoding == MolEncoding.KEKULE:
+        return Chem.MolToSmiles(mol, doRandom=True, kekuleSmiles=True)
+    else:
+        return smi  # Fallback to not randomizing
+
+
 def encode_selfies(ds, input_column: str, output_column: str, **kwargs):
     """Encode SMILES to selfies, if possible, filtering out encoding failures"""
     ds = ds.map(

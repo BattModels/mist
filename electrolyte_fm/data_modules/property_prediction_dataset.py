@@ -11,6 +11,7 @@ from ..utils.tokenizer import load_tokenizer
 from .utils import (
     MolEncoding,
     AbstractDataset,
+    random_smiles,
     maybe_shard_dataset,
     encode_molecules,
     is_fast,
@@ -29,6 +30,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         val_batch_size: Optional[int] = None,
         encoding: str = MolEncoding.SMILES.value,
         include_encoding: bool = False,
+        randomize: bool = False,
     ):
         super().__init__()
 
@@ -40,6 +42,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.target_columns = target_columns
         self.encoding = MolEncoding(encoding)
         self.include_encoding = include_encoding
+        self.randomize = randomize
 
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size or batch_size
@@ -87,7 +90,7 @@ class PropertyPredictionDataModule(LightningDataModule):
             batched=is_fast(self.tokenizer),
             input_columns=self.smi_column,
         )
-        if not self.include_encoding:
+        if not self.include_encoding and not self.randomize:
             ds = ds.remove_columns(self.smi_column)
 
         self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
@@ -96,6 +99,15 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def collate_fn(self, batch):
+        if self.randomize:
+            for idx in range(len(batch)):
+                batch[idx].update(
+                    random_smiles(batch[idx][self.smi_column], self.encoding)
+                )
+
+                if not self.include_encoding:
+                    batch[idx].pop(self.smi_column, None)
+
         output = self.token_collator(batch)
         if self.target_columns:
             output["target"] = torch.stack([torch.tensor(x["target"]) for x in batch])
