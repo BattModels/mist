@@ -1,10 +1,15 @@
 # Finetuned Models for Inference
-import torch
 import json
 from pathlib import Path
-from transformers import AutoModel, AutoConfig, DataCollatorWithPadding
-from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
+
+import torch
+from smirk import SmirkTokenizerFast
+from transformers import AutoConfig, AutoModel, AutoTokenizer, DataCollatorWithPadding
+
 from electrolyte_fm.models.normalize import AbstractNormalizer
+from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
+
+AutoTokenizer.register("SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast)
 
 
 def save_model(model, save_directory, safe_serialization=False):
@@ -27,21 +32,45 @@ def load_model(model, save_directory):
         raise RuntimeError("No model found")
 
 
+def maybe_get_annotated_channels(channels: list):
+    for chn in channels:
+        if isinstance(chn, str):
+            yield {"name": chn, "description": None, "unit": None}
+        else:
+            yield chn
+
+
+def annotate_prediction(y: torch.Tensor, channels: list[dict[str, str]]) -> dict:
+    out = {}
+    for idx, chn in enumerate(channels):
+        channel_info = {f: v for f, v in chn.items() if f != "name"}
+        out[chn["name"]] = {
+            "value": y[idx],
+            **channel_info,
+        }
+    return out
+
+
 class MISTFinetuned(torch.nn.Module):
-    def __init__(self, encoder, task_network, transform, channels=None):
+    def __init__(self, encoder, task_network, transform, tokenizer, channels=None):
         super().__init__()
         self.encoder = encoder
         self.task_network = task_network
         self.transform = transform
+        self.tokenizer = tokenizer
         self.channels = channels
 
-    def forward(self, input):
-        hs = self.encoder(input["input_ids"]).last_hidden_state
+    def forward(self, input_ids, attention_mask=None):
+        hs = self.encoder(input_ids, attention_mask=attention_mask).last_hidden_state
         y = self.task_network(hs)
         return self.transform.forward(y)
 
     def save_pretrained(self, save_directory, safe_serialization=False):
         config = {
+            "architectures": [
+                self.__class__.__name__,
+            ],
+            "tokenizer_class": self.tokenizer.__class__,
             "encoder": self.encoder.config.to_diff_dict(),
             "task_network": {
                 "embed_dim": self.encoder.config.hidden_size,
@@ -55,14 +84,25 @@ class MISTFinetuned(torch.nn.Module):
         Path(save_directory, "config.json").write_text(json.dumps(config, indent=4))
         save_model(self, save_directory, safe_serialization)
 
-    def predict(self, smi: list[str], tokenizer):
-        batch = tokenizer(smi)
-        collate_fn = DataCollatorWithPadding(tokenizer)
-        batch = collate_fn(batch).to(self.encoder.device)
-        out = self(batch)
+    def predict(self, smi: list[str]):
+        batch = self.tokenizer(smi)
+        collate_fn = DataCollatorWithPadding(self.tokenizer)
+        batch = collate_fn(batch)
+        batch = {
+            "input_ids": batch["input_ids"].to(self.encoder.device),
+            "attention_mask": batch["attention_mask"].to(self.encoder.device),
+        }
+        with torch.inference_mode():
+            out = self(**batch).cpu()
+
         if self.channels is None:
             return out
-        return {k: out[:, idx].cpu().detach() for idx, k in enumerate(self.channels)}
+
+        out_batch = []
+        for idx in range(len(smi)):
+            out_batch.append(annotate_prediction(out[idx, :], self.channels))
+
+        return out_batch
 
     @classmethod
     def from_pretrained(self, save_directory: str):
@@ -76,40 +116,58 @@ class MISTFinetuned(torch.nn.Module):
             config["transform"]["class"], config["transform"]["num_outputs"]
         )
 
-        # Instantiate model
-        model = MISTFinetuned(encoder, task_network, transform, config["channels"])
+        tokenizer = AutoTokenizer.from_pretrained(save_directory, use_fast=True)
+        channels = list(maybe_get_annotated_channels(config["channels"]))
+
+        model = MISTFinetuned(encoder, task_network, transform, tokenizer, channels)
         load_model(model, save_directory)
         return model
 
 
 class MISTMultiTask(torch.nn.Module):
-    def __init__(self, encoder, task_networks, transforms, channels=None):
+    def __init__(self, encoder, task_networks, transforms, tokenizer, channels=None):
         super().__init__()
         self.encoder = encoder
         self.task_networks = torch.nn.ModuleList(task_networks)
         self.transforms = torch.nn.ModuleList(transforms)
+        self.tokenizer = tokenizer
         assert len(self.task_networks) == len(self.transforms)
         self.channels = channels
 
-    def forward(self, input):
-        hs = self.encoder(input["input_ids"]).last_hidden_state
+    def forward(self, input_ids, attention_mask=None):
+        hs = self.encoder(input_ids, attention_mask=attention_mask).last_hidden_state
         out = []
         for tn, tf in zip(self.task_networks, self.transforms):
             out.append(tf.forward(tn(hs)))
 
         return torch.cat(out, dim=-1)
 
-    def predict(self, smi: list[str], tokenizer):
-        batch = tokenizer(smi)
-        collate_fn = DataCollatorWithPadding(tokenizer)
-        batch = collate_fn(batch).to(self.encoder.device)
-        out = self(batch).detach().cpu()
+    def predict(self, smi: list[str]):
+        batch = self.tokenizer(smi)
+        collate_fn = DataCollatorWithPadding(self.tokenizer)
+        batch = collate_fn(batch)
+        batch = {
+            "input_ids": batch["input_ids"].to(self.encoder.device),
+            "attention_mask": batch["attention_mask"].to(self.encoder.device),
+        }
+        with torch.inference_mode():
+            out = self(**batch).cpu()
+
         if self.channels is None:
             return out
-        return {k: out[:, idx] for idx, k in enumerate(self.channels)}
+
+        out_batch = []
+        for idx in range(len(smi)):
+            out_batch.append(annotate_prediction(out[idx, :].cpu(), self.channels))
+
+        return out_batch
 
     def save_pretrained(self, save_directory, safe_serialization=False):
         config = {
+            "architectures": [
+                self.__class__.__name__,
+            ],
+            "tokenizer_class": self.tokenizer.__class__,
             "encoder": self.encoder.config.to_diff_dict(),
             "task_networks": [
                 {
@@ -141,6 +199,7 @@ class MISTMultiTask(torch.nn.Module):
             )
             task_networks.append(PredictionTaskHead(**tc))
 
-        model = MISTMultiTask(encoder, task_networks, transforms, config["channels"])
+        channels = list(maybe_get_annotated_channels(config["channels"]))
+        model = MISTMultiTask(encoder, task_networks, transforms, channels)
         load_model(model, save_directory)
         return model
