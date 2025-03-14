@@ -1,0 +1,95 @@
+name,smi
+Dimethyl dicarbonate,O=C(OC(=O)OC)OC
+Ethylene carbonate,C1COC(=O)O1
+Dimethyl carbonate,COC(=O)OC
+Ethyl methyl carbonate,CCOC(=O)OC
+Dimethyl carbonate,COC(=O)OC
+Diethyl carbonate,CCOC(=O)OCC
+"2,2,2-trifluoromethyl ethyl carbonate",CCOC(=O)OC(F)(F)F
+"2,2,2-trifluoroethyl methyl carbonate",COC(=O)OCC(F)(F)F
+methyl trifluoromethyl carbonate,COC(=O)OC(F)(F)F
+"ethyl 2,2,2-trifluoroethyl carbonate",CCOC(=O)OCC(F)(F)F
+Bis(trifluoromethyl) ester,C(=O)(OC(F)(F)F)OC(F)(F)F
+"2,2,2-trifluoroethyl trifluoromethyl carbonate",C(C(F)(F)F)OC(=O)OC(F)(F)F
+"bis(2,2,2-trifluoroethyl) carbonate",C(C(F)(F)F)OC(=O)OCC(F)(F)F
+"1,3-bis(trimethylsilyloxy)propane",C[Si](C)(C)OCCCO[Si](C)(C)C
+"1,2-bis(trimethylsilyloxy)ethane",C[Si](C)(C)OCCO[Si](C)(C)C
+"Chloroform-d",[2H]C(Cl)(Cl)Cl
+"Dichloromethane",C(Cl)Cl
+"1,2-Dichloroethane",C(CCl)Cl
+"1,3-Dichloropropane",C(CCl)CCl
+"1,1,2,2-Tetrachloroethane",C(C(Cl)Cl)(Cl)Cl
+"1,1,2,2,3,3,4-Heptafluorocyclopentane",C1C(C(C(C1(F)F)(F)F)(F)F)F
+"1,1,2,2-Tetrafluoroethyl-2,2,3,3-tetrafluoropropylether",C(C(C(F)F)(F)F)OC(C(F)F)(F)F
+Fluorobenzene,C1=CC=C(C=C1)F
+"1,2-Difluorobenzene",C1=CC=C(C(=C1)F)F
+"1,3-Difluorobenzene",C1=CC(=CC(=C1)F)F
+"1,4-Difluorobenzene",C1=CC(=CC=C1F)F
+"1,2,3-Trifluorobenzene (123-FB)",C1=CC(=C(C(=C1)F)F)F
+"1,2,4-Trifluorobenzene",C1=CC(=C(C=C1F)F)F
+"1-Fluoropentane",CCCCCF
+Fluorocyclohexane,C1CCC(CC1)F
+"DEE (1,2-diethoxyethane)",CCOCCOCC
+"F1F0 (1-Ethoxy-2-(2-fluoroethoxy)ethane)",CCOCCOCCF
+"F1F1 (Ethane, 1,2-bis(2-fluoroethoxy)-)",C(COCCF)OCCF
+F1F2,C(COCC(F)F)OCCF
+"F3DEE (1-(2,2,2-Trifluoroethoxy)-2-ethoxyethane)",CCOCCOCC(F)(F)F
+"FDMB (2,2,3,3-Tetrafluoro-1,4-dimethoxybutane)",COCC(C(COC)(F)F)(F)F
+"F4DEE (1,2-Bis(2,2-difluoroethoxy)ethane)",C(COCC(F)F)OCC(F)F
+"F5DEE (1-Difluoroethoxy-2-Trifluoroethoxyethane)",C(COCC(F)(F)F)OCC(F)F
+"F6DEE (1,1,1-Trifluoro-2-[2-(2,2,2-trifluoroethoxy)ethoxy]ethane)",C(COCC(F)(F)F)OCC(F)(F)F
+ethylene carbonate,C1COC(=O)O1
+fluoroethylene carbonate,C1C(OC(=O)O1)F
+difluoroethylene carbonate,C1(C(OC(=O)O1)F)F
+cis-difluoroethylene carbonate,O=C1O[C@@H](F)[C@@H](F)O1
+trans-difluoroethylene carbonate 2,O=C1O[C@H](F)[C@@H](F)O1
+trans-difluoroethylene carbonate,O=C1O[C@@H](F)[C@H](F)O1
+trifluoroethylene carbonate,C1(C(OC(=O)O1)(F)F)F
+tetrafluoroethylene carbonate,C1(=O)OC(C(O1)(F)F)(F)F
+TMS,C1CCS(=O)(=O)C1
+EMS,CCS(=O)(=O)C
+BS,CCCCS(=O)(=O)CCCC
+FS,CS(=O)(=O)C1=CC=CC=C1F
+EVS,CCS(=O)(=O)C=C
+MiPS,CC(C)S(=O)(=O)C
+EiPS,CCS(=O)(=O)C(C)C
+EiBS,CCS(=O)(=O)CC(C)C
+iPiBS,CC(C)CS(=O)(=O)C(C)C
+iPsBS,CCC(C)S(=O)(=O)C(C)C
+BiBS,CCCCS(=O)(=O)CC(C)C
+MEMS,COCCS(=O)(=O)C
+EMES,CCS(=O)(=O)CCOC
+ESEME,CCS(=O)(=O)CCOCCOC
+AN,CC#N
+MPN,COCCC#N
+EPN,CCOCCC#N
+FEPN,C(COCC(F)(F)F)C#N
+MAN,C(C#N)C#N
+SCN,C(CC#N)C#N
+GLN,C(CC#N)CC#N
+ADN,C(CCC#N)CC#N
+PMN,C(CCC#N)CCC#N
+SUN,C(CCCC#N)CCC#N
+AZN,C(CCCC#N)CCCC#N
+SEN,C(CCCCC#N)CCCC#N
+TMP,COP(=O)(OC)OC
+DMMP,COP(=O)(C)OC
+DMMEMP,COCCOCP(=O)(OC)OC
+DEMEMP,CCOP(=O)(COCCOC)OCC
+HMP,COP1(=NP(=NP(=N1)(OC)OC)(OC)OC)OC
+HTP,CCOP1(=NP(=NP(=N1)(OCC)OCC)(OCC)OCC)OCC
+HHTP,CCCOP1(=NP(=NP(=N1)(OCCC)OCCC)(OCCC)OCCC)OCCC
+METMS,COCCO[Si](C)(C)C
+MEETMS,COCCOCCO[Si](C)(C)C
+MEEETMS,COCCOCCOCCO[Si](C)(C)C
+MEEEETMS,COCCOCCOCCOCCO[Si](C)(C)C
+MEEEEETMS,COCCOCCOCCOCCOCCO[Si](C)(C)C
+MEEEEEETMS,COCCOCCOCCOCCOCCOCCO[Si](C)(C)C
+MEEEEEEETMS,COCCOCCOCCOCCOCCOCCOCCO[Si](C)(C)C
+DMC,COC(=O)OC
+EMC,CCOC(=O)OC
+DEC,O=C(OCC)OCC
+DME,COCCOC
+DMDC,O=C(OC(=O)OC)OC
+
+
