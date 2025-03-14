@@ -52,14 +52,9 @@ def export_finetuned(ckpt: Path):
     from electrolyte_fm.models import MISTFinetuned
 
     model = SaveConfigWithCkpts.load(ckpt)
-<<<<<<< HEAD
     model_config = json.loads(ckpt.parent.parent.joinpath("config.json").read_text())
     tokenizer_name = model_config["data"]["init_args"]["tokenizer"]
     tokenizer = load_tokenizer(tokenizer_name)
-=======
-    config_file = Path(ckpt).parent.parent.joinpath("config.json")
-    model_config = json.loads(config_file.read_text())
->>>>>>> 2c78388 (initial run over linear probes)
     return MISTFinetuned(
         model.encoder,
         model.task_network,

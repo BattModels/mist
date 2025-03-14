@@ -66,13 +66,8 @@ class MISTFinetuned(torch.nn.Module):
         self.tokenizer = tokenizer
         self.channels = channels
 
-<<<<<<< HEAD
     def forward(self, input_ids, attention_mask=None):
         hs = self.encoder(input_ids, attention_mask=attention_mask).last_hidden_state
-=======
-    def forward(self, **kwargs):
-        hs = self.encoder(**kwargs).last_hidden_state
->>>>>>> 2c78388 (initial run over linear probes)
         y = self.task_network(hs)
         return self.transform.forward(y)
 
@@ -95,7 +90,6 @@ class MISTFinetuned(torch.nn.Module):
         Path(save_directory, "config.json").write_text(json.dumps(config, indent=4))
         save_model(self, save_directory, safe_serialization)
 
-<<<<<<< HEAD
     def embed(self, smi: list[str]):
         batch = self.tokenizer(smi)
         collate_fn = DataCollatorWithPadding(self.tokenizer)
@@ -120,26 +114,14 @@ class MISTFinetuned(torch.nn.Module):
         with torch.inference_mode():
             out = self(**batch).cpu()
 
-=======
-    def predict(self, smi: list[str], tokenizer):
-        batch = tokenizer(smi)
-        collate_fn = DataCollatorWithPadding(tokenizer)
-        batch = collate_fn(batch).to(self.encoder.device)
-        out = self(**batch)
->>>>>>> 2c78388 (initial run over linear probes)
         if self.channels is None:
             return out
 
         return annotate_prediction(out, self.channels)
 
     @classmethod
-<<<<<<< HEAD
-    def from_pretrained(cls, save_directory: str):
-        config = json.loads(Path(save_directory, "config.json").read_text())
-=======
     def from_pretrained(cls, name_or_path: str) -> "MISTFinetuned":
         config = json.loads(Path(name_or_path, "config.json").read_text())
->>>>>>> 2c78388 (initial run over linear probes)
         encoder_config = AutoConfig.for_model(
             config["encoder"]["model_type"]
         ).from_dict(config["encoder"])
@@ -149,17 +131,9 @@ class MISTFinetuned(torch.nn.Module):
             config["transform"]["class"], config["transform"]["num_outputs"]
         )
 
-<<<<<<< HEAD
-        tokenizer = AutoTokenizer.from_pretrained(save_directory, use_fast=True)
-        channels = list(maybe_get_annotated_channels(config["channels"]))
-
-        model = cls(encoder, task_network, transform, tokenizer, channels)
-        load_model(model, save_directory)
-=======
         # Instantiate model
         model = cls(encoder, task_network, transform, config["channels"])
         load_model(model, name_or_path)
->>>>>>> 2c78388 (initial run over linear probes)
         return model
 
 

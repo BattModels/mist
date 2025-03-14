@@ -151,15 +151,9 @@ class SaveConfigWithCkpts(Callback):
         config_path = config_path or checkpoint_dir.parent.parent.joinpath(
             "model_hparams.json"
         )
-<<<<<<< HEAD
         assert (
             checkpoint_dir.exists()
         ), f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
-=======
-        assert checkpoint_dir.exists(), (
-            f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
-        )
->>>>>>> 2c78388 (initial run over linear probes)
         assert config_path.is_file(), f"Missing model config file {config_path}"
 
         model = SaveConfigWithCkpts.instantiate(config_path, max_position_embeddings)
@@ -178,14 +172,11 @@ class SaveConfigWithCkpts(Callback):
             model.load_state_dict(state["state_dict"], strict=True, assign=True)
             return model
 
-<<<<<<< HEAD
-=======
         if checkpoint_dir.is_file():
             state = torch.load(checkpoint_dir)
             model.load_state_dict(state["state_dict"], strict=True, assign=True)
             return model
 
->>>>>>> 2c78388 (initial run over linear probes)
         # Load model weights from the checkpoint
         try:
             from deepspeed.utils.zero_to_fp32 import (
@@ -193,12 +184,6 @@ class SaveConfigWithCkpts(Callback):
             )
 
             state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
-<<<<<<< HEAD
-            if max_position_embeddings is not None:
-                state = adjust_state_position_embeddings(state, max_position_embeddings)
-
-=======
->>>>>>> 2c78388 (initial run over linear probes)
             model.load_state_dict(state, strict=False, assign=True)
         except FileNotFoundError:
             logging.error(
@@ -206,16 +191,8 @@ class SaveConfigWithCkpts(Callback):
                 checkpoint_dir,
             )
             file = Path(checkpoint_dir, "checkpoint", "mp_rank_00_model_states.pt")
-<<<<<<< HEAD
-            state = torch.load(file, map_location=map_location)
-            logging.info("loaded %s", file)
-            if max_position_embeddings is not None:
-                state = adjust_state_position_embeddings(state, max_position_embeddings)
-
-=======
             state = torch.load(file)
             logging.info("loaded %s", file)
->>>>>>> 2c78388 (initial run over linear probes)
             model.load_state_dict(state["module"], strict=True, assign=True)
 
         return model
