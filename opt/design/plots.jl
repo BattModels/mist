@@ -1,25 +1,50 @@
+using PythonCall
+
+# Load the MIST models
+# Normally, I'd do all of the code loading first. By something's funky
+# with loading the models later on (seg-faults) so here we are
+MISTFinetuned = pyimport("electrolyte_fm.models.prod_finetune").MISTFinetuned
+MISTMultiTask = pyimport("electrolyte_fm.models.prod_finetune").MISTMultiTask
+
+mist_qm9 = MISTFinetuned.from_pretrained("../../models/mist-x4i8qzuq-qm9")
+mist_kt = MISTMultiTask.from_pretrained("../../models/solvent-properties")
+mist_dn = MISTMultiTask.from_pretrained("../../models/donor-number")
+mist_solvent = MISTMultiTask.from_pretrained("../../models/mist-solventnet")
+
+# Generate Plots
 using Makie
+using DesignRules
 using DataFrames
-using CSV
+using CSV: CSV
 
-function plot_sat_fats(file)
-    f = Figure(size=96 .* (4.5, 6))
-    df = DataFrame(CSV.File(file))
-    df.n_carbon = map(x -> count(==('C'), x), df.smi)
+include("../style.jl")
 
-    ax = Axis(f[1, 1], ylabel="Diploe Moment [D]", xlabel="Number of Carbons")
-    scatter!(ax, df.n_carbon, df.mu)
 
-    ax = Axis(f[2, 1], ylabel="Energy [Ha]", xlabel="Number of Carbons")
-    scatter!(ax, df.n_carbon, df.u0; marker=:+, label="Internal 0K")
-    scatter!(ax, df.n_carbon, df.u298; marker=:x, label="Internal at 298.15K")
-    scatter!(ax, df.n_carbon, df.h298; marker=:circle, label="Enthalpy at 298.15K")
-    scatter!(ax, df.n_carbon, df.g298; marker=:diamond, label="Gibbs at 298.15K")
-    axislegend(ax; position=:rb, nbanks=2)
+# Evaluate hydrocarbons
+df_hydrocarbons = DesignRules.predict_all(
+    DesignRules.simple_hydrocarbons(25),
+    mist_qm9,
+    "kt" => mist_kt,
+    mist_dn,
+    mist_solvent => [:bp, :mp, :fp];
+    n=10
+)
 
-    ax = Axis(f[3, 1], ylabel="HOMO-LUMO Gap", xlabel="Number of Carbons")
-    scatter!(ax, df.n_carbon, df.gap; marker=:x, label="Direct")
-    scatter!(ax, df.n_carbon, df.lumo - df.homo; marker=:+, label="Calculated")
-    axislegend(ax; position=:rb)
-    return f
-end
+DesignRules.hydrocarbon_trends(df_hydrocarbons)
+
+# Evaluate electrolytes
+df_electrolyte = DataFrame(CSV.File("electrolytes.csv"))
+df_electrolyte = DesignRules.predict_all(
+    df_electrolyte,
+    mist_qm9,
+    "kt" => mist_kt,
+    mist_dn,
+    mist_solvent => [:bp, :mp, :fp];
+    n=10
+)
+
+
+
+
+
+
