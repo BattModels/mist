@@ -85,5 +85,5 @@ ${PWD}/submit/set_node_rank \
 nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
-    /mist/.venv/bin/python {{ program or "${PWD}/train.py" }}
+    /mist/.venv/bin/python {{ program or "${PWD}/train.py" }} --config ${PL_CONFIG}
 {%- endif %}
