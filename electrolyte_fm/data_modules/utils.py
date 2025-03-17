@@ -70,9 +70,19 @@ def random_smiles(smi: str, encoding: MolEncoding = MolEncoding.SMILES) -> str:
     if mol is None:
         return smi
     elif encoding == MolEncoding.SMILES:
-        return Chem.MolToSmiles(mol, doRandom=True, kekuleSmiles=(random() > 0.5))
+        return Chem.MolToSmiles(
+            mol,
+            canonical=False,
+            doRandom=True,
+            kekuleSmiles=(random() > 0.5),
+        )
     elif encoding == MolEncoding.KEKULE:
-        return Chem.MolToSmiles(mol, doRandom=True, kekuleSmiles=True)
+        return Chem.MolToSmiles(
+            mol,
+            doRandom=True,
+            kekuleSmiles=True,
+            canonical=False,
+        )
     elif encoding == MolEncoding.CANONICAL_SMILES:
         return Chem.MolToSmiles(mol, doRandom=True, canonical=True)
     else:

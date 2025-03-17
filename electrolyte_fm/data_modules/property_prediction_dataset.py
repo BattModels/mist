@@ -102,7 +102,9 @@ class PropertyPredictionDataModule(LightningDataModule):
         if self.randomize:
             for idx in range(len(batch)):
                 batch[idx].update(
-                    random_smiles(batch[idx][self.smi_column], self.encoding)
+                    self.tokenizer(
+                        random_smiles(batch[idx][self.smi_column], self.encoding)
+                    )
                 )
 
                 if not self.include_encoding:

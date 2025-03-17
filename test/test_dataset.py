@@ -11,7 +11,11 @@ from electrolyte_fm.data_modules import (
     tmQMDataModule,
 )
 from electrolyte_fm.data_modules.molnet_dataset import strip_unk_tokens
-from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
+from electrolyte_fm.data_modules.utils import (
+    MolEncoding,
+    encode_molecules,
+    random_smiles,
+)
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 
@@ -105,3 +109,20 @@ def test_strip_unknown_tokens():
     assert strip_encoding.pop("is_oov")
     for k, v in strip_encoding.items():
         assert len(v) == 32
+
+
+@pytest.mark.parametrize("encoding", [e.value for e in MolEncoding])
+def test_randomize(encoding):
+    mols = set()
+    for _ in range(10):
+        mols.add(
+            random_smiles(
+                "CN1C=NC2=C1C(=O)N(C(=O)N2C)C", encoding=MolEncoding(encoding)
+            )
+        )
+
+    if encoding == "selfies":
+        assert len(mols) == 1
+        pytest.xfail("random selfies are not supported")
+    else:
+        assert len(mols) > 1
