@@ -1,5 +1,6 @@
 from enum import Enum
 from typing import Optional, TypeVar
+from random import random
 from rdkit import Chem
 from datasets import Dataset, DatasetDict, IterableDatasetDict
 from datasets.distributed import split_dataset_by_node
@@ -69,9 +70,11 @@ def random_smiles(smi: str, encoding: MolEncoding = MolEncoding.SMILES) -> str:
     if mol is None:
         return smi
     elif encoding == MolEncoding.SMILES:
-        return Chem.MolToSmiles(mol, doRandom=True)
+        return Chem.MolToSmiles(mol, doRandom=True, kekuleSmiles=(random() > 0.5))
     elif encoding == MolEncoding.KEKULE:
         return Chem.MolToSmiles(mol, doRandom=True, kekuleSmiles=True)
+    elif encoding == MolEncoding.CANONICAL_SMILES:
+        return Chem.MolToSmiles(mol, doRandom=True, canonical=True)
     else:
         return smi  # Fallback to not randomizing
 
