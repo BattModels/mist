@@ -14,7 +14,7 @@ from ..utils.metrics import (
     masked_metric_update,
 )
 from ..utils.tokenizer import load_tokenizer
-from ..utils.ckpt import SaveConfigWithCkpts 
+from ..utils.ckpt import SaveConfigWithCkpts
 
 from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
 from .normalize import AbstractNormalizer
@@ -26,10 +26,7 @@ def load_encoder(encoder: str | Path | torch.nn.Module, load_weights: bool = Tru
     hparams_path = Path(encoder).parent.parent.joinpath("model_hparams.json")
     if isinstance(encoder, torch.nn.Module):
         return encoder
-    elif (
-        Path(encoder).exists()
-        and config_path.is_file()
-    ):
+    elif Path(encoder).exists() and config_path.is_file():
         if load_weights is False:
             return SaveConfigWithCkpts.instantiate(hparams_path).get_encoder()
         else:
@@ -64,7 +61,6 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         target_columns: Optional[List[str]] = None,
         track_oov: bool = True,
         from_pretrained: bool = True,
-
     ) -> None:
         super().__init__()
 
@@ -112,7 +108,9 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
 
     def configure_model(self):
         if not hasattr(self, "encoder"):
-            self.encoder = load_encoder(self.encoder_ckpt, load_weights=self.from_pretrained)
+            self.encoder = load_encoder(
+                self.encoder_ckpt, load_weights=self.from_pretrained
+            )
             self.task_network = PredictionTaskHead(
                 embed_dim=self.encoder.config.hidden_size,
                 output_size=self.output_size,
