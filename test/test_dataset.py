@@ -25,8 +25,11 @@ def check_datamodule(dm: LightningDataModule, stage="fit", limit_batches=100):
 
 def check_dataloader(dl, limit_batches):
     for idx, batch in enumerate(dl):
+        print(batch.keys())
         assert "input_ids" in batch
-        assert "labels" in batch
+        assert "labels" in batch or "target" in batch
+        assert isinstance(batch["target"], list)
+        assert isinstance(batch["target_mask"], list)
         if idx >= limit_batches:
             break
 
@@ -72,15 +75,20 @@ def test_encoding(encoding):
     )
     encode_molecules(ds, "text", encoding=MolEncoding(encoding))
 
-
 def has_tmQm():
-    return Path(__file__).parent.parent.joinpath("opt", "tmQM", "data").exists()
+    files = Path(__file__).parent.parent.joinpath("opt", "tmQM", "data")
+    if files.exists():
+         return files 
+    return None
 
 
 @pytest.mark.parametrize("encoding", ["smiles", "selfies", "smiles-canonical"])
-@pytest.mark.skipif(has_tmQm(), reason="Skipping tmQM tests")
-def test_tmQM_dataset(fake_dataset, encoding):
-    dm = tmQMDataModule(fake_dataset, tokenizer="smirk", encoding=encoding)
+@pytest.mark.skipif(has_tmQm() is None, reason="Skipping tmQM tests")
+def test_tmQM_dataset(encoding):
+    dm = tmQMDataModule(has_tmQm(), 
+    target_columns= ['Electronic_E', 'Dispersion_E'], 
+    tokenizer="smirk", 
+    encoding=encoding)
     check_datamodule(dm)
 
 
