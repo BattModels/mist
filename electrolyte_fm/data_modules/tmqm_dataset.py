@@ -26,7 +26,7 @@ class tmQMDataModule(PropertyPredictionDataModule):
         )
         assert isinstance(ds, IterableDatasetDict)
         return ds
-    
+
     def collate_fn(self, batch):
         for i in range(len(batch)):
             batch[i]["target"] = batch[i]["target"].tolist()
@@ -38,5 +38,4 @@ class tmQMDataModule(PropertyPredictionDataModule):
                 [torch.tensor(x["target_mask"]) for x in batch]
             )
             assert output["target"].shape == output["target_mask"].shape
-
-        return output 
+        return output
