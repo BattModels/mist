@@ -25,6 +25,7 @@ def load_encoder(encoder: str | Path | torch.nn.Module):
     elif (
         Path(encoder).exists()
         and Path(encoder).parent.parent.joinpath("config.json").is_file()
+        and Path(encoder).parent.parent.joinpath("model_hparams.json").is_file()
     ):
         return DeepSpeedMixin.load(encoder).get_encoder()
     else:

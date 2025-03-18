@@ -1,13 +1,8 @@
 {
   nodes: 5,
   gpus_per_node: 8,
-  container: '/lustre/fs0/awadell/sqsh-files/0535844560745234+mist+latest.sqsh',
+  container: '/lustre/fs0/shared/sqsh-files/mist+pytorch+25.01+v2.sif',
   train: {
-    data: {
-      init_args: {
-        path: '/lustre/fs0/awadell/realspace',
-      },
-    },
     trainer: {
       devices: $.gpus_per_node,
       num_nodes: $.nodes,

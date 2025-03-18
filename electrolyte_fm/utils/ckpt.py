@@ -1,9 +1,11 @@
+import logging
 import importlib
 import json
 import os
 from typing import Optional
 from pathlib import Path
 
+import torch
 from jsonargparse import Namespace
 from lightning.pytorch import Callback, LightningModule, Trainer
 from lightning.pytorch.cli import LightningArgumentParser
@@ -137,19 +139,35 @@ class SaveConfigWithCkpts(Callback):
             "model_hparams.json"
         )
         assert (
-            checkpoint_dir.is_dir()
-        ), f"Missing deepspeed checkpoint director {checkpoint_dir}"
+            checkpoint_dir.exists()
+        ), f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
         assert config_path.is_file(), f"Missing model config file {config_path}"
 
         model = SaveConfigWithCkpts.instantiate(config_path)
 
-        # Load model weights from the checkpoint
-        from deepspeed.utils.zero_to_fp32 import (
-            get_fp32_state_dict_from_zero_checkpoint,
-        )
+        if checkpoint_dir.is_file():
+            state = torch.load(checkpoint_dir)
+            model.load_state_dict(state["state_dict"], strict=True, assign=True)
+            return model
 
-        state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
-        model.load_state_dict(state, strict=False, assign=True)
+        # Load model weights from the checkpoint
+        try:
+            from deepspeed.utils.zero_to_fp32 import (
+                get_fp32_state_dict_from_zero_checkpoint,
+            )
+
+            state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
+            model.load_state_dict(state, strict=False, assign=True)
+        except FileNotFoundError:
+            logging.error(
+                "failed to load checkpoint %s, trying to load rank 0 model states",
+                checkpoint_dir,
+            )
+            file = Path(checkpoint_dir, "checkpoint", "mp_rank_00_model_states.pt")
+            state = torch.load(file)
+            logging.info("loaded %s", file)
+            model.load_state_dict(state["module"], strict=True, assign=True)
+
         return model
 
 
