@@ -5,12 +5,11 @@ from typing import Optional
 
 import typer
 
-from electrolyte_fm.models import MISTFinetuned, MISTMultiTask
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
-import package
-from package import get_best_ckpt, create_save_directory
+import utils
+from utils import get_best_ckpt, create_save_directory
 
 cli = typer.Typer()
 
@@ -29,10 +28,12 @@ def pretrained(ckpt: Path, name: Optional[str] = None):
         safe_serialization=True,
         push_to_hub=False,
     )
-    package.save_tokenizer(save_dir, ckpt)
+    utils.save_tokenizer(save_dir, ckpt)
 
 
 def export_finetuned(ckpt: Path):
+    from electrolyte_fm.models import MISTFinetuned
+
     model = SaveConfigWithCkpts.load(ckpt)
     model_config = json.loads(Path(ckpt, "..", "..", "config.json").read_text())
     tokenizer = load_tokenizer(model_config["data"]["init_args"]["tokenizer"])
@@ -54,8 +55,8 @@ def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     save_dir = create_save_directory(name, ckpt)
     model = export_finetuned(ckpt)
 
-    package.export_code(save_dir, model, model.transform, model.task_network)
-    package.save_model(model, save_dir, safe)
+    utils.export_code(save_dir, model, model.transform, model.task_network)
+    utils.save_model(model, save_dir, safe)
     shutil.move(Path(save_dir, "prod_finetune.py"), Path(save_dir, "model.py"))
 
 
@@ -63,6 +64,8 @@ def export_multitask(
     encoder_ckpt: Path,
     task_ckpt: list[Path],
 ):
+    from electrolyte_fm.models import MISTMultiTask
+
     encoder = SaveConfigWithCkpts.load(encoder_ckpt).get_encoder()
     tokenizer = get_ckpt_tokenizer(encoder_ckpt)
 
@@ -105,8 +108,8 @@ def multitask(
                 task_ckpt.append(get_best_ckpt(dir))
 
     model = export_multitask(encoder_ckpt, task_ckpt)
-    package.save_model(model, save_dir, safe)
-    package.export_code(save_dir, model, *model.transforms, *model.task_networks)
+    utils.save_model(model, save_dir, safe)
+    utils.export_code(save_dir, model, *model.transforms, *model.task_networks)
     shutil.move(Path(save_dir, "prod_finetune.py"), Path(save_dir, "model.py"))
 
 
