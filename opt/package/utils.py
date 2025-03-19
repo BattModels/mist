@@ -115,6 +115,10 @@ def export_code(save_dir, *classes):
 
 
 def save_model(model, save_directory, safe=False):
+    # Save the tokenizer first
+    if hasattr(model, "tokenizer"):
+        save_tokenizer(save_directory, model.tokenizer)
+
     if safe:
         # For some reason, this avoids an issue when saving the task network
         model.save_pretrained(save_directory, safe_serialization=False)
@@ -125,9 +129,6 @@ def save_model(model, save_directory, safe=False):
 
     # Validate
     model.__class__.from_pretrained(save_directory)
-
-    if hasattr(model, "tokenizer"):
-        save_tokenizer(save_directory, model.tokenizer)
 
 
 def strip_imports(file: str, license_header: Optional[str] = None):
@@ -142,3 +143,31 @@ def strip_imports(file: str, license_header: Optional[str] = None):
         if license_header is not None:
             fid.write(license_header)
         fid.write(p.stdout)
+
+
+def metric_units(number):
+    unit = ""
+    for unit in ["", "K", "M", "B"]:
+        if abs(number) < 1000:
+            break
+        number /= 1000
+
+    return f"{number:.1f}{unit}"
+
+
+def name_model(model, template: str = "mist-{model_size}", **kwargs):
+    kwargs.update(
+        {
+            "model_size": metric_units(
+                sum(p.numel() for p in model.parameters() if p.requires_grad)
+            ),
+        }
+    )
+    return template.format(**kwargs)
+
+
+def ckpt_id(path: Path) -> str:
+    if path.joinpath("model.safetensors").exists():
+        return path.name
+    else:
+        return path.parent.parent.name

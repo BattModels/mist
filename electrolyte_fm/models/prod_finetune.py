@@ -1,6 +1,7 @@
 # Finetuned Models for Inference
 import json
 from pathlib import Path
+import logging
 
 import torch
 from smirk import SmirkTokenizerFast
@@ -23,9 +24,17 @@ def save_model(model, save_directory, safe_serialization=False):
 
 def load_model(model, save_directory):
     if (file := Path(save_directory, "model.safetensors")).is_file():
-        from safetensors.torch import load_model
+        from safetensors.torch import load_model as st_load_model
 
-        load_model(model, file)
+        unexpected, missing = st_load_model(model, file)
+        if unexpected or missing:
+            logging.warning(
+                "Unexpected or missing tensors when loading %s, unexpected: %s missing: %s",
+                file,
+                unexpected,
+                missing,
+            )
+
     elif (file := Path(save_directory, "model.pt")).is_file():
         model.load_state_dict(torch.load(file, weights_only=True))
     else:
@@ -44,10 +53,7 @@ def annotate_prediction(y: torch.Tensor, channels: list[dict[str, str]]) -> dict
     out = {}
     for idx, chn in enumerate(channels):
         channel_info = {f: v for f, v in chn.items() if f != "name"}
-        out[chn["name"]] = {
-            "value": y[idx],
-            **channel_info,
-        }
+        out[chn["name"]] = {"value": y[:, idx], **channel_info}
     return out
 
 
@@ -70,7 +76,7 @@ class MISTFinetuned(torch.nn.Module):
             "architectures": [
                 self.__class__.__name__,
             ],
-            "tokenizer_class": self.tokenizer.__class__,
+            "tokenizer_class": self.tokenizer.__class__.__name__,
             "encoder": self.encoder.config.to_diff_dict(),
             "task_network": {
                 "embed_dim": self.encoder.config.hidden_size,
@@ -83,6 +89,19 @@ class MISTFinetuned(torch.nn.Module):
 
         Path(save_directory, "config.json").write_text(json.dumps(config, indent=4))
         save_model(self, save_directory, safe_serialization)
+
+    def embed(self, smi: list[str]):
+        batch = self.tokenizer(smi)
+        collate_fn = DataCollatorWithPadding(self.tokenizer)
+        batch = collate_fn(batch)
+        input_ids = batch["input_ids"].to(self.encoder.device)
+        attention_mask = batch["attention_mask"].to(self.encoder.device)
+        with torch.inference_mode():
+            hs = self.encoder(
+                input_ids, attention_mask=attention_mask
+            ).last_hidden_state[:, 0, :]
+
+        return hs.to("cpu")
 
     def predict(self, smi: list[str]):
         batch = self.tokenizer(smi)
@@ -98,14 +117,10 @@ class MISTFinetuned(torch.nn.Module):
         if self.channels is None:
             return out
 
-        out_batch = []
-        for idx in range(len(smi)):
-            out_batch.append(annotate_prediction(out[idx, :], self.channels))
-
-        return out_batch
+        return annotate_prediction(out, self.channels)
 
     @classmethod
-    def from_pretrained(self, save_directory: str):
+    def from_pretrained(cls, save_directory: str):
         config = json.loads(Path(save_directory, "config.json").read_text())
         encoder_config = AutoConfig.for_model(
             config["encoder"]["model_type"]
@@ -119,7 +134,7 @@ class MISTFinetuned(torch.nn.Module):
         tokenizer = AutoTokenizer.from_pretrained(save_directory, use_fast=True)
         channels = list(maybe_get_annotated_channels(config["channels"]))
 
-        model = MISTFinetuned(encoder, task_network, transform, tokenizer, channels)
+        model = cls(encoder, task_network, transform, tokenizer, channels)
         load_model(model, save_directory)
         return model
 
@@ -155,19 +170,27 @@ class MISTMultiTask(torch.nn.Module):
 
         if self.channels is None:
             return out
+        return annotate_prediction(out, self.channels)
 
-        out_batch = []
-        for idx in range(len(smi)):
-            out_batch.append(annotate_prediction(out[idx, :].cpu(), self.channels))
+    def embed(self, smi: list[str]):
+        batch = self.tokenizer(smi)
+        collate_fn = DataCollatorWithPadding(self.tokenizer)
+        batch = collate_fn(batch)
+        input_ids = batch["input_ids"].to(self.encoder.device)
+        attention_mask = batch["attention_mask"].to(self.encoder.device)
+        with torch.inference_mode():
+            hs = self.encoder(
+                input_ids, attention_mask=attention_mask
+            ).last_hidden_state[:, 0, :]
 
-        return out_batch
+        return hs.to("cpu")
 
     def save_pretrained(self, save_directory, safe_serialization=False):
         config = {
             "architectures": [
                 self.__class__.__name__,
             ],
-            "tokenizer_class": self.tokenizer.__class__,
+            "tokenizer_class": self.tokenizer.__class__.__name__,
             "encoder": self.encoder.config.to_diff_dict(),
             "task_networks": [
                 {
@@ -190,6 +213,7 @@ class MISTMultiTask(torch.nn.Module):
             config["encoder"]["model_type"]
         ).from_dict(config["encoder"])
         encoder = AutoModel.from_config(encoder_config, add_pooling_layer=False)
+        tokenizer = AutoTokenizer.from_pretrained(save_directory, use_fast=True)
 
         task_networks = []
         transforms = []
@@ -200,6 +224,6 @@ class MISTMultiTask(torch.nn.Module):
             task_networks.append(PredictionTaskHead(**tc))
 
         channels = list(maybe_get_annotated_channels(config["channels"]))
-        model = MISTMultiTask(encoder, task_networks, transforms, channels)
+        model = MISTMultiTask(encoder, task_networks, transforms, tokenizer, channels)
         load_model(model, save_directory)
         return model

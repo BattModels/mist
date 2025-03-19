@@ -1,7 +1,14 @@
+#!/usr/bin/env python
+# Script to package MIST models for downstream usage
+#
+# Usage:
+#   python opt/package --help
+
 import json
 import shutil
 from pathlib import Path
 from typing import Optional
+import logging
 
 import typer
 
@@ -9,9 +16,11 @@ from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 import utils
-from utils import get_best_ckpt, create_save_directory
+from utils import get_best_ckpt, create_save_directory, ckpt_id
 
 cli = typer.Typer()
+
+logging.basicConfig(level=logging.INFO)
 
 
 @cli.command()
@@ -20,7 +29,11 @@ def pretrained(ckpt: Path, name: Optional[str] = None):
     if ckpt.joinpath("config.json").is_file():
         ckpt = get_best_ckpt(ckpt)
     model = SaveConfigWithCkpts.load(ckpt)
-    name = name or ckpt.parent.parent.name
+    name = utils.name_model(
+        model,
+        template=name or "mist-{model_size}-{ckpt}",
+        ckpt=ckpt_id(ckpt),
+    )
 
     save_dir = create_save_directory(name, ckpt)
     model.model.save_pretrained(
@@ -29,6 +42,7 @@ def pretrained(ckpt: Path, name: Optional[str] = None):
         push_to_hub=False,
     )
     utils.save_tokenizer(save_dir, ckpt)
+    logging.info("Saved model to %s", save_dir)
 
 
 def export_finetuned(ckpt: Path):
@@ -36,7 +50,8 @@ def export_finetuned(ckpt: Path):
 
     model = SaveConfigWithCkpts.load(ckpt)
     model_config = json.loads(Path(ckpt, "..", "..", "config.json").read_text())
-    tokenizer = load_tokenizer(model_config["data"]["init_args"]["tokenizer"])
+    tokenizer_name = model_config["data"]["init_args"]["tokenizer"]
+    tokenizer = load_tokenizer(tokenizer_name)
     return MISTFinetuned(
         model.encoder,
         model.task_network,
@@ -49,15 +64,20 @@ def export_finetuned(ckpt: Path):
 @cli.command()
 def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     """Export a finetuned model"""
-    name = name or ckpt.parent.parent.name
     if Path(ckpt).joinpath("config.json").is_file():
         ckpt = get_best_ckpt(ckpt)
-    save_dir = create_save_directory(name, ckpt)
     model = export_finetuned(ckpt)
 
+    name = utils.name_model(
+        model,
+        template=name or "mist-{model_size}-{ckpt}",
+        ckpt=ckpt_id(ckpt),
+    )
+    save_dir = create_save_directory(name, ckpt)
     utils.export_code(save_dir, model, model.transform, model.task_network)
     utils.save_model(model, save_dir, safe)
     shutil.move(Path(save_dir, "prod_finetune.py"), Path(save_dir, "model.py"))
+    logging.info("Saved model to %s", save_dir)
 
 
 def export_multitask(
@@ -65,21 +85,25 @@ def export_multitask(
     task_ckpt: list[Path],
 ):
     from electrolyte_fm.models import MISTMultiTask
+    from electrolyte_fm.models.lm_finetuning import load_encoder
 
-    encoder = SaveConfigWithCkpts.load(encoder_ckpt).get_encoder()
+    encoder = load_encoder(encoder_ckpt)
     tokenizer = get_ckpt_tokenizer(encoder_ckpt)
 
     task_networks = []
     transforms = []
     channels = []
     for ckpt in task_ckpt:
-        print(f"Loading {ckpt}")
+        logging.info(f"Loading {ckpt}")
+        config = json.loads(Path(ckpt, "..", "..", "config.json").read_text())
+        channels.extend(config["data"]["init_args"]["target_columns"])
+
+        frozen = config["model"]["init_args"]["freeze_encoder"]
+        assert frozen, f"Encoder was not frozen for {ckpt}"
+
         model = SaveConfigWithCkpts.load(ckpt)
         task_networks.append(model.task_network)
         transforms.append(model.transform)
-
-        config = json.loads(Path(ckpt, "..", "..", "config.json").read_text())
-        channels.extend(config["data"]["init_args"]["target_columns"])
 
     return MISTMultiTask(encoder, task_networks, transforms, tokenizer, channels)
 
@@ -92,10 +116,12 @@ def multitask(
     name: Optional[str] = None,
     safe: bool = True,
 ):
-    """Export a Multitask model using a single encoder"""
+    """Export a Multitask model using a single encoder
 
-    name = name or f"{encoder_ckpt.parent.parent.name}-multitask"
-    save_dir = create_save_directory(name, encoder_ckpt, "MISTMultiTask")
+    Multiple task networks can be specified by repeating `--task-ckpt`
+
+    > All task checkpoints must be frozen!
+    """
 
     # Look in parent folders for task checkpoints
     if tasks_in_folder:
@@ -108,9 +134,16 @@ def multitask(
                 task_ckpt.append(get_best_ckpt(dir))
 
     model = export_multitask(encoder_ckpt, task_ckpt)
+    name = utils.name_model(
+        model,
+        template=name or "mist-{model_size}-{encoder}-multitask",
+        encoder=ckpt_id(encoder_ckpt),
+    )
+    save_dir = create_save_directory(name, encoder_ckpt, "MISTMultiTask")
     utils.save_model(model, save_dir, safe)
     utils.export_code(save_dir, model, *model.transforms, *model.task_networks)
     shutil.move(Path(save_dir, "prod_finetune.py"), Path(save_dir, "model.py"))
+    logging.info("Saved model to %s", save_dir)
 
 
 if __name__ == "__main__":
