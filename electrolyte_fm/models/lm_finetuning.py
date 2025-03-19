@@ -26,7 +26,7 @@ def load_encoder(encoder: str | Path | torch.nn.Module, load_weights: bool = Tru
     hparams_path = Path(encoder).parent.parent.joinpath("model_hparams.json")
     if isinstance(encoder, torch.nn.Module):
         return encoder
-    elif Path(encoder).exists() and config_path.is_file():
+    elif Path(encoder).exists() and hparams_path.is_file() and config_path.is_file():
         if load_weights is False:
             return SaveConfigWithCkpts.instantiate(hparams_path).get_encoder()
         else:
