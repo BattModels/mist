@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import jinja2
+from smirk import SmirkTokenizerFast
 
 import electrolyte_fm
 from electrolyte_fm.utils.ckpt import get_ckpt_tokenizer
@@ -83,8 +84,8 @@ def write_requirements(save_directory: Path, extra_deps: list[str] = []):
 
 
 def extra_deps(ckpt: Path) -> list[str]:
-    tokenizer = get_ckpt_tokenizer(ckpt)
-    if "smirk" in tokenizer:
+    tokenizer = load_tokenizer(get_ckpt_tokenizer(ckpt))
+    if isinstance(tokenizer, SmirkTokenizerFast):
         return ["smirk"]
     return []
 
