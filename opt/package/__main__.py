@@ -51,7 +51,7 @@ def export_finetuned(ckpt: Path):
     model = SaveConfigWithCkpts.load(ckpt)
     model_config = json.loads(Path(ckpt, "..", "..", "config.json").read_text())
     tokenizer_name = model_config["data"]["init_args"]["tokenizer"]
-    tokenizer = load_tokenizer("/Users/alexwadell/Downloads/mist-ti624ev1")
+    tokenizer = load_tokenizer(tokenizer_name)
     return MISTFinetuned(
         model.encoder,
         model.task_network,
