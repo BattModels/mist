@@ -96,7 +96,7 @@ def test_masked_metric(name):
     preds = torch.rand(2, 3)
     targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
     input_ids = torch.randint(0, 3, (2, 3))
-    mask = torch.tensor([[False, False, True], [True, False, False]])
+    mask = torch.tensor([[True, True, True], [False, True, True]])
     masked_metric_update(metric, preds, targets, mask, input_ids)
     out_init = metric.compute()
     if name == "crosstab":
@@ -150,7 +150,7 @@ def test_masked_loss():
     lossfn = torch.nn.MSELoss(reduction="none")
     preds = torch.rand(2, 3)
     targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
-    mask = torch.tensor([[False, False, True], [True, False, False]])
+    mask = torch.tensor([[True, True, False], [False, True, True]])
 
     loss = masked_loss(lossfn, preds, targets, mask)
     assert ~(loss.isnan()) and loss.isfinite() and 0 < loss
@@ -172,7 +172,7 @@ def test_masked_loss_reduction():
     lossfn = torch.nn.MSELoss()
     preds = torch.rand(2, 3)
     targets = torch.tensor([[1, 0, 1], [0, 1, 0]])
-    mask = torch.tensor([[False, False, True], [True, False, False]])
+    mask = torch.tensor([[True, True, False], [False, True, True]])
     with pytest.raises(RuntimeError, match="Reduction must be 'none'"):
         masked_loss(lossfn, preds, targets, mask)
 
@@ -454,7 +454,7 @@ def test_bootstrap_oov():
         preds = torch.rand(32, 8)
         targets = torch.rand(32, 8)
         input_ids = torch.randint(0, 8, (32, 8))
-        mask = input_ids == 0
+        mask = input_ids != 0
         masked_metric_update(metrics, preds, targets, mask, input_ids)
     out = metrics.compute()
 

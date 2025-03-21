@@ -362,7 +362,7 @@ def masked_metric_update(
     int_cast: bool = False,
 ):
     """Update metrics, masking out targets as needed"""
-    targets = targets.masked_fill(mask.to(dtype=bool), IGNORE_INDEX)
+    targets = targets.masked_fill(~(mask.to(dtype=bool)), IGNORE_INDEX)
     if int_cast:
         targets = targets.int()
     if isinstance(metrics, OOVMetric):

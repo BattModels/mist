@@ -42,7 +42,7 @@ class AbstractNormalizer(torch.nn.Module):
             mask = torch.stack([torch.tensor(x) for x in ds["target_mask"]])
 
         # Use masked tensor to compute normalization parameters
-        target = MaskedTensor(target, ~mask)
+        target = MaskedTensor(target, mask)
 
         state = self._fit(target)
         return state
