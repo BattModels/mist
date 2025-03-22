@@ -1,4 +1,5 @@
 from torch import nn
+from torch.nn import functional as F
 
 
 class PredictionTaskHead(nn.Module):
@@ -34,3 +35,22 @@ class PredictionTaskHead(nn.Module):
         else:
             z = self.final(z)
         return z
+
+
+class TokenTaskHead(nn.Module):
+    def __init__(
+        self, embed_dim: int, output_size: int = 1, dropout: float = 0.2
+    ) -> None:
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.Dropout(dropout),
+            nn.GELU(),
+            nn.Linear(embed_dim, embed_dim),
+            nn.Dropout(dropout),
+            nn.GELU(),
+            nn.Linear(embed_dim, output_size),
+        )
+
+    def forward(self, emb):
+        return self.layers(emb)
