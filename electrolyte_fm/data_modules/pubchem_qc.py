@@ -9,7 +9,6 @@ from typing import Optional
 from enum import IntEnum, auto
 
 import torch
-from torch.masked import masked_tensor
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from transformers import DataCollatorWithPadding
@@ -31,11 +30,14 @@ class PubChemQC(LightningDataModule):
         num_workers: int = 0,
         prefetch_factor: Optional[int] = None,
         val_batch_size: Optional[int] = None,
+        randomize: bool = True,
         **kwargs,
     ):
+        super().__init__()
         self.path = Path(path)
         self.tokenizer = load_tokenizer(tokenizer)
         self.vocab_size = len(self.tokenizer)
+        self.randomize = randomize
 
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size or batch_size
@@ -74,7 +76,7 @@ class PubChemQC(LightningDataModule):
         ds = ds.map(
             collate_partial_charges,
             batched=False,
-            fn_kwargs={"tokenizer": self.tokenizer},
+            fn_kwargs={"tokenizer": self.tokenizer, "randomize": self.randomize},
         )
         ds = ds.select_columns(
             [
@@ -99,25 +101,18 @@ class PubChemQC(LightningDataModule):
                 for x in batch
             ]
         )
-        output["target"] = masked_tensor(
-            torch.stack([torch.tensor(x["target"]) for x in batch]),
-            torch.stack([torch.tensor(x["target_mask"]) for x in batch]),
-        )
-        token_target = pad_sequence(
-            [torch.tensor(x["token_target"]) for x in batch],
+        output["target"] = torch.stack([x["target"] for x in batch])
+        output["target_mask"] = torch.stack([x["target_mask"] for x in batch])
+        output["token_target"] = pad_sequence(
+            [x["token_target"] for x in batch],
             batch_first=True,
-            padding_value=torch.nan,
+            padding_value=0,
         )
-        token_target_mask = pad_sequence(
-            [torch.tensor(x["token_target_mask"]) for x in batch],
+        output["token_target_mask"] = pad_sequence(
+            [x["token_target_mask"] for x in batch],
             batch_first=True,
             padding_value=False,
         )
-        print(token_target)
-        print(token_target_mask)
-        assert token_target.shape[0:2] == output["input_ids"].shape
-        output["token_target"] = masked_tensor(token_target, token_target_mask)
-
         return output
 
     def train_dataloader(self):
@@ -153,26 +148,29 @@ class PubChemQC(LightningDataModule):
         )
 
 
-def collate_partial_charges(row: dict, tokenizer):
+def collate_partial_charges(row: dict, tokenizer, randomize: bool = True):
     mol = construct_mol(
         atomic_numbers=row["atomic-numbers"],
         positions=row["atomic-coordinates"],
         bonds=row["bond-connections"],
         bond_orders=row["bond-order"],
     )
-    mol = add_atomic_properties(
-        mol,
-        {
-            "mulliken": row["partial-charge-mulliken"],
-            "lowdin": row["partial-charge-lowdin"],
-        },
-    )
+    token_target = {
+        "mulliken": row["partial-charge-mulliken"],
+        "lowdin": row["partial-charge-lowdin"],
+    }
+    mol = add_atomic_properties(mol, token_target)
+
+    # Smear hydrogen targets onto central atoms
+    mol = smear_hydrogen_targets(mol, token_target.keys())
 
     # Annotate tokens with data
     # Log any errors before rethrowing
     out = None
     try:
-        out = annotated_tokens(mol, targets=["mulliken", "lowdin"], tokenizer=tokenizer)
+        out = annotated_tokens(
+            mol, targets=["mulliken", "lowdin"], tokenizer=tokenizer, doRandom=randomize
+        )
     except Exception:
         logging.error(
             "Error annotating `%s`: %s",
@@ -192,17 +190,15 @@ def collate_partial_charges(row: dict, tokenizer):
         "beta-lumo",
         "beta-gap",
     ]
-    out["target"] = [row[k] for k in scalar_targets]
-    out["target_mask"] = [True] * len(scalar_targets)
+    out["target"] = torch.tensor([row[k] for k in scalar_targets])
+    out["target_mask"] = torch.tensor([True] * len(scalar_targets))
 
     return out
 
 
 def _best_effort_sanitize(mol: Chem.Mol):
     sanitize_ops = (
-        Chem.rdmolops.SANITIZE_CLEANUPCHIRALITY
-        | Chem.rdmolops.SANITIZE_SETAROMATICITY
-        | Chem.rdmolops.SANITIZE_CLEANUP
+        Chem.rdmolops.SANITIZE_CLEANUPCHIRALITY | Chem.rdmolops.SANITIZE_SETAROMATICITY
     )
     out = Chem.rdmolops.SanitizeMol(mol, sanitize_ops, catchErrors=True)
     if out != 0:
@@ -225,7 +221,10 @@ def construct_mol(
 
     assert len(bonds) == 2 * len(bond_orders)
     for idx, order in enumerate(bond_orders):
-        mol.AddBond(bonds[2 * idx], bonds[2 * idx + 1], order=get_bond_order(order))
+        sdx = bonds[2 * idx]
+        edx = bonds[2 * idx + 1]
+        order = get_bond_order(order)
+        mol.AddBond(sdx, edx, order)
 
     # Add conformer and assign stereochemistry
     mol = mol.GetMol()
@@ -288,7 +287,7 @@ def smear_hydrogen_targets(mol_explicit: Chem.Mol, targets: list[str]) -> Chem.M
     # Remove hydrogen atoms
     mol = Chem.rdmolops.RemoveHs(
         mol_explicit,
-        implicitOnly=True,
+        implicitOnly=False,
         updateExplicitCount=True,
         sanitize=False,
     )
@@ -297,7 +296,6 @@ def smear_hydrogen_targets(mol_explicit: Chem.Mol, targets: list[str]) -> Chem.M
     retained_atoms = set()
     for atom in mol.GetAtoms():
         retained_atoms.add(atom.GetIntProp("atom_index"))
-        atom.SetNoImplicit(False)
 
     assert retained_atoms.issubset(atom_map.keys())
 
@@ -376,7 +374,7 @@ def smi_token_type(tokenizer, input_ids: list[int]):
 
 
 def annotated_tokens(
-    mol: Chem.Mol, targets: list[str], tokenizer, tokenizer_kwargs=None
+    mol: Chem.Mol, targets: list[str], tokenizer, tokenizer_kwargs=None, doRandom=True
 ):
     """
     Given a rdkit.Chem.Mol with atom-level properties, return a tokenized SMILES encoding
@@ -388,7 +386,7 @@ def annotated_tokens(
 
     """
 
-    smi = Chem.MolToSmiles(mol)
+    smi = Chem.MolToSmiles(mol, canonical=False, doRandom=doRandom)
     smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
     token_out = tokenizer(smi, **(tokenizer_kwargs or {}))
     input_ids = token_out["input_ids"]
@@ -400,17 +398,18 @@ def annotated_tokens(
         if token_type not in [SmiTokenType.Element, SmiTokenType.ExplicitHydrogen]:
             continue
 
-        atom = mol.GetAtomWithIdx(smi_order[smi_atom_idx])
         if token_type == SmiTokenType.Element:
             for tdx, target in enumerate(targets):
+                atom = mol.GetAtomWithIdx(smi_order[smi_atom_idx])
                 y[idx, 2 * tdx] = atom.GetDoubleProp(target)
                 mask[idx, 2 * tdx] = True
                 if atom.HasProp(f"hs_{target}"):
-                    y[2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
+                    y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
                     mask[idx, 2 * tdx + 1] = True
 
         elif token_type == SmiTokenType.ExplicitHydrogen:
             # Set Hs target for the atom on the hcount's H
+            atom = mol.GetAtomWithIdx(smi_order[smi_atom_idx - 1])
             for tdx, target in enumerate(targets):
                 y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
                 mask[idx, 2 * tdx + 1] = True
@@ -421,4 +420,4 @@ def annotated_tokens(
         if token_type == SmiTokenType.Element:
             smi_atom_idx += 1
 
-    return {**token_out, "token_target": y, "token_target_mask": mask}
+    return {**token_out, "token_target": y, "token_target_mask": mask, "smi": smi}

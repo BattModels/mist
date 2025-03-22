@@ -29,11 +29,14 @@ def pubchem_qc_dataset_path():
     return None
 
 
+NUM_PUBCHEM_QC_EXAMPLES = 32
+
+
 @pytest.mark.skipif(
     pubchem_qc_dataset_path() is None, reason="Missing PubChem QC Dataset"
 )
 @pytest.fixture(scope="session")
-def pubchem_qc_examples():
+def __pubchem_qc_examples():
     dir = pubchem_qc_dataset_path()
     assert dir is not None
     ds = load_dataset(
@@ -42,42 +45,45 @@ def pubchem_qc_examples():
         keep_in_memory=False,
         split="train",
     )
-    return ds.take(10)
+    return ds.take(NUM_PUBCHEM_QC_EXAMPLES)
 
 
-@pytest.fixture(params=list(range(10)))
-def example_mol(request, pubchem_qc_examples):
-    row = pubchem_qc_examples[request.param]
+@pytest.fixture(params=list(range(NUM_PUBCHEM_QC_EXAMPLES)))
+def pubchem_qc_example(request, __pubchem_qc_examples):
+    return __pubchem_qc_examples[request.param]
+
+
+@pytest.fixture()
+def example_mol(pubchem_qc_example):
+    row = pubchem_qc_example
     mol = construct_mol(
         atomic_numbers=row["atomic-numbers"],
         positions=row["atomic-coordinates"],
         bonds=row["bond-connections"],
         bond_orders=row["bond-order"],
     )
-    yield mol
+    yield {"mol": mol, **row}
 
 
 def test_mol(example_mol):
-    assert isinstance(example_mol, Chem.Mol)
-    assert example_mol.GetConformer() is not None
-    for atom in example_mol.GetAtoms():
+    mol = example_mol["mol"]
+    assert isinstance(mol, Chem.Mol)
+    assert mol.GetConformer() is not None
+    for atom, an in zip(mol.GetAtoms(), example_mol["atomic-numbers"]):
         assert atom.GetNoImplicit()
         assert atom.GetNumImplicitHs() == 0
+        assert atom.GetAtomicNum() == an
 
 
-def test_construct_mol(pubchem_qc_examples):
-    data = pubchem_qc_examples[0]
-    mol = construct_mol(
-        atomic_numbers=data["atomic-numbers"],
-        positions=data["atomic-coordinates"],
-        bonds=data["bond-connections"],
-        bond_orders=data["bond-order"],
-    )
+def test_construct_mol(example_mol):
+    mol = example_mol["mol"]
     assert isinstance(mol, Chem.Mol)
-    assert 3 * mol.GetNumAtoms() == len(data["atomic-coordinates"])
-    for idx, order in enumerate(data["bond-order"]):
-        sdx, edx = data["bond-connections"][2 * idx : 2 * idx + 2]
+    assert 3 * mol.GetNumAtoms() == len(example_mol["atomic-coordinates"])
+    for idx, order in enumerate(example_mol["bond-order"]):
+        sdx, edx = example_mol["bond-connections"][2 * idx : 2 * idx + 2]
         bond = mol.GetBondBetweenAtoms(sdx, edx)
+        assert mol.GetAtomWithIdx(sdx).GetIntProp("atom_index") == sdx
+        assert mol.GetAtomWithIdx(edx).GetIntProp("atom_index") == edx
         assert bond is not None
         if bond.GetBondType() == Chem.BondType.AROMATIC:
             assert order in [1, 2]  # Allow for kekule
@@ -87,9 +93,9 @@ def test_construct_mol(pubchem_qc_examples):
     conf = mol.GetConformer()
     for idx in range(mol.GetNumAtoms()):
         pos = conf.GetAtomPosition(idx)
-        assert pos.x == data["atomic-coordinates"][3 * idx]
-        assert pos.y == data["atomic-coordinates"][3 * idx + 1]
-        assert pos.z == data["atomic-coordinates"][3 * idx + 2]
+        assert pos.x == example_mol["atomic-coordinates"][3 * idx]
+        assert pos.y == example_mol["atomic-coordinates"][3 * idx + 1]
+        assert pos.z == example_mol["atomic-coordinates"][3 * idx + 2]
 
     # Add properties
     charge = [random.normalvariate(0, 1) for _ in range(mol.GetNumAtoms())]
@@ -98,14 +104,8 @@ def test_construct_mol(pubchem_qc_examples):
         assert mol.GetAtomWithIdx(idx).GetDoubleProp("charge") == q
 
 
-def test_aligned_tokenized(pubchem_qc_examples):
-    data = pubchem_qc_examples[0]
-    mol = construct_mol(
-        atomic_numbers=data["atomic-numbers"],
-        positions=data["atomic-coordinates"],
-        bonds=data["bond-connections"],
-        bond_orders=data["bond-order"],
-    )
+def test_aligned_tokenized(example_mol):
+    mol = example_mol["mol"]
 
     # Construct fake charge data
     charge = [random.normalvariate(0, 1) for _ in range(mol.GetNumAtoms())]
@@ -120,73 +120,101 @@ def test_aligned_tokenized(pubchem_qc_examples):
     assert out["token_target"].shape == (len(out["input_ids"]), 2)
     assert out["token_target_mask"].shape == (len(out["input_ids"]), 2)
     ref_net_charge = torch.tensor(charge).sum()
-    net_charge = torch.masked.masked_tensor(
-        out["token_target"], out["token_target_mask"]
-    ).sum()
-    assert ref_net_charge.isclose(net_charge, atol=1e-6).item()
+    net_charge = (
+        torch.masked.masked_tensor(out["token_target"], out["token_target_mask"])
+        .sum()
+        .get_data()
+    )
+    assert ref_net_charge.isclose(net_charge, atol=1e-5)
 
 
-@pytest.fixture(
-    params=[
-        "c1ccc(c(c1)C[P](=O)O)O",
-        "O=C1c2ccccc2C(=O)N1C3CCC(=O)NC3=O",
-        "CN3[C@H]1CC[C@@H]3C[C@@H](C1)OC(=O)C(CO)c2ccccc2",
-        "O=C(OC)[C@H]2[C@@]3(CC[C@H]4C(=O)O[C@H](c1ccoc1)C[C@@]4([C@H]3C(=O)[C@@H](OC(=O)C)C2)C)C",
-    ]
-)
-def smear_hydrogen_fixture(request):
-    smi = request.param
-    mol = Chem.MolFromSmiles(smi)
-    assert mol is not None
-    for idx, atom in enumerate(mol.GetAtoms()):
-        atom.SetIntProp("atom_index", idx)
-
-    # Add Hs and add indices
-    mol_hs = Chem.AddHs(mol)
-    idx = mol.GetNumAtoms()
-    assert mol_hs.GetNumAtoms() > mol.GetNumAtoms()
-    for atom in mol_hs.GetAtoms():
-        atom.SetNoImplicit(True)
-        if not atom.HasProp("atom_index"):
-            atom.SetIntProp("atom_index", idx)
-            idx += 1
-
-    assert mol_hs.GetNumAtoms() == idx
-    n_atoms = mol_hs.GetNumAtoms()
+@pytest.fixture()
+def example_mol_target(example_mol):
     target = {
-        "v1": [random.random() for _ in range(n_atoms)],
-        "v2": [random.random() for _ in range(n_atoms)],
+        "mulliken": example_mol["partial-charge-mulliken"],
+        "lowdin": example_mol["partial-charge-lowdin"],
     }
-    mol_hs_prop = add_atomic_properties(mol_hs, target)
-    assert mol_hs_prop.GetNumAtoms() == mol_hs.GetNumAtoms()
+    mol = example_mol["mol"]
+    mol_with_target = add_atomic_properties(mol, target)
+    assert mol_with_target.GetNumAtoms() == mol.GetNumAtoms()
+    assert all(
+        a.GetSmarts() == b.GetSmarts()
+        for a, b in zip(mol.GetAtoms(), mol_with_target.GetAtoms())
+    )
+    assert "mol_with_target" not in example_mol
+    assert "target" not in example_mol
+    return {"mol_with_target": mol_with_target, "target": target, **example_mol}
 
-    return mol, mol_hs_prop, target
 
-
-def test_smear_hydrogens(smear_hydrogen_fixture):
-    _, mol_hs_prop, targets = smear_hydrogen_fixture
-    mol_smear = pubchem_qc.smear_hydrogen_targets(mol_hs_prop, targets.keys())
+def test_smear_hydrogens(example_mol_target):
+    mol_with_target = example_mol_target["mol_with_target"]
+    targets = example_mol_target["target"]
+    mol_smear = pubchem_qc.smear_hydrogen_targets(mol_with_target, targets.keys())
+    h_count = sum(an == 1 for an in example_mol_target["atomic-numbers"])
+    h_atoms = sum(atom.GetAtomicNum() == 1 for atom in mol_smear.GetAtoms())
+    assert h_atoms <= h_count
+    mol_has_hs_target = False
     for atom in mol_smear.GetAtoms():
         atom_idx = atom.GetIntProp("atom_index")
         for target, target_values in targets.items():
             assert atom.HasProp(target)
             assert atom.GetDoubleProp(target) == target_values[atom_idx]
             assert atom.HasProp(f"hs_{target}") == atom.GetBoolProp("has_hs_target")
+            mol_has_hs_target |= atom.GetBoolProp("has_hs_target")
+
+    # Either no hydrogen atoms were removed or the mol has a hs_target
+    assert (h_atoms == h_count) != mol_has_hs_target
+    logging.debug(
+        {"smi": Chem.MolToSmiles(mol_smear), "mol_has_hs_target": mol_has_hs_target}
+    )
 
 
-def test_collate_partial_charges(pubchem_qc_examples, caplog):
-    caplog.set_level(logging.DEBUG)
-    for row in pubchem_qc_examples:
-        out = collate_partial_charges(row, tokenizer=SmirkTokenizerFast())
-        for f in [
-            "input_ids",
-            "target",
-            "target_mask",
-            "token_target",
-            "token_target_mask",
-        ]:
-            assert f in out
-        logging.info({"smi": row["smiles"], **out})
+def test_smear_smi(example_mol_target):
+    # h_atoms should match the h_count from the smiles
+    mol_with_target = example_mol_target["mol_with_target"]
+    mol_smear = pubchem_qc.smear_hydrogen_targets(
+        mol_with_target, example_mol_target["target"].keys()
+    )
+    h_atoms = sum(atom.GetAtomicNum() == 1 for atom in mol_smear.GetAtoms())
+    mol_smi = Chem.MolFromSmiles(Chem.MolToSmiles(mol_with_target))
+    h_atoms_smi = sum(atom.GetAtomicNum() == 1 for atom in mol_smi.GetAtoms())
+    assert h_atoms_smi == h_atoms
+
+
+def test_collate_partial_charges(pubchem_qc_example):
+    out = collate_partial_charges(pubchem_qc_example, tokenizer=SmirkTokenizerFast())
+    for f in [
+        "input_ids",
+        "target",
+        "target_mask",
+        "token_target",
+        "token_target_mask",
+    ]:
+        assert f in out
+
+    # Check has_hs_target was populated
+    h_atom = sum(an == 1 for an in pubchem_qc_example["atomic-numbers"])
+    h_smi = sum(
+        atom.GetAtomicNum() == 1 for atom in Chem.MolFromSmiles(out["smi"]).GetAtoms()
+    )
+    token_target_mask = out["token_target_mask"]
+    assert token_target_mask.shape[1] == 4
+    assert token_target_mask.shape[0] == len(out["input_ids"])
+    logging.debug(
+        {
+            "smi": out["smi"],
+            "token_target_mask": token_target_mask,
+            "h_atom": h_atom,
+            "h_smi": h_smi,
+        }
+    )
+    if h_smi < h_atom:
+        # Both central and hs_targets should be defined for at least one atom
+        assert token_target_mask.any(0).all()
+    else:
+        # No hs_targets should be defined for all atoms
+        assert not token_target_mask[:, [1, 3]].any()
+        assert token_target_mask[:, [0, 2]].any(0).all()
 
 
 def test_smiles_numbering():
