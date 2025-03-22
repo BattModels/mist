@@ -153,13 +153,13 @@ class TokenLevelPredictor(pl.LightningModule):
 
 
 if __name__ == "__main__":
+    from os import environ
     from datetime import timedelta
 
     from jsonargparse import lazy_instance
     from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
     from lightning.pytorch.loggers import WandbLogger
 
-    from electrolyte_fm.data_modules.pubchem_qc import PubChemQC
     from electrolyte_fm.utils.callbacks import ThroughputMonitor
     from electrolyte_fm.utils.cli import MistLightningCLI
 
@@ -201,7 +201,11 @@ if __name__ == "__main__":
                 step_ckpt,
             ],
             "logger": lazy_instance(
-                WandbLogger, project="partial-charge", save_code=True
+                WandbLogger,
+                project="partial-charge",
+                save_code=True,
+                id=environ.get("WANDB_ID", None),
+                resume=environ.get("WANBD_RESUME", "allow"),
             ),
             "max_epochs": 1000,
             "precision": "16-mixed",
