@@ -45,6 +45,12 @@ class TokenLevelPredictor(pl.LightningModule):
         self.freeze_encoder = freeze_encoder
         self.save_hyperparameters()
 
+    def setup(self, stage: str) -> None:
+        if isinstance(self.logger, WandbLogger):
+            for m in ["train/loss", "val/loss"]:
+                for s in ["_step", "_epoch"]:
+                    self.logger.experiment.define_metric(m + s, summary="min")
+
     def on_fit_start(self):
         """Standardized training data"""
         assert hasattr(self.trainer, "datamodule")
