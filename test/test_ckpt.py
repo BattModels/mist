@@ -77,9 +77,9 @@ def test_ckpt(cli):
         model_config = json.load(fid)
     assert model_config["class_path"] == __name__ + ".MockedModel"
     assert model_config["lightning_module"] == {
-        "class_path": __name__ + ".MockedModel",
+        "_class_path": __name__ + ".MockedModel",
         "_instantiator": "lightning.pytorch.cli.instantiate_module",
-        "init_args": {"vocab_size": None},
+        "vocab_size": None,
     }
     assert model_config["datamodule"] == {
         "_instantiator": "lightning.pytorch.cli.instantiate_module",
