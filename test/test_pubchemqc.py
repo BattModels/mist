@@ -1,28 +1,30 @@
+import itertools
 import logging
+import random
+from pathlib import Path
+from statistics import mean
+from typing import Mapping
+
 import pytest
 import torch
-import json
-import random
-from statistics import mean
-from pathlib import Path
-from rdkit import Chem
 from datasets import load_dataset
+from rdkit import Chem
+from smirk import SmirkTokenizerFast
+
 from electrolyte_fm.data_modules import pubchem_qc
 from electrolyte_fm.data_modules.pubchem_qc import (
     PubChemQC,
-    annotated_tokens,
-    construct_mol,
-    add_atomic_properties,
-    collate_partial_charges,
     SmiTokenType,
+    add_atomic_properties,
+    annotated_tokens,
+    collate_partial_charges,
+    construct_mol,
 )
-from smirk import SmirkTokenizerFast
-from .test_dataset import check_datamodule
 
 
 def pubchem_qc_dataset_path():
     dir = Path(__file__).parent.parent.joinpath(
-        "opt", "pubchem-qc", "pubchemqc_jcim2017-split", "train"
+        "opt", "pubchem-qc", "pubchemqc_jcim2017-split"
     )
     if dir.exists():
         return dir
@@ -39,7 +41,7 @@ def __pubchem_qc_examples():
         pytest.skip("Missing PubChem QC Dataset")
     ds = load_dataset(
         "arrow",
-        data_files=[str(dir.joinpath("*.arrow"))],
+        data_files=[str(dir.joinpath("train", "*.arrow"))],
         keep_in_memory=False,
         split="train",
     )
@@ -261,14 +263,6 @@ def test_smiles_numbering():
         assert atom.GetIntProp("atom_index") == idx
 
 
-@pytest.mark.skipif(
-    pubchem_qc_dataset_path() is None, reason="Missing PubChem QC Dataset"
-)
-def test_pubchem_qc_dm():
-    dm = PubChemQC(str(pubchem_qc_dataset_path()), num_workers=8)
-    check_datamodule(dm, limit_batches=10)
-
-
 @pytest.mark.parametrize(
     "smi,token_types",
     [
@@ -331,3 +325,42 @@ def test_smi_token_type(smi: str, token_types: list[SmiTokenType]):
         assert token_type == ref, (
             f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
         )
+
+
+@pytest.mark.skipif(
+    pubchem_qc_dataset_path() is None, reason="Missing PubChem QC Dataset"
+)
+@pytest.mark.parametrize("include_3d,randomize", [(True, True), (False, False)])
+def test_datamodule(include_3d, randomize):
+    dir = pubchem_qc_dataset_path()
+    assert dir is not None
+    dm = PubChemQC(str(dir), include_3d=include_3d, randomize=randomize, batch_size=16)
+    dm.prepare_data()
+    dm.setup("fit")
+
+    def check_dataloader(dl):
+        for batch in itertools.islice(dl, 16):
+            assert isinstance(batch, Mapping)
+            for col in [
+                "input_ids",
+                "attention_mask",
+                "target",
+                "target_mask",
+                "token_target",
+                "token_target_mask",
+            ]:
+                assert col in batch
+                assert isinstance(batch[col], torch.Tensor)
+
+            for target in ["target", "token_target"]:
+                assert batch[target].shape == batch[target + "_mask"].shape
+
+            if include_3d:
+                assert batch["token_target_mask"].shape[-1] == 7
+                assert batch["token_target_mask"].any(1)[:, -3:].all()
+            else:
+                assert batch["token_target_mask"].shape[-1] == 4
+
+    check_dataloader(dm.train_dataloader())
+    check_dataloader(dm.val_dataloader())
+    check_dataloader(dm.test_dataloader())

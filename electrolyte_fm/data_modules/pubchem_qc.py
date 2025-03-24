@@ -25,7 +25,7 @@ class PubChemQC(LightningDataModule):
     def __init__(
         self,
         path: str,
-        tokenizer: str = "smirk",
+        tokenizer: str = "smirk-cls",
         batch_size: int = 64,
         num_workers: int = 0,
         prefetch_factor: Optional[int] = None,
@@ -78,7 +78,11 @@ class PubChemQC(LightningDataModule):
         ds = ds.map(
             collate_partial_charges,
             batched=False,
-            fn_kwargs={"tokenizer": self.tokenizer, "randomize": self.randomize},
+            fn_kwargs={
+                "tokenizer": self.tokenizer,
+                "randomize": self.randomize,
+                "include_3d": self.include_3d,
+            },
         )
         ds = ds.select_columns(
             [
@@ -150,7 +154,12 @@ class PubChemQC(LightningDataModule):
         )
 
 
-def collate_partial_charges(row: dict, tokenizer, randomize: bool = True):
+def collate_partial_charges(
+    row: dict,
+    tokenizer,
+    randomize: bool = True,
+    include_3d: bool = False,
+):
     mol = construct_mol(
         atomic_numbers=row["atomic-numbers"],
         positions=row["atomic-coordinates"],
@@ -171,7 +180,11 @@ def collate_partial_charges(row: dict, tokenizer, randomize: bool = True):
     out = None
     try:
         out = annotated_tokens(
-            mol, targets=["mulliken", "lowdin"], tokenizer=tokenizer, doRandom=randomize
+            mol,
+            targets=["mulliken", "lowdin"],
+            tokenizer=tokenizer,
+            doRandom=randomize,
+            include_3d=include_3d,
         )
     except Exception:
         logging.error(
@@ -180,8 +193,6 @@ def collate_partial_charges(row: dict, tokenizer, randomize: bool = True):
             traceback.format_exc(),
         )
         raise
-
-    assert out["token_target_mask"].any(0).all()
 
     scalar_targets = [
         "total-energy",

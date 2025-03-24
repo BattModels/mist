@@ -31,7 +31,7 @@ def check_dataloader(dl, limit_batches):
     for idx, batch in enumerate(dl):
         assert "input_ids" in batch
         assert "labels" in batch or "target" in batch
-        for k, v in batch.item():
+        for k, v in batch.items():
             assert isinstance(k, str)
             assert isinstance(v, torch.Tensor)
         if idx >= limit_batches:
