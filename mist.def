@@ -1,0 +1,38 @@
+Bootstrap: docker
+From: nvcr.io/nvidia/pytorch:{{ NGC_VERSION }}
+
+%arguments
+    NGC_VERSION=25.01-py3
+    PROJECT_DIR=/mist
+
+%files
+    pyproject.toml {{ PROJECT_DIR }}/pyproject.toml
+    uv.lock {{ PROJECT_DIR }}/uv.lock
+    README.md {{ PROJECT_DIR }}/README.md
+
+%post
+    # Install cargo
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile=minimal
+    source $HOME/.cargo/env
+
+    # Install UV
+    export UV_UNMANAGED_INSTALL=/opt/uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # Setup SSH
+    export SSH_AUTH_SOCK={{ SSH_AUTH_SOCK }}
+    mkdir -p -m 0600 ~/.ssh
+    ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+    ssh git@github.com || echo "success"
+
+    # Install dependencies
+    $UV_UNMANAGED_INSTALL/uv sync \
+        --directory {{ PROJECT_DIR }} \
+        --frozen \
+        --no-install-project \
+        --link-mode=copy \
+        --compile-bytecode \
+        --no-cache
+
+%runscript
+    /opt/uv/uv run --directory {{ PROJECT_DIR }} $@

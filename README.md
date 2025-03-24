@@ -5,7 +5,7 @@ Benchmarking RoBERTa model pre-training on molecular datasets.
 
 ## Polaris
 
-1. Install [rust](https://www.rust-lang.org/tools/install)
+1. Install [rust](https://www.rust-lang.org/tools/install) and [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 2. Load conda
 ```shell
@@ -15,20 +15,15 @@ module --ignore_cache load conda/2024-04-29
 conda activate base
 ```
 
-3. Install poetry + pipx
+3. Install the environment
 ```shell
-python -m pip install pipx
-python -m pipx ensurepath
-python -m pipx install maturin
-python -m pipx install --python $(which python) poetry
+uv sync
 ```
-
-4. Install environment: `poetry install`
-
 ## Artemis
 
+
 Same as above except:
-1. Skip loading conda (just use poetry)
+1. Skip loading conda (just use uv)
 2. Ensure a module for CUDA@12.2 exists, may need to install with spack (make sure `buildable: True`)
 
 # Submitting Jobs
@@ -40,6 +35,14 @@ source ./activate # Activate Environment
 
 See `submit/submit.py --help` for more info
 
+## Building Apptainer Image
+
+```shell
+apptainer build --fakeroot \
+    --build-arg SSH_AUTH_SOCK=$SSH_AUTH_SOCK \
+    mist.sif mist.def
+```
+
 ## Hackathon
 
 Create a file `hack.yaml` and include it as an overlay to `submit.py` (i.e. `./submit/submit.py ... --data hack.yaml ...`).
@@ -48,9 +51,9 @@ Put the following in `hack.yaml`:
 queue: debug
 account: GPU_Hack
 nodes: 2
-walltime: "1:0:0"
+walltime: 1:0:0
 train:
-    data.path: /grand/gpu_hack/FoundEnergy/realspace_v3_dev
+  data.path: /grand/gpu_hack/FoundEnergy/realspace_v3_dev
 ```
 
 # Development
