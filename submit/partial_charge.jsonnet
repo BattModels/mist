@@ -27,7 +27,7 @@
           class_path: 'electrolyte_fm.models.prediction_task_head.TokenTaskHead',
           init_args: {
             embed_dim: 512,
-            output_size: 4,
+            output_size: (if $.train.model.init_args.distance_matrix_loss then 7 else 4),
           },
         },
         seq_transform: {

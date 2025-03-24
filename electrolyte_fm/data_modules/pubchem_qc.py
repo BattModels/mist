@@ -20,6 +20,20 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 from .utils import maybe_shard_dataset
 
+DEFAULT_SEQ_TARGETS = [
+    "total-energy",
+    "charge",
+    "dipole-moment",
+    "alpha-homo",
+    "alpha-lumo",
+    "alpha-gap",
+    "beta-homo",
+    "beta-lumo",
+    "beta-gap",
+]
+
+DEFAULT_TOKEN_TARGETS = ["partial-charge-mulliken", "partial-charge-lowdin"]
+
 
 class PubChemQC(LightningDataModule):
     def __init__(
@@ -32,6 +46,8 @@ class PubChemQC(LightningDataModule):
         val_batch_size: Optional[int] = None,
         randomize: bool = True,
         include_3d: bool = False,
+        seq_targets: list[str] = DEFAULT_SEQ_TARGETS,
+        token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
         **kwargs,
     ):
         super().__init__()
@@ -40,6 +56,8 @@ class PubChemQC(LightningDataModule):
         self.vocab_size = len(self.tokenizer)
         self.randomize = randomize
         self.include_3d = include_3d
+        self.seq_targets = seq_targets
+        self.token_targets = token_targets
 
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size or batch_size
@@ -82,6 +100,8 @@ class PubChemQC(LightningDataModule):
                 "tokenizer": self.tokenizer,
                 "randomize": self.randomize,
                 "include_3d": self.include_3d,
+                "seq_targets": self.seq_targets,
+                "token_targets": self.token_targets,
             },
         )
         ds = ds.select_columns(
@@ -157,6 +177,8 @@ class PubChemQC(LightningDataModule):
 def collate_partial_charges(
     row: dict,
     tokenizer,
+    seq_targets: list[str] = DEFAULT_SEQ_TARGETS,
+    token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
     randomize: bool = True,
     include_3d: bool = False,
 ):
@@ -166,10 +188,7 @@ def collate_partial_charges(
         bonds=row["bond-connections"],
         bond_orders=row["bond-order"],
     )
-    token_target = {
-        "mulliken": row["partial-charge-mulliken"],
-        "lowdin": row["partial-charge-lowdin"],
-    }
+    token_target = {k: row[k] for k in token_targets}
     mol = add_atomic_properties(mol, token_target)
 
     # Smear hydrogen targets onto central atoms
@@ -181,7 +200,7 @@ def collate_partial_charges(
     try:
         out = annotated_tokens(
             mol,
-            targets=["mulliken", "lowdin"],
+            targets=token_targets,
             tokenizer=tokenizer,
             doRandom=randomize,
             include_3d=include_3d,
@@ -194,19 +213,8 @@ def collate_partial_charges(
         )
         raise
 
-    scalar_targets = [
-        "total-energy",
-        "charge",
-        "dipole-moment",
-        "alpha-homo",
-        "alpha-lumo",
-        "alpha-gap",
-        "beta-homo",
-        "beta-lumo",
-        "beta-gap",
-    ]
-    out["target"] = torch.tensor([row[k] for k in scalar_targets])
-    out["target_mask"] = torch.tensor([True] * len(scalar_targets))
+    out["target"] = torch.tensor([row[k] for k in seq_targets])
+    out["target_mask"] = torch.ones(out["target"].shape, dtype=bool)
 
     return out
 
@@ -412,7 +420,6 @@ def annotated_tokens(
     input_ids = token_out["input_ids"]
     y = torch.zeros(len(input_ids), 2 * len(targets) + 3 * include_3d)
     mask = torch.zeros(y.shape, dtype=torch.bool)
-    idx_3d = range(2 * len(targets), 2 * len(targets) + 3)
     smi_atom_idx = 0
 
     for idx, token_type in enumerate(smi_token_type(tokenizer, input_ids)):
@@ -431,8 +438,8 @@ def annotated_tokens(
             conf = mol.GetConformer()
             if include_3d:
                 pos = conf.GetAtomPosition(smi_order[smi_atom_idx])
-                y[idx, idx_3d] = torch.tensor([pos.x, pos.y, pos.z])
-                mask[idx, idx_3d] = True
+                y[idx, -3:] = torch.tensor(pos)
+                mask[idx, -3:] = True
 
         elif token_type == SmiTokenType.ExplicitHydrogen:
             # Set Hs target for the atom on the hcount's H
@@ -448,3 +455,78 @@ def annotated_tokens(
             smi_atom_idx += 1
 
     return {**token_out, "token_target": y, "token_target_mask": mask, "smi": smi}
+
+
+def mol_from_prediction(
+    input_ids: torch.Tensor,
+    y_seq: torch.Tensor,
+    y_token: torch.Tensor,
+    seq_targets: list[str],
+    token_targets: list[str],
+    tokenizer,
+    include_3d: bool = False,
+) -> Chem.Mol:
+    # Construct molecule and smi -> atom mapping
+    smi = tokenizer.decode(input_ids, skip_special_tokens=True)
+    mol = Chem.MolFromSmiles(smi, sanitize=False)
+    Chem.MolToSmiles(mol, canonical=False)
+    smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
+
+    # Tag molecule properties
+    for k, v in zip(seq_targets, y_seq):
+        mol.SetDoubleProp(k, v.item())
+
+    # Annotate atoms from prediction
+    conf = Chem.Conformer(mol.GetNumAtoms()) if include_3d else None
+    smi_atom_idx = 0
+    for idx, token_type in enumerate(smi_token_type(tokenizer, input_ids.tolist())):
+        if token_type == SmiTokenType.Element:
+            atom_idx = smi_order[smi_atom_idx]
+            atom = mol.GetAtomWithIdx(atom_idx)
+            smi_atom_idx += 1
+
+            if include_3d:
+                conf.SetAtomPosition(atom_idx, y_token[idx, -3:].tolist())
+
+            for tdx, target in enumerate(token_targets):
+                atom.SetDoubleProp(target, y_token[idx, 2 * tdx].item())
+                atom.SetDoubleProp(f"hs_{target}", y_token[idx, 2 * tdx + 1].item())
+
+    if include_3d:
+        mol.AddConformer(conf)
+
+    return mol
+
+
+def serialize_molecule(mol: Chem.Mol):
+    _best_effort_sanitize(mol)
+
+    def serialize_atom(mol, atom: Chem.Atom):
+        out = {}
+        # out["atomic-number"] = int(atom.GetAtomicNum())
+        # out["hs-count"] = int(atom.GetTotalNumHs())
+        # out["isotope"] = int(atom.GetIsotope())
+        # if mol.GetNumConformers() > 0:
+        #     out["position"] = [
+        #         float(x) for x in mol.GetConformer().GetAtomPosition(atom.GetIdx())
+        #     ]
+
+        out["properties"] = dict(**atom.GetPropsAsDict())
+
+        return out
+
+    return {
+        # "smi": Chem.MolToSmiles(mol, canonical=True),
+        "atoms": [serialize_atom(mol, atom) for atom in mol.GetAtoms()],
+        # "bonds": [
+        #     {
+        #         "start_index": bond.GetBeginAtomIdx(),
+        #         "end_index": bond.GetEndAtomIdx(),
+        #         "bond-order": bond.GetBondTypeAsDouble(),
+        #         "bond-type": str(bond.GetBondType()),
+        #         "properties": dict(**bond.GetPropsAsDict()),
+        #     }
+        #     for bond in mol.GetBonds()
+        # ],
+        # "properties": dict(**mol.GetPropsAsDict()),
+    }

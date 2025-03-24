@@ -64,6 +64,7 @@ class TokenLevelPredictor(pl.LightningModule):
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
             for m in ["train/loss", "val/loss"]:
+                self.logger.experiment.define_metric(m, summary="min")
                 for s in ["_step", "_epoch"]:
                     self.logger.experiment.define_metric(m + s, summary="min")
 
@@ -204,7 +205,7 @@ if __name__ == "__main__":
     from electrolyte_fm.utils.cli import MistLightningCLI
 
     logging.basicConfig(level=logging.INFO)
-    monitor = "val/loss_epoch"
+    monitor = "val/loss"
     val_loss_ckpt = ModelCheckpoint(
         filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.3f}",
         monitor=monitor,

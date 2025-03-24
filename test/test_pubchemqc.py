@@ -1,9 +1,10 @@
+import json
 import itertools
 import logging
 import random
 from pathlib import Path
 from statistics import mean
-from typing import Mapping
+from typing import Mapping, Any
 
 import pytest
 import torch
@@ -12,6 +13,7 @@ from rdkit import Chem
 from smirk import SmirkTokenizerFast
 
 from electrolyte_fm.data_modules import pubchem_qc
+from electrolyte_fm.models.normalize import AbstractNormalizer
 from electrolyte_fm.data_modules.pubchem_qc import (
     PubChemQC,
     SmiTokenType,
@@ -19,6 +21,7 @@ from electrolyte_fm.data_modules.pubchem_qc import (
     annotated_tokens,
     collate_partial_charges,
     construct_mol,
+    mol_from_prediction,
 )
 
 
@@ -364,3 +367,99 @@ def test_datamodule(include_3d, randomize):
     check_dataloader(dm.train_dataloader())
     check_dataloader(dm.val_dataloader())
     check_dataloader(dm.test_dataloader())
+
+
+@pytest.mark.skipif(
+    pubchem_qc_dataset_path() is None, reason="Missing PubChem QC Dataset"
+)
+def test_normalize():
+    dir = pubchem_qc_dataset_path()
+    assert dir is not None
+    dm = PubChemQC(str(dir), include_3d=True, batch_size=16)
+    dm.prepare_data()
+    dm.setup("fit")
+
+    transform = AbstractNormalizer.get("standarize", num_outputs=7)
+    ds = dm.train_dataset.take(100)
+    ds_token = ds.select_columns(["token_target", "token_target_mask"])
+    ds_token = ds_token.rename_columns(
+        {"token_target": "target", "token_target_mask": "target_mask"}
+    )
+    state = transform.fit(ds)
+    logging.debug(state)
+    assert state["mean"].shape == (7,)
+    assert state["std"].shape == (7,)
+
+
+def test_mol_from_prediction(pubchem_qc_example: dict[str, Any]):
+    tokenizer = SmirkTokenizerFast(template="[CLS] $0 [SEP]")
+    include_3d = True
+    out = collate_partial_charges(
+        pubchem_qc_example,
+        tokenizer,
+        include_3d=include_3d,
+        randomize=False,
+    )
+
+    # Reference
+    mol_ref = construct_mol(
+        atomic_numbers=pubchem_qc_example["atomic-numbers"],
+        positions=pubchem_qc_example["atomic-coordinates"],
+        bonds=pubchem_qc_example["bond-connections"],
+        bond_orders=pubchem_qc_example["bond-order"],
+    )
+    token_target = {k: pubchem_qc_example[k] for k in pubchem_qc.DEFAULT_TOKEN_TARGETS}
+    mol_ref = add_atomic_properties(mol_ref, token_target)
+    mol_ref = pubchem_qc.smear_hydrogen_targets(mol_ref, list(token_target.keys()))
+
+    # Get Ref Smi Order, to remap atoms between mol and mol_ref
+    Chem.MolToSmiles(mol_ref, canonical=False)
+    ref_smi_order = [
+        int(c) for c in mol_ref.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")
+    ]
+
+    # Reconstruct mol from prediction
+    assert isinstance(out["target"], torch.Tensor) and isinstance(
+        out["token_target"], torch.Tensor
+    )
+    mol = mol_from_prediction(
+        torch.tensor(out["input_ids"]),
+        y_seq=out["target"],
+        y_token=out["token_target"],
+        token_targets=pubchem_qc.DEFAULT_TOKEN_TARGETS,
+        seq_targets=pubchem_qc.DEFAULT_SEQ_TARGETS,
+        tokenizer=tokenizer,
+        include_3d=include_3d,
+    )
+    assert isinstance(mol, Chem.Mol)
+    conf = None
+    conf_ref = None
+    if include_3d:
+        conf = mol.GetConformer()
+        conf_ref = mol_ref.GetConformer()
+
+    for idx, atom in enumerate(mol.GetAtoms()):
+        ref_atom = mol_ref.GetAtomWithIdx(ref_smi_order[idx])
+        target_props = {}
+        ref_target_props = {"atomic-number": ref_atom.GetAtomicNum()}
+        position = None
+        position_ref = None
+        for k in pubchem_qc.DEFAULT_TOKEN_TARGETS:
+            assert atom.GetAtomicNum() == ref_atom.GetAtomicNum()
+            for target in [k, f"hs_{k}"]:
+                assert atom.HasProp(target)  # Properties are defined everywhere
+                if atom.HasProp(target):
+                    target_props[target] = atom.GetDoubleProp(target)
+                if ref_atom.HasProp(target):
+                    ref_target_props[target] = ref_atom.GetDoubleProp(target)
+
+        if include_3d:
+            assert conf is not None and conf_ref is not None
+            position = torch.tensor(conf.GetAtomPosition(atom.GetIdx()))
+            position_ref = torch.tensor(conf_ref.GetAtomPosition(ref_atom.GetIdx()))
+            assert position.isclose(position_ref, atol=1e-4, rtol=1e-4).all()
+
+    s = pubchem_qc.serialize_molecule(mol)
+    logging.debug(s)
+    assert isinstance(s, dict)
+    assert isinstance(json.dumps(s), str)
