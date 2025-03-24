@@ -31,6 +31,7 @@ class PubChemQC(LightningDataModule):
         prefetch_factor: Optional[int] = None,
         val_batch_size: Optional[int] = None,
         randomize: bool = True,
+        include_3d: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -38,12 +39,13 @@ class PubChemQC(LightningDataModule):
         self.tokenizer = load_tokenizer(tokenizer)
         self.vocab_size = len(self.tokenizer)
         self.randomize = randomize
+        self.include_3d = include_3d
 
         self.batch_size = batch_size
         self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
-        self.save_hyperparameters(logger=False)
+        self.save_hyperparameters()
 
     @property
     def dataset(self):
@@ -178,6 +180,8 @@ def collate_partial_charges(row: dict, tokenizer, randomize: bool = True):
             traceback.format_exc(),
         )
         raise
+
+    assert out["token_target_mask"].any(0).all()
 
     scalar_targets = [
         "total-energy",
@@ -374,7 +378,12 @@ def smi_token_type(tokenizer, input_ids: list[int]):
 
 
 def annotated_tokens(
-    mol: Chem.Mol, targets: list[str], tokenizer, tokenizer_kwargs=None, doRandom=True
+    mol: Chem.Mol,
+    targets: list[str],
+    tokenizer,
+    tokenizer_kwargs: dict | None = None,
+    doRandom: bool = True,
+    include_3d: bool = False,
 ):
     """
     Given a rdkit.Chem.Mol with atom-level properties, return a tokenized SMILES encoding
@@ -390,22 +399,29 @@ def annotated_tokens(
     smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
     token_out = tokenizer(smi, **(tokenizer_kwargs or {}))
     input_ids = token_out["input_ids"]
-    y = torch.zeros(len(input_ids), 2 * len(targets))
-    mask = torch.zeros(len(input_ids), 2 * len(targets), dtype=torch.bool)
-
+    y = torch.zeros(len(input_ids), 2 * len(targets) + 3 * include_3d)
+    mask = torch.zeros(y.shape, dtype=torch.bool)
+    idx_3d = range(2 * len(targets), 2 * len(targets) + 3)
     smi_atom_idx = 0
+
     for idx, token_type in enumerate(smi_token_type(tokenizer, input_ids)):
         if token_type not in [SmiTokenType.Element, SmiTokenType.ExplicitHydrogen]:
             continue
 
         if token_type == SmiTokenType.Element:
+            atom = mol.GetAtomWithIdx(smi_order[smi_atom_idx])
             for tdx, target in enumerate(targets):
-                atom = mol.GetAtomWithIdx(smi_order[smi_atom_idx])
                 y[idx, 2 * tdx] = atom.GetDoubleProp(target)
                 mask[idx, 2 * tdx] = True
                 if atom.HasProp(f"hs_{target}"):
                     y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
                     mask[idx, 2 * tdx + 1] = True
+
+            conf = mol.GetConformer()
+            if include_3d:
+                pos = conf.GetAtomPosition(smi_order[smi_atom_idx])
+                y[idx, idx_3d] = torch.tensor([pos.x, pos.y, pos.z])
+                mask[idx, idx_3d] = True
 
         elif token_type == SmiTokenType.ExplicitHydrogen:
             # Set Hs target for the atom on the hcount's H

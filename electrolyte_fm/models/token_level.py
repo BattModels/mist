@@ -4,10 +4,11 @@ from typing import Any, Callable
 
 import lightning.pytorch as pl
 import torch
-from torch.nn import functional as F
 from jsonargparse import lazy_instance
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
+from lightning.pytorch.loggers import WandbLogger
 from torch import nn
+from torch.nn import functional as F
 
 from electrolyte_fm.models.normalize import AbstractNormalizer, IdentityTransform
 
@@ -21,6 +22,19 @@ def masked_mse_loss(
     return loss.sum() / mask.sum()
 
 
+def distance_matrix_loss(y_hat: torch.Tensor, y: torch.Tensor, mask: torch.Tensor):
+    loss = []
+    for bdx in range(y_hat.shape[0]):
+        pos_mask = mask[bdx]
+        pos_ref = y[bdx, pos_mask, :]
+        pos_hat = y_hat[bdx, pos_mask, :]
+        dist_hat = torch.cdist(pos_hat, pos_hat)
+        dist_expt = torch.cdist(pos_ref, pos_ref)
+        loss.append(F.mse_loss(dist_hat, dist_expt))
+
+    return torch.tensor(loss).mean()
+
+
 class TokenLevelPredictor(pl.LightningModule):
     def __init__(
         self,
@@ -29,6 +43,7 @@ class TokenLevelPredictor(pl.LightningModule):
         token_network: nn.Module,
         seq_transform: AbstractNormalizer | None = None,
         token_transform: AbstractNormalizer | None = None,
+        distance_matrix_loss: bool = False,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         freeze_encoder: bool | str = False,
         lr_schedule: LRSchedulerCallable | None = None,
@@ -43,6 +58,7 @@ class TokenLevelPredictor(pl.LightningModule):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
+        self.distance_matrix_loss = distance_matrix_loss
         self.save_hyperparameters()
 
     def setup(self, stage: str) -> None:
@@ -88,29 +104,45 @@ class TokenLevelPredictor(pl.LightningModule):
             batch["input_ids"], attention_mask=batch["attention_mask"]
         ).last_hidden_state
         y_mol_raw = self.seq_network(hs)
-        y_token = self.token_network(hs)
+        y_hat_token = self.token_network(hs)
 
-        loss_mol = masked_mse_loss(
+        y_token_ref = self.token_transform.inverse(batch["token_target"])
+        y_token_mask = batch["token_target_mask"]
+
+        loss_seq = masked_mse_loss(
             y_mol_raw,
             self.seq_transform.inverse(batch["target"]),
             batch["target_mask"],
         )
-        loss_token = masked_mse_loss(
-            y_token,
-            self.token_transform.inverse(batch["token_target"]),
-            batch["token_target_mask"],
-        )
-        loss = loss_mol + loss_token
 
-        y_mol = self.seq_transform.forward(y_mol_raw)
-        y_token = self.token_transform.forward(y_token)
-        return {
+        # Treat the final 3 channels as atomic coordinates
+        if self.distance_matrix_loss:
+            y_pos = y_hat_token[:, :, -3:]
+            y_pos_ref = y_token_ref[:, :, -3:]
+            y_pos_mask = y_token_mask[:, :, -3:].all(-1)
+            loss_dist = distance_matrix_loss(y_pos, y_pos_ref, y_pos_mask)
+
+            y_token = y_hat_token[:, :, :-3]
+            y_token_mask = y_token_mask[:, :, :-3]
+            y_token_ref = y_token_ref[:, :, :-3]
+
+        else:
+            y_token = y_hat_token
+            loss_dist = None
+
+        loss_token = masked_mse_loss(y_token, y_token_ref, y_token_mask)
+        loss = loss_seq + loss_token + (loss_dist if loss_dist is not None else 0)
+
+        out = {
             "loss": loss,
-            "sequence": y_mol,
-            "token": y_token,
+            "sequence": self.seq_transform.forward(y_mol_raw),
+            "token": self.token_transform.forward(y_hat_token),
             "token_loss": loss_token,
-            "seq_loss": loss_mol,
+            "seq_loss": loss_seq,
+            "dist_loss": loss_dist,
         }
+
+        return out
 
     def training_step(self, batch):
         out = self.forward_with_loss(batch)
@@ -119,6 +151,7 @@ class TokenLevelPredictor(pl.LightningModule):
                 "train/loss": out["loss"],
                 "train/loss_token": out["token_loss"],
                 "train/seq_loss": out["seq_loss"],
+                "train/dist_loss": out["dist_loss"],
             },
             on_step=True,
             on_epoch=True,
@@ -132,8 +165,9 @@ class TokenLevelPredictor(pl.LightningModule):
                 "val/loss": out["loss"],
                 "val/loss_token": out["token_loss"],
                 "val/seq_loss": out["seq_loss"],
+                "val/dist_loss": out["dist_loss"],
             },
-            on_step=True,
+            on_step=False,
             on_epoch=True,
         )
         return out
@@ -159,8 +193,8 @@ class TokenLevelPredictor(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    from os import environ
     from datetime import timedelta
+    from os import environ
 
     from jsonargparse import lazy_instance
     from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint

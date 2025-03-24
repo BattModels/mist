@@ -2,13 +2,14 @@
   container: '/lustre/fs0/shared/sqsh-files/mist+pytorch+25.01+v2.sif',
   program: '-m electrolyte_fm.models.token_level',
   nodes: 1,
-  gpus_per_node: 2,
+  gpus_per_node: 1,
   train: {
     tags: ['debug'],
     model: {
       class_path: 'electrolyte_fm.models.token_level.TokenLevelPredictor',
       init_args: {
         freeze_encoder: false,
+        distance_matrix_loss: true,
         encoder: {
           class_path: 'electrolyte_fm.models.lm_finetuning.load_encoder',
           init_args: {
@@ -66,10 +67,11 @@
       init_args: {
         path: '/lustre/fs0/shared/pubchemqc_jcim2017-split',
         tokenizer: 'smirk-cls',
-        batch_size: 128,
+        batch_size: 256,
         val_batch_size: 2 * self.batch_size,
         num_workers: 12,
         prefetch_factor: 4,
+        include_3d: $.train.model.init_args.distance_matrix_loss,
       },
     },
     trainer: {
@@ -81,8 +83,6 @@
       enable_progress_bar: false,
       gradient_clip_val: 1,
       gradient_clip_algorithm: 'norm',
-      val_check_interval: 128 * self.accumulate_grad_batches,
-      limit_val_batches: 16,
     },
   },
 }
