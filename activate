@@ -5,7 +5,7 @@
 GIT_ROOT=$(git rev-parse --show-toplevel)
 
 # Activate virtual environment
-source .venv/bin/activate
+source ${GIT_ROOT}/.venv/bin/activate
 
 # Add NVIDIA libraries
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GIT_ROOT}/.venv/lib64:${GIT_ROOT}.venv/lib"
