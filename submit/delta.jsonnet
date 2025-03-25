@@ -2,7 +2,7 @@
   nodes: 1,
   gpus_per_node: 1,
   queue: 'gpuA100x4',
-  container: '/projects/bcuf/mist/mist+pytorch+25.01+v3.sif',
+  container: '/projects/bcuf/mist/mist+pytorch+25.01+v4.sif',
   train: {
     trainer: {
       devices: $.gpus_per_node,
