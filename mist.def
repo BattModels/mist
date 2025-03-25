@@ -39,4 +39,3 @@ From: nvcr.io/nvidia/pytorch:{{ NGC_VERSION }}
 
 %environment
     export TRITON_LIBCUDA_PATH=/usr/local/cuda/compat/lib.real/libcuda.so
-
