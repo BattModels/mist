@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Union
 
 import torch
 from datasets import Dataset, load_dataset
@@ -174,6 +174,7 @@ class HiddenStateDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             batch_size=self.batch_size,
             pin_memory=True,
+            persistent_workers=True,
         )
 
     def val_dataloader(self):
@@ -184,6 +185,7 @@ class HiddenStateDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             batch_size=self.val_batch_size,
             pin_memory=True,
+            persistent_workers=True,
         )
 
     def test_dataloader(self):
@@ -204,13 +206,10 @@ def collate_components_and_environment(
     encoder: PreTrainedModel = None,
     collate: DataCollatorWithPadding = None,
 ):
-    target = args[-1]
-    target_mask = [True if t is None else False for t in target]
-
+    output = {}
     if include_temperature:
-        temperature = torch.tensor(args[-2])
-
-    output = {"target": target, "temperature": temperature, "target_mask": target_mask}
+        temperature = torch.tensor(args[-1])
+        output = {"temperature": temperature}
 
     for i in range(n_components):
         idx = 2 * i
@@ -225,11 +224,29 @@ def collate_components_and_environment(
     return output
 
 
+def collate_target(x, target_columns):
+    """Stack multiple target columns into a single vector,
+    recording unknown elements to be masked out during training
+    """
+    target = []
+    mask = []
+    for k in target_columns:
+        v = x[k]
+        if v is None:
+            target.append(torch.tensor(0))  # Placeholder, should be masked out
+            mask.append(torch.tensor(True))
+        else:
+            target.append(torch.tensor(v))
+            mask.append(torch.tensor(False))
+
+    return {"target": torch.stack(target), "target_mask": torch.stack(mask)}
+
+
 class ComponentDataModule(LightningDataModule):
     def __init__(
         self,
         path: str,
-        target_col: str,
+        target_col: Union[str, List],
         n_components: int = 2,
         tokenizer: Optional[str] = None,
         batch_size: int = 64,
@@ -239,6 +256,7 @@ class ComponentDataModule(LightningDataModule):
         encoder_batch_size: Optional[int] = None,
         include_temperature: bool = True,
         encoding: Optional[str | MolEncoding] = "smiles",
+        smi_column: str = "smiles",
         encoder_device: str = "cuda",
     ):
         super().__init__()
@@ -248,6 +266,10 @@ class ComponentDataModule(LightningDataModule):
         self.vocab_size = len(self.tokenizer)
         self.path: Path = Path(path)
         self.encoding = MolEncoding(encoding)
+        if isinstance(target_col, str):
+            target_col = [
+                target_col,
+            ]
         self.target_col = target_col
         self.encoder_batch_size = encoder_batch_size
         self.encoder_device = torch.device(encoder_device)
@@ -288,9 +310,19 @@ class ComponentDataModule(LightningDataModule):
             input_columns.extend([f"smi{i+1}", f"x{i+1}"])
         if self.temperature:
             input_columns.append("temperature")
-        input_columns.append(self.target_col)
 
         ds = self.dataset
+        ds = ds.map(
+            collate_target,
+            batched=False,
+            fn_kwargs={"target_columns": self.target_col},
+            remove_columns=self.target_col,
+        )
+
+        # Save training dataset for target transformations
+        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+        # ds = ds.select_columns(input_columns + self.target_col)
+
         ds = ds.map(
             collate_components_and_environment,
             batched=True,
@@ -330,9 +362,11 @@ class ComponentDataModule(LightningDataModule):
         output["target_mask"] = torch.stack(
             [torch.tensor(x["target_mask"], dtype=bool) for x in batch]
         )
-        output["temperature"] = torch.stack(
-            [torch.tensor(x["temperature"], dtype=float) for x in batch]
-        )
+
+        if self.temperature:
+            output["temperature"] = torch.stack(
+                [torch.tensor(x["temperature"], dtype=float) for x in batch]
+            )
         return output
 
     def train_dataloader(self):
@@ -343,6 +377,7 @@ class ComponentDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             batch_size=self.batch_size,
             pin_memory=True,
+            persistent_workers=True,
         )
 
     def val_dataloader(self):
@@ -353,6 +388,7 @@ class ComponentDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             batch_size=self.val_batch_size,
             pin_memory=True,
+            persistent_workers=True,
         )
 
     def test_dataloader(self):
