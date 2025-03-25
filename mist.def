@@ -35,4 +35,8 @@ From: nvcr.io/nvidia/pytorch:{{ NGC_VERSION }}
         --no-cache
 
 %runscript
-    /opt/uv/uv run --directory {{ PROJECT_DIR }} $@
+    /opt/uv/uv run --project {{ PROJECT_DIR }} $@
+
+%environment
+    export TRITON_LIBCUDA_PATH=/usr/local/cuda/compat/lib.real/libcuda.so
+
