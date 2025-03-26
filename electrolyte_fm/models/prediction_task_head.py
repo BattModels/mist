@@ -1,5 +1,4 @@
 from torch import nn
-from torch.nn import functional as F
 
 
 class PredictionTaskHead(nn.Module):

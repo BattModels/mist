@@ -7,6 +7,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Optional
 from enum import IntEnum, auto
+from asyncio import Semaphore
 
 import torch
 from torch.utils.data import DataLoader
@@ -94,7 +95,7 @@ class PubChemQC(LightningDataModule):
             ds = maybe_shard_dataset(self.trainer, ds)
 
         ds = ds.map(
-            collate_partial_charges,
+            async_collate_partial_charges,
             batched=False,
             fn_kwargs={
                 "tokenizer": self.tokenizer,
@@ -102,6 +103,9 @@ class PubChemQC(LightningDataModule):
                 "include_3d": self.include_3d,
                 "seq_targets": self.seq_targets,
                 "token_targets": self.token_targets,
+                "limit": Semaphore(
+                    max((self.prefetch_factor or 1) * self.num_workers, 4)
+                ),
             },
         )
         ds = ds.select_columns(
@@ -172,6 +176,16 @@ class PubChemQC(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             persistent_workers=self.num_workers > 0,
         )
+
+
+async def async_collate_partial_charges(
+    *args, limit: Semaphore | None = None, **kwargs
+):
+    if limit is not None:
+        async with limit:
+            return collate_partial_charges(*args, **kwargs)
+    else:
+        return collate_partial_charges(*args, **kwargs)
 
 
 def collate_partial_charges(
@@ -459,11 +473,11 @@ def annotated_tokens(
 
 def mol_from_prediction(
     input_ids: torch.Tensor,
-    y_seq: torch.Tensor,
-    y_token: torch.Tensor,
-    seq_targets: list[str],
-    token_targets: list[str],
     tokenizer,
+    y_seq: torch.Tensor | None = None,
+    y_token: torch.Tensor | None = None,
+    seq_targets: list[str] | None = None,
+    token_targets: list[str] | None = None,
     include_3d: bool = False,
 ) -> Chem.Mol:
     # Construct molecule and smi -> atom mapping
@@ -473,11 +487,23 @@ def mol_from_prediction(
     smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
 
     # Tag molecule properties
-    for k, v in zip(seq_targets, y_seq):
-        mol.SetDoubleProp(k, v.item())
+    if y_seq is not None:
+        assert seq_targets is not None
+        for k, v in zip(seq_targets, y_seq):
+            mol.SetDoubleProp(k, v.item())
+
+    if y_token is None:
+        return mol
+    assert token_targets is not None
+
+    if include_3d:
+        assert token_targets is not None
+        assert y_token.shape[-1] == 2 * len(token_targets) + 3
+    else:
+        return mol
 
     # Annotate atoms from prediction
-    conf = Chem.Conformer(mol.GetNumAtoms()) if include_3d else None
+    conf = Chem.Conformer(mol.GetNumAtoms())
     smi_atom_idx = 0
     for idx, token_type in enumerate(smi_token_type(tokenizer, input_ids.tolist())):
         if token_type == SmiTokenType.Element:
@@ -492,8 +518,7 @@ def mol_from_prediction(
                 atom.SetDoubleProp(target, y_token[idx, 2 * tdx].item())
                 atom.SetDoubleProp(f"hs_{target}", y_token[idx, 2 * tdx + 1].item())
 
-    if include_3d:
-        mol.AddConformer(conf)
+    mol.AddConformer(conf)
 
     return mol
 
@@ -503,30 +528,34 @@ def serialize_molecule(mol: Chem.Mol):
 
     def serialize_atom(mol, atom: Chem.Atom):
         out = {}
-        # out["atomic-number"] = int(atom.GetAtomicNum())
-        # out["hs-count"] = int(atom.GetTotalNumHs())
-        # out["isotope"] = int(atom.GetIsotope())
-        # if mol.GetNumConformers() > 0:
-        #     out["position"] = [
-        #         float(x) for x in mol.GetConformer().GetAtomPosition(atom.GetIdx())
-        #     ]
+        out["atomic-number"] = int(atom.GetAtomicNum())
+        out["hs-count"] = int(atom.GetTotalNumHs())
+        out["isotope"] = int(atom.GetIsotope())
+        if mol.GetNumConformers() > 0:
+            out["position"] = [
+                float(x) for x in mol.GetConformer().GetAtomPosition(atom.GetIdx())
+            ]
 
-        out["properties"] = dict(**atom.GetPropsAsDict())
+        out["properties"] = {
+            str(k): v
+            for k, v in atom.GetPropsAsDict().items()
+            if isinstance(v, (bool, int, float, str))
+        }
 
         return out
 
     return {
-        # "smi": Chem.MolToSmiles(mol, canonical=True),
+        "smi": Chem.MolToSmiles(mol, canonical=True),
         "atoms": [serialize_atom(mol, atom) for atom in mol.GetAtoms()],
-        # "bonds": [
-        #     {
-        #         "start_index": bond.GetBeginAtomIdx(),
-        #         "end_index": bond.GetEndAtomIdx(),
-        #         "bond-order": bond.GetBondTypeAsDouble(),
-        #         "bond-type": str(bond.GetBondType()),
-        #         "properties": dict(**bond.GetPropsAsDict()),
-        #     }
-        #     for bond in mol.GetBonds()
-        # ],
-        # "properties": dict(**mol.GetPropsAsDict()),
+        "bonds": [
+            {
+                "start_index": bond.GetBeginAtomIdx(),
+                "end_index": bond.GetEndAtomIdx(),
+                "bond-order": bond.GetBondTypeAsDouble(),
+                "bond-type": str(bond.GetBondType()),
+                "properties": dict(**bond.GetPropsAsDict()),
+            }
+            for bond in mol.GetBonds()
+        ],
+        "properties": dict(**mol.GetPropsAsDict()),
     }

@@ -5,6 +5,7 @@ import random
 from pathlib import Path
 from statistics import mean
 from typing import Mapping, Any
+from math import cos, sin
 
 import pytest
 import torch
@@ -13,7 +14,7 @@ from rdkit import Chem
 from smirk import SmirkTokenizerFast
 
 from electrolyte_fm.data_modules import pubchem_qc
-from electrolyte_fm.models.normalize import AbstractNormalizer
+from electrolyte_fm.models.normalize import AbstractNormalizer, Standardize
 from electrolyte_fm.data_modules.pubchem_qc import (
     PubChemQC,
     SmiTokenType,
@@ -23,6 +24,7 @@ from electrolyte_fm.data_modules.pubchem_qc import (
     construct_mol,
     mol_from_prediction,
 )
+from electrolyte_fm.models.token_level import distance_matrix_loss
 
 
 def pubchem_qc_dataset_path():
@@ -379,16 +381,23 @@ def test_normalize():
     dm.prepare_data()
     dm.setup("fit")
 
-    transform = AbstractNormalizer.get("standarize", num_outputs=7)
+    transform = AbstractNormalizer.get("standardize", num_outputs=9)
+    assert isinstance(transform, Standardize)
     ds = dm.train_dataset.take(100)
+    state = transform.fit(ds.select_columns(["target", "target_mask"]))
+    assert state["mean"].shape == (len(dm.seq_targets),)
+    assert state["std"].shape == (len(dm.seq_targets),)
+
+    # Repeat for token targets
+    transform = AbstractNormalizer.get("standardize", num_outputs=7)
+    assert isinstance(transform, Standardize)
     ds_token = ds.select_columns(["token_target", "token_target_mask"])
     ds_token = ds_token.rename_columns(
         {"token_target": "target", "token_target_mask": "target_mask"}
     )
-    state = transform.fit(ds)
-    logging.debug(state)
-    assert state["mean"].shape == (7,)
-    assert state["std"].shape == (7,)
+    state = transform.fit(ds_token)
+    assert state["mean"].shape == (2 * len(dm.token_targets) + 3,)
+    assert state["std"].shape == (2 * len(dm.token_targets) + 3,)
 
 
 def test_mol_from_prediction(pubchem_qc_example: dict[str, Any]):
@@ -444,6 +453,7 @@ def test_mol_from_prediction(pubchem_qc_example: dict[str, Any]):
         ref_target_props = {"atomic-number": ref_atom.GetAtomicNum()}
         position = None
         position_ref = None
+        logging.debug(atom.GetPropsAsDict())
         for k in pubchem_qc.DEFAULT_TOKEN_TARGETS:
             assert atom.GetAtomicNum() == ref_atom.GetAtomicNum()
             for target in [k, f"hs_{k}"]:
@@ -463,3 +473,30 @@ def test_mol_from_prediction(pubchem_qc_example: dict[str, Any]):
     logging.debug(s)
     assert isinstance(s, dict)
     assert isinstance(json.dumps(s), str)
+
+
+def test_distance_loss():
+    # Shifts shouldn't increase the loss
+    x = torch.rand(5, 32, 3)
+    y = x + torch.rand(1, 1, 3)
+    mask = torch.ones(5, 32, dtype=torch.bool)
+    loss = distance_matrix_loss(x, y, mask)
+    assert loss.isclose(torch.tensor(0.0))
+
+    # Or rotations
+    def rot(θ=1):
+        return torch.tensor([[cos(θ), -sin(θ), 0], [sin(θ), cos(θ), 0], [0, 0, 1]])
+
+    y = x @ rot().reshape(1, 3, 3)
+    loss = distance_matrix_loss(x, y, mask)
+    assert loss.isclose(torch.tensor(0.0))
+
+    # Or random orthogonal transforms
+    y = x @ torch.nn.init.orthogonal_(torch.ones(3, 3))
+    loss = distance_matrix_loss(x, y, mask)
+    assert loss.isclose(torch.tensor(0.0))
+
+    # Skewing the input does
+    y = x @ torch.rand(3, 3)
+    loss = distance_matrix_loss(x, y, mask)
+    assert not loss.isclose(torch.tensor(0.0))

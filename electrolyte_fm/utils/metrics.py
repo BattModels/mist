@@ -366,6 +366,7 @@ def masked_metric_update(
     if int_cast:
         targets = targets.int()
     if isinstance(metrics, OOVMetric):
+        assert input_ids is not None
         metrics.update(preds, targets, input_ids, is_oov)
     else:
         metrics.update(preds, targets)
