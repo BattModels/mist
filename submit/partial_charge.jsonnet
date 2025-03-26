@@ -65,7 +65,7 @@
     data: {
       class_path: 'electrolyte_fm.data_modules.pubchem_qc.PubChemQC',
       init_args: {
-        path: 'opt/pubchem-qc/pubchemqc_jcim2017-split',
+        path: 'opt/pubchem-qc/pubchemqc_jcim2017-split-v2',
         tokenizer: 'smirk-cls',
         batch_size: 256,
         val_batch_size: 2 * self.batch_size,

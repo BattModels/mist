@@ -7,7 +7,6 @@ from pathlib import Path
 from statistics import mean
 from typing import Optional
 from enum import IntEnum, auto
-from asyncio import Semaphore
 
 import torch
 from torch.utils.data import DataLoader
@@ -81,7 +80,7 @@ class PubChemQC(LightningDataModule):
             data_files={
                 "train": str(self.path.joinpath("train/*.arrow")),
                 "validation": str(self.path.joinpath("validation/*.arrow")),
-                "test": str(self.path.joinpath("test/*.txt")),
+                "test": str(self.path.joinpath("test/*.arrow")),
             },
             streaming=True,
         )
@@ -95,7 +94,7 @@ class PubChemQC(LightningDataModule):
             ds = maybe_shard_dataset(self.trainer, ds)
 
         ds = ds.map(
-            async_collate_partial_charges,
+            collate_partial_charges,
             batched=False,
             fn_kwargs={
                 "tokenizer": self.tokenizer,
@@ -103,9 +102,7 @@ class PubChemQC(LightningDataModule):
                 "include_3d": self.include_3d,
                 "seq_targets": self.seq_targets,
                 "token_targets": self.token_targets,
-                "limit": Semaphore(
-                    max((self.prefetch_factor or 1) * self.num_workers, 4)
-                ),
+                "labeler": TokenLabeler(self.tokenizer),
             },
         )
         ds = ds.select_columns(
@@ -174,18 +171,9 @@ class PubChemQC(LightningDataModule):
             batch_size=self.val_batch_size,
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
+            pin_memory=True,
             persistent_workers=self.num_workers > 0,
         )
-
-
-async def async_collate_partial_charges(
-    *args, limit: Semaphore | None = None, **kwargs
-):
-    if limit is not None:
-        async with limit:
-            return collate_partial_charges(*args, **kwargs)
-    else:
-        return collate_partial_charges(*args, **kwargs)
 
 
 def collate_partial_charges(
@@ -195,6 +183,7 @@ def collate_partial_charges(
     token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
     randomize: bool = True,
     include_3d: bool = False,
+    labeler: "TokenLabeler | None" = None,
 ):
     mol = construct_mol(
         atomic_numbers=row["atomic-numbers"],
@@ -218,6 +207,7 @@ def collate_partial_charges(
             tokenizer=tokenizer,
             doRandom=randomize,
             include_3d=include_3d,
+            labeler=labeler,
         )
     except Exception:
         logging.error(
@@ -378,36 +368,64 @@ class SmiTokenType(IntEnum):
         return f"{self.name}"
 
 
-def smi_token_type(tokenizer, input_ids: list[int]):
-    in_bracket = False
-    seen_element = False
-    is_element_regex = re.compile(r"^[A-Za-z][a-z]?")
-    for token_id in input_ids:
-        if token_id in tokenizer.all_special_ids:
-            yield SmiTokenType.Special
-            continue
+class TokenLabeler:
+    def __init__(self, tokenizer) -> None:
+        self.tokenizer = tokenizer
+        self.element_ids: list[int] = self.get_element_ids()
+        self.token_map: dict[str, int] = self.get_token_map()
+        self.all_special_ids: list[int] = tokenizer.all_special_ids
 
-        # Bracketed atom
-        token = tokenizer.convert_ids_to_tokens(token_id)
-        if token == "[":
-            in_bracket = True
-            seen_element = False
-            yield SmiTokenType.Bracket
-        elif token == "]":
-            in_bracket = False
-            yield SmiTokenType.Bracket
-        elif token in ("(", ")"):
-            yield SmiTokenType.Structure
+    def get_element_ids(self):
+        is_element_regex = re.compile(r"^[A-Za-z][a-z]?")
+        element_ids = []
+        for token, id in self.tokenizer.get_vocab().items():
+            if is_element_regex.match(token):
+                element_ids.append(id)
 
-        elif is_element_regex.match(token):
-            if in_bracket and seen_element:
-                assert token == "H"
-                yield SmiTokenType.ExplicitHydrogen
+        return element_ids
+
+    def get_token_map(self):
+        token_map = {}
+        tokenizer = self.tokenizer
+        for token in ["[", "]", "(", ")", "H"]:
+            token_map[token] = tokenizer.convert_tokens_to_ids(token)
+        return token_map
+
+    def __call__(self, input_ids: list[int]):
+        all_special_ids = self.all_special_ids
+        token_map = self.token_map
+        element_ids = self.element_ids
+        hydrogen_id = token_map["H"]
+        in_bracket = False
+        seen_element = False
+        for token_id in input_ids:
+            if token_id in all_special_ids:
+                yield SmiTokenType.Special
+                continue
+
+            # Bracketed atom
+            if token_id == token_map["["]:
+                in_bracket = True
+                seen_element = False
+                yield SmiTokenType.Bracket
+            elif token_id == token_map["]"]:
+                in_bracket = False
+                yield SmiTokenType.Bracket
+            elif token_id in (token_map["("], token_map[")"]):
+                yield SmiTokenType.Structure
+
+            elif token_id in element_ids:
+                if in_bracket and seen_element and token_id == hydrogen_id:
+                    yield SmiTokenType.ExplicitHydrogen
+                else:
+                    seen_element = True
+                    yield SmiTokenType.Element
             else:
-                seen_element = True
-                yield SmiTokenType.Element
-        else:
-            yield SmiTokenType.Unknown
+                yield SmiTokenType.Unknown
+
+
+def smi_token_type(tokenizer, input_ids: list[int]):
+    return TokenLabeler(tokenizer)(input_ids)
 
 
 def annotated_tokens(
@@ -417,6 +435,7 @@ def annotated_tokens(
     tokenizer_kwargs: dict | None = None,
     doRandom: bool = True,
     include_3d: bool = False,
+    labeler: TokenLabeler | None = None,
 ):
     """
     Given a rdkit.Chem.Mol with atom-level properties, return a tokenized SMILES encoding
@@ -430,45 +449,76 @@ def annotated_tokens(
 
     smi = Chem.MolToSmiles(mol, canonical=False, doRandom=doRandom)
     smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
-    token_out = tokenizer(smi, **(tokenizer_kwargs or {}))
+    token_out = tokenizer.encode_plus(smi, **(tokenizer_kwargs or {}))
     input_ids = token_out["input_ids"]
-    y = torch.zeros(len(input_ids), 2 * len(targets) + 3 * include_3d)
-    mask = torch.zeros(y.shape, dtype=torch.bool)
+    # y = torch.zeros(len(input_ids), 2 * len(targets) + 3 * include_3d)
+    # mask = torch.zeros(y.shape, dtype=torch.bool)
+    n_features = 2 * len(targets) + 3 * include_3d
+    y = []
+    mask = []
     smi_atom_idx = 0
 
-    for idx, token_type in enumerate(smi_token_type(tokenizer, input_ids)):
-        if token_type not in [SmiTokenType.Element, SmiTokenType.ExplicitHydrogen]:
-            continue
-
+    conf = mol.GetConformer() if include_3d else None
+    labeler = labeler or TokenLabeler(tokenizer)
+    prior_atom = None
+    for idx, token_type in enumerate(labeler(input_ids)):
+        y_atom = []
+        mask_atom = []
         if token_type == SmiTokenType.Element:
             atom = mol.GetAtomWithIdx(smi_order[smi_atom_idx])
             for tdx, target in enumerate(targets):
-                y[idx, 2 * tdx] = atom.GetDoubleProp(target)
-                mask[idx, 2 * tdx] = True
+                y_atom.append(atom.GetDoubleProp(target))
+                mask_atom.append(True)
+                # y[idx, 2 * tdx] = atom.GetDoubleProp(target)
+                # mask[idx, 2 * tdx] = True
                 if atom.HasProp(f"hs_{target}"):
-                    y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
-                    mask[idx, 2 * tdx + 1] = True
+                    y_atom.append(atom.GetDoubleProp(f"hs_{target}"))
+                    mask_atom.append(True)
+                else:
+                    y_atom.append(0)
+                    mask_atom.append(False)
+                    # y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
+                    # mask[idx, 2 * tdx + 1] = True
 
-            conf = mol.GetConformer()
             if include_3d:
                 pos = conf.GetAtomPosition(smi_order[smi_atom_idx])
-                y[idx, -3:] = torch.tensor(pos)
-                mask[idx, -3:] = True
+                y_atom.extend([pos.x, pos.y, pos.z])
+                mask_atom.extend([True, True, True])
+                # y[idx, -3:] = torch.tensor(pos)
+                # mask[idx, -3:] = True
+
+            smi_atom_idx += 1
+            prior_atom = atom
 
         elif token_type == SmiTokenType.ExplicitHydrogen:
             # Set Hs target for the atom on the hcount's H
-            atom = mol.GetAtomWithIdx(smi_order[smi_atom_idx - 1])
+            atom = prior_atom
+            assert atom is not None
             for tdx, target in enumerate(targets):
-                y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
-                mask[idx, 2 * tdx + 1] = True
+                y_atom.extend([0, atom.GetDoubleProp(f"hs_{target}")])
+                mask_atom.extend([False, True])
+
+            if include_3d:
+                y_atom.extend([0] * 3)
+                mask_atom.extend([False] * 3)
+
+                # y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
+                # mask[idx, 2 * tdx + 1] = True
         else:
-            raise RuntimeError(f"unexpected token type: {token_type})")
+            y_atom = [0] * n_features
+            mask_atom = [False] * n_features
 
-        # Update smi_atom_idx
-        if token_type == SmiTokenType.Element:
-            smi_atom_idx += 1
+        assert len(y_atom) == n_features
+        assert len(mask_atom) == n_features
+        y.append(y_atom)
+        mask.append(mask_atom)
 
-    return {**token_out, "token_target": y, "token_target_mask": mask, "smi": smi}
+    return {
+        **token_out,
+        "token_target": torch.tensor(y),
+        "token_target_mask": torch.tensor(mask),
+        "smi": smi,
+    }
 
 
 def mol_from_prediction(
@@ -479,6 +529,7 @@ def mol_from_prediction(
     seq_targets: list[str] | None = None,
     token_targets: list[str] | None = None,
     include_3d: bool = False,
+    labeler: TokenLabeler | None = None,
 ) -> Chem.Mol:
     # Construct molecule and smi -> atom mapping
     smi = tokenizer.decode(input_ids, skip_special_tokens=True)
@@ -505,7 +556,8 @@ def mol_from_prediction(
     # Annotate atoms from prediction
     conf = Chem.Conformer(mol.GetNumAtoms())
     smi_atom_idx = 0
-    for idx, token_type in enumerate(smi_token_type(tokenizer, input_ids.tolist())):
+    labeler = labeler or TokenLabeler(tokenizer)
+    for idx, token_type in enumerate(labeler(input_ids.tolist())):
         if token_type == SmiTokenType.Element:
             atom_idx = smi_order[smi_atom_idx]
             atom = mol.GetAtomWithIdx(atom_idx)
