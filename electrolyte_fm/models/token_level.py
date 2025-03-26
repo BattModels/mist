@@ -9,10 +9,13 @@ from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 from torch.nn import functional as F
-from torchmetrics import MetricCollection, MeanMetric
+from torchmetrics import (
+    MetricCollection,
+    MeanMetric,
+)
 from rdkit.Chem.rdMolAlign import AlignMol
 
-from electrolyte_fm.utils.metrics import get_metrics
+from electrolyte_fm.utils.metrics import get_metrics, get_metric
 from electrolyte_fm.models.normalize import AbstractNormalizer, IdentityTransform
 from electrolyte_fm.data_modules.pubchem_qc import (
     DEFAULT_SEQ_TARGETS,
@@ -123,13 +126,22 @@ class TokenLevelPredictor(pl.LightningModule):
         self.distance_matrix_loss = distance_matrix_loss
         self.save_hyperparameters(ignore=["seq_targets", "token_targets"])
 
+        self._setup_metrics(metrics)
+
+    def _setup_metrics(self, metrics: list[str]):
         stage_metrics = {
             "seq": get_metrics(
                 metrics,
                 "regression",
                 num_outputs=len(self.seq_targets),
                 target_channels=self.seq_targets,
-            )
+            ),
+            "token": get_metrics(
+                metrics,
+                "regression",
+                num_outputs=len(self.token_network),
+                target_channels=self.token_targets,
+            ),
         }
         if distance_matrix_loss:
             stage_metrics["dist"] = MetricCollection(
@@ -263,6 +275,10 @@ class TokenLevelPredictor(pl.LightningModule):
 
         self.log_dict(log_out, on_step=False, on_epoch=True)
         self.val_metrics["seq"].update(out["sequence"], batch["target"])
+        self.val_metrics["token"].update(
+            out["token"][batch["token_target_mask"]],
+            batch["token_target"][batch["token_target_mask"]],
+        )
 
         return out
 
