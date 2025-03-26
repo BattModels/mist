@@ -76,7 +76,7 @@ fi
 {%- endif %}
 
 srun --mpi=pmix \
-$(which apptainer) run \
+$(which apptainer) exec \
 --bind /lustre/fs0,/tmp,$TMPDIR \
 --nv \
 {{ container }} \

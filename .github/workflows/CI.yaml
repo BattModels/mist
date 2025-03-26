@@ -2,20 +2,23 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - run: pipx install poetry
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: 3.11.8
-          cache: 'poetry'
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Install deploy key for BattModels/smirk
         uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 #v0.9.0
         with:
           ssh-private-key: ${{ secrets.SMIRK_PRIVATE_KEY }}
-      - run: poetry install
-      - run: source activate && pytest
+      - name: install project
+        run: uv sync --all-extras --dev
+      - name: pytest
+        run: uv run pytest
