@@ -139,7 +139,7 @@ class TokenLevelPredictor(pl.LightningModule):
             "token": get_metrics(
                 metrics,
                 "regression",
-                num_outputs=len(self.token_network),
+                num_outputs=len(self.token_targets),
                 target_channels=self.token_targets,
             ),
         }
@@ -212,6 +212,7 @@ class TokenLevelPredictor(pl.LightningModule):
             self.seq_transform.inverse(batch["target"]),
             batch["target_mask"],
         )
+        loss = loss_seq
 
         # Treat the final 3 channels as atomic coordinates
         if self.distance_matrix_loss:
@@ -219,6 +220,7 @@ class TokenLevelPredictor(pl.LightningModule):
             y_pos_ref = y_token_ref[:, :, -3:]
             y_pos_mask = y_token_mask[:, :, -3:].all(-1)
             loss_dist = distance_matrix_loss(y_pos, y_pos_ref, y_pos_mask)
+            loss = loss + loss_dist
 
             y_token = y_hat_token[:, :, :-3]
             y_token_mask = y_token_mask[:, :, :-3]
@@ -229,7 +231,7 @@ class TokenLevelPredictor(pl.LightningModule):
             loss_dist = None
 
         loss_token = masked_mse_loss(y_token, y_token_ref, y_token_mask)
-        loss = loss_seq + loss_token + (loss_dist if loss_dist is not None else 0)
+        loss += loss_token
 
         out = {
             "loss": loss,
@@ -245,12 +247,7 @@ class TokenLevelPredictor(pl.LightningModule):
     def training_step(self, batch):
         out = self.forward_with_loss(batch)
         self.log_dict(
-            {
-                "train/loss": out["loss"],
-                "train/loss_token": out["token_loss"],
-                "train/seq_loss": out["seq_loss"],
-                "train/dist_loss": out["dist_loss"],
-            },
+            {f"train/{k}": v for k, v in out.items() if "loss" in k and v is not None},
             on_step=True,
             on_epoch=True,
         )
@@ -258,27 +255,24 @@ class TokenLevelPredictor(pl.LightningModule):
 
     def validation_step(self, batch):
         out = self.forward_with_loss(batch)
-        log_out = {
-            "val/loss": out["loss"],
-            "val/loss_token": out["token_loss"],
-            "val/seq_loss": out["seq_loss"],
-        }
+        self.log_dict(
+            {f"val/{k}": v for k, v in out.items() if "loss" in k and v is not None},
+            on_step=True,
+            on_epoch=True,
+        )
 
+        self.val_metrics["seq"].update(out["sequence"], batch["target"])
+        self.val_metrics["token"].update(
+            out["token"][batch["token_target_mask"]],
+            batch["token_target"][batch["token_target_mask"]],
+        )
         if self.distance_matrix_loss:
-            log_out["val/dist_loss"] = out["dist_loss"]
             update_alignment_metric(
                 self.val_metrics["dist"],
                 out,
                 batch,
                 self.trainer.datamodule.tokenizer,
             )
-
-        self.log_dict(log_out, on_step=False, on_epoch=True)
-        self.val_metrics["seq"].update(out["sequence"], batch["target"])
-        self.val_metrics["token"].update(
-            out["token"][batch["token_target_mask"]],
-            batch["token_target"][batch["token_target_mask"]],
-        )
 
         return out
 

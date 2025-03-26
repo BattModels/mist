@@ -1,8 +1,8 @@
 {
-  container: '/lustre/fs0/shared/sqsh-files/mist+pytorch+25.01+v3.sif',
   program: '-m electrolyte_fm.models.token_level',
   nodes: 1,
   gpus_per_node: 1,
+  stage: null,
   train: {
     tags: [],
     model: {
@@ -65,12 +65,12 @@
     data: {
       class_path: 'electrolyte_fm.data_modules.pubchem_qc.PubChemQC',
       init_args: {
-        path: '/lustre/fs0/shared/pubchemqc_jcim2017-split',
+        path: 'opt/pubchem-qc/pubchemqc_jcim2017-split',
         tokenizer: 'smirk-cls',
-        batch_size: 1024,
+        batch_size: 256,
         val_batch_size: 2 * self.batch_size,
-        num_workers: 12,
-        prefetch_factor: 8,
+        num_workers: 8,
+        prefetch_factor: 2,
         include_3d: $.train.model.init_args.distance_matrix_loss,
       },
     },

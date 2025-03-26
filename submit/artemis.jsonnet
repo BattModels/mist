@@ -2,12 +2,8 @@
   nodes: 1,
   gpus_per_node: 1,
   queue: 'venkvis-debug',
+  container: '/nfs/turbo/coe-venkvis/mist/mist+pytorch+25.01+v4.sif',
   train: {
-    data: {
-      init_args: {
-        path: '/nfs/turbo/coe-venkvis/mist/realspace_v4_dev2/',
-      },
-    },
     trainer: {
       devices: $.gpus_per_node,
       num_nodes: $.nodes,

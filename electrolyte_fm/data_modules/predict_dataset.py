@@ -3,7 +3,7 @@ from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from transformers import DataCollatorWithPadding
 from electrolyte_fm.utils.tokenizer import load_tokenizer
-from .utils import maybe_shard_dataset
+from .utils import maybe_shard_dataset, is_fast
 from datasets import load_dataset
 
 
@@ -46,7 +46,11 @@ class PredictDataModule(LightningDataModule):
 
     def setup(self, stage: str) -> None:
         ds = maybe_shard_dataset(self.trainer, self.dataset)
-        ds = ds.map(self.tokenizer, input_columns=self.smi_column)
+        ds = ds.map(
+            self.tokenizer,
+            input_columns=self.smi_column,
+            batched=is_fast(self.tokenizer),
+        )
         self.predict_dataset = ds.select_columns(["input_ids", "attention_mask"])
 
     def predict_dataloader(self):
