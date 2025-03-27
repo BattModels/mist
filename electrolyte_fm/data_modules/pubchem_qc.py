@@ -52,6 +52,7 @@ class PubChemQC(LightningDataModule):
     ):
         super().__init__()
         self.path = Path(path)
+        assert self.path.exists(), f"Path {self.path} does not exist"
         self.tokenizer = load_tokenizer(tokenizer)
         self.vocab_size = len(self.tokenizer)
         self.randomize = randomize
