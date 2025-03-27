@@ -140,9 +140,9 @@ class SaveConfigWithCkpts(Callback):
         config_path = config_path or checkpoint_dir.parent.parent.joinpath(
             "model_hparams.json"
         )
-        assert checkpoint_dir.exists(), (
-            f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
-        )
+        assert (
+            checkpoint_dir.exists()
+        ), f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
         assert config_path.is_file(), f"Missing model config file {config_path}"
 
         model = SaveConfigWithCkpts.instantiate(config_path)
