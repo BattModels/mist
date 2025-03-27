@@ -1,0 +1,5 @@
+name = "MISTStyle"
+uuid = "0a43f4a4-3db7-4939-b247-26273f54b603"
+
+[deps]
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"

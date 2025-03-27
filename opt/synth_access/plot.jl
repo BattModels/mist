@@ -5,9 +5,7 @@ using StatsBase: cor, corspearman, corkendall
 using Clustering: hclust
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode, levels
-
-include("../style.jl")
-using .MISTStyle: MISTStyle, savefig, inch, pt
+using MISTStyle: MISTStyle, savefig, inch, pt
 
 function plot_score_correlation!(f, df; correlation, kwargs...)
     columns = names(df)
