@@ -1,5 +1,6 @@
 function predict(smi::Vector{String}, model::Py)
     model = model.to("mps")
+    model.eval()
     py_out = model.predict(PyList(smi))
     out = Dict{String,Vector{Float64}}()
     for (k, v) in py_out.items()
@@ -8,6 +9,13 @@ function predict(smi::Vector{String}, model::Py)
     df = DataFrame(out)
     insertcols!(df, 1, :smi => smi)
     return df
+end
+
+function encode(smi::String; encoding::String="smiles-kekule", random::Bool=false)
+    utils = @pyconst(pyimport("electrolyte_fm.data_modules.utils"))
+    encoder = utils.MolEncoding(encoding)
+    smi_out = random ? encoder.random(smi) : encoder(smi)
+    return something(pyconvert(Union{String,Nothing}, smi_out), smi)
 end
 
 function embed(smi::Vector{String}, model::Py)
@@ -41,6 +49,19 @@ function predict_monte(smi::Vector{String}, model::Py; n=10)
     df = DataFrame(summary)
     insertcols!(df, 1, :smi => smi)
     return df
+end
+
+encoding_variants(smi::String, n::Int=100) = unique(encode(smi; encoding="smiles", random=true) for _ in 1:n)
+
+function sample_encodings(smi::String, model::Py; n=100)
+    smi_variants = encoding_variants(smi, n)
+    df = predict(smi_variants, model)
+    out = Dict()
+    for col in names(df)
+        col == "smi" && continue
+        out[col] = UQReal(df[:, col])
+    end
+    return out
 end
 
 model_spec(model::Py) = (nothing, model, Colon())
