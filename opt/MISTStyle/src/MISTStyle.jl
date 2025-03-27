@@ -188,7 +188,7 @@ function theme()
         Legend=(;
             titlegap=0,
             labelsize=8pt,
-            patchsize=(8, 8),
+            patchsize=(8pt, 8pt),
             patchlabelgap=3pt,
             rowgap=1pt,
             colgap=3pt,
@@ -215,6 +215,7 @@ function theme()
             size=6pt,
 =======
             padding=(2pt, 2pt, 2pt, 2pt),
+            margin=(2pt, 2pt, 2pt, 2pt),
         ),
         Colorbar=(;
             spinewidth=0.5,
