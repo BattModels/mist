@@ -2,6 +2,7 @@ import re
 import shutil
 import subprocess
 import sys
+import logging
 from importlib.metadata import version
 from pathlib import Path
 from typing import Optional
@@ -172,3 +173,9 @@ def ckpt_id(path: Path) -> str:
         return path.name
     else:
         return path.parent.parent.name
+
+
+def create_tar_gz(input_dir: Path):
+    output = input_dir.parent.joinpath(input_dir.name + ".tar.gz")
+    logging.info("Creating %s for %s", output, input_dir)
+    subprocess.run(["tar", "-czf", str(output), "-C", str(input_dir), "."], check=True)

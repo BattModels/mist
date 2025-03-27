@@ -132,21 +132,29 @@ class SaveConfigWithCkpts(Callback):
         return model
 
     @staticmethod
-    def load(checkpoint_dir: str | Path, config_path=None) -> LightningModule:
+    def load(
+        checkpoint_dir: str | Path, config_path=None, map_location=None
+    ) -> LightningModule:
         """Restore from a deepspeed checkpoint, mainly used for downstream tasks"""
         checkpoint_dir = Path(checkpoint_dir).resolve()
         config_path = config_path or checkpoint_dir.parent.parent.joinpath(
             "model_hparams.json"
         )
-        assert (
-            checkpoint_dir.exists()
-        ), f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
+        assert checkpoint_dir.exists(), (
+            f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
+        )
         assert config_path.is_file(), f"Missing model config file {config_path}"
 
         model = SaveConfigWithCkpts.instantiate(config_path)
 
+        # Fallback to cpu if no GPU
+        if not torch.cuda.is_available() and map_location is None:
+            map_location = torch.device("cpu")
+
         if checkpoint_dir.is_file():
-            state = torch.load(checkpoint_dir)
+            state = torch.load(
+                checkpoint_dir, map_location=map_location, weights_only=False
+            )
             model.load_state_dict(state["state_dict"], strict=True, assign=True)
             return model
 
@@ -164,7 +172,7 @@ class SaveConfigWithCkpts(Callback):
                 checkpoint_dir,
             )
             file = Path(checkpoint_dir, "checkpoint", "mp_rank_00_model_states.pt")
-            state = torch.load(file)
+            state = torch.load(file, map_location=map_location)
             logging.info("loaded %s", file)
             model.load_state_dict(state["module"], strict=True, assign=True)
 

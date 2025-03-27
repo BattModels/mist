@@ -4,6 +4,7 @@
 # Usage:
 #   python opt/package --help
 
+import sys
 import json
 import shutil
 from pathlib import Path
@@ -12,6 +13,7 @@ import logging
 
 import typer
 
+sys.path.append(str(Path(__file__).parent.parent.parent))
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
@@ -43,13 +45,14 @@ def pretrained(ckpt: Path, name: Optional[str] = None):
     )
     utils.save_tokenizer(save_dir, ckpt)
     logging.info("Saved model to %s", save_dir)
+    utils.create_tar_gz(save_dir)
 
 
 def export_finetuned(ckpt: Path):
     from electrolyte_fm.models import MISTFinetuned
 
     model = SaveConfigWithCkpts.load(ckpt)
-    model_config = json.loads(Path(ckpt, "..", "..", "config.json").read_text())
+    model_config = json.loads(ckpt.parent.parent.joinpath("config.json").read_text())
     tokenizer_name = model_config["data"]["init_args"]["tokenizer"]
     tokenizer = load_tokenizer(tokenizer_name)
     return MISTFinetuned(
@@ -78,6 +81,7 @@ def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     utils.save_model(model, save_dir, safe)
     shutil.move(Path(save_dir, "prod_finetune.py"), Path(save_dir, "model.py"))
     logging.info("Saved model to %s", save_dir)
+    utils.create_tar_gz(save_dir)
 
 
 def export_multitask(
@@ -144,6 +148,7 @@ def multitask(
     utils.export_code(save_dir, model, *model.transforms, *model.task_networks)
     shutil.move(Path(save_dir, "prod_finetune.py"), Path(save_dir, "model.py"))
     logging.info("Saved model to %s", save_dir)
+    utils.create_tar_gz(save_dir)
 
 
 if __name__ == "__main__":
