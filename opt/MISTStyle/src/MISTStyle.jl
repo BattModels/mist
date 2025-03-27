@@ -87,6 +87,7 @@ const CAT_COLORS = cgrad(
     10
 )
 
+<<<<<<< HEAD
 UM_COLORS = (;
     blue=colorant"#00274C",
     maize=colorant"#FFCB05",
@@ -98,6 +99,8 @@ UM_COLORS = (;
 )
 
 
+=======
+>>>>>>> db6a992 (refactor: Move MistStyle into a proper package)
 const CONTINUOUS_COLORS = :lipari
 
 function theme()
@@ -112,7 +115,11 @@ function theme()
         size=(246, 152),
         figure_padding=(2, 2, 2, 2),
         colormap=:lipari,
+<<<<<<< HEAD
         linewidth=1pt,
+=======
+        linewidth=0.5,
+>>>>>>> db6a992 (refactor: Move MistStyle into a proper package)
         CairoMakie=(;
             pt_per_unit=2,
             px_per_unit=300 / inch
@@ -122,17 +129,30 @@ function theme()
             color=CAT_COLORS,
             linestyle=[:solid, :dot, :dashdot],
         ),
+<<<<<<< HEAD
         Axis=(;
             spinewidth=0.5,
             xlabelsize=6pt,
             ylabelsize=6pt,
             yticklabelsize=5pt,
             xticklabelsize=5pt,
+=======
+        Lines=(;
+            cycle=Cycle([:color, :linestyle], covary=true),
+        ),
+        Axis=(;
+            spinewidth=0.5,
+            xlabelsize=8pt,
+            ylabelsize=8pt,
+            yticklabelsize=6pt,
+            xticklabelsize=6pt,
+>>>>>>> db6a992 (refactor: Move MistStyle into a proper package)
             ylabelpadding=1pt,
             xlabelpadding=1pt,
             yticklabelpad=2pt,
             xticklabelpad=2pt,
             yticksize=2pt,
+<<<<<<< HEAD
             ytickwidth=0.5pt,
             yminortickwidth=0.25pt,
             yminorticksize=1pt,
@@ -140,10 +160,20 @@ function theme()
             xticksize=2pt,
             xminortickwidth=0.25pt,
             xminorticksize=1pt,
+=======
+            ytickwidth=0.5,
+            yminortickwidth=0.5,
+            yminorticksize=2,
+            xtickwidth=0.5,
+            xticksize=2pt,
+            xminortickwidth=0.5,
+            xminorticksize=2,
+>>>>>>> db6a992 (refactor: Move MistStyle into a proper package)
             xgridwidth=0.5,
             ygridwidth=0.5,
             xminorgridwidth=0.5,
             yminorgridwidth=0.5,
+<<<<<<< HEAD
             titlegap=2pt,
         ),
         Legend=(;
@@ -153,11 +183,22 @@ function theme()
             patchlabelgap=2pt,
             rowgap=0.5pt,
             colgap=1pt,
+=======
+        ),
+        Legend=(;
+            titlegap=0,
+            labelsize=8pt,
+            patchsize=(8, 8),
+            patchlabelgap=3pt,
+            rowgap=1pt,
+            colgap=3pt,
+>>>>>>> db6a992 (refactor: Move MistStyle into a proper package)
             groupgap=4pt,
             famevisible=true,
             framewidth=0.5,
             tellheight=false,
             tellwidth=false,
+<<<<<<< HEAD
             padding=(1pt, 1pt, 1pt, 1pt),
             margin=(1pt, 1pt, 1pt, 1pt),
         ),
@@ -172,6 +213,18 @@ function theme()
             labelpadding=1pt,
             ticklabelpad=0pt,
             size=6pt,
+=======
+            padding=(2pt, 2pt, 2pt, 2pt),
+        ),
+        Colorbar=(;
+            spinewidth=0.5,
+            tickwidth=0.5,
+            ticksize=2,
+            labelsize=8pt,
+            ticklabelsize=6pt,
+            labelpadding=0pt,
+            ticklabelpad=0pt,
+>>>>>>> db6a992 (refactor: Move MistStyle into a proper package)
         ),
         Scatter=(;
             markersize=5pt,
@@ -183,12 +236,15 @@ function theme()
         ErrorCross=(;
             markersize=5pt,
             whiskerwidth=3,
+<<<<<<< HEAD
         ),
         Quadrant=(;
             color=UM_COLORS.maize,
             linestyle=:solid,
             linecolor=UM_COLORS.blue,
             alpha=0.2,
+=======
+>>>>>>> db6a992 (refactor: Move MistStyle into a proper package)
         )
     )
 end
