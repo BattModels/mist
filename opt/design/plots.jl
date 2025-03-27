@@ -6,45 +6,58 @@ using PythonCall
 MISTFinetuned = pyimport("electrolyte_fm.models.prod_finetune").MISTFinetuned
 MISTMultiTask = pyimport("electrolyte_fm.models.prod_finetune").MISTMultiTask
 
-mist_qm9 = MISTFinetuned.from_pretrained("../../models/mist-x4i8qzuq-qm9")
-mist_kt = MISTMultiTask.from_pretrained("../../models/solvent-properties")
-mist_dn = MISTMultiTask.from_pretrained("../../models/donor-number")
-mist_solvent = MISTMultiTask.from_pretrained("../../models/mist-solventnet")
+models = (
+    MISTFinetuned.from_pretrained("../../models/mist-x4i8qzuq-qm9"),
+    "rand" => MISTFinetuned.from_pretrained("../../models/mist-26.9M-kkgx0omx-qm9"),
+    "kt" => MISTMultiTask.from_pretrained("../../models/solvent-properties"),
+    MISTFinetuned.from_pretrained("../../models/mist-26.9M-6hk5coof-dn"),
+    MISTFinetuned.from_pretrained("../../models/mist-26.9M-b302p09x-bp"),
+    MISTFinetuned.from_pretrained("../../models/mist-26.9M-y3ge5pf9-mp"),
+    MISTFinetuned.from_pretrained("../../models/mist-26.9M-cyuo2xb6-fp"),
+    "lyte" => MISTMultiTask.from_pretrained("../../models/electrolyte-solvent/"),
+)
 
 # Generate Plots
 using Makie
 using DesignRules
+using DesignRules: simple_hydrocarbons
+using MISTStyle
 using DataFrames
 using CSV: CSV
-
-include("../style.jl")
-
 
 # Evaluate hydrocarbons
 df_hydrocarbons = DesignRules.predict_all(
     DesignRules.simple_hydrocarbons(25),
-    mist_qm9,
-    "kt" => mist_kt,
-    mist_dn,
-    mist_solvent => [:bp, :mp, :fp];
-    n=10
+    models...;
+    n=2
 )
 
-DesignRules.hydrocarbon_trends(df_hydrocarbons)
+with_theme(MISTStyle.theme()) do
+    DesignRules.hydrocarbon_trends(df_hydrocarbons)
+end
 
 # Evaluate electrolytes
 df_electrolyte = DataFrame(CSV.File("electrolytes.csv"))
-df_electrolyte = DesignRules.predict_all(
-    df_electrolyte,
-    mist_qm9,
-    "kt" => mist_kt,
-    mist_dn,
-    mist_solvent => [:bp, :mp, :fp];
-    n=10
-)
+df_electrolyte.smi .= DesignRules.encode.(df_electrolyte.smi; encoding="smiles-kekule")
+df_electrolyte = DesignRules.predict_all(df_electrolyte, models...; n=10)
 
+with_theme(MISTStyle.theme()) do
+    DesignRules.electrolyte_trends(df_electrolyte)
+end
 
+# Permutation sensitivity
+df_perm = simple_hydrocarbons(25)
+f(m) = :smi => ByRow(smi -> DesignRules.sample_encodings(smi, m)) => AsTable
+df_perm_ref = transform(df_perm, f(models[1]))          # QM9 finetuned on kekule
+df_perm_rand = transform(df_perm, f(last(models[2])))   # QM9 finetuned with random
 
+# Order sensitivity
+df_order_rand = DesignRules.alkene_sweep(25, last(models[2]))
+df_order = DesignRules.alkene_sweep(25, models[1])
 
-
-
+with_theme(MISTStyle.theme()) do
+    DesignRules.figure_permutations(
+        "Kekule" => df_perm_ref, "Random" => df_perm_rand;
+        name_df_order=("Kekule" => df_order, "Random" => df_order_rand)
+    )
+end
