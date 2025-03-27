@@ -2,8 +2,10 @@ module MISTStyle
 
 using Makie
 
-const pt = 4 / 3
+const pt = 3 / 4
 const inch = 96
+
+export pt, inch
 
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
@@ -12,6 +14,22 @@ function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
     save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch)
     return nothing
 end
+
+""" Helper function to get the label of an plot element """
+label(x) = x.label[]
+
+""" Get the colorbar attributes of a plot element """
+function cb_attrs(cb::Colorbar)
+    return (;
+        colormap=cb.colormap,
+        colorscale=cb.scale,
+        colorrange=cb.colorrange,
+        lowclip=cb.lowclip,
+        highclip=cb.highclip,
+    )
+end
+
+include("errorcross.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
@@ -43,6 +61,7 @@ function theme()
         size=(246, 152),
         figure_padding=(2, 2, 2, 2),
         colormap=:lipari,
+        linewidth=0.5,
         CairoMakie=(;
             pt_per_unit=2,
             px_per_unit=300 / inch
@@ -57,28 +76,34 @@ function theme()
         ),
         Axis=(;
             spinewidth=0.5,
+            xlabelsize=8pt,
+            ylabelsize=8pt,
+            yticklabelsize=6pt,
+            xticklabelsize=6pt,
             ylabelpadding=1pt,
             xlabelpadding=1pt,
-            yticksize=3,
+            yticklabelpad=2pt,
+            xticklabelpad=2pt,
+            yticksize=2pt,
             ytickwidth=0.5,
             yminortickwidth=0.5,
             yminorticksize=2,
             xtickwidth=0.5,
-            xticksize=3,
+            xticksize=2pt,
             xminortickwidth=0.5,
             xminorticksize=2,
             xgridwidth=0.5,
             ygridwidth=0.5,
             xminorgridwidth=0.5,
             yminorgridwidth=0.5,
-            yticklabelsize=7pt,
-            xticklabelsize=7pt,
         ),
         Legend=(;
             titlegap=0,
+            labelsize=8pt,
             patchsize=(8, 8),
-            rowgap=2pt,
-            colgap=8,
+            patchlabelgap=3pt,
+            rowgap=1pt,
+            colgap=3pt,
             groupgap=4pt,
             famevisible=true,
             framewidth=0.5,
@@ -90,8 +115,8 @@ function theme()
             spinewidth=0.5,
             tickwidth=0.5,
             ticksize=2,
-            labelsize=6pt,
-            ticklabelsize=5pt,
+            labelsize=8pt,
+            ticklabelsize=6pt,
             labelpadding=0pt,
             ticklabelpad=0pt,
         ),
@@ -99,9 +124,12 @@ function theme()
             markersize=5pt,
             marker=:x,
         ),
-        ErrrorBar=(;
-            whiskerwidth=2,
-            linewidth=0.5,
+        ErrorLines=(;
+            whiskerwidth=3,
+        ),
+        ErrorCross=(;
+            markersize=5pt,
+            whiskerwidth=3,
         )
     )
 end
