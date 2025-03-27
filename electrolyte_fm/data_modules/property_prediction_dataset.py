@@ -11,7 +11,6 @@ from ..utils.tokenizer import load_tokenizer
 from .utils import (
     MolEncoding,
     AbstractDataset,
-    random_smiles,
     maybe_shard_dataset,
     encode_molecules,
     is_fast,
@@ -99,13 +98,13 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def collate_fn(self, batch):
+        tokenizer = self.tokenizer
+        encoding = self.encoding
         if self.randomize:
             for idx in range(len(batch)):
-                batch[idx].update(
-                    self.tokenizer(
-                        random_smiles(batch[idx][self.smi_column], self.encoding)
-                    )
-                )
+                new_smi = encoding.random(batch[idx][self.smi_column])
+                if new_smi is not None:
+                    batch[idx].update(tokenizer(new_smi))
 
                 if not self.include_encoding:
                     batch[idx].pop(self.smi_column, None)
