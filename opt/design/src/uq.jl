@@ -4,9 +4,10 @@ struct UQReal{T}
     n::Int
 end
 
+UQReal(x::Vector) = UQReal(mean_and_std(x)..., length(x))
 Statistics.mean(x::UQReal) = x.mean
-Statistics.std(x::Real) = x.std
-StatsBase.stderror(x) = x.std / sqrt(x.n)
+Statistics.std(x::UQReal) = x.std
+StatsBase.stderror(x::UQReal) = x.std / sqrt(x.n)
 function Base.show(io::IO, x::UQReal)
     μ = mean(x)
     se = stderror(x)

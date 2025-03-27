@@ -1,6 +1,7 @@
 module MISTStyle
 
 using Makie
+using CategoricalArrays: levels
 
 const pt = 3 / 4
 const inch = 96
@@ -18,6 +19,9 @@ end
 """ Helper function to get the label of an plot element """
 label(x) = x.label[]
 
+categorical_ticks(x) = (1:length(levels(x)), levels(x))
+
+
 """ Get the colorbar attributes of a plot element """
 function cb_attrs(cb::Colorbar)
     return (;
@@ -30,6 +34,7 @@ function cb_attrs(cb::Colorbar)
 end
 
 include("errorcross.jl")
+include("powerlaw.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
@@ -46,6 +51,12 @@ const CAT_COLORS = cgrad(
     ]),
     10
 )
+
+UM_COLORS = (;
+    blue=RGBf(0, 39 / 255, 76 / 255),
+    maize=RGBf(1, 203 / 255, 5 / 255),
+)
+
 
 const CONTINUOUS_COLORS = :lipari
 
@@ -85,13 +96,13 @@ function theme()
             yticklabelpad=2pt,
             xticklabelpad=2pt,
             yticksize=2pt,
-            ytickwidth=0.5,
-            yminortickwidth=0.5,
-            yminorticksize=2,
-            xtickwidth=0.5,
+            ytickwidth=0.5pt,
+            yminortickwidth=0.25pt,
+            yminorticksize=1pt,
+            xtickwidth=0.5pt,
             xticksize=2pt,
-            xminortickwidth=0.5,
-            xminorticksize=2,
+            xminortickwidth=0.25pt,
+            xminorticksize=1pt,
             xgridwidth=0.5,
             ygridwidth=0.5,
             xminorgridwidth=0.5,
@@ -100,7 +111,7 @@ function theme()
         Legend=(;
             titlegap=0,
             labelsize=8pt,
-            patchsize=(8, 8),
+            patchsize=(8pt, 8pt),
             patchlabelgap=3pt,
             rowgap=1pt,
             colgap=3pt,
@@ -110,6 +121,7 @@ function theme()
             tellheight=false,
             tellwidth=false,
             padding=(2pt, 2pt, 2pt, 2pt),
+            margin=(2pt, 2pt, 2pt, 2pt),
         ),
         Colorbar=(;
             spinewidth=0.5,
