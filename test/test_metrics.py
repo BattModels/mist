@@ -1,12 +1,16 @@
-from itertools import chain, repeat
+import logging
 from typing import Union
+from itertools import chain, repeat
+from math import cos, sin
 
 import pytest
 import torch
 from torchmetrics import Metric, Accuracy
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.wrappers import BootStrapper, ClasswiseWrapper
+from scipy.linalg import orthogonal_procrustes
 
+from electrolyte_fm.utils import metrics
 from electrolyte_fm.utils.metrics import (
     MetricCollection,
     get_metric,
@@ -468,3 +472,37 @@ def test_bootstrap_oov():
             assert "_" not in key
             for token_group in ["oov", "non_oov", "all"]:
                 assert f"train/{key}_{v}_{token_group}" in out.keys()
+
+
+def test_ortho_procrustes():
+    # Shifts shouldn't increase the loss
+    B = 1
+    N = 16
+    atol = 1e-4
+    x = torch.rand(B, N, 3)
+    y = x + torch.rand(1, 3)
+
+    def check_alignment(x, y, matches=True):
+        R_ref, _ = orthogonal_procrustes(x.numpy()[0], y.numpy()[0])
+        R = metrics.OrthoProcrustes.procrustes_alignment(x, y)
+        loss = metrics.OrthoProcrustes.procrustes_disparity(x[0], y[0])
+        logging.debug({"R": R, "R_ref": R_ref, "loss": loss, "x": x, "y": y})
+        # assert R.isclose(torch.tensor(R_ref.tolist()), atol=1e-5).all()
+        assert loss.isclose(torch.tensor(0.0), atol=atol) == matches
+
+    check_alignment(x, y)
+
+    # Or rotations
+    def rot(θ=1):
+        return torch.tensor([[cos(θ), -sin(θ), 0], [sin(θ), cos(θ), 0], [0, 0, 1]])
+
+    y = x @ rot().reshape(1, 3, 3)
+    check_alignment(x, y)
+
+    # Or random orthogonal transforms
+    y = x @ torch.nn.init.orthogonal_(torch.ones(3, 3))
+    check_alignment(x, y)
+
+    # Skewing the input does
+    y = x @ torch.rand(3, 3)
+    check_alignment(x, y, matches=False)

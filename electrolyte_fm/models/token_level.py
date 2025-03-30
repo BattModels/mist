@@ -1,6 +1,6 @@
 import logging
 from itertools import chain
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Union
 
 import lightning.pytorch as pl
 import torch
@@ -15,7 +15,7 @@ from torchmetrics import (
 )
 from rdkit.Chem.rdMolAlign import AlignMol
 
-from electrolyte_fm.utils.metrics import get_metrics, get_metric
+from electrolyte_fm.utils.metrics import get_metrics, get_metric, OrthoProcrustes
 from electrolyte_fm.models.normalize import AbstractNormalizer, IdentityTransform
 from electrolyte_fm.data_modules.pubchem_qc import (
     DEFAULT_SEQ_TARGETS,
@@ -31,7 +31,7 @@ def masked_mse_loss(
     preds: torch.Tensor, target: torch.Tensor, mask: torch.BoolTensor
 ) -> torch.Tensor:
     loss = F.mse_loss(preds, target, reduction="none") * mask
-    return loss.sum() / mask.sum()
+    return loss.sum() / (mask.sum() + 1e-6)
 
 
 def distance_matrix_loss(y_hat: torch.Tensor, y: torch.Tensor, mask: torch.Tensor):
@@ -49,10 +49,75 @@ def distance_matrix_loss(y_hat: torch.Tensor, y: torch.Tensor, mask: torch.Tenso
         sse = F.mse_loss(dist_hat, dist_ref, reduction="sum")
         n = pos_hat.shape[0]
         n_elem = n * (n - 1) * 0.5
-        mse = sse / max(n_elem, 1)
+        mse = sse / (n_elem + 1e-6)
         loss.append(mse)
 
     return torch.tensor(loss).mean()
+
+
+def masked_procustes_loss(
+    y_hat: torch.Tensor,
+    y: torch.Tensor,
+    mask: torch.Tensor,
+    chunk: Optional[int] = None,
+):
+    loss = torch.tensor(0.0).to(y_hat)
+    nelem = torch.tensor(0).to(device=y_hat.device)
+    for bdx in range(y_hat.shape[0]):
+        pos_mask = mask[bdx]
+        pos_ref = y[bdx, pos_mask, :]
+        pos_hat = y_hat[bdx, pos_mask, :]
+        n = pos_mask.count_nonzero()
+        if chunk is not None and n > chunk:
+            pos_ref, _ = sliding_window(pos_ref, chunk)
+            pos_hat, weight = sliding_window(pos_hat, chunk)
+            d = OrthoProcrustes.procrustes_disparity(pos_ref, pos_hat)
+            loss += (d * weight).sum()
+        else:
+            loss += OrthoProcrustes.procrustes_disparity(pos_ref, pos_hat)
+
+        nelem += pos_mask.count_nonzero()
+
+    return loss / (nelem + 1e-6)
+
+
+def sliding_window(x: torch.Tensor, chunk: int, step: int = 1, dim: int = 0):
+    out = []
+    x_cpu = x.cpu()
+    edx = x.shape[dim]
+    w = torch.zeros(edx)
+    for bdx in range(0, x.shape[dim], step):
+        chunk_edx = bdx + chunk
+        if chunk_edx > edx:
+            index = range(edx - chunk, edx)
+        else:
+            index = range(bdx, bdx + chunk)
+        w[index] += 1
+        index = torch.tensor(index, dtype=torch.int32)
+        out.append(x_cpu.index_select(dim, index))
+
+    w = w.softmax(0)
+    return torch.stack(out).to(x), w.to(x)
+
+
+@torch.compile()
+def pairwise_distance_loss(
+    y_hat: torch.Tensor, coordiantes: torch.Tensor, mask: torch.BoolTensor
+):
+    B = y_hat.shape[0]
+    loss = torch.tensor(0.0).to(y_hat)
+    n = torch.tensor(0.0).to(y_hat)
+    for bdx in range(B):
+        pos_mask = mask[bdx]
+        pairwise_hat = y_hat[bdx][pos_mask][:, pos_mask]
+
+        pos = coordiantes[bdx][pos_mask]
+        pairwise = torch.cdist(pos, pos).detach()
+
+        loss += F.mse_loss(pairwise_hat, pairwise, reduction="sum")
+        n += pos_mask.count_nonzero().pow(2)
+
+    return loss / (n + 1e-6)
 
 
 def update_alignment_metric(
@@ -63,7 +128,7 @@ def update_alignment_metric(
     y_ref = batch["token_target"].to("cpu")
     for bdx in range(min(input_ids.shape[0], 8)):
         rmse = alignment_rmse(input_ids[bdx], y[bdx], y_ref[bdx], tokenizer)
-        metric.update(rmse)
+        metric["avg_alignment_rmse"].update(rmse)
     return metric
 
 
@@ -127,6 +192,22 @@ class TokenLevelPredictor(pl.LightningModule):
         self.save_hyperparameters(ignore=["seq_targets", "token_targets"])
 
         self._setup_metrics(metrics)
+
+    def on_save_checkpoint(self, checkpoint: dict):
+        # Include the encoder config in the checkpoint
+        encoder = self.encoder
+        config, kwargs = encoder.config.get_config_dict(encoder.config.name_or_path)
+        kwargs["add_pooling_layer"] = False
+        checkpoint["hyper_parameters"]["encoder"] = {
+            "class_path": f"{encoder.__class__.__module__}.{encoder.__class__.__qualname__}",
+            "init_args": {
+                "config": {
+                    "class_path": f"{encoder.config.__class__.__module__}.{encoder.config.__class__.__qualname__}",
+                    "init_args": config,
+                },
+                **kwargs,
+            },
+        }
 
     def _setup_metrics(self, metrics: list[str]):
         stage_metrics = {
@@ -219,7 +300,7 @@ class TokenLevelPredictor(pl.LightningModule):
             y_pos = y_hat_token[:, :, -3:]
             y_pos_ref = y_token_ref[:, :, -3:]
             y_pos_mask = y_token_mask[:, :, -3:].all(-1)
-            loss_dist = distance_matrix_loss(y_pos, y_pos_ref, y_pos_mask)
+            loss_dist = masked_procustes_loss(y_pos, y_pos_ref, y_pos_mask, chunk=2)
             loss = loss + loss_dist
 
             y_token = y_hat_token[:, :, :-3]
@@ -240,12 +321,18 @@ class TokenLevelPredictor(pl.LightningModule):
             "token_loss": loss_token,
             "seq_loss": loss_seq,
             "dist_loss": loss_dist,
+            "batch": batch,
         }
+
+        if loss.isnan().any():
+            logging.error("loss is nan", out, batch)
 
         return out
 
     def training_step(self, batch):
         out = self.forward_with_loss(batch)
+        if out is None:
+            return None
         self.log_dict(
             {f"train/{k}": v for k, v in out.items() if "loss" in k and v is not None},
             on_step=True,
@@ -303,6 +390,82 @@ class TokenLevelPredictor(pl.LightningModule):
     def configure_optimizers(self):
         learnable_params = chain(
             self.seq_network.parameters(), self.token_network.parameters()
+        )
+        if not self.freeze_encoder:
+            learnable_params = chain(learnable_params, self.encoder.parameters())
+        elif self.freeze_encoder == "encoder":
+            learnable_params = chain(
+                learnable_params, self.encoder.embeddings.parameters()
+            )
+
+        optimizer = self.optimizer(learnable_params)
+        if schedule := self.lr_schedule:
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {"scheduler": schedule(optimizer), "interval": "step"},
+            }
+        return optimizer
+
+
+class TokenLevelDist(TokenLevelPredictor):
+    def __init__(self, *args, dist_network: nn.Module, **kwargs):
+        super().__init__(*args, **kwargs, distance_matrix_loss=False)
+        self.dist_network = dist_network
+
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor = None):
+        hs = self.encoder(input_ids, attention_mask).last_hidden_state
+        y_mol = self.seq_transform.forward(self.seq_network(hs))
+        y_token = self.token_transform.forward(self.token_network(hs))
+        y_dist = self.dist_network(hs)
+        return y_mol, y_token, y_dist
+
+    def forward_with_loss(self, batch):
+        hs = self.encoder(
+            batch["input_ids"], attention_mask=batch["attention_mask"]
+        ).last_hidden_state
+        y_mol_raw = self.seq_transform.forward(self.seq_network(hs))
+        y_token_hat = self.token_transform.forward(self.token_network(hs))
+
+        loss_seq = masked_mse_loss(
+            y_mol_raw,
+            self.seq_transform.inverse(batch["target"]),
+            batch["target_mask"],
+        )
+        loss = loss_seq
+
+        # Token targets
+        y_token_ref = self.token_transform.inverse(batch["token_target"])
+        y_token_mask = batch["token_target_mask"]
+        loss_token = masked_mse_loss(y_token_ref, y_token_hat, y_token_mask)
+        loss += loss_token
+
+        # Pairwise distances
+        y_dist_hat = self.dist_network(hs)
+        loss_dist = pairwise_distance_loss(
+            y_dist_hat, batch["token_coords"], batch["token_coords_mask"]
+        )
+        loss += loss_dist
+
+        out = {
+            "loss": loss,
+            "sequence": self.seq_transform.forward(y_mol_raw),
+            "token": self.token_transform.forward(y_token_hat),
+            "pairwise-distance": y_dist_hat,
+            "token_loss": loss_token,
+            "seq_loss": loss_seq,
+            "dist_loss": loss_dist,
+        }
+
+        if loss.isnan().any():
+            logging.error("loss is nan", out, batch)
+
+        return out
+
+    def configure_optimizers(self):
+        learnable_params = chain(
+            self.seq_network.parameters(),
+            self.token_network.parameters(),
+            self.dist_network.parameters(),
         )
         if not self.freeze_encoder:
             learnable_params = chain(learnable_params, self.encoder.parameters())
@@ -421,6 +584,6 @@ if __name__ == "__main__":
     )
 
     trainer: pl.Trainer = cli.trainer
-    model: TokenLevelPredictor = cli.model
+    model: Union[TokenLevelPredictor, TokenLevelDist] = cli.model
     trainer.fit(model, cli.datamodule)
     trainer.validate(model, cli.datamodule, ckpt_path="best")

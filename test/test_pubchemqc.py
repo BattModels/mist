@@ -132,6 +132,9 @@ def test_aligned_tokenized(example_mol):
     )
     assert ref_net_charge.isclose(net_charge, atol=1e-5)
 
+    assert "token_coords" in out
+    assert "token_coords_mask" in out
+
 
 @pytest.fixture()
 def example_mol_target(example_mol):
@@ -157,24 +160,18 @@ def test_annotate_position(example_mol_target):
     out = annotated_tokens(
         mol_with_target,
         targets=example_mol_target["target"],
-        include_3d=True,
         tokenizer=tokenizer,
     )
     token_target = out["token_target"]
     token_mask = out["token_target_mask"]
     assert token_target.shape == token_mask.shape
-    assert token_target.shape[-1] == 2 * len(example_mol_target["target"]) + 3
-    pos_mask = token_mask[:, -3:].all(-1)
-    pos = token_target[pos_mask, -3:]
-    logging.debug(
-        {
-            "smi": out["smi"],
-            "token_target": token_target,
-            "token_mask": token_mask,
-            "masked_pos": pos,
-        }
-    )
-    assert pos_mask.any()
+    assert token_target.shape[-1] == 2 * len(example_mol_target["target"])
+
+    token_coords = out["token_coords"]
+    token_coords_mask = out["token_coords_mask"]
+    assert token_coords_mask.any()
+    assert token_coords_mask.ndim == 1
+    assert token_coords_mask.shape[0] == token_coords.shape[0]
 
 
 def test_smear_hydrogens(example_mol_target):
@@ -327,15 +324,17 @@ def test_smi_token_type(smi: str, token_types: list[SmiTokenType]):
         zip(pubchem_qc.smi_token_type(tok, tokens), token_types)
     ):
         token = tok.convert_ids_to_tokens(tokens[idx])
-        assert token_type == ref, (
-            f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
-        )
+        assert (
+            token_type == ref
+        ), f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
 
 
 @pytest.mark.skipif(
     pubchem_qc_dataset_path() is None, reason="Missing PubChem QC Dataset"
 )
-@pytest.mark.parametrize("include_3d,randomize", [(True, True), (False, False)])
+@pytest.mark.parametrize(
+    "include_3d,randomize", [(True, True), (False, False), ("as-target", True)]
+)
 def test_datamodule(include_3d, randomize):
     dir = pubchem_qc_dataset_path()
     assert dir is not None
@@ -357,12 +356,18 @@ def test_datamodule(include_3d, randomize):
                 assert col in batch
                 assert isinstance(batch[col], torch.Tensor)
 
+            B, S = batch["input_ids"].shape
             for target in ["target", "token_target"]:
                 assert batch[target].shape == batch[target + "_mask"].shape
 
-            if include_3d:
-                assert batch["token_target_mask"].shape[-1] == 7
+            if include_3d is True:
+                assert batch["token_target"].shape == (B, S, 7)
+                assert batch["token_target_mask"].shape == (B, S, 7)
                 assert batch["token_target_mask"].any(1)[:, -3:].all()
+            elif include_3d == "as-target":
+                assert batch["token_coords"].shape == (B, S, 3)
+                assert batch["token_coords_mask"].shape == (B, S)
+
             else:
                 assert batch["token_target_mask"].shape[-1] == 4
 

@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 
 
@@ -53,3 +54,44 @@ class TokenTaskHead(nn.Module):
 
     def forward(self, emb):
         return self.layers(emb)
+
+
+class TokenPairwiseDistance(nn.Module):
+    def __init__(
+        self,
+        embed_dim: int,
+        dropout: float = 0.2,
+        num_attention_heads: int = 1,
+        activation: str = "relu",
+        ff_ratio: int = 2,
+    ) -> None:
+        super().__init__()
+        self.num_attention_heads = num_attention_heads
+        self.interaction = nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=num_attention_heads,
+            dim_feedforward=ff_ratio * embed_dim,
+            dropout=dropout,
+            batch_first=True,
+            norm_first=True,
+        )
+        self.distance = nn.Sequential(
+            nn.Linear(num_attention_heads, num_attention_heads),
+            nn.Dropout(dropout),
+            nn.ReLU(),
+            nn.Linear(num_attention_heads, 1, bias=False),
+        )
+
+    @torch.compile()
+    def forward(self, hs: torch.Tensor) -> torch.Tensor:
+        B, S, _ = hs.shape
+        hs = self.interaction(hs)
+
+        # Multi-head feature distance
+        H = self.num_attention_heads
+        xb = hs.reshape(B, S, H, -1).transpose(-3, -2)
+        d = torch.cdist(xb, xb, compute_mode="use_mm_for_euclid_dist").transpose(-3, -1)
+
+        # Pairwise token distances
+        pw = self.distance(d).squeeze(-1)
+        return pw

@@ -1,3 +1,4 @@
+from itertools import pairwise
 import json
 import logging
 import traceback
@@ -45,7 +46,7 @@ class PubChemQC(LightningDataModule):
         prefetch_factor: Optional[int] = None,
         val_batch_size: Optional[int] = None,
         randomize: bool = True,
-        include_3d: bool = False,
+        include_3d: bool | str = False,
         seq_targets: list[str] = DEFAULT_SEQ_TARGETS,
         token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
         **kwargs,
@@ -114,6 +115,8 @@ class PubChemQC(LightningDataModule):
                 "target_mask",
                 "token_target",
                 "token_target_mask",
+                "token_coords",
+                "token_coords_mask",
             ]
         )
 
@@ -129,18 +132,18 @@ class PubChemQC(LightningDataModule):
                 for x in batch
             ]
         )
-        output["target"] = torch.stack([x["target"] for x in batch])
-        output["target_mask"] = torch.stack([x["target_mask"] for x in batch])
-        output["token_target"] = pad_sequence(
-            [x["token_target"] for x in batch],
-            batch_first=True,
-            padding_value=0,
-        )
-        output["token_target_mask"] = pad_sequence(
-            [x["token_target_mask"] for x in batch],
-            batch_first=True,
-            padding_value=False,
-        )
+        for k in ["target", "target_mask"]:
+            output[k] = torch.stack([x[k] for x in batch]).detach()
+
+        # Pad token targets
+        token_targets = ["token_target", "token_target_mask"]
+        if self.include_3d == "as-target":
+            token_targets.extend(["token_coords", "token_coords_mask"])
+        for k in token_targets:
+            output[k] = pad_sequence(
+                [x[k] for x in batch], batch_first=True, padding_value=0
+            )
+
         return output
 
     def train_dataloader(self):
@@ -183,7 +186,7 @@ def collate_partial_charges(
     seq_targets: list[str] = DEFAULT_SEQ_TARGETS,
     token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
     randomize: bool = True,
-    include_3d: bool = False,
+    include_3d: bool | str = False,
     labeler: "TokenLabeler | None" = None,
 ):
     mol = construct_mol(
@@ -207,7 +210,6 @@ def collate_partial_charges(
             targets=token_targets,
             tokenizer=tokenizer,
             doRandom=randomize,
-            include_3d=include_3d,
             labeler=labeler,
         )
     except Exception:
@@ -218,8 +220,22 @@ def collate_partial_charges(
         )
         raise
 
+    if include_3d is True:
+        out["token_target"] = torch.cat((out["token_target"], out["token_coords"]), -1)
+        out["token_target_mask"] = torch.cat(
+            (
+                out["token_target_mask"],
+                *([out["token_coords_mask"].reshape(-1, 1)] * 3),
+            ),
+            -1,
+        )
+
     out["target"] = torch.tensor([row[k] for k in seq_targets])
     out["target_mask"] = torch.ones(out["target"].shape, dtype=bool)
+
+    # Check for Molecule missing token-target
+    if not out["token_target_mask"].any():
+        logging.warning({**out, "smi": Chem.MolToSmiles(mol, canonical=False)})
 
     return out
 
@@ -435,7 +451,6 @@ def annotated_tokens(
     tokenizer,
     tokenizer_kwargs: dict | None = None,
     doRandom: bool = True,
-    include_3d: bool = False,
     labeler: TokenLabeler | None = None,
 ):
     """
@@ -452,41 +467,36 @@ def annotated_tokens(
     smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
     token_out = tokenizer.encode_plus(smi, **(tokenizer_kwargs or {}))
     input_ids = token_out["input_ids"]
-    # y = torch.zeros(len(input_ids), 2 * len(targets) + 3 * include_3d)
-    # mask = torch.zeros(y.shape, dtype=torch.bool)
-    n_features = 2 * len(targets) + 3 * include_3d
+    n_features = 2 * len(targets)
     y = []
     mask = []
+    y_pos = []
+    mask_pos = []
     smi_atom_idx = 0
 
-    conf = mol.GetConformer() if include_3d else None
+    conf = mol.GetConformer()
     labeler = labeler or TokenLabeler(tokenizer)
     prior_atom = None
     for idx, token_type in enumerate(labeler(input_ids)):
         y_atom = []
         mask_atom = []
+        pos_atom = [0, 0, 0]
+        pos_mask_atom = False
         if token_type == SmiTokenType.Element:
             atom = mol.GetAtomWithIdx(smi_order[smi_atom_idx])
-            for tdx, target in enumerate(targets):
+            for target in targets:
                 y_atom.append(atom.GetDoubleProp(target))
                 mask_atom.append(True)
-                # y[idx, 2 * tdx] = atom.GetDoubleProp(target)
-                # mask[idx, 2 * tdx] = True
                 if atom.HasProp(f"hs_{target}"):
                     y_atom.append(atom.GetDoubleProp(f"hs_{target}"))
                     mask_atom.append(True)
                 else:
                     y_atom.append(0)
                     mask_atom.append(False)
-                    # y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
-                    # mask[idx, 2 * tdx + 1] = True
 
-            if include_3d:
-                pos = conf.GetAtomPosition(smi_order[smi_atom_idx])
-                y_atom.extend([pos.x, pos.y, pos.z])
-                mask_atom.extend([True, True, True])
-                # y[idx, -3:] = torch.tensor(pos)
-                # mask[idx, -3:] = True
+            pos = conf.GetAtomPosition(smi_order[smi_atom_idx])
+            pos_atom = [pos.x, pos.y, pos.z]
+            pos_mask_atom = True
 
             smi_atom_idx += 1
             prior_atom = atom
@@ -495,29 +505,28 @@ def annotated_tokens(
             # Set Hs target for the atom on the hcount's H
             atom = prior_atom
             assert atom is not None
-            for tdx, target in enumerate(targets):
+            for target in targets:
                 y_atom.extend([0, atom.GetDoubleProp(f"hs_{target}")])
                 mask_atom.extend([False, True])
 
-            if include_3d:
-                y_atom.extend([0] * 3)
-                mask_atom.extend([False] * 3)
-
-                # y[idx, 2 * tdx + 1] = atom.GetDoubleProp(f"hs_{target}")
-                # mask[idx, 2 * tdx + 1] = True
         else:
             y_atom = [0] * n_features
             mask_atom = [False] * n_features
 
-        assert len(y_atom) == n_features
+        assert len(y_atom) == n_features, f"{len(y_atom)} != {n_features}"
         assert len(mask_atom) == n_features
+        assert len(pos_atom) == 3
         y.append(y_atom)
         mask.append(mask_atom)
+        y_pos.append(pos_atom)
+        mask_pos.append(pos_mask_atom)
 
     return {
         **token_out,
         "token_target": torch.tensor(y),
         "token_target_mask": torch.tensor(mask),
+        "token_coords": torch.tensor(y_pos),
+        "token_coords_mask": torch.tensor(mask_pos),
         "smi": smi,
     }
 

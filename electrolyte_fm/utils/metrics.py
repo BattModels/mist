@@ -1,6 +1,8 @@
+import logging
 from typing import Any, Dict, Literal, Optional, Union
 
 import torch
+import torch.functional as F
 from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.classification import (
@@ -424,3 +426,54 @@ def bootstrap_collection(metrics: MetricCollection, **kwargs) -> MetricCollectio
             mc[k] = BootStrapper(v, **kwargs)
 
     return MetricCollection(mc)
+
+
+class OrthoProcrustes(Metric):
+    def __init__(self, reduction="mean", **kwargs):
+        super.__init__(**kwargs)
+        self.reduction = reduction
+        self.add_state("distance", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    def compute(self):
+        if self.reduction == "mean":
+            return self.distance / self.total
+        return self.distance
+
+    def update(self, preds: torch.Tensor, targets: torch.Tensor):
+        self.distance += self.procrustes_disparity(preds, targets)
+        self.total += preds.size(0)
+
+    @staticmethod
+    def procrustes_disparity(preds: torch.Tensor, targets: torch.Tensor):
+        # Zero centroids
+        preds = preds - preds.mean(-2, keepdim=True)
+        targets = targets - targets.mean(-2, keepdim=True)
+        dtype = preds.dtype
+
+        # Rotate targets to align with preds
+        R = OrthoProcrustes.procrustes_alignment(targets, preds)
+        targets = (targets @ R).to(dtype=dtype).detach()
+
+        # Compute RMSE error
+        return (preds - targets).pow(2).sum(-1).sqrt().sum()
+
+    @staticmethod
+    def procrustes_alignment(pc1: torch.Tensor, pc2: torch.Tensor) -> torch.Tensor:
+        M = (pc1.mT @ pc2).mT.to(dtype=torch.float32)
+
+        # Promote to at least float32 for svd
+        M = M.to(dtype=torch.promote_types(M.dtype, torch.float32))
+        u, _, v = torch.linalg.svd(M, full_matrices=False)
+        d = u.det() * v.det()
+        if d.ndim == 0:
+            s = torch.tensor([1, 1, d.item()]).diag()
+            assert s.shape == (3, 3)
+        else:
+            s = torch.stack([torch.tensor([1, 1, ds]).diag() for ds in d])
+            assert s.shape == (pc1.shape[0], 3, 3)
+
+        s = s.to(u)
+        R = u.matmul(s).matmul(v).mT.to(pc1)
+
+        return R
