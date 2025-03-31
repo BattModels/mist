@@ -197,27 +197,21 @@ class SaveConfigWithCkpts(Callback):
 
 def adjust_state_position_embeddings(state, max_position_embeddings):
     module_state = state["module"]
+    weight_key = "model.roberta_prelayernorm.embeddings.position_embeddings.weight"
     assert (
-        "model.roberta_prelayernorm.embeddings.position_embeddings.weight"
-        in module_state
+        weight_key in module_state
     ), "Changing position embedding size only implemented for RoBERTaPreLayerNorm"
-    current_max_pos, embed_size = module_state[
-        "model.roberta_prelayernorm.embeddings.position_embeddings.weight"
-    ].shape
+    current_max_pos, embed_size = module_state[weight_key].shape
     assert (
         max_position_embeddings > current_max_pos
     ), "Maximum position embedding cannot be decreased"
     # Initialize new position embedding matrix
-    new_pos_embed = module_state[
-        "model.roberta_prelayernorm.embeddings.position_embeddings.weight"
-    ].new_empty(max_position_embeddings, embed_size)
+    new_pos_embed = module_state[weight_key].new_empty(
+        max_position_embeddings, embed_size
+    )
     # Restore pre-train position embeddings
-    new_pos_embed[:current_max_pos, :] = module_state[
-        "model.roberta_prelayernorm.embeddings.position_embeddings.weight"
-    ]
-    module_state[
-        "model.roberta_prelayernorm.embeddings.position_embeddings.weight"
-    ].data = new_pos_embed
+    new_pos_embed[:current_max_pos, :] = module_state[weight_key]
+    module_state[weight_key].data = new_pos_embed
     state["module"] = module_state
     return state
 
