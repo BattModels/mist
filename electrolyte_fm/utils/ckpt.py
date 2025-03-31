@@ -1,9 +1,9 @@
-import logging
 import importlib
 import json
+import logging
 import os
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 import torch
 from jsonargparse import Namespace
@@ -177,10 +177,6 @@ class SaveConfigWithCkpts(Callback):
             logging.info("loaded %s", file)
             model.load_state_dict(state["module"], strict=True, assign=True)
 
-<<<<<<< HEAD
-=======
-        model.load_state_dict(state, strict=False, assign=True)
->>>>>>> 0ce01bb (fix: move transform state loading fix to class)
         return model
 
 

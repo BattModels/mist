@@ -10,7 +10,6 @@ from lightning.pytorch.loggers import WandbLogger
 from ..utils.metrics import get_metrics, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
-from .normalize import Standardize
 from .physics_task_heads import ArrheniusTaskHead
 
 
@@ -25,7 +24,6 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         freeze_encoder: bool = False,
         tokenizer: Optional[str] = None,
         vocab_size: Optional[int] = None,
-        hidden_size: int = 768,
         dropout: float = 0.1,
         n_components: int = 38,
         optimizer: OptimizerCallable = torch.optim.AdamW,
@@ -60,8 +58,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 assert (
                     self.encoder.config.vocab_size == vocab_size
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
-
-        self.task_network = ArrheniusTaskHead(embed_dim=hidden_size)
+        self.task_network = ArrheniusTaskHead(embed_dim=self.encoder.config.hidden_size)
         self.lossfn = torch.nn.MSELoss(reduction="mean")
 
         metrics = get_metrics(
@@ -94,8 +91,20 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 mix_embedding = embedding
             else:
                 mix_embedding += embedding
-        pred_unscaled = self.task_network(mix_embedding, batch["temperature"])
-        return pred_unscaled
+
+        pred_unscaled, alpha, beta, lmbda = self.task_network(
+            mix_embedding, batch["temperature"]
+        )
+
+        exponent = torch.div(-1 * alpha + batch["composition_4"], lmbda)
+        pred_decay = torch.mul((1 - beta), torch.exp(exponent)) + beta
+        pred = torch.mul(pred_unscaled, pred_decay)
+
+        # predicted conductivity*decay if salt molarity > alpha
+        # else predicted conductivity
+        pred = torch.where(batch["composition_4"] > alpha, pred, pred_unscaled)
+
+        return pred.view(-1, 1), alpha, beta
 
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
@@ -105,9 +114,9 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
 
     def _scaled_pred_loss(self, batch):
         """Compute loss before transforming the model's predictions"""
-        preds = self.forward(batch, transform=False)
+        preds, alpha, beta = self.forward(batch, transform=False)
         target = batch["target"]
-        loss = self.lossfn(preds, target)
+        loss = self.lossfn(preds, target) + alpha.abs().mean()
         return preds, loss
 
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:

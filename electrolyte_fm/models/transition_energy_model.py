@@ -10,7 +10,7 @@ from lightning.pytorch.loggers import WandbLogger
 from ..utils.metrics import get_metrics, masked_loss, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
-from .normalize import Standardize, get_normalizer
+from .normalize import Standardize
 from .prediction_task_head import PredictionTaskHead
 
 
