@@ -1,6 +1,6 @@
 import logging
 from itertools import chain
-from typing import Any, Callable, Optional, Union
+from typing import Optional, Union
 
 import lightning.pytorch as pl
 import torch
@@ -9,22 +9,10 @@ from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 from torch.nn import functional as F
-from torchmetrics import (
-    MetricCollection,
-    MeanMetric,
-)
-from rdkit.Chem.rdMolAlign import AlignMol
 
-from electrolyte_fm.utils.metrics import get_metrics, get_metric, OrthoProcrustes
+from electrolyte_fm.utils.metrics import get_metrics, OrthoProcrustes
 from electrolyte_fm.models.normalize import AbstractNormalizer, IdentityTransform
-from electrolyte_fm.data_modules.pubchem_qc import (
-    DEFAULT_SEQ_TARGETS,
-    DEFAULT_TOKEN_TARGETS,
-    mol_from_prediction,
-    serialize_molecule,
-)
-
-TaskNetworkCallable = Callable[Any, nn.Module]
+from electrolyte_fm.data_modules import pubchem_qc
 
 
 def masked_mse_loss(
@@ -120,42 +108,6 @@ def pairwise_distance_loss(
     return loss / (n + 1e-6)
 
 
-def update_alignment_metric(
-    metric: MetricCollection, out: dict, batch: dict, tokenizer
-):
-    input_ids = batch["input_ids"].to("cpu")
-    y = out["token"].to("cpu")
-    y_ref = batch["token_target"].to("cpu")
-    for bdx in range(min(input_ids.shape[0], 8)):
-        rmse = alignment_rmse(input_ids[bdx], y[bdx], y_ref[bdx], tokenizer)
-        metric["avg_alignment_rmse"].update(rmse)
-    return metric
-
-
-def alignment_rmse(
-    input_ids: torch.Tensor, y: torch.Tensor, y_hat: torch.Tensor, tokenizer
-):
-    mol = mol_from_prediction(
-        input_ids,
-        y_token=y_hat[:, -3:],
-        tokenizer=tokenizer,
-        seq_targets=None,
-        token_targets=[],
-        include_3d=True,
-    )
-    mol_ref = mol_from_prediction(
-        input_ids,
-        y_token=y[:, -3:],
-        tokenizer=tokenizer,
-        seq_targets=None,
-        token_targets=[],
-        include_3d=True,
-    )
-    return AlignMol(
-        mol, mol_ref, atomMap=[(idx, idx) for idx in range(mol.GetNumAtoms())]
-    )
-
-
 class TokenLevelPredictor(pl.LightningModule):
     def __init__(
         self,
@@ -178,11 +130,11 @@ class TokenLevelPredictor(pl.LightningModule):
         self.seq_network = seq_network
         self.token_network = token_network
         self.seq_transform = seq_transform or IdentityTransform()
-        self.seq_targets = seq_targets or DEFAULT_SEQ_TARGETS
+        self.seq_targets = seq_targets or pubchem_qc.DEFAULT_SEQ_TARGETS
         self.token_transform = token_transform or IdentityTransform()
 
         self.token_targets = []
-        for target in token_targets or DEFAULT_TOKEN_TARGETS:
+        for target in token_targets or pubchem_qc.DEFAULT_TOKEN_TARGETS:
             self.token_targets.extend([target, f"hs_{target}"])
 
         self.optimizer = optimizer
@@ -224,10 +176,6 @@ class TokenLevelPredictor(pl.LightningModule):
                 target_channels=self.token_targets,
             ),
         }
-        if distance_matrix_loss:
-            stage_metrics["dist"] = MetricCollection(
-                {"avg_alignment_rmse": MeanMetric()}
-            )
         self.val_metrics = nn.ModuleDict(
             {k: v.clone(prefix="val/") for k, v in stage_metrics.items()}
         )
@@ -353,13 +301,6 @@ class TokenLevelPredictor(pl.LightningModule):
             out["token"][batch["token_target_mask"]],
             batch["token_target"][batch["token_target_mask"]],
         )
-        if self.distance_matrix_loss:
-            update_alignment_metric(
-                self.val_metrics["dist"],
-                out,
-                batch,
-                self.trainer.datamodule.tokenizer,
-            )
 
         return out
 
@@ -374,16 +315,16 @@ class TokenLevelPredictor(pl.LightningModule):
         seq_targets = self.seq_targets
         token_targets = self.token_targets
         for bdx in range(y.shape[0]):
-            mol = mol_from_prediction(
+            mol = pubchem_qc.mol_from_prediction(
                 batch["input_ids"][bdx],
+                tokenizer,
                 y[bdx],
                 y_token[bdx],
-                tokenizer=tokenizer,
                 seq_targets=seq_targets,
                 token_targets=token_targets,
                 include_3d=self.distance_matrix_loss,
             )
-            out.append(serialize_molecule(mol))
+            out.append(pubchem_qc.serialize_molecule(mol))
 
         return out
 
@@ -461,6 +402,37 @@ class TokenLevelDist(TokenLevelPredictor):
 
         return out
 
+    def predict_step(self, batch):
+        input_ids = batch["input_ids"]
+        y_seq, y_token, y_dist = self.forward(
+            input_ids, attention_mask=batch["attention_mask"]
+        )
+
+        dm = self.trainer.datamodule
+        tokenizer = dm.tokenizer
+        seq_targets = self.seq_targets
+        token_targets = self.token_targets
+        if not hasattr(self, "_labeler"):
+            self._labeler = pubchem_qc.TokenLabeler(tokenizer)
+        labeler = self._labeler
+
+        B = y_seq.shape[0]
+        out = []
+        for bdx in range(B):
+            mol = pubchem_qc.mol_from_pairwise(
+                input_ids[bdx],
+                y_seq[bdx],
+                y_token[bdx],
+                y_dist[bdx],
+                seq_targets=seq_targets,
+                token_targets=token_targets,
+                labeler=labeler,
+                tokenizer=tokenizer,
+            )
+            out.append(pubchem_qc.serialize_molecule(mol))
+
+        return out
+
     def configure_optimizers(self):
         learnable_params = chain(
             self.seq_network.parameters(),
@@ -488,6 +460,7 @@ def predict(argv):
     import argparse
     import json
     from itertools import chain
+    from electrolyte_fm.models.token_level import TokenLevelDist
     from electrolyte_fm.data_modules.predict_dataset import PredictDataModule
     from lightning.pytorch import Trainer
 
@@ -499,7 +472,7 @@ def predict(argv):
     parser.add_argument("--output", type=argparse.FileType("w"), default=sys.stdout)
     args = parser.parse_args(argv)
 
-    model = TokenLevelPredictor.load_from_checkpoint(args.model)
+    model = TokenLevelDist.load_from_checkpoint(args.model)
     dm = PredictDataModule(
         "csv",
         tokenizer="smirk-cls",

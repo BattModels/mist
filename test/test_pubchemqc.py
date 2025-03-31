@@ -324,9 +324,9 @@ def test_smi_token_type(smi: str, token_types: list[SmiTokenType]):
         zip(pubchem_qc.smi_token_type(tok, tokens), token_types)
     ):
         token = tok.convert_ids_to_tokens(tokens[idx])
-        assert (
-            token_type == ref
-        ), f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
+        assert token_type == ref, (
+            f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
+        )
 
 
 @pytest.mark.skipif(
@@ -505,3 +505,12 @@ def test_distance_loss():
     y = x @ torch.rand(3, 3)
     loss = distance_matrix_loss(x, y, mask)
     assert not loss.isclose(torch.tensor(0.0))
+
+
+def test_mds_svd():
+    N = 32
+    coords = torch.rand(N, 3)
+    D = torch.cdist(coords, coords)
+    est_coords = pubchem_qc.mds_svd(D)
+    D_est = torch.cdist(est_coords, est_coords)
+    assert D.isclose(D_est).all()

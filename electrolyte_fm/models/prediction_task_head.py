@@ -82,7 +82,6 @@ class TokenPairwiseDistance(nn.Module):
             nn.Linear(num_attention_heads, 1, bias=False),
         )
 
-    @torch.compile()
     def forward(self, hs: torch.Tensor) -> torch.Tensor:
         B, S, _ = hs.shape
         hs = self.interaction(hs)

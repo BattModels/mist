@@ -531,6 +531,14 @@ def annotated_tokens(
     }
 
 
+def decode_mol(input_ids: torch.Tensor, tokenizer):
+    smi = tokenizer.decode(input_ids, skip_special_tokens=True)
+    mol = Chem.MolFromSmiles(smi, sanitize=False)
+    Chem.MolToSmiles(mol, canonical=False)
+    smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
+    return mol, smi_order
+
+
 def mol_from_prediction(
     input_ids: torch.Tensor,
     tokenizer,
@@ -541,11 +549,7 @@ def mol_from_prediction(
     include_3d: bool = False,
     labeler: TokenLabeler | None = None,
 ) -> Chem.Mol:
-    # Construct molecule and smi -> atom mapping
-    smi = tokenizer.decode(input_ids, skip_special_tokens=True)
-    mol = Chem.MolFromSmiles(smi, sanitize=False)
-    Chem.MolToSmiles(mol, canonical=False)
-    smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
+    mol, smi_order = decode_mol(input_ids, tokenizer)
 
     # Tag molecule properties
     if y_seq is not None:
@@ -582,6 +586,69 @@ def mol_from_prediction(
 
     mol.AddConformer(conf)
 
+    return mol
+
+
+def mds_svd(D: torch.Tensor, dim=3):
+    n = D.size(0)
+
+    # Compute the Gram matrix (inner product matrix) using double centering
+    J = torch.eye(n) - (1.0 / n) * torch.ones(n, n)
+    J = J.to(D)
+    B = -0.5 * J @ (D.pow(2)) @ J
+
+    u, s, _ = torch.linalg.svd(B)
+
+    # Select the top 'dim' components, clamping to avoid numerical issues
+    u = u[:, :dim]
+    s = s[:dim].clamp(min=0)
+
+    # Compute the coordinates: X = U * sqrt(S)
+    return u * torch.sqrt(s)
+
+
+def mol_from_pairwise(
+    input_ids: torch.Tensor,
+    y_seq: torch.Tensor,
+    y_token: torch.Tensor,
+    y_dist: torch.Tensor,
+    tokenizer,
+    seq_targets: list[str] | None = None,
+    token_targets: list[str] | None = None,
+    labeler: TokenLabeler | None = None,
+):
+    mol, smi_order = decode_mol(input_ids, tokenizer)
+
+    seq_targets = seq_targets or DEFAULT_SEQ_TARGETS
+    for k, v in zip(seq_targets, y_seq):
+        mol.SetDoubleProp(k, v.item())
+
+    smi_atom_idx = 0
+    token_targets = token_targets or DEFAULT_TOKEN_TARGETS
+    labeler = labeler or TokenLabeler(tokenizer)
+    atom_mask = []
+    for idx, token_type in enumerate(labeler(input_ids.tolist())):
+        if token_type == SmiTokenType.Element:
+            atom_idx = smi_order[smi_atom_idx]
+            atom = mol.GetAtomWithIdx(atom_idx)
+            smi_atom_idx += 1
+            atom_mask.append(True)
+
+            for tdx, target in enumerate(token_targets):
+                atom.SetDoubleProp(target, y_token[idx, tdx].item())
+        else:
+            atom_mask.append(False)
+
+    atom_mask = torch.tensor(atom_mask, dtype=torch.bool)
+
+    # Estimate atom coordinates from pairwise distances
+    pairwise_dist = y_dist[atom_mask][:, atom_mask]
+    coords = mds_svd(pairwise_dist)
+    conf = Chem.Conformer(mol.GetNumAtoms())
+    for idx, atom_idx in enumerate(smi_order):
+        conf.SetAtomPosition(atom_idx, coords[idx, :].tolist())
+
+    mol.AddConformer(conf)
     return mol
 
 
