@@ -1,3 +1,4 @@
+from typing import Optional
 import torch
 from torch import nn
 
@@ -64,9 +65,11 @@ class TokenPairwiseDistance(nn.Module):
         num_attention_heads: int = 1,
         activation: str = "relu",
         ff_ratio: int = 2,
+        n_ref_dist: int = 0,
     ) -> None:
         super().__init__()
         self.num_attention_heads = num_attention_heads
+        self.n_ref_dist = n_ref_dist
         self.interaction = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_attention_heads,
@@ -75,14 +78,17 @@ class TokenPairwiseDistance(nn.Module):
             batch_first=True,
             norm_first=True,
         )
+        n_pw_dist = self.num_attention_heads + n_ref_dist
         self.distance = nn.Sequential(
-            nn.Linear(num_attention_heads, num_attention_heads),
+            nn.Linear(n_pw_dist, n_pw_dist),
             nn.Dropout(dropout),
             nn.ReLU(),
-            nn.Linear(num_attention_heads, 1, bias=False),
+            nn.Linear(n_pw_dist, 1, bias=False),
         )
 
-    def forward(self, hs: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, hs: torch.Tensor, ref_dist: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         B, S, _ = hs.shape
         hs = self.interaction(hs)
 
@@ -90,6 +96,12 @@ class TokenPairwiseDistance(nn.Module):
         H = self.num_attention_heads
         xb = hs.reshape(B, S, H, -1).transpose(-3, -2)
         d = torch.cdist(xb, xb, compute_mode="use_mm_for_euclid_dist").transpose(-3, -1)
+
+        # Concat Ref Distances
+        if self.n_ref_dist > 0:
+            assert ref_dist is not None and ref_dist.shape[0:3] == (B, S, S)
+            ref_dist = ref_dist if ref_dist.ndim == 4 else ref_dist.unsqueeze(-1)
+            d = torch.cat((d, ref_dist), dim=-1)
 
         # Pairwise token distances
         pw = self.distance(d).squeeze(-1)

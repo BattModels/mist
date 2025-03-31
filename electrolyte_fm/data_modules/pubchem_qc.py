@@ -47,6 +47,7 @@ class PubChemQC(LightningDataModule):
         val_batch_size: Optional[int] = None,
         randomize: bool = True,
         include_3d: bool | str = False,
+        include_topo_dist: bool = False,
         seq_targets: list[str] = DEFAULT_SEQ_TARGETS,
         token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
         **kwargs,
@@ -58,6 +59,7 @@ class PubChemQC(LightningDataModule):
         self.vocab_size = len(self.tokenizer)
         self.randomize = randomize
         self.include_3d = include_3d
+        self.include_topo_dist = include_topo_dist
         self.seq_targets = seq_targets
         self.token_targets = token_targets
 
@@ -107,18 +109,19 @@ class PubChemQC(LightningDataModule):
                 "labeler": TokenLabeler(self.tokenizer),
             },
         )
-        ds = ds.select_columns(
-            [
-                "input_ids",
-                "attention_mask",
-                "target",
-                "target_mask",
-                "token_target",
-                "token_target_mask",
-                "token_coords",
-                "token_coords_mask",
-            ]
-        )
+        cols = [
+            "input_ids",
+            "attention_mask",
+            "target",
+            "target_mask",
+            "token_target",
+            "token_target_mask",
+            "token_coords",
+            "token_coords_mask",
+        ]
+        if self.include_topo_dist:
+            cols.append("topo_dist_map")
+        ds = ds.select_columns(cols)
 
         self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
         self.val_dataset: Dataset = ds["validation"]
@@ -143,6 +146,15 @@ class PubChemQC(LightningDataModule):
             output[k] = pad_sequence(
                 [x[k] for x in batch], batch_first=True, padding_value=0
             )
+
+        # Pairwise targets
+        if self.include_topo_dist:
+            S = output["input_ids"].shape[1]
+            o = []
+            for x in batch:
+                d = x["topo_dist_map"]
+                o.append(d.sparse_resize_((S, S, d.shape[-1]), 3, 0))
+            output["topo_dist_map"] = torch.stack(o)
 
         return output
 
@@ -473,6 +485,7 @@ def annotated_tokens(
     y_pos = []
     mask_pos = []
     smi_atom_idx = 0
+    atom_indices = []
 
     conf = mol.GetConformer()
     labeler = labeler or TokenLabeler(tokenizer)
@@ -500,6 +513,7 @@ def annotated_tokens(
 
             smi_atom_idx += 1
             prior_atom = atom
+            atom_indices.append(idx)
 
         elif token_type == SmiTokenType.ExplicitHydrogen:
             # Set Hs target for the atom on the hcount's H
@@ -527,8 +541,25 @@ def annotated_tokens(
         "token_target_mask": torch.tensor(mask),
         "token_coords": torch.tensor(y_pos),
         "token_coords_mask": torch.tensor(mask_pos),
+        "topo_dist_map": sparse_topo_distance(mol, atom_indices),
         "smi": smi,
     }
+
+
+def sparse_topo_distance(mol: Chem.Mol, atom_indices: list[int]):
+    adx = torch.tensor(atom_indices)
+    rdx, cdx = torch.meshgrid(adx, adx, indexing="ij")
+    idx = torch.stack((rdx.flatten(), cdx.flatten()))
+    S = []
+
+    # Number of Hops
+    for d in [
+        Chem.rdmolops.GetDistanceMatrix(mol, force=True),
+        Chem.rdmolops.GetDistanceMatrix(mol, useBO=True, force=True),
+    ]:
+        S.append(torch.sparse_coo_tensor(idx, d.flatten()))
+
+    return torch.stack(S, dim=-1)
 
 
 def decode_mol(input_ids: torch.Tensor, tokenizer):

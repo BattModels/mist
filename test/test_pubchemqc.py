@@ -333,7 +333,13 @@ def test_smi_token_type(smi: str, token_types: list[SmiTokenType]):
     pubchem_qc_dataset_path() is None, reason="Missing PubChem QC Dataset"
 )
 @pytest.mark.parametrize(
-    "include_3d,randomize", [(True, True), (False, False), ("as-target", True)]
+    "include_3d,randomize,incluce_topo_dist",
+    [
+        (True, True, False),
+        (False, False, False),
+        ("as-target", True, False),
+        ("as-target", True, True),
+    ],
 )
 def test_datamodule(include_3d, randomize):
     dir = pubchem_qc_dataset_path()
@@ -514,3 +520,10 @@ def test_mds_svd():
     est_coords = pubchem_qc.mds_svd(D)
     D_est = torch.cdist(est_coords, est_coords)
     assert D.isclose(D_est).all()
+
+
+def test_sparse_topo_distance():
+    mol = Chem.MolFromSmiles("CC#N")
+    atom_indixes = [0, 1, 3]
+    s = pubchem_qc.sparse_topo_distance(mol, atom_indixes)
+    assert s.shape == (4, 4, 2)

@@ -353,7 +353,9 @@ class TokenLevelDist(TokenLevelPredictor):
         super().__init__(*args, **kwargs, distance_matrix_loss=False)
         self.dist_network = dist_network
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor = None):
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None
+    ):
         hs = self.encoder(input_ids, attention_mask).last_hidden_state
         y_mol = self.seq_transform.forward(self.seq_network(hs))
         y_token = self.token_transform.forward(self.token_network(hs))
@@ -381,7 +383,7 @@ class TokenLevelDist(TokenLevelPredictor):
         loss += loss_token
 
         # Pairwise distances
-        y_dist_hat = self.dist_network(hs)
+        y_dist_hat = self.dist_network(hs, batch.get("topo_dist_map", None))
         loss_dist = pairwise_distance_loss(
             y_dist_hat, batch["token_coords"], batch["token_coords_mask"]
         )
