@@ -4,6 +4,9 @@ from typing import Optional, TypeVar
 from rdkit import Chem
 from datasets import Dataset, DatasetDict, IterableDatasetDict
 from datasets.distributed import split_dataset_by_node
+from rdkit import Chem
+
+from ..models.model_utils import DeepSpeedMixin
 
 
 def is_fast(tokenizer):

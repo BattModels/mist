@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 import torch
-from datasets import Dataset, load_dataset
+from datasets import Dataset, IterableDatasetDict, load_dataset
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from transformers import DataCollatorWithPadding, PreTrainedModel
@@ -72,8 +72,8 @@ class HiddenStateDataModule(LightningDataModule):
         tokenizer: Optional[str] = None,
         batch_size: int = 64,
         val_batch_size: Optional[int] = None,
-        num_workers: int = 1,
-        prefetch_factor: int = 4,
+        num_workers: int = 12,
+        prefetch_factor: Optional[int] = 4,
         encoder_batch_size: Optional[int] = None,
         encoder_device: str = "cuda",
         return_molecule: bool = False,
@@ -210,7 +210,6 @@ def collate_components_and_environment(
     if include_temperature:
         temperature = torch.tensor(args[-1])
         output = {"temperature": temperature}
-
     for i in range(n_components):
         idx = 2 * i
         smiles = args[idx]
@@ -251,18 +250,20 @@ class ComponentDataModule(LightningDataModule):
         tokenizer: Optional[str] = None,
         batch_size: int = 64,
         val_batch_size: Optional[int] = None,
-        num_workers: int = 1,
-        prefetch_factor: int = 4,
+        num_workers: int = 0,
+        prefetch_factor: Optional[int] = None,
         encoder_batch_size: Optional[int] = None,
         include_temperature: bool = True,
         encoding: Optional[str | MolEncoding] = "smiles",
         smi_column: str = "smiles",
         encoder_device: str = "cuda",
+        iterable: bool = False,
     ):
         super().__init__()
 
         # Locate Tokeniser and dataset
         self.tokenizer = load_tokenizer(tokenizer)
+        self.iterable = iterable
         self.vocab_size = len(self.tokenizer)
         self.path: Path = Path(path)
         self.encoding = MolEncoding(encoding)
@@ -282,7 +283,9 @@ class ComponentDataModule(LightningDataModule):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.save_hyperparameters(logger=False)
-        self.data_collator = DataCollatorWithPadding(self.tokenizer, "longest")
+        self.data_collator = DataCollatorWithPadding(
+            self.tokenizer, max_length=128, padding="max_length"
+        )
 
     def prepare_data(self):
         self.dataset
@@ -291,16 +294,30 @@ class ComponentDataModule(LightningDataModule):
     def dataset(self):
         if hasattr(self, "_dataset"):
             return self._dataset
-        self._dataset = load_dataset(
-            "csv",
-            name=str(self.path.name),
-            data_files={
-                "train": str(self.path.joinpath("train.csv")),
-                "validation": str(self.path.joinpath("val.csv")),
-                "test": str(self.path.joinpath("test.csv")),
-            },
-            keep_in_memory=True,
-        )
+        if self.iterable:
+            self._dataset = load_dataset(
+                "arrow",
+                name=str(self.path.name),
+                data_files={
+                    "train": str(self.path.joinpath("train/*.arrow")),
+                    "validation": str(self.path.joinpath("validation/*.arrow")),
+                    "test": str(self.path.joinpath("test/*.arrow")),
+                },
+                keep_in_memory=False,
+                streaming=True,
+                save_infos=False,
+            )
+            assert isinstance(self._dataset, IterableDatasetDict)
+        else:
+            self._dataset = self._dataset = load_dataset(
+                "csv",
+                name=str(self.path.name),
+                data_files={
+                    "train": str(self.path.joinpath("train.csv")),
+                    "validation": str(self.path.joinpath("val.csv")),
+                    "test": str(self.path.joinpath("test.csv")),
+                },
+            )
         return self._dataset
 
     def setup(self, stage: str) -> None:
@@ -318,15 +335,9 @@ class ComponentDataModule(LightningDataModule):
             fn_kwargs={"target_columns": self.target_col},
             remove_columns=self.target_col,
         )
-
-        # Save training dataset for target transformations
-        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
-        # ds = ds.select_columns(input_columns + self.target_col)
-
         ds = ds.map(
             collate_components_and_environment,
-            batched=True,
-            batch_size=self.encoder_batch_size,
+            batched=False,
             fn_kwargs={
                 "include_temperature": self.temperature,
                 "tokenizer": self.tokenizer,
@@ -334,17 +345,16 @@ class ComponentDataModule(LightningDataModule):
                 "n_components": self.n_components,
             },
             input_columns=input_columns,
-            remove_columns=input_columns,
         )
 
         self.train_dataset: Dataset = ds["train"].shuffle()
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
-
-        self.target_dataset = ds["train"].select_columns(["target"])
+        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
     def collator(self, batch):
         output = {}
+
         for i in range(self.n_components):
             output[f"input_ids_{i}"] = torch.stack(
                 [torch.tensor(x[f"input_ids_{i}"], dtype=int) for x in batch]
@@ -353,11 +363,14 @@ class ComponentDataModule(LightningDataModule):
                 [torch.tensor(x[f"attention_mask_{i}"], dtype=int) for x in batch]
             )
             output[f"composition_{i}"] = torch.stack(
-                [torch.tensor(x[f"composition_{i}"], dtype=float) for x in batch]
+                [
+                    torch.tensor(x[f"composition_{i}"], dtype=torch.float32)
+                    for x in batch
+                ]
             )
 
         output["target"] = torch.stack(
-            [torch.tensor(x["target"], dtype=float) for x in batch]
+            [torch.tensor(x["target"], dtype=torch.float32) for x in batch]
         )
         output["target_mask"] = torch.stack(
             [torch.tensor(x["target_mask"], dtype=bool) for x in batch]
@@ -365,7 +378,7 @@ class ComponentDataModule(LightningDataModule):
 
         if self.temperature:
             output["temperature"] = torch.stack(
-                [torch.tensor(x["temperature"], dtype=float) for x in batch]
+                [torch.tensor(x["temperature"], dtype=torch.float32) for x in batch]
             )
         return output
 
@@ -377,7 +390,7 @@ class ComponentDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             batch_size=self.batch_size,
             pin_memory=True,
-            persistent_workers=True,
+            persistent_workers=self.num_workers > 0,
         )
 
     def val_dataloader(self):
@@ -388,7 +401,7 @@ class ComponentDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             batch_size=self.val_batch_size,
             pin_memory=True,
-            persistent_workers=True,
+            persistent_workers=self.num_workers > 0,
         )
 
     def test_dataloader(self):
@@ -398,4 +411,5 @@ class ComponentDataModule(LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
             batch_size=self.val_batch_size,
+            persistent_workers=self.num_workers > 0,
         )
