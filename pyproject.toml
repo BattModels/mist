@@ -26,7 +26,6 @@ dependencies = [
     "pytorch-lightning~=2.5"
 ]
 
-<<<<<<< HEAD
 [optional-dependencies]
 tokenizers = [
     "rdkit",
@@ -35,7 +34,7 @@ tokenizers = [
     "apetokenizer @ git+https://github.com/mikemayuare/apetokenizer.git@8b070d6278503bcf8ad2eedc1756ac34f4bbd981",
     "pyspark>=3.5.0",
 ]
-=======
+
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
 torch = {version = "~2.3"}
@@ -52,12 +51,10 @@ rich = "^13"
 pydoe2 = "^1.3"
 jsonnet = "^0.20.0"
 scikit-learn = "^1.5.1"
-scipy="^1.13.1"
-selfies= "^2.1.0"
+selfies = "^2.1.0"
 rdkit = "^2024.3.5"
 smirk = {git = "git@github.com:BattModels/smirk.git", tag = "v0.1.1" }
 safetensors = "^0.5.1"
->>>>>>> 205083e (fix: add scipy as dependency)
 
 [dependency-groups]
 dev = [
