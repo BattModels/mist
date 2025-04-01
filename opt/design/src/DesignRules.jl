@@ -4,7 +4,7 @@ using PythonCall: PythonCall, Py, PyList, pyconvert, @pyconst, pyimport
 using DataFrames
 using Makie
 using MISTStyle
-using MISTStyle: label
+using MISTStyle: label, sublabel!
 using Statistics: Statistics, mean, std
 using StatsBase: StatsBase, stderror, mean_and_std, mean, range
 using CategoricalArrays: levelcode, categorical
