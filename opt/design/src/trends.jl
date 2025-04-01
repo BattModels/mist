@@ -444,6 +444,7 @@ function figure_fatty_acids(df; omega=3, alpha=0.8, qm_model="")
         :bp => L"$$Boil\n[$\degree C$ ]",
         :fp => L"$$Flash\n[$\degree C$ ]",
     ]
+    x_sat = 0.3
     axes = map(enumerate(axes)) do (idx, (col, ylabel))
         is_last = idx == length(axes)
         col => Axis(gl_trends[idx, 1];
