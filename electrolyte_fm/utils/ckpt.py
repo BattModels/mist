@@ -11,6 +11,8 @@ from lightning.pytorch import Callback, LightningModule, Trainer
 from lightning.pytorch.cli import LightningArgumentParser
 from lightning.pytorch.loggers import WandbLogger
 
+import torch.nn.functional as F
+
 
 class SaveConfigWithCkpts(Callback):
     """Save Configuration with the model's checkpoints
@@ -205,13 +207,21 @@ def adjust_state_position_embeddings(state, max_position_embeddings):
     assert (
         max_position_embeddings > current_max_pos
     ), "Maximum position embedding cannot be decreased"
-    # Initialize new position embedding matrix
-    new_pos_embed = module_state[weight_key].new_empty(
-        max_position_embeddings, embed_size
+
+    # Scale the current embeddings to the new size using interpolation
+    new_pos_embed = (
+        F.interpolate(
+            module_state[weight_key].unsqueeze(0).permute(0, 2, 1),
+            size=max_position_embeddings,
+            mode="linear",
+            align_corners=False,
+        )
+        .squeeze(0)
+        .permute(1, 0)
     )
-    # Restore pre-train position embeddings
-    new_pos_embed[:current_max_pos, :] = module_state[weight_key]
-    module_state[weight_key].data = new_pos_embed
+
+    # Update the state's position embedding
+    module_state[weight_key] = new_pos_embed
     state["module"] = module_state
     return state
 
