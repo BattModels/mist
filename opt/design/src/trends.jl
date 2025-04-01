@@ -1,5 +1,5 @@
 function hydrocarbon_trends(df)
-    f = Figure(size=(3.5inch, 3inch))
+    f = Figure(size=(2.9inch, 2inch))
 
     func_groups = [
         "Alkanes",
@@ -31,8 +31,8 @@ function hydrocarbon_trends(df)
         :mu => L"$\mu$ [D]",
         :r2 => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
         :gap => L"Gap\n[eV]$$",
-        :mp => L"$$Melt\n[$\degree C$]",
-        :bp => L"$$Boil\n[$\degree C$]",
+        :mp => L"$$Melt\n[$\degree C$ ]",
+        :bp => L"$$Boil\n[$\degree C$ ]",
         # :dn => L"$$DN\n[kJ/mol]",
         :pKa_kt => L"pKa",
         # :alpha_kt => L"KT $\alpha$",
@@ -49,7 +49,7 @@ function hydrocarbon_trends(df)
             xminorticksvisible=is_last,
             xticklabelsvisible=is_last,
             tellwidth=true,
-            yticks=WilkinsonTicks(5),
+            yticks=WilkinsonTicks(3),
             yminorticksvisible=true,
             xminorticks=IntervalsBetween(5),
         )
@@ -71,17 +71,17 @@ function hydrocarbon_trends(df)
     elems = map(enumerate(func_groups)) do (color, label)
         PolyElement(; color, label, colormap, colorrange)
     end
-    Legend(gl_trends[length(axes)+1, 1], elems, label.(elems);
+    Legend(gl_trends[end+1, 1], elems, label.(elems);
         nbanks=4,
         tellheight=true, tellwidth=true,
     )
 
     # Design Rules
     gl_dr = GridLayout(f[1, 2])
-    ax_dn = Axis(gl_dr[1, 1]; ylabel=L"DN [kcal/mol, BF3]$$", xlabel=L"HOMO [eV]$$")
+    ax_dn = Axis(gl_dr[1, 1]; ylabel=L"$G\degree$ [kJ/mol]", xlabel=L"HOMO [eV]$$")
     ax_mp_bp = Axis(gl_dr[2, 1];
-        xlabel=L"Melting Point [$C\degree$]",
-        ylabel=L"Boiling Point [$C\degree$]",
+        xlabel=L"Melting Point [$\degree C$ ]",
+        ylabel=L"Boiling Point [$\degree C$ ]",
     )
     foreach(groupby(df, :type)) do gdf
         kwargs = (;
@@ -91,7 +91,7 @@ function hydrocarbon_trends(df)
             label=string(first(gdf.type)),
             marker=:circle
         )
-        scatter!(ax_dn, HARTREE_TO_EV .* mean.(gdf.homo), mean.(gdf.dn); kwargs...)
+        scatter!(ax_dn, HARTREE_TO_EV .* mean.(gdf.homo), mean.(gdf.g298); kwargs...)
         scatter!(ax_mp_bp, mean.(gdf.mp), mean.(gdf.bp); kwargs...)
     end
     ablines!(ax_mp_bp, 0, 1; color=:black, linestyle=:dash)
@@ -178,12 +178,12 @@ function electrolyte_trends(df)
     scatter!(ax, df.min_lowdin, mean.(df.mu); marker, color)
     # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
 
-    ax = Axis(gl[2, 1]; xlabel=L"Melting Point $[\degree C]$", ylabel=L"Flash Point $[\degree C]$")
+    ax = Axis(gl[2, 1]; xlabel=L"Melting Point $[\degree C ]$", ylabel=L"Flash Point $[\degree C ]$")
     # vlines!(ax, -100; color=:black)
     # hlines!(ax, 60; color=:black)
     scatter!(ax, mean.(df.mp), mean.(df.fp); marker, color)
 
-    ax = Axis(gl[2, 2]; xlabel=L"Melting Point $[\degree C]$", ylabel=L"Boiling Point $[\degree C]$")
+    ax = Axis(gl[2, 2]; xlabel=L"Melting Point $[\degree C]$", ylabel=L"Boiling Point $[\degree C ]$")
     # vlines!(ax, -100; color=:black)
     # hlines!(ax, 60; color=:black)
     scatter!(ax, mean.(df.mp), mean.(df.bp); marker, color)
@@ -423,9 +423,9 @@ function figure_fatty_acids(df)
         :mu_rand => L"$\mu$\n[D]",
         # :r2 => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
         # :gap => L"Gap\n[eV]$$",
-        :mp => L"$$Melt\n[$\degree C$]",
-        :bp => L"$$Boil\n[$\degree C$]",
-        :fp => L"$$Flash\n[$\degree C$]",
+        :mp => L"$$Melt\n[$\degree C$ ]",
+        :bp => L"$$Boil\n[$\degree C$ ]",
+        :fp => L"$$Flash\n[$\degree C$ ]",
         # :dn => L"$$DN\n[kJ/mol]",
         # :pKa_kt => L"pKa",
         # :beta_kt => L"KT $\beta$",
@@ -474,14 +474,14 @@ function figure_fatty_acids(df)
     n = 2
     ax_fp_c = Axis(gl_cross[1, 1];
         xlabel=L"Number of Carbons$$",
-        ylabel=L"Flash Point [$\degree C~$]",
+        ylabel=L"Flash Point [$\degree C$ ]",
         xlabelvisible=false,
         xticksvisible=false,
         xticklabelsvisible=false,
     )
     ax_fp_mu = Axis(gl_cross[1, 2];
         xlabel=L"Dipole Moment [D]$$",
-        ylabel=L"Flash Point [$\degree C~$]",
+        ylabel=L"Flash Point [$\degree C$ ]",
         xlabelvisible=false,
         xticksvisible=false,
         xticklabelsvisible=false,
