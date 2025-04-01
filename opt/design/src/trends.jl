@@ -109,6 +109,9 @@ function hydrocarbon_trends(df)
 
     colgap!(f.layout, 5)
     colsize!(f.layout, 1, Relative(2 / 3))
+    sublabel!(f[1, 1, TopLeft()], "a"; left=25)
+    sublabel!(gl_dr[1, 1, TopLeft()], "b"; left=3)
+    sublabel!(gl_dr[2, 1, TopLeft()], "c"; left=3)
     resize_to_layout!(f)
 
     return f
@@ -434,10 +437,7 @@ function figure_fatty_acids(df)
     axes = map(enumerate(axes)) do (idx, (col, ylabel))
         is_last = idx == length(axes)
         col => Axis(gl_trends[idx, 1];
-            xlabel=L"$\omega$-n Fatty Acids", ylabel,
-            limits=((0, nothing), nothing),
-            xticks=vcat(x_sat, collect(1:n_max)),
-            xtickformat = values -> map(n -> n == x_sat ? "Sat." : "$(Int(n))", values),
+            xlabel=L"Chain Length$$", ylabel,
             xlabelvisible=is_last,
             xticksvisible=is_last,
             xticklabelsvisible=is_last,
@@ -451,25 +451,33 @@ function figure_fatty_acids(df)
         label="Number of Double Bonds",
         vertical=false, tellwidth=false,
     )
+    local h, hs
     for (col, ax) in pairs(axes)
-        boxplot!(ax, x_sat * ones(nrow(df_sat)), mean.(convert_units(df_sat[:, col], col));
-            width=1/d_max,
-            color=df_sat.d,
-            show_outliers=false,
-            MISTStyle.cb_attrs(cb, BoxPlot)...
-        )
-
         foreach(groupby(df, :n)) do gdf
             y = convert_units(gdf[:, col], col)
-            boxplot!(ax, gdf.n, mean.(y);
-                dodge=gdf.d,
+            ϵ = randn(nrow(gdf)) * 0.12
+            hs = scatter!(ax, gdf.c .+ ϵ, mean.(y);
                 color=gdf.d,
-                show_outliers=false,
+                marker=:circle,
+                alpha=0.5,
                 MISTStyle.cb_attrs(cb, BoxPlot)...
             )
         end
-
+        h = lines!(ax, df_sat.c, mean.(convert_units(df_sat[:, col], col));
+            color=:black,
+            linewidth=1,
+            label="Saturated",
+            MISTStyle.cb_attrs(cb, BoxPlot)...
+        )
     end
+    elems = [h, MarkerElement(color=:black, marker=hs.marker, label="Unsaturated", markersize=hs.markersize)]
+    Legend(gl_trends[end, 1], elems, label.(elems);
+        alignmode=Inside(),
+        labelsize=6pt,
+        halign=:right,
+        valign=:bottom,
+        nbanks=2,
+    )
 
     n = 2
     ax_fp_c = Axis(gl_cross[1, 1];
@@ -478,6 +486,8 @@ function figure_fatty_acids(df)
         xlabelvisible=false,
         xticksvisible=false,
         xticklabelsvisible=false,
+        yminorticksvisible=true,
+        yminorticks=IntervalsBetween(5),
     )
     ax_fp_mu = Axis(gl_cross[1, 2];
         xlabel=L"Dipole Moment [D]$$",
@@ -489,27 +499,34 @@ function figure_fatty_acids(df)
         yticksvisible=false,
         yticklabelsvisible=false,
     )
-    ax_gibbs_c = Axis(gl_cross[2, 1];
+    ax_mp_c = Axis(gl_cross[2, 1];
         xlabel=L"Chain Length$$",
         ylabel=L"$G\degree$ [kJ/mol]",
+        xticks=[0, 10, 20],
+        xminorticks=IntervalsBetween(5),
+        xminorticksvisible=true,
+        yminorticksvisible=true,
+        yminorticks=IntervalsBetween(5),
     )
-    ax_gibbs_mu = Axis(gl_cross[2, 2];
+    ax_mp_mu = Axis(gl_cross[2, 2];
         xlabel=L"Dipole Moment [D]$$",
-        ylabel=L"$G\degree$ [kJ/mol]",
+        ylabel=L"Melting Point [$\degree C$ ]",
         ylabelvisible=false,
         yticksvisible=false,
         yticklabelsvisible=false,
+        xticks=WilkinsonTicks(3),
+        xminorticksvisible=true,
     )
     linkyaxes!(ax_fp_c, ax_fp_mu)
-    linkyaxes!(ax_gibbs_c, ax_gibbs_mu)
-    linkxaxes!(ax_fp_c, ax_gibbs_c)
-    linkxaxes!(ax_fp_mu, ax_gibbs_mu)
+    linkyaxes!(ax_mp_c, ax_mp_mu)
+    linkxaxes!(ax_fp_c, ax_mp_c)
+    linkxaxes!(ax_fp_mu, ax_mp_mu)
     cb_sat = Colorbar(gl_cross[1:n, 3];
         label="Degree of Saturation",
         tickformat="{:.0%}",
         colorrange=extrema(df.saturation),
     )
-    colgap!(gl_cross, 1, 4)
+    # colgap!(gl_cross, 1, 4)
 
     sort!(df_unsat, :saturation)
     scatter!(ax_fp_c, df_unsat.c, mean.(df_unsat.fp);
@@ -526,13 +543,13 @@ function figure_fatty_acids(df)
     )
 
     sort!(df_unsat, :saturation)
-    scatter!(ax_gibbs_c, df_unsat.c, mean.(df_unsat.g298_rand);
+    scatter!(ax_mp_c, df_unsat.c, mean.(df_unsat.mp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha=0.5,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
-    scatter!(ax_gibbs_mu, mean.(df_unsat.mu), mean.(df_unsat.g298_rand);
+    scatter!(ax_mp_mu, mean.(df_unsat.mu), mean.(df_unsat.mp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha=0.5,
