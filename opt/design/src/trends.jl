@@ -216,8 +216,14 @@ function figure_permutations(name_df::Pair...; name_df_order)
         :lumo => L"LUMO$$",
         :zpve => L"ZPVE$$",
         # :cv => L"CV$$",
-        :h298 => L"$G\degree$",
+        :g298 => L"$G\degree$",
     ]
+    limits = Dict(
+        :homo => (nothing, (3e-3, 2)),
+        :gap => (nothing, (5e-3, 2)),
+        :zpve => (nothing, (5e-3, 3e-1)),
+        :g298 => (nothing, (1e-1, 4e1)),
+    )
     dfs = []
     for (name, df) in name_df
         df = deepcopy(df)
@@ -240,14 +246,14 @@ function figure_permutations(name_df::Pair...; name_df_order)
             xminorticksvisible=is_last,
             xticklabelsvisible=is_last,
             tellwidth=true,
-            yticks=LogTicks(WilkinsonTicks(5)),
+            yticks=LogTicks(WilkinsonTicks(3)),
             yminorticksvisible=true,
             xminorticks=IntervalsBetween(5),
         )
         ax_scatter = Axis(gl_trends[idx, 2];
             xscale=ax_tend.yscale,
             yscale=ax_tend.yscale,
-            xlabel="Randomized\nUncertainty",
+            xlabel="Comparative\nRobustness",
             xlabelvisible=is_last,
             xticksvisible=false,
             xticklabelsvisible=false,
@@ -259,9 +265,7 @@ function figure_permutations(name_df::Pair...; name_df_order)
 
     for (col, (ax, axs)) in axes
         y = std.(df[:, col])
-        if col in [:homo, :lumo, :gap, :cv, :zpve]
-            y .*= HARTREE_TO_EV
-        end
+        y = convert_units(y, col)
         x = df.type
         dodge = levelcode.(df._plt_name)
         idx = @. !isnan(y)
@@ -280,8 +284,12 @@ function figure_permutations(name_df::Pair...; name_df_order)
             alpha=0.2,
             marker=:circle,
         )
-        linkyaxes!(ax, axs)
         powerlaw!(axs, 1, 1; color=:black)
+        if haskey(limits, col)
+            ax.limits[] = limits[col]
+            axs.limits[] = (last(limits[col]), last(limits[col]))
+        end
+        linkyaxes!(axs, ax)
     end
 
     # Legend
@@ -303,15 +311,16 @@ function figure_permutations(name_df::Pair...; name_df_order)
 
     # Order Sensitivity
     n_carbon_range = extrema(last(first(name_df_order)).n_carbon)
-    cb = Colorbar(gl_order[1:length(name_df_order), 2];
+    cb = Colorbar(gl_order[1, 1];
         label="Number of Carbons",
         colorrange=n_carbon_range,
-        width=5
+        vertical=false, tellwidth=false,
+        # flipaxis=false,
     )
     axes = Axis[]
     for (idx, (_, df)) in enumerate(name_df_order)
         is_last = idx == length(name_df_order)
-        ax = Axis(gl_order[idx, 1];
+        ax = Axis(gl_order[1+idx, 1];
             xlabel=L"Double Bond Location$$",
             ylabel=L"HOMO [eV]$$",
             limits=((0, 1), nothing),
@@ -340,19 +349,13 @@ function figure_permutations(name_df::Pair...; name_df_order)
         end
     end
     linkyaxes!(axes...)
-    colgap!(gl_order, 1, 4)
     colgap!(f.layout, 1, 3)
-    colsize!(f.layout, 1, Relative(3 / 4))
+    colsize!(f.layout, 2, Relative(3 / 4))
 
-    label_kwargs = (;
-        fontsize=8pt,
-        font=:bold,
-        halign=:right,
-        tellheight=false,
-    )
-    Label(f[1, 1, TopLeft()], "a)"; padding=(0, 15, 0, 2), label_kwargs...)
-    Label(gl_order[1, 1, TopLeft()], "b)"; padding=(0, 7, 0, 2), label_kwargs...)
-    Label(gl_order[2, 1, TopLeft()], "c)"; padding=(0, 7, 0, 7), label_kwargs...)
+
+    sublabel!(gl_order[2, 1, TopLeft()], "a"; left=5)
+    sublabel!(gl_order[3, 1, TopLeft()], "b"; left=5)
+    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=13)
 
     resize_to_layout!(f)
 
@@ -406,6 +409,8 @@ function figure_fatty_acids(df)
 
     gl_trends = GridLayout(f[1, 1])
     gl_cross = GridLayout(f[1, 2])
+    sublabel!(f[1, 1, TopLeft()], "a"; left=5)
+    sublabel!(f[1, 2, TopLeft()], "b"; left=5)
 
     d_max = maximum(df.d)
     n_max = maximum(df.n)
@@ -415,7 +420,7 @@ function figure_fatty_acids(df)
     # Trends with ω-n
     axes = [
         :u298_rand => L"$G\degree$\n[kJ/mol]",
-        :mu_rand => L"$\mu$ [D]",
+        :mu_rand => L"$\mu$\n[D]",
         # :r2 => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
         # :gap => L"Gap\n[eV]$$",
         :mp => L"$$Melt\n[$\degree C$]",
@@ -425,16 +430,16 @@ function figure_fatty_acids(df)
         # :pKa_kt => L"pKa",
         # :beta_kt => L"KT $\beta$",
     ]
+    x_sat = 0.3
     axes = map(enumerate(axes)) do (idx, (col, ylabel))
         is_last = idx == length(axes)
         col => Axis(gl_trends[idx, 1];
             xlabel=L"$\omega$-n Fatty Acids", ylabel,
-            limits=((-0.1, n_max), nothing),
-            xticks=0:n_max,
-            xtickformat = values -> map(n -> n == 0 ? "Sat." : "$(Int(n))", values),
+            limits=((0, nothing), nothing),
+            xticks=vcat(x_sat, collect(1:n_max)),
+            xtickformat = values -> map(n -> n == x_sat ? "Sat." : "$(Int(n))", values),
             xlabelvisible=is_last,
             xticksvisible=is_last,
-            xminorticksvisible=is_last,
             xticklabelsvisible=is_last,
             tellwidth=true,
             yticks=WilkinsonTicks(5),
@@ -447,12 +452,13 @@ function figure_fatty_acids(df)
         vertical=false, tellwidth=false,
     )
     for (col, ax) in pairs(axes)
-        boxplot!(ax, df_sat.n, mean.(convert_units(df_sat[:, col], col));
+        boxplot!(ax, x_sat * ones(nrow(df_sat)), mean.(convert_units(df_sat[:, col], col));
             width=1/d_max,
             color=df_sat.d,
             show_outliers=false,
             MISTStyle.cb_attrs(cb, BoxPlot)...
         )
+
         foreach(groupby(df, :n)) do gdf
             y = convert_units(gdf[:, col], col)
             boxplot!(ax, gdf.n, mean.(y);
@@ -462,66 +468,78 @@ function figure_fatty_acids(df)
                 MISTStyle.cb_attrs(cb, BoxPlot)...
             )
         end
+
     end
 
     n = 2
-    ax_bp = Axis(gl_cross[1, 1];
-        xlabel=L"Melting Point [$\degree C~$]",
+    ax_fp_c = Axis(gl_cross[1, 1];
+        xlabel=L"Number of Carbons$$",
         ylabel=L"Flash Point [$\degree C~$]",
         xlabelvisible=false,
         xticksvisible=false,
         xticklabelsvisible=false,
     )
-    ax_mu = Axis(gl_cross[2, 1];
-        xlabel=L"Melting Point [$\degree C~$]",
-        ylabel=L"$$Dipole Moment [D]",
+    ax_fp_mu = Axis(gl_cross[1, 2];
+        xlabel=L"Dipole Moment [D]$$",
+        ylabel=L"Flash Point [$\degree C~$]",
+        xlabelvisible=false,
+        xticksvisible=false,
+        xticklabelsvisible=false,
+        ylabelvisible=false,
+        yticksvisible=false,
+        yticklabelsvisible=false,
     )
-    linkxaxes!(ax_bp, ax_mu)
-    cb_sat = Colorbar(gl_cross[1:n, 2];
+    ax_gibbs_c = Axis(gl_cross[2, 1];
+        xlabel=L"Chain Length$$",
+        ylabel=L"$G\degree$ [kJ/mol]",
+    )
+    ax_gibbs_mu = Axis(gl_cross[2, 2];
+        xlabel=L"Dipole Moment [D]$$",
+        ylabel=L"$G\degree$ [kJ/mol]",
+        ylabelvisible=false,
+        yticksvisible=false,
+        yticklabelsvisible=false,
+    )
+    linkyaxes!(ax_fp_c, ax_fp_mu)
+    linkyaxes!(ax_gibbs_c, ax_gibbs_mu)
+    linkxaxes!(ax_fp_c, ax_gibbs_c)
+    linkxaxes!(ax_fp_mu, ax_gibbs_mu)
+    cb_sat = Colorbar(gl_cross[1:n, 3];
         label="Degree of Saturation",
         tickformat="{:.0%}",
         colorrange=extrema(df.saturation),
     )
-    cb_c = Colorbar(gl_cross[n+1, 1];
-        label="Saturated Chain Length",
-        colormap=:imola,
-        colorrange=extrema(df_sat.c),
-        vertical=false, tellwidth=false,
-        flipaxis=false,
-    )
+    colgap!(gl_cross, 1, 4)
 
-    scatter!(ax_bp, mean.(df_unsat.mp), mean.(df_unsat.fp);
+    sort!(df_unsat, :saturation)
+    scatter!(ax_fp_c, df_unsat.c, mean.(df_unsat.fp);
         color=df_unsat.saturation,
         marker=:circle,
-        alpha=0.8,
+        alpha=0.5,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
-    lines!(ax_bp, mean.(df_sat.mp), mean.(df_sat.fp);
-        color=df_sat.c,
-        linewidth=2,
-        MISTStyle.cb_attrs(cb_c, Lines)...
-    )
-
-    scatter!(ax_mu, mean.(df_unsat.mp), mean.(df_unsat.mu);
+    scatter!(ax_fp_mu, mean.(df_unsat.mu), mean.(df_unsat.fp);
         color=df_unsat.saturation,
         marker=:circle,
-        alpha=0.8,
+        alpha=0.5,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
-    lines!(ax_mu, mean.(df_sat.mp), mean.(df_sat.mu);
-        color=df_sat.c,
-        linewidth=2,
-        MISTStyle.cb_attrs(cb_c, Lines)...
+
+    sort!(df_unsat, :saturation)
+    scatter!(ax_gibbs_c, df_unsat.c, mean.(df_unsat.g298_rand);
+        color=df_unsat.saturation,
+        marker=:circle,
+        alpha=0.5,
+        MISTStyle.cb_attrs(cb_sat, Scatter)...
+    )
+    scatter!(ax_gibbs_mu, mean.(df_unsat.mu), mean.(df_unsat.g298_rand);
+        color=df_unsat.saturation,
+        marker=:circle,
+        alpha=0.5,
+        MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
 
-
-    # foreach(groupby(df, :d)) do gdf
-    #     @info "d" gdf
-    #     boxplot!(ax, gdf.n, mean.(gdf.mp); dodge=gdf.d)
-    # end
-
-    colgap!(f.layout, 5)
-    colsize!(f.layout, 1, Relative(2 / 3))
+    colsize!(f.layout, 1, Relative(0.6))
     resize_to_layout!(f)
 
     return f
