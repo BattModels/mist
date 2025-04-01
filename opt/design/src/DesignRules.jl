@@ -6,13 +6,15 @@ using Makie
 using MISTStyle
 using MISTStyle: label
 using Statistics: Statistics, mean, std
-using StatsBase: StatsBase, stderror, mean_and_std, mean
+using StatsBase: StatsBase, stderror, mean_and_std, mean, range
 using CategoricalArrays: levelcode, categorical
+using JSON: JSON
 
 const HARTREE_TO_EV = 27.211_386_245_981
 
 include("uq.jl")
 include("inference.jl")
+include("pubchem.jl")
 
 include("hydrocarbons.jl")
 include("plot_utils.jl")
