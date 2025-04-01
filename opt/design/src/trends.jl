@@ -407,7 +407,7 @@ function figure_order2(name_df::Pair...)
     return f
 end
 
-function figure_fatty_acids(df)
+function figure_fatty_acids(df; omega=3, alpha=0.8)
     f = Figure(size=(3.42inch, 2inch))
 
     gl_trends = GridLayout(f[1, 1])
@@ -418,7 +418,7 @@ function figure_fatty_acids(df)
     d_max = maximum(df.d)
     n_max = maximum(df.n)
     df_sat = subset(df, :d => ByRow(==(0)))
-    df_unsat = subset(df, :d => ByRow(!=(0)))
+    df_unsat = subset(df, :d => ByRow(!=(0)), :n => ByRow(==(omega)))
 
     # Trends with ω-n
     axes = [
@@ -441,8 +441,11 @@ function figure_fatty_acids(df)
             xlabelvisible=is_last,
             xticksvisible=is_last,
             xticklabelsvisible=is_last,
+            xminorticksvisible=is_last,
+            xticks=0:5:25,
+            xminorticks=IntervalsBetween(5),
             tellwidth=true,
-            yticks=WilkinsonTicks(5),
+            yticks=WilkinsonTicks(3),
             yminorticksvisible=true,
         )
     end |> Dict
@@ -453,13 +456,12 @@ function figure_fatty_acids(df)
     )
     local h, hs
     for (col, ax) in pairs(axes)
-        foreach(groupby(df, :n)) do gdf
+        foreach(groupby(df_unsat, :n)) do gdf
             y = convert_units(gdf[:, col], col)
-            ϵ = randn(nrow(gdf)) * 0.12
-            hs = scatter!(ax, gdf.c .+ ϵ, mean.(y);
+            hs = scatter!(ax, gdf.c, mean.(y);
                 color=gdf.d,
                 marker=:circle,
-                alpha=0.5,
+                alpha=0.8,
                 MISTStyle.cb_attrs(cb, BoxPlot)...
             )
         end
@@ -470,7 +472,7 @@ function figure_fatty_acids(df)
             MISTStyle.cb_attrs(cb, BoxPlot)...
         )
     end
-    elems = [h, MarkerElement(color=:black, marker=hs.marker, label="Unsaturated", markersize=hs.markersize)]
+    elems = [h, MarkerElement(color=:black, label="Unsaturated", marker=hs.marker, markersize=hs.markersize)]
     Legend(gl_trends[end, 1], elems, label.(elems);
         alignmode=Inside(),
         labelsize=6pt,
@@ -501,7 +503,7 @@ function figure_fatty_acids(df)
     )
     ax_mp_c = Axis(gl_cross[2, 1];
         xlabel=L"Chain Length$$",
-        ylabel=L"$G\degree$ [kJ/mol]",
+        ylabel=L"Melting Point [$\degree C$ ]",
         xticks=[0, 10, 20],
         xminorticks=IntervalsBetween(5),
         xminorticksvisible=true,
@@ -532,13 +534,13 @@ function figure_fatty_acids(df)
     scatter!(ax_fp_c, df_unsat.c, mean.(df_unsat.fp);
         color=df_unsat.saturation,
         marker=:circle,
-        alpha=0.5,
+        alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
     scatter!(ax_fp_mu, mean.(df_unsat.mu), mean.(df_unsat.fp);
         color=df_unsat.saturation,
         marker=:circle,
-        alpha=0.5,
+        alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
 
@@ -546,13 +548,13 @@ function figure_fatty_acids(df)
     scatter!(ax_mp_c, df_unsat.c, mean.(df_unsat.mp);
         color=df_unsat.saturation,
         marker=:circle,
-        alpha=0.5,
+        alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
     scatter!(ax_mp_mu, mean.(df_unsat.mu), mean.(df_unsat.mp);
         color=df_unsat.saturation,
         marker=:circle,
-        alpha=0.5,
+        alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
 

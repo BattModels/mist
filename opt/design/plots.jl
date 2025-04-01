@@ -42,9 +42,11 @@ df_sat = DesignRules.predict_all(
     n=3,
 )
 
-with_theme(MISTStyle.theme()) do
-    DesignRules.figure_fatty_acids(df_sat)
-end |> MISTStyle.savefig("saturated-fats")
+for omega in [3, 6, 9]
+    with_theme(MISTStyle.theme()) do
+        DesignRules.figure_fatty_acids(df_sat; omega)
+    end |> MISTStyle.savefig("omega-$omega-saturated-fats")
+end
 
 
 # Evaluate electrolytes
