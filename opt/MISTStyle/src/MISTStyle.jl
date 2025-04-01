@@ -2,6 +2,8 @@ module MISTStyle
 
 using Makie
 using CategoricalArrays: levels
+using GLMakie: GLMakie
+using CairoMakie: CairoMakie
 
 const pt = 3 / 4
 const inch = 96
@@ -11,9 +13,17 @@ export pt, inch
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
     mkpath(fig_dir)
-    save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1)
-    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch)
+    save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1, backend=CairoMakie)
+    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=GLMakie)
     return nothing
+end
+
+function savefig(name::String; kwargs...)
+    function curry_savefig(fig; kwargs...)
+        savefig(name, fig; kwargs...)
+        return fig
+    end
+    return curry_savefig
 end
 
 """ Helper function to get the label of an plot element """
@@ -31,6 +41,12 @@ function cb_attrs(cb::Colorbar)
         lowclip=cb.lowclip,
         highclip=cb.highclip,
     )
+end
+function cb_attrs(cb::Colorbar, plt)
+    attrs = cb_attrs(cb)
+    valid = Makie.attribute_names(plt)
+    invalid = setdiff(keys(attrs), valid)
+    return Base.structdiff(attrs, NamedTuple{(invalid...,)})
 end
 
 include("errorcross.jl")
@@ -131,6 +147,7 @@ function theme()
             ticklabelsize=6pt,
             labelpadding=0pt,
             ticklabelpad=0pt,
+            size=8pt,
         ),
         Scatter=(;
             markersize=5pt,

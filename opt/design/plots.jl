@@ -27,23 +27,36 @@ using CSV: CSV
 
 # Evaluate hydrocarbons
 df_hydrocarbons = DesignRules.predict_all(
-    DesignRules.simple_hydrocarbons(25),
+    DesignRules.simple_hydrocarbons(30),
     models...;
-    n=2
+    n=10
 )
 
 with_theme(MISTStyle.theme()) do
     DesignRules.hydrocarbon_trends(df_hydrocarbons)
-end
+end |> MISTStyle.savefig("hydrocarbons")
+
+df_sat = DesignRules.predict_all(
+    DesignRules.saturated_fats(24; n_max=9, d_max=6),
+    models...;
+    n=3,
+)
+
+with_theme(MISTStyle.theme()) do
+    DesignRules.figure_fatty_acids(df_sat)
+end |> MISTStyle.savefig("saturated-fats")
+
 
 # Evaluate electrolytes
 df_electrolyte = DataFrame(CSV.File("electrolytes.csv"))
 df_electrolyte.smi .= DesignRules.encode.(df_electrolyte.smi; encoding="smiles-kekule")
 df_electrolyte = DesignRules.predict_all(df_electrolyte, models...; n=10)
+df_pc = DesignRules.pubchem_from_jsonl("electrolytes.jsonl")
+df_electrolyte = leftjoin(df_electrolyte, df_pc, on=:smi)
 
 with_theme(MISTStyle.theme()) do
     DesignRules.electrolyte_trends(df_electrolyte)
-end
+end |> MISTStyle.savefig("electrolytes")
 
 # Permutation sensitivity
 df_perm = simple_hydrocarbons(25)
@@ -57,7 +70,7 @@ df_order = DesignRules.alkene_sweep(25, models[1])
 
 with_theme(MISTStyle.theme()) do
     DesignRules.figure_permutations(
-        "Kekule" => df_perm_ref, "Random" => df_perm_rand;
-        name_df_order=("Kekule" => df_order, "Random" => df_order_rand)
+        "Baseline" => df_perm_ref, "Random" => df_perm_rand;
+        name_df_order=("Baseline" => df_order, "Random" => df_order_rand)
     )
-end
+end |> MISTStyle.savefig("permutations")
