@@ -38,3 +38,4 @@ spack.lock
 
 # outputs
 *.json
+*.jsonl

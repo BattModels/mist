@@ -1,5 +1,29 @@
 function hydrocarbon_trends(df)
     f = Figure(size=(3.5inch, 3inch))
+
+    func_groups = [
+        "Alkanes",
+        "Alkenes",
+        "Alkynes",
+        # "Isoalkanes",
+        "Arenes",
+        # "Esters",
+        # "Ethers",
+        "Alcohols",
+        # "Aldehydes",
+        "Amines",
+        "Nitriles",
+        # "Dinitriles",
+        "Carboxylic acids",
+        # "Fluoroalkanes",
+        # "Bromoalkanes",
+        # "Chloroalkanes",
+    ]
+    df = subset(df, :type => ByRow(in(func_groups)))
+    df.type = categorical(df.type; levels=func_groups)
+    colormap = :tab10
+    colorrange = (1, 10)
+
     # Trends with Size
     gl_trends = GridLayout(f[1, 1])
     axes = [
@@ -36,20 +60,52 @@ function hydrocarbon_trends(df)
             if col in [:gap]
                 y .*= HARTREE_TO_EV
             end
-            errorlines!(ax, gdf.n_carbon, y; label=string(first(gdf.type)))
+            lines!(ax, gdf.n_carbon, mean.(y);
+                label=string(first(gdf.type)),
+                color=levelcode.(gdf.type),
+                colormap,
+                colorrange,
+            )
         end
     end
-    Legend(gl_trends[length(axes)+1, 1], axes[:mu]; nbanks=3, tellheight=true)
+    elems = map(enumerate(func_groups)) do (color, label)
+        PolyElement(; color, label, colormap, colorrange)
+    end
+    Legend(gl_trends[length(axes)+1, 1], elems, label.(elems);
+        nbanks=4,
+        tellheight=true, tellwidth=true,
+    )
 
     # Design Rules
     gl_dr = GridLayout(f[1, 2])
-    ax_dn = Axis(gl_dr[1, 1]; ylabel=L"DN", xlabel=L"HOMO [eV]$$")
-    ax_alpha_beta = Axis(gl_dr[2, 1]; ylabel=L"KT $\beta$", xlabel=L"KT $\alpha$")
+    ax_dn = Axis(gl_dr[1, 1]; ylabel=L"DN [kcal/mol, BF3]$$", xlabel=L"HOMO [eV]$$")
+    ax_mp_bp = Axis(gl_dr[2, 1];
+        xlabel=L"Melting Point [$C\degree$]",
+        ylabel=L"Boiling Point [$C\degree$]",
+    )
     foreach(groupby(df, :type)) do gdf
-        label = string(first(gdf.type))
-        errorcross!(ax_dn, HARTREE_TO_EV .* gdf.homo, gdf.dn; label)
-        errorcross!(ax_alpha_beta, gdf.alpha_kt, gdf.beta_kt; label)
+        kwargs = (;
+            colormap,
+            colorrange,
+            color=levelcode.(gdf.type),
+            label=string(first(gdf.type)),
+            marker=:circle
+        )
+        scatter!(ax_dn, HARTREE_TO_EV .* mean.(gdf.homo), mean.(gdf.dn); kwargs...)
+        scatter!(ax_mp_bp, mean.(gdf.mp), mean.(gdf.bp); kwargs...)
     end
+    ablines!(ax_mp_bp, 0, 1; color=:black, linestyle=:dash)
+    text!(ax_mp_bp, 20, 20;
+        text=L"T_m = T_b",
+        align=(:left, :bottom),
+        rotation=pi / 4,
+        markerspace=:data,
+        fontsize=24,
+    )
+
+    # Exceptions to BP > MP
+    df_except = subset(df, [:mp, :bp] => ByRow((mp, bp) -> mean(mp) > mean(bp)))
+    @info "Exceptions to BP > MP" df_except[:, [:type, :smi, :mp, :bp]]
 
     colgap!(f.layout, 5)
     colsize!(f.layout, 1, Relative(2 / 3))
@@ -58,33 +114,86 @@ function hydrocarbon_trends(df)
     return f
 end
 
+
 function electrolyte_trends(df)
-    f = Figure(size=(3.5inch, 3inch))
+    f = Figure(size=(3.5inch, 1.7inch))
+    df = deepcopy(df)
 
-    ax = Axis(f[1, 1]; ylabel=L"DN$$", xlabel=L"HOMO [eV]$$")
-    errorcross!(ax, df.homo .* HARTREE_TO_EV, df.dn)
-    vlines!(ax, -11.444; color=:black) # 10.1021/jz500485r
-    hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
+    func_groups = [
+        "Ethylene carbonate", "Carbonate ester", "Ester", "Ether",
+        "Dicarbonate", "Alkane", "Alkene", "Arene",
+    ]
+    subset!(df, :class => ByRow(in(func_groups)))
+    df.class = categorical(df.class; levels=func_groups)
 
-    ax = Axis(f[2, 1]; ylabel=L"DN$$", xlabel=L"KT $\beta$")
-    errorcross!(ax, df.beta_kt, df.dn)
-    hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
 
-    ax = Axis(f[3, 1]; xlabel=L"HOMO [eV]$$", ylabel=L"Gap [eV]$$")
-    errorcross!(ax, df.homo .* HARTREE_TO_EV, df.gap .* HARTREE_TO_EV)
-    vlines!(ax, -11.444; color=:black) # 10.1021/jz500485r
-    hlines!(ax, 5; color=:black) # 10.1021/acsenergylett.3c00004 (Really just says 5eV is good
+    func_groups_mods = Dict(
+        "Baseline" => :+,
+        "Chloro" => :pentagon,
+        "Fluoro" => :hexagon,
+        "Sulfone" => :diamond,
+        "Phosphate" => :star5,
+        "Silyl" => :rect,
+        "Nitrile" => :utriangle,
+    )
+    df.subsitute .= coalesce.(df.subsitute, "Baseline")
+    subset!(df, :subsitute => ByRow(in(collect(keys(func_groups_mods)))))
+    marker = map(df.subsitute) do subsitute
+        return func_groups_mods[subsitute]
+    end
+    color = map(class -> MISTStyle.CAT_COLORS[levelcode(class)], df.class)
 
-    ax = Axis(f[1, 2]; xlabel=L"Melting Point $[\degree C]$", ylabel=L"Flash Point $[\degree C]$")
-    vlines!(ax, -100; color=:black)
-    hlines!(ax, 60; color=:black)
-    errorcross!(ax, df.mp, df.fp)
+    @info sort(combine(nrow, groupby(df, [:class, :subsitute])), :class)
 
-    ax = Axis(f[2, 2]; xlabel=L"Melting Point $[\degree C]$", ylabel=L"Boiling Point $[\degree C]$")
-    vlines!(ax, -100; color=:black)
-    hlines!(ax, 60; color=:black)
-    errorcross!(ax, df.mp, df.bp)
+    marker_elems = map(collect(pairs(func_groups_mods))) do (label, marker)
+        label = coalesce(label, "Baseline")
+        MarkerElement(; label, marker)
+    end
+    color_elems = map(enumerate(func_groups)) do (idx, label)
+        PolyElement(; color=MISTStyle.CAT_COLORS[idx], label)
+    end
+    gl = GridLayout(f[1, 1]; default_colgap=3)
+    Legend(f[1, 2],
+        [marker_elems, color_elems],
+        [label.(marker_elems), label.(color_elems)],
+        ["Substitutions", "Functional Groups"];
+        tellwidth=true,
+        tellheight=true,
+        valign=:top,
+        margin=(0, 0, 0, 0),
+    )
 
+    ax = Axis(gl[1, 1]; ylabel=L"DN [kcal/mol, BF3]$$", xlabel=L"HOMO [eV]$$")
+    scatter!(ax, mean.(df.homo) .* HARTREE_TO_EV, mean.(df.dn); marker, color)
+    # vlines!(ax, -11.444; color=:black) # 10.1021/jz500485r
+    # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
+
+    ax = Axis(gl[1, 2]; ylabel=L"DN [kcal/mol, BF3]$$", xlabel=L"KT $\beta$")
+    scatter!(ax, mean.(df.beta_kt), mean.(df.dn); marker, color)
+    # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
+
+    ax = Axis(gl[1, 3]; ylabel=L"$\mu$ [D]", xlabel=L"Partial Charge Range$$")
+    scatter!(ax, df.range_lowdin, mean.(df.mu); marker, color)
+    ax = Axis(gl[1, 4]; ylabel=L"$\mu$ [D]", xlabel=L"Minimum Partial Charge$$")
+    scatter!(ax, df.min_lowdin, mean.(df.mu); marker, color)
+    # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
+
+    ax = Axis(gl[2, 1]; xlabel=L"Melting Point $[\degree C]$", ylabel=L"Flash Point $[\degree C]$")
+    # vlines!(ax, -100; color=:black)
+    # hlines!(ax, 60; color=:black)
+    scatter!(ax, mean.(df.mp), mean.(df.fp); marker, color)
+
+    ax = Axis(gl[2, 2]; xlabel=L"Melting Point $[\degree C]$", ylabel=L"Boiling Point $[\degree C]$")
+    # vlines!(ax, -100; color=:black)
+    # hlines!(ax, 60; color=:black)
+    scatter!(ax, mean.(df.mp), mean.(df.bp); marker, color)
+
+    ax = Axis(gl[2, 3]; xlabel=L"HOMO [eV]$$", ylabel=L"Gap [eV]$$")
+    scatter!(ax, mean.(df.homo) .* HARTREE_TO_EV, mean.(df.gap) .* HARTREE_TO_EV; marker, color)
+    # vlines!(ax, -11.444; color=:black) # 10.1021/jz500485r
+    # hlines!(ax, 5; color=:black) # 10.1021/acsenergylett.3c00004 (Really just says 5eV is good
+
+    resize_to_layout!(f)
 
     return f
 end
@@ -98,7 +207,9 @@ end
 
 function figure_permutations(name_df::Pair...; name_df_order)
     f = Figure(size=(3.42inch, 2inch), figure_padding=(2, 3, 2, 4))
-    gl_trends = GridLayout(f[1, 1])
+    gl_order = GridLayout(f[1, 1])
+    gl_trends = GridLayout(f[1, 2])
+
     axes = [
         :homo => L"HOMO$$",
         :gap => L"Gap$$",
@@ -192,7 +303,6 @@ function figure_permutations(name_df::Pair...; name_df_order)
 
     # Order Sensitivity
     n_carbon_range = extrema(last(first(name_df_order)).n_carbon)
-    gl_order = GridLayout(f[1, 2])
     cb = Colorbar(gl_order[1:length(name_df_order), 2];
         label="Number of Carbons",
         colorrange=n_carbon_range,
@@ -288,5 +398,131 @@ function figure_order2(name_df::Pair...)
             )
         end
     end
+    return f
+end
+
+function figure_fatty_acids(df)
+    f = Figure(size=(3.42inch, 2inch))
+
+    gl_trends = GridLayout(f[1, 1])
+    gl_cross = GridLayout(f[1, 2])
+
+    d_max = maximum(df.d)
+    n_max = maximum(df.n)
+    df_sat = subset(df, :d => ByRow(==(0)))
+    df_unsat = subset(df, :d => ByRow(!=(0)))
+
+    # Trends with ω-n
+    axes = [
+        :u298_rand => L"$G\degree$\n[kJ/mol]",
+        :mu_rand => L"$\mu$ [D]",
+        # :r2 => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
+        # :gap => L"Gap\n[eV]$$",
+        :mp => L"$$Melt\n[$\degree C$]",
+        :bp => L"$$Boil\n[$\degree C$]",
+        :fp => L"$$Flash\n[$\degree C$]",
+        # :dn => L"$$DN\n[kJ/mol]",
+        # :pKa_kt => L"pKa",
+        # :beta_kt => L"KT $\beta$",
+    ]
+    axes = map(enumerate(axes)) do (idx, (col, ylabel))
+        is_last = idx == length(axes)
+        col => Axis(gl_trends[idx, 1];
+            xlabel=L"$\omega$-n Fatty Acids", ylabel,
+            limits=((-0.1, n_max), nothing),
+            xticks=0:n_max,
+            xtickformat = values -> map(n -> n == 0 ? "Sat." : "$(Int(n))", values),
+            xlabelvisible=is_last,
+            xticksvisible=is_last,
+            xminorticksvisible=is_last,
+            xticklabelsvisible=is_last,
+            tellwidth=true,
+            yticks=WilkinsonTicks(5),
+            yminorticksvisible=true,
+        )
+    end |> Dict
+    cb = Colorbar(gl_trends[0, 1];
+        colorrange=(0, d_max),
+        label="Number of Double Bonds",
+        vertical=false, tellwidth=false,
+    )
+    for (col, ax) in pairs(axes)
+        boxplot!(ax, df_sat.n, mean.(convert_units(df_sat[:, col], col));
+            width=1/d_max,
+            color=df_sat.d,
+            show_outliers=false,
+            MISTStyle.cb_attrs(cb, BoxPlot)...
+        )
+        foreach(groupby(df, :n)) do gdf
+            y = convert_units(gdf[:, col], col)
+            boxplot!(ax, gdf.n, mean.(y);
+                dodge=gdf.d,
+                color=gdf.d,
+                show_outliers=false,
+                MISTStyle.cb_attrs(cb, BoxPlot)...
+            )
+        end
+    end
+
+    n = 2
+    ax_bp = Axis(gl_cross[1, 1];
+        xlabel=L"Melting Point [$\degree C~$]",
+        ylabel=L"Flash Point [$\degree C~$]",
+        xlabelvisible=false,
+        xticksvisible=false,
+        xticklabelsvisible=false,
+    )
+    ax_mu = Axis(gl_cross[2, 1];
+        xlabel=L"Melting Point [$\degree C~$]",
+        ylabel=L"$$Dipole Moment [D]",
+    )
+    linkxaxes!(ax_bp, ax_mu)
+    cb_sat = Colorbar(gl_cross[1:n, 2];
+        label="Degree of Saturation",
+        tickformat="{:.0%}",
+        colorrange=extrema(df.saturation),
+    )
+    cb_c = Colorbar(gl_cross[n+1, 1];
+        label="Saturated Chain Length",
+        colormap=:imola,
+        colorrange=extrema(df_sat.c),
+        vertical=false, tellwidth=false,
+        flipaxis=false,
+    )
+
+    scatter!(ax_bp, mean.(df_unsat.mp), mean.(df_unsat.fp);
+        color=df_unsat.saturation,
+        marker=:circle,
+        alpha=0.8,
+        MISTStyle.cb_attrs(cb_sat, Scatter)...
+    )
+    lines!(ax_bp, mean.(df_sat.mp), mean.(df_sat.fp);
+        color=df_sat.c,
+        linewidth=2,
+        MISTStyle.cb_attrs(cb_c, Lines)...
+    )
+
+    scatter!(ax_mu, mean.(df_unsat.mp), mean.(df_unsat.mu);
+        color=df_unsat.saturation,
+        marker=:circle,
+        alpha=0.8,
+        MISTStyle.cb_attrs(cb_sat, Scatter)...
+    )
+    lines!(ax_mu, mean.(df_sat.mp), mean.(df_sat.mu);
+        color=df_sat.c,
+        linewidth=2,
+        MISTStyle.cb_attrs(cb_c, Lines)...
+    )
+
+
+    # foreach(groupby(df, :d)) do gdf
+    #     @info "d" gdf
+    #     boxplot!(ax, gdf.n, mean.(gdf.mp); dodge=gdf.d)
+    # end
+
+    colgap!(f.layout, 5)
+    colsize!(f.layout, 1, Relative(2 / 3))
+    resize_to_layout!(f)
+
     return f
 end
