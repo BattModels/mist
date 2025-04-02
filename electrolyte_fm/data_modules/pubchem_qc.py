@@ -1,8 +1,8 @@
-from itertools import pairwise
 import json
 import logging
 import traceback
 import re
+import random
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -98,6 +98,12 @@ class PubChemQC(LightningDataModule):
             ds = maybe_shard_dataset(self.trainer, ds)
 
         ds = ds.map(
+            maybe_construct_mol,
+            batched=False,
+            fn_kwargs={"token_targets": self.token_targets},
+        )
+        ds = ds.filter(lambda x: x["mol"] is not None, batched=False)
+        ds = ds.map(
             collate_partial_charges,
             batched=False,
             fn_kwargs={
@@ -192,14 +198,9 @@ class PubChemQC(LightningDataModule):
         )
 
 
-def collate_partial_charges(
+def maybe_construct_mol(
     row: dict,
-    tokenizer,
-    seq_targets: list[str] = DEFAULT_SEQ_TARGETS,
     token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
-    randomize: bool = True,
-    include_3d: bool | str = False,
-    labeler: "TokenLabeler | None" = None,
 ):
     mol = construct_mol(
         atomic_numbers=row["atomic-numbers"],
@@ -207,15 +208,25 @@ def collate_partial_charges(
         bonds=row["bond-connections"],
         bond_orders=row["bond-order"],
     )
-    token_target = {k: row[k] for k in token_targets}
-    mol = add_atomic_properties(mol, token_target)
+    mol = add_atomic_properties(mol, {k: row[k] for k in token_targets})
 
     # Smear hydrogen targets onto central atoms
-    mol = smear_hydrogen_targets(mol, token_target.keys())
+    return {"mol": smear_hydrogen_targets(mol, token_targets), **row}
 
+
+def collate_partial_charges(
+    row,
+    tokenizer,
+    token_targets: list[str],
+    seq_targets: list[str],
+    randomize: bool = True,
+    include_3d: bool | str = False,
+    labeler: "TokenLabeler | None" = None,
+):
     # Annotate tokens with data
     # Log any errors before rethrowing
     out = None
+    mol: Chem.Mol = row["mol"]
     try:
         out = annotated_tokens(
             mol,
@@ -227,7 +238,7 @@ def collate_partial_charges(
     except Exception:
         logging.error(
             "Error annotating `%s`: %s",
-            json.dumps({k: v for k, v in row.items()}),
+            json.dumps({k: v for k, v in row.items() if k not in ["mol"]}),
             traceback.format_exc(),
         )
         raise
@@ -252,13 +263,14 @@ def collate_partial_charges(
     return out
 
 
-def _best_effort_sanitize(mol: Chem.Mol):
+def _best_effort_sanitize(mol: Chem.Mol) -> int:
     sanitize_ops = (
-        Chem.rdmolops.SANITIZE_CLEANUPCHIRALITY | Chem.rdmolops.SANITIZE_SETAROMATICITY
+        Chem.rdmolops.SANITIZE_CLEANUPCHIRALITY
+        | Chem.rdmolops.SANITIZE_SETAROMATICITY
+        | Chem.rdmolops.SANITIZE_CLEANUP
+        | Chem.rdmolops.SANITIZE_SETAROMATICITY
     )
-    out = Chem.rdmolops.SanitizeMol(mol, sanitize_ops, catchErrors=True)
-    if out != 0:
-        logging.info("failed to fully sanitize %s: %s", Chem.MolToSmiles(mol), out)
+    return Chem.rdmolops.SanitizeMol(mol, sanitize_ops, catchErrors=True)
 
 
 def construct_mol(
@@ -319,7 +331,9 @@ def add_atomic_properties(mol, properties: dict[str, list[float]]):
     return mol
 
 
-def smear_hydrogen_targets(mol_explicit: Chem.Mol, targets: list[str]) -> Chem.Mol:
+def smear_hydrogen_targets(
+    mol_explicit: Chem.Mol, targets: list[str]
+) -> Optional[Chem.Mol]:
     """
     Remove implicit hydrogen atoms from the molecule, accumulating their targets onto the
     attached atom
@@ -347,7 +361,14 @@ def smear_hydrogen_targets(mol_explicit: Chem.Mol, targets: list[str]) -> Chem.M
         updateExplicitCount=True,
         sanitize=False,
     )
-    _best_effort_sanitize(mol)
+    if _best_effort_sanitize(mol) != 0:
+        return None
+
+    # Attempt encoding, filtering molecules with errors
+    try:
+        Chem.MolToSmiles(mol, kekuleSmiles=True)
+    except Exception:
+        return None
 
     retained_atoms = set()
     for atom in mol.GetAtoms():
@@ -475,7 +496,10 @@ def annotated_tokens(
 
     """
 
-    smi = Chem.MolToSmiles(mol, canonical=False, doRandom=doRandom)
+    kekuleSmiles = random.random() > 0.5 if doRandom else False
+    smi = Chem.MolToSmiles(
+        mol, canonical=False, doRandom=doRandom, kekuleSmiles=kekuleSmiles
+    )
     smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
     token_out = tokenizer.encode_plus(smi, **(tokenizer_kwargs or {}))
     input_ids = token_out["input_ids"]
