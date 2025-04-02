@@ -65,11 +65,11 @@ class TokenPairwiseDistance(nn.Module):
         num_attention_heads: int = 1,
         activation: str = "relu",
         ff_ratio: int = 2,
-        n_ref_dist: int = 0,
+        num_ref_dist: int = 0,
     ) -> None:
         super().__init__()
         self.num_attention_heads = num_attention_heads
-        self.n_ref_dist = n_ref_dist
+        self.n_ref_dist = num_ref_dist
         self.interaction = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_attention_heads,
@@ -78,12 +78,18 @@ class TokenPairwiseDistance(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        n_pw_dist = self.num_attention_heads + n_ref_dist
-        self.distance = nn.Sequential(
-            nn.Linear(n_pw_dist, n_pw_dist),
+        num_pw_dist = self.num_attention_heads + num_ref_dist
+        self.distance1 = nn.Sequential(
+            nn.Linear(num_pw_dist, num_pw_dist * ff_ratio),
             nn.Dropout(dropout),
             nn.ReLU(),
-            nn.Linear(n_pw_dist, 1, bias=False),
+            nn.Linear(num_pw_dist * ff_ratio, num_pw_dist),
+        )
+        self.distance = nn.Sequential(
+            nn.Linear(num_pw_dist, num_pw_dist),
+            nn.Dropout(dropout),
+            nn.ReLU(),
+            nn.Linear(num_pw_dist, 1, bias=False),
         )
 
     def forward(
@@ -101,8 +107,9 @@ class TokenPairwiseDistance(nn.Module):
         if self.n_ref_dist > 0:
             assert ref_dist is not None and ref_dist.shape[0:3] == (B, S, S)
             ref_dist = ref_dist if ref_dist.ndim == 4 else ref_dist.unsqueeze(-1)
-            d = torch.cat((d, ref_dist), dim=-1)
+            d = torch.cat((d, ref_dist.to_dense().to(d)), dim=-1)
 
         # Pairwise token distances
+        d = self.distance1(d) + d
         pw = self.distance(d).squeeze(-1)
         return pw

@@ -578,8 +578,9 @@ def sparse_topo_distance(mol: Chem.Mol, atom_indices: list[int]):
 
     # Number of Hops
     for d in [
-        Chem.rdmolops.GetDistanceMatrix(mol, force=True),
-        Chem.rdmolops.GetDistanceMatrix(mol, useBO=True, force=True),
+        # Chem.rdmolops.GetDistanceMatrix(mol, force=True),
+        Chem.rdmolops.GetAdjacencyMatrix(mol, force=True),
+        # Chem.rdmolops.GetDistanceMatrix(mol, useBO=True, force=True),
     ]:
         S.append(torch.sparse_coo_tensor(idx, d.flatten()))
 
