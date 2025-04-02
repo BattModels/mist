@@ -366,15 +366,16 @@ class TokenLevelDist(TokenLevelPredictor):
         hs = self.encoder(
             batch["input_ids"], attention_mask=batch["attention_mask"]
         ).last_hidden_state
-        y_mol_raw = self.seq_transform.forward(self.seq_network(hs))
-        y_token_hat = self.token_transform.forward(self.token_network(hs))
+        y_mol_raw = self.seq_network(hs)
+        y_token_hat = self.token_network(hs)
 
         loss_seq = masked_mse_loss(
             y_mol_raw,
             self.seq_transform.inverse(batch["target"]),
             batch["target_mask"],
         )
-        loss = loss_seq
+        loss = torch.tensor(0.0).to(loss_seq)
+        loss += loss_seq
 
         # Token targets
         y_token_ref = self.token_transform.inverse(batch["token_target"])
