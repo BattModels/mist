@@ -449,6 +449,7 @@ class OrthoProcrustes(Metric):
 
         self.total += preds.size(0)
 
+    @torch.cuda.nvtx.range("OrthoProcrustes.procrustes_disparity")
     @staticmethod
     def procrustes_disparity(preds: torch.Tensor, targets: torch.Tensor):
         # Zero centroids
@@ -468,7 +469,6 @@ class OrthoProcrustes(Metric):
         M = (pc1.mT @ pc2).mT.to(dtype=torch.float32)
 
         # Promote to at least float32 for svd
-        M = M.to(dtype=torch.promote_types(M.dtype, torch.float32))
         u, _, v = torch.linalg.svd(M, full_matrices=False)
         d = u.det() * v.det()
         if d.ndim == 0:

@@ -9,10 +9,12 @@
       class_path: 'electrolyte_fm.models.token_level.TokenLevelDist',
       init_args: {
         freeze_encoder: false,
+        procrustes_loss: true,
         encoder: {
           class_path: 'electrolyte_fm.models.lm_finetuning.load_encoder',
           init_args: {
-            encoder: '/scratch/venkvis_root/venkvis/awadell/ti624ev1/pretrained',
+            encoder: '/lustre/fs0/awadell/electrolyte-fm/sae/models/mist-ti624ev1-moleculenet/pretrained',
+            // encoder: '/scratch/venkvis_root/venkvis/awadell/ti624ev1/pretrained',
           },
         },
         seq_network: {
@@ -50,7 +52,7 @@
             activation: 'gelu',
             ff_ratio: 2,
             num_attention_heads: 8,
-          }
+          },
         },
         optimizer: {
           class_path: 'deepspeed.ops.lamb.FusedLamb',
@@ -75,24 +77,26 @@
       init_args: {
         path: 'opt/pubchem-qc/pubchemqc_jcim2017-split-v2',
         tokenizer: 'smirk-cls',
-        batch_size: 256,
-        val_batch_size: 2 * self.batch_size,
+        batch_size: 64,
+        val_batch_size: self.batch_size,
         num_workers: 8,
         prefetch_factor: 2,
-        include_3d: "as-target",
-        include_topo_dist: true,
+        include_3d: 'as-target',
       },
     },
     trainer: {
       num_nodes: $.nodes,
       devices: $.gpus_per_node,
+      // strategy: 'deepspeed',
       max_steps: 100000,
       precision: 'bf16-mixed',
       accumulate_grad_batches: 1,
+      val_check_interval: 100,
+      limit_val_batches: 12,
       enable_progress_bar: false,
-      gradient_clip_val: 1,
-      gradient_clip_algorithm: 'value',
-      reload_dataloaders_every_n_epochs: 1,
     },
+  },
+  env: {
+    PYTORCH_CUDA_ALLOC_CONF: 'expandable_segments:True',
   },
 }

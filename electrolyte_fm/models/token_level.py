@@ -1,12 +1,14 @@
 import logging
+from itertools import chain
 from typing import Optional
 
 import lightning.pytorch as pl
+from numpy import count_nonzero
 import torch
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
+from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 from torch.nn import functional as F
-from torchmetrics import MetricCollection
 
 from electrolyte_fm.utils.metrics import get_metrics, OrthoProcrustes
 from electrolyte_fm.models.normalize import AbstractNormalizer, IdentityTransform
@@ -24,8 +26,8 @@ def distance_matrix_loss(y_hat: torch.Tensor, y: torch.Tensor, mask: torch.Tenso
     loss = []
     for bdx in range(y_hat.shape[0]):
         pos_mask = mask[bdx]
-        pos_ref = y[bdx, pos_mask, :]
-        pos_hat = y_hat[bdx, pos_mask, :]
+        pos_ref = torch.atleast_2d(y[bdx, pos_mask, :])
+        pos_hat = torch.atleast_2d(y_hat[bdx, pos_mask, :])
 
         # Limit to one set of comparisons and skip self
         dist_hat = torch.cdist(pos_hat, pos_hat).triu(1)
@@ -51,8 +53,8 @@ def masked_procustes_loss(
     nelem = torch.tensor(0).to(device=y_hat.device)
     for bdx in range(y_hat.shape[0]):
         pos_mask = mask[bdx]
-        pos_ref = y[bdx, pos_mask, :]
-        pos_hat = y_hat[bdx, pos_mask, :]
+        pos_ref = torch.atleast_2d(y[bdx, pos_mask, :])
+        pos_hat = torch.atleast_2d(y_hat[bdx, pos_mask, :])
         n = pos_mask.count_nonzero()
         if chunk is not None and n > chunk:
             pos_ref, _ = sliding_window(pos_ref, chunk)
@@ -67,21 +69,32 @@ def masked_procustes_loss(
     return loss / (nelem + 1e-6)
 
 
+@torch.cuda.nvtx.range("masked_procustes_pw_loss")
 def masked_procustes_pw_loss(
     y_dist: torch.Tensor, y_coords: torch.Tensor, mask: torch.Tensor
 ):
-    dtype = torch.promote_types(y_dist.dtype, torch.float32)
     loss = torch.tensor(0.0).to(y_dist)
+    rmsd = torch.tensor(0.0).to(y_dist)
+    dtype = torch.promote_types(y_dist.dtype, torch.float32)
+    y_dist = y_dist.to(dtype=dtype)
     B = y_dist.shape[0]
     for bdx in range(B):
         m = mask[bdx]
-        d = y_dist[bdx][m][:, m].to(dtype=dtype)
+        d = torch.atleast_2d(y_dist[bdx][m][:, m])
         coords = pubchem_qc.mds_svd(d)
-        coords_ref = y_coords[bdx, m, :]
+        coords_ref = torch.atleast_2d(y_coords[bdx, m, :])
         atom_dists = OrthoProcrustes.procrustes_disparity(coords_ref, coords)
-        loss += F.huber_loss(atom_dists, torch.zeros_like(atom_dists), reduction="mean")
+        rmsd += atom_dists.square().mean().sqrt()
+        loss += F.huber_loss(
+            atom_dists,
+            torch.zeros_like(atom_dists),
+            reduction="mean",
+            delta=1.0,
+        )
 
-    return loss / (B + 1e-6)
+    loss /= B + 1e-6
+    rmsd /= B + 1e-6
+    return loss, rmsd
 
 
 def sliding_window(x: torch.Tensor, chunk: int, step: int = 1, dim: int = 0):
@@ -103,26 +116,15 @@ def sliding_window(x: torch.Tensor, chunk: int, step: int = 1, dim: int = 0):
     return torch.stack(out).to(x), w.to(x)
 
 
-@torch.compile()
+@torch.cuda.nvtx.range("pairwise_distance_loss")
 def pairwise_distance_loss(
-    y_hat: torch.Tensor, coordiantes: torch.Tensor, mask: torch.BoolTensor
+    y_dist: torch.Tensor, coordiantes: torch.Tensor, mask: torch.BoolTensor
 ):
-    B = y_hat.shape[0]
-    loss = torch.tensor(0.0).to(y_hat)
-    n = torch.tensor(0.0).to(y_hat)
-    dtype = torch.promote_types(y_hat.dtype, torch.float32)
-    for bdx in range(B):
-        pos_mask = mask[bdx]
-        pairwise_hat = y_hat[bdx][pos_mask][:, pos_mask]
-
-        # Promote to f32 for cdist
-        pos = coordiantes[bdx][pos_mask].to(dtype=dtype)
-        pairwise = torch.cdist(pos, pos).to(dtype=y_hat.dtype).detach()
-
-        loss += F.mse_loss(pairwise_hat, pairwise, reduction="sum")
-        n += pos_mask.count_nonzero().pow(2)
-
-    return loss / (n + 1e-6)
+    d_ref = torch.cdist(coordiantes, coordiantes)
+    mse = F.mse_loss(y_dist, d_ref, reduction="none")
+    mask_pw = mask.unsqueeze(2) & mask.unsqueeze(1)
+    mse *= mask_pw
+    return mse.sum() / (mask_pw.count_nonzero() + 1e-6)
 
 
 class TokenLevelPredictor(pl.LightningModule):
@@ -136,6 +138,7 @@ class TokenLevelPredictor(pl.LightningModule):
         token_transform: AbstractNormalizer | None = None,
         token_targets: list[str] | None = None,
         distance_matrix_loss: bool = False,
+        procrustes_loss: bool = False,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         freeze_encoder: bool | str = False,
         lr_schedule: LRSchedulerCallable | None = None,
@@ -158,6 +161,7 @@ class TokenLevelPredictor(pl.LightningModule):
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
         self.distance_matrix_loss = distance_matrix_loss
+        self.procrustes_loss = procrustes_loss
         self.save_hyperparameters(ignore=["seq_targets", "token_targets"])
 
         self._setup_metrics(metrics)
@@ -191,11 +195,6 @@ class TokenLevelPredictor(pl.LightningModule):
                 "regression",
                 num_outputs=len(self.token_targets),
                 target_channels=self.token_targets,
-            ),
-            "dist": MetricCollection(
-                {
-                    "procrustes": OrthoProcrustes(),
-                }
             ),
         }
         self.val_metrics = nn.ModuleDict(
@@ -412,12 +411,6 @@ class TokenLevelDist(TokenLevelPredictor):
         )
         loss += loss_dist
 
-        # Recover coordinates
-        loss_procrustes = masked_procustes_pw_loss(
-            y_dist_hat, batch["token_coords"], batch["token_coords_mask"]
-        )
-        loss += loss_procrustes
-
         out = {
             "loss": loss,
             "sequence": self.seq_transform.forward(y_mol_raw),
@@ -426,8 +419,17 @@ class TokenLevelDist(TokenLevelPredictor):
             "token_loss": loss_token,
             "seq_loss": loss_seq,
             "dist_loss": loss_dist,
-            "procrustes_loss": loss_procrustes,
         }
+        # Recover coordinates
+        if self.procrustes_loss:
+            loss_procrustes, procrustes_rmsd = masked_procustes_pw_loss(
+                y_dist_hat, batch["token_coords"], batch["token_coords_mask"]
+            )
+            out["procrustes_loss"] = loss_procrustes
+            out["procrustes_rmsd"] = procrustes_rmsd
+            loss += loss_procrustes
+
+        out["loss"] = loss
 
         if loss.isnan().any():
             logging.error("loss is nan", out, batch)
@@ -439,7 +441,11 @@ class TokenLevelDist(TokenLevelPredictor):
         if out is None:
             return None
         self.log_dict(
-            {f"train/{k}": v for k, v in out.items() if "loss" in k and v is not None},
+            {
+                f"train/{k}": v
+                for k, v in out.items()
+                if v is not None and ("loss" in k or k in ["procrustes_rmsd"])
+            },
             on_step=True,
             on_epoch=True,
         )
@@ -447,8 +453,23 @@ class TokenLevelDist(TokenLevelPredictor):
 
     def validation_step(self, batch):
         out = self.forward_with_loss(batch)
+
+        # Always compute procrustes metrics during validation
+        if "procrustes_loss" not in out:
+            loss_procrustes, procrustes_rmsd = masked_procustes_pw_loss(
+                out["pairwise_distance"][[0]],
+                batch["token_coords"][[0]],
+                batch["token_coords_mask"][[0]],
+            )
+            out["procrustes_loss"] = loss_procrustes
+            out["procrustes_rmsd"] = procrustes_rmsd
+
         self.log_dict(
-            {f"val/{k}": v for k, v in out.items() if "loss" in k and v is not None},
+            {
+                f"val/{k}": v
+                for k, v in out.items()
+                if v is not None and ("loss" in k or k in ["procrustes_rmsd"])
+            },
             on_step=True,
             on_epoch=True,
         )
@@ -549,8 +570,10 @@ def predict(argv):
 
 if __name__ == "__main__":
     import sys
+    import logging
     from datetime import timedelta
     from os import environ
+    from typing import Union
 
     from jsonargparse import lazy_instance
     from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint

@@ -1,6 +1,8 @@
+import math
 from typing import Optional
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 
 class PredictionTaskHead(nn.Module):
@@ -65,11 +67,9 @@ class TokenPairwiseDistance(nn.Module):
         num_attention_heads: int = 1,
         activation: str = "relu",
         ff_ratio: int = 2,
-        num_ref_dist: int = 0,
     ) -> None:
         super().__init__()
-        self.num_attention_heads = num_attention_heads
-        self.n_ref_dist = num_ref_dist
+        kv_size = int(embed_dim / num_attention_heads)
         self.interaction = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_attention_heads,
@@ -78,38 +78,52 @@ class TokenPairwiseDistance(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        num_pw_dist = self.num_attention_heads + num_ref_dist
+        self.pairwise_distance = nn.Sequential(
+            BiPairwiseBlock(embed_dim), nn.Dropout(dropout)
+        )
         self.distance1 = nn.Sequential(
-            nn.Linear(num_pw_dist, num_pw_dist * ff_ratio),
-            nn.Dropout(dropout),
-            nn.ReLU(),
-            nn.Linear(num_pw_dist * ff_ratio, num_pw_dist),
+            nn.Linear(embed_dim, embed_dim), nn.Dropout(dropout), nn.GELU()
         )
-        self.distance = nn.Sequential(
-            nn.Linear(num_pw_dist, num_pw_dist),
-            nn.Dropout(dropout),
-            nn.ReLU(),
-            nn.Linear(num_pw_dist, 1, bias=False),
-        )
+        self.distance2 = nn.Sequential(nn.Linear(embed_dim, 1), nn.ReLU())
 
-    def forward(
-        self, hs: torch.Tensor, ref_dist: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        B, S, _ = hs.shape
+    def forward(self, hs: torch.Tensor) -> torch.Tensor:
         hs = self.interaction(hs)
+        pw_dist = self.pairwise_distance(hs)
+        dist = self.distance1(pw_dist) + pw_dist
+        return self.distance2(dist).squeeze(-1)
 
-        # Multi-head feature distance
-        H = self.num_attention_heads
-        xb = hs.reshape(B, S, H, -1).transpose(-3, -2)
-        d = torch.cdist(xb, xb, compute_mode="use_mm_for_euclid_dist").transpose(-3, -1)
 
-        # Concat Ref Distances
-        if self.n_ref_dist > 0:
-            assert ref_dist is not None and ref_dist.shape[0:3] == (B, S, S)
-            ref_dist = ref_dist if ref_dist.ndim == 4 else ref_dist.unsqueeze(-1)
-            d = torch.cat((d, ref_dist.to_dense().to(d)), dim=-1)
+class BiPairwiseBlock(nn.Module):
+    def __init__(self, d_model: int, bias: bool = True, device=None, dtype=None):
+        super().__init__()
+        factory_kwargs = {"device": device, "dtype": dtype}
 
-        # Pairwise token distances
-        d = self.distance1(d) + d
-        pw = self.distance(d).squeeze(-1)
-        return pw
+        self.bi_weight = nn.Parameter(torch.empty((d_model, d_model), **factory_kwargs))
+        self.lin_weight = nn.Parameter(
+            torch.empty((d_model, d_model), **factory_kwargs)
+        )
+        if bias:
+            self.bias = nn.Parameter(torch.empty(d_model, **factory_kwargs))
+        else:
+            self.register_parameter("bias", None)
+        self.reset_parameters()
+
+        # Gradient hook to enforce symmetry
+        self.bi_weight.register_hook(lambda grad: 0.5 * (grad + grad.T))
+
+    def reset_parameters(self):
+        nn.init.xavier_normal_(self.lin_weight, gain=nn.init.calculate_gain("relu"))
+        nn.init.xavier_normal_(self.bi_weight, gain=nn.init.calculate_gain("relu"))
+        with torch.no_grad():
+            self.bi_weight.copy_(0.5 * (self.bi_weight + self.bi_weight.T))
+
+        if self.bias is not None:
+            bound = 1 / math.sqrt(self.bias.size(0))
+            nn.init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, x: torch.Tensor):
+        y_bi = torch.einsum("...ld,df,...rf->...lrf", x, self.bi_weight, x)
+        y_bi = 0.5 * (y_bi + y_bi.transpose(-3, -2))  # Enforce symmetry
+
+        x_linear = x.unsqueeze(-2) + x.unsqueeze(-3)
+        return y_bi + F.linear(x_linear, self.lin_weight, self.bias)
