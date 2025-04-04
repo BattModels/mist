@@ -1,14 +1,12 @@
 import logging
-from itertools import chain
-from typing import Optional, Union
+from typing import Optional
 
 import lightning.pytorch as pl
 import torch
-from jsonargparse import lazy_instance
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
-from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 from torch.nn import functional as F
+from torchmetrics import MetricCollection
 
 from electrolyte_fm.utils.metrics import get_metrics, OrthoProcrustes
 from electrolyte_fm.models.normalize import AbstractNormalizer, IdentityTransform
@@ -69,6 +67,23 @@ def masked_procustes_loss(
     return loss / (nelem + 1e-6)
 
 
+def masked_procustes_pw_loss(
+    y_dist: torch.Tensor, y_coords: torch.Tensor, mask: torch.Tensor
+):
+    dtype = torch.promote_types(y_dist.dtype, torch.float32)
+    loss = torch.tensor(0.0).to(y_dist)
+    B = y_dist.shape[0]
+    for bdx in range(B):
+        m = mask[bdx]
+        d = y_dist[bdx][m][:, m].to(dtype=dtype)
+        coords = pubchem_qc.mds_svd(d)
+        coords_ref = y_coords[bdx, m, :]
+        atom_dists = OrthoProcrustes.procrustes_disparity(coords_ref, coords)
+        loss += F.huber_loss(atom_dists, torch.zeros_like(atom_dists), reduction="mean")
+
+    return loss / (B + 1e-6)
+
+
 def sliding_window(x: torch.Tensor, chunk: int, step: int = 1, dim: int = 0):
     out = []
     x_cpu = x.cpu()
@@ -95,12 +110,14 @@ def pairwise_distance_loss(
     B = y_hat.shape[0]
     loss = torch.tensor(0.0).to(y_hat)
     n = torch.tensor(0.0).to(y_hat)
+    dtype = torch.promote_types(y_hat.dtype, torch.float32)
     for bdx in range(B):
         pos_mask = mask[bdx]
         pairwise_hat = y_hat[bdx][pos_mask][:, pos_mask]
 
-        pos = coordiantes[bdx][pos_mask]
-        pairwise = torch.cdist(pos, pos).detach()
+        # Promote to f32 for cdist
+        pos = coordiantes[bdx][pos_mask].to(dtype=dtype)
+        pairwise = torch.cdist(pos, pos).to(dtype=y_hat.dtype).detach()
 
         loss += F.mse_loss(pairwise_hat, pairwise, reduction="sum")
         n += pos_mask.count_nonzero().pow(2)
@@ -174,6 +191,11 @@ class TokenLevelPredictor(pl.LightningModule):
                 "regression",
                 num_outputs=len(self.token_targets),
                 target_channels=self.token_targets,
+            ),
+            "dist": MetricCollection(
+                {
+                    "procrustes": OrthoProcrustes(),
+                }
             ),
         }
         self.val_metrics = nn.ModuleDict(
@@ -384,24 +406,58 @@ class TokenLevelDist(TokenLevelPredictor):
         loss += loss_token
 
         # Pairwise distances
-        y_dist_hat = self.dist_network(hs, batch.get("topo_dist_map", None))
+        y_dist_hat = self.dist_network(hs)
         loss_dist = pairwise_distance_loss(
             y_dist_hat, batch["token_coords"], batch["token_coords_mask"]
         )
         loss += loss_dist
 
+        # Recover coordinates
+        loss_procrustes = masked_procustes_pw_loss(
+            y_dist_hat, batch["token_coords"], batch["token_coords_mask"]
+        )
+        loss += loss_procrustes
+
         out = {
             "loss": loss,
             "sequence": self.seq_transform.forward(y_mol_raw),
             "token": self.token_transform.forward(y_token_hat),
-            "pairwise-distance": y_dist_hat,
+            "pairwise_distance": y_dist_hat,
             "token_loss": loss_token,
             "seq_loss": loss_seq,
             "dist_loss": loss_dist,
+            "procrustes_loss": loss_procrustes,
         }
 
         if loss.isnan().any():
             logging.error("loss is nan", out, batch)
+
+        return out
+
+    def training_step(self, batch):
+        out = self.forward_with_loss(batch)
+        if out is None:
+            return None
+        self.log_dict(
+            {f"train/{k}": v for k, v in out.items() if "loss" in k and v is not None},
+            on_step=True,
+            on_epoch=True,
+        )
+        return out
+
+    def validation_step(self, batch):
+        out = self.forward_with_loss(batch)
+        self.log_dict(
+            {f"val/{k}": v for k, v in out.items() if "loss" in k and v is not None},
+            on_step=True,
+            on_epoch=True,
+        )
+
+        self.val_metrics["seq"].update(out["sequence"], batch["target"])
+        self.val_metrics["token"].update(
+            out["token"][batch["token_target_mask"]],
+            batch["token_target"][batch["token_target_mask"]],
+        )
 
         return out
 

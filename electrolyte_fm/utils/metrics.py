@@ -436,12 +436,17 @@ class OrthoProcrustes(Metric):
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
     def compute(self):
-        if self.reduction == "mean":
-            return self.distance / self.total
-        return self.distance
+        return self.distance / self.total
 
     def update(self, preds: torch.Tensor, targets: torch.Tensor):
-        self.distance += self.procrustes_disparity(preds, targets)
+        dists = self.procrustes_disparity(preds, targets)
+        if self.reduction == "mean":
+            self.distance += dists.mean()
+        elif self.reduction == "rmsd":
+            self.distance += dists.square().mean().sqrt()
+        else:
+            self.reduction = dists.sum()
+
         self.total += preds.size(0)
 
     @staticmethod
@@ -455,8 +460,8 @@ class OrthoProcrustes(Metric):
         R = OrthoProcrustes.procrustes_alignment(targets, preds)
         targets = (targets @ R).to(dtype=dtype).detach()
 
-        # Compute RMSE error
-        return (preds - targets).pow(2).sum(-1).sqrt().sum()
+        # Atom-wise distances
+        return (preds - targets).pow(2).sum(-1).sqrt()
 
     @staticmethod
     def procrustes_alignment(pc1: torch.Tensor, pc2: torch.Tensor) -> torch.Tensor:

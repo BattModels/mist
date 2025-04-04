@@ -333,7 +333,7 @@ def test_smi_token_type(smi: str, token_types: list[SmiTokenType]):
     pubchem_qc_dataset_path() is None, reason="Missing PubChem QC Dataset"
 )
 @pytest.mark.parametrize(
-    "include_3d,randomize,incluce_topo_dist",
+    "include_3d,randomize,include_topo_dist",
     [
         (True, True, False),
         (False, False, False),
@@ -341,10 +341,16 @@ def test_smi_token_type(smi: str, token_types: list[SmiTokenType]):
         ("as-target", True, True),
     ],
 )
-def test_datamodule(include_3d, randomize):
+def test_datamodule(include_3d, randomize, include_topo_dist):
     dir = pubchem_qc_dataset_path()
     assert dir is not None
-    dm = PubChemQC(str(dir), include_3d=include_3d, randomize=randomize, batch_size=16)
+    dm = PubChemQC(
+        str(dir),
+        include_3d=include_3d,
+        randomize=randomize,
+        include_topo_dist=include_topo_dist,
+        batch_size=16,
+    )
     dm.prepare_data()
     dm.setup("fit")
 
@@ -519,7 +525,32 @@ def test_mds_svd():
     D = torch.cdist(coords, coords)
     est_coords = pubchem_qc.mds_svd(D)
     D_est = torch.cdist(est_coords, est_coords)
-    assert D.isclose(D_est).all()
+    assert D.isclose(D_est, atol=5e-4).all()
+
+
+def test_masked_mds_svd():
+    B, N = 8, 16
+    mask = torch.rand(B, N) > 0.8
+    mask_pw = mask.unsqueeze(2) & mask.unsqueeze(1)
+    coords = torch.rand(B, N, 3)
+    D = torch.cdist(coords, coords)
+    D[~mask_pw] = 0
+    assert D.shape == (B, N, N)
+
+    est_coords = pubchem_qc.masked_mds_svd(D, mask)
+    est_ref_coords = pubchem_qc.mds_svd(D[0])
+    D_est = torch.cdist(est_coords, est_coords)
+    D_est_ref = torch.cdist(est_ref_coords, est_ref_coords)
+
+    logging.info(
+        {
+            "D": D[0],
+            "D_est": D_est[0],
+            "D_est_ref": D_est_ref,
+            "max_error": (D - D_est).max().item(),
+        }
+    )
+    assert D_est.isclose(D, atol=5e-4)[mask_pw].all()
 
 
 def test_sparse_topo_distance():

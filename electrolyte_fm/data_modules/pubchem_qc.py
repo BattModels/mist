@@ -2,7 +2,6 @@ import json
 import logging
 import traceback
 import re
-import random
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -50,6 +49,7 @@ class PubChemQC(LightningDataModule):
         include_topo_dist: bool = False,
         seq_targets: list[str] = DEFAULT_SEQ_TARGETS,
         token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
+        persistent_workers: Optional[bool] = None,
         **kwargs,
     ):
         super().__init__()
@@ -67,6 +67,7 @@ class PubChemQC(LightningDataModule):
         self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
+        self.persistent_workers = persistent_workers or num_workers > 0
         self.save_hyperparameters()
 
     @property
@@ -98,12 +99,6 @@ class PubChemQC(LightningDataModule):
             ds = maybe_shard_dataset(self.trainer, ds)
 
         ds = ds.map(
-            maybe_construct_mol,
-            batched=False,
-            fn_kwargs={"token_targets": self.token_targets},
-        )
-        ds = ds.filter(lambda x: x["mol"] is not None, batched=False)
-        ds = ds.map(
             collate_partial_charges,
             batched=False,
             fn_kwargs={
@@ -113,6 +108,7 @@ class PubChemQC(LightningDataModule):
                 "seq_targets": self.seq_targets,
                 "token_targets": self.token_targets,
                 "labeler": TokenLabeler(self.tokenizer),
+                "include_topo_dist": self.include_topo_dist,
             },
         )
         cols = [
@@ -172,7 +168,7 @@ class PubChemQC(LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
             pin_memory=True,
-            persistent_workers=self.num_workers > 0,
+            persistent_workers=self.persistent_workers,
         )
 
     def val_dataloader(self):
@@ -183,7 +179,7 @@ class PubChemQC(LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
             pin_memory=True,
-            persistent_workers=self.num_workers > 0,
+            persistent_workers=self.persistent_workers,
         )
 
     def test_dataloader(self):
@@ -194,7 +190,7 @@ class PubChemQC(LightningDataModule):
             num_workers=self.num_workers,
             prefetch_factor=self.prefetch_factor,
             pin_memory=True,
-            persistent_workers=self.num_workers > 0,
+            persistent_workers=self.persistent_workers,
         )
 
 
@@ -221,12 +217,20 @@ def collate_partial_charges(
     seq_targets: list[str],
     randomize: bool = True,
     include_3d: bool | str = False,
+    include_topo_dist: bool = False,
     labeler: "TokenLabeler | None" = None,
 ):
+    mol = construct_mol(
+        atomic_numbers=row["atomic-numbers"],
+        positions=row["atomic-coordinates"],
+        bonds=row["bond-connections"],
+        bond_orders=row["bond-order"],
+    )
+    mol = add_atomic_properties(mol, {k: row[k] for k in token_targets})
+
     # Annotate tokens with data
     # Log any errors before rethrowing
     out = None
-    mol: Chem.Mol = row["mol"]
     try:
         out = annotated_tokens(
             mol,
@@ -252,6 +256,10 @@ def collate_partial_charges(
             ),
             -1,
         )
+
+    atom_indices = out.pop("atom_indices")
+    if include_topo_dist:
+        out["topo_dist_map"] = sparse_topo_distance(mol, atom_indices)
 
     out["target"] = torch.tensor([row[k] for k in seq_targets])
     out["target_mask"] = torch.ones(out["target"].shape, dtype=bool)
@@ -362,12 +370,6 @@ def smear_hydrogen_targets(
         sanitize=False,
     )
     if _best_effort_sanitize(mol) != 0:
-        return None
-
-    # Attempt encoding, filtering molecules with errors
-    try:
-        Chem.MolToSmiles(mol, kekuleSmiles=True)
-    except Exception:
         return None
 
     retained_atoms = set()
@@ -485,6 +487,7 @@ def annotated_tokens(
     tokenizer_kwargs: dict | None = None,
     doRandom: bool = True,
     labeler: TokenLabeler | None = None,
+    include_topo_dist: bool = False,
 ):
     """
     Given a rdkit.Chem.Mol with atom-level properties, return a tokenized SMILES encoding
@@ -496,10 +499,7 @@ def annotated_tokens(
 
     """
 
-    kekuleSmiles = random.random() > 0.5 if doRandom else False
-    smi = Chem.MolToSmiles(
-        mol, canonical=False, doRandom=doRandom, kekuleSmiles=kekuleSmiles
-    )
+    smi = Chem.MolToSmiles(mol, canonical=False, doRandom=doRandom)
     smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
     token_out = tokenizer.encode_plus(smi, **(tokenizer_kwargs or {}))
     input_ids = token_out["input_ids"]
@@ -559,17 +559,23 @@ def annotated_tokens(
         y_pos.append(pos_atom)
         mask_pos.append(pos_mask_atom)
 
-    return {
+    out = {
         **token_out,
         "token_target": torch.tensor(y),
         "token_target_mask": torch.tensor(mask),
         "token_coords": torch.tensor(y_pos),
         "token_coords_mask": torch.tensor(mask_pos),
-        "topo_dist_map": sparse_topo_distance(mol, atom_indices),
+        "atom_indices": atom_indices,
         "smi": smi,
     }
 
+    if (not out["token_coords_mask"].any()) or (len(atom_indices) == 0):
+        logging.error({"msg": "output has no atoms", **out})
 
+    return out
+
+
+@torch.no_grad
 def sparse_topo_distance(mol: Chem.Mol, atom_indices: list[int]):
     adx = torch.tensor(atom_indices)
     rdx, cdx = torch.meshgrid(adx, adx, indexing="ij")
@@ -645,15 +651,31 @@ def mol_from_prediction(
     return mol
 
 
+@torch.cuda.nvtx.range("mds_svd")
 def mds_svd(D: torch.Tensor, dim=3):
     n = D.size(0)
+    factory_kwargs = {"device": D.device, "dtype": D.dtype}
 
-    # Compute the Gram matrix (inner product matrix) using double centering
-    J = torch.eye(n) - (1.0 / n) * torch.ones(n, n)
-    J = J.to(D)
-    B = -0.5 * J @ (D.pow(2)) @ J
+    if n == 1:
+        return torch.zeros(dim, **factory_kwargs)
+    elif n == 2:
+        p1 = torch.zeros(dim, **factory_kwargs)
+        p2 = torch.zeros(dim, **factory_kwargs)
+        p2[-1] += D[0, 1]
+        return torch.stack([p1, p2])
+    elif n < dim:
+        raise RuntimeError(
+            "Insufficient points to compute coordinates (Dim reduction not implimented)"
+        )
 
-    u, s, _ = torch.linalg.svd(B)
+    # Compute the Gram matrix using double centering
+    B = D.pow(2)
+    B -= B.mean(-1, keepdim=True)
+    B -= B.mean(-2, keepdim=True)
+    B *= 0.5
+
+    with torch.autocast("cuda", dtype=torch.promote_types(D.dtype, torch.float32)):
+        u, s, _ = torch.linalg.svd(B)
 
     # Select the top 'dim' components, clamping to avoid numerical issues
     u = u[:, :dim]
@@ -661,6 +683,40 @@ def mds_svd(D: torch.Tensor, dim=3):
 
     # Compute the coordinates: X = U * sqrt(S)
     return u * torch.sqrt(s)
+
+
+@torch.cuda.nvtx.range("batched_mds_svd")
+def masked_mds_svd(D: torch.Tensor, mask: torch.Tensor, dim=3):
+    # Zero Mask
+    mask_pw = mask.unsqueeze(-1) & mask.unsqueeze(-2)
+    assert mask_pw.shape == D.shape
+    D = torch.masked.masked_tensor(D, mask_pw)
+
+    # Gram matrix from distance matrix
+    B = D.pow(2)
+    B = B - B.mean(-1, keepdim=True).get_data()
+    B = B - B.mean(-2, keepdim=True).get_data()
+    B = -0.5 * B
+    B = B.get_data()
+    B[~mask_pw] = 0
+
+    with torch.autocast("cuda", dtype=torch.promote_types(D.dtype, torch.float32)):
+        u, s, _ = torch.linalg.svd(B)
+
+    u = u[:, :, :dim]
+    s = s[:, :dim].clamp(min=0)
+    s = torch.diag_embed(s.sqrt())
+    coords_raw = u @ s
+    return coords_raw
+
+    # Scatter coords per mask
+    coords = torch.zeros_like(coords_raw)
+    for bdx in range(D.shape[0]):
+        m = mask[bdx]
+        n = m.count_nonzero()
+        coords[bdx, m, :] = coords_raw[bdx, :n, :]
+
+    return coords
 
 
 def mol_from_pairwise(
