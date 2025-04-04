@@ -26,8 +26,8 @@ def distance_matrix_loss(y_hat: torch.Tensor, y: torch.Tensor, mask: torch.Tenso
     loss = []
     for bdx in range(y_hat.shape[0]):
         pos_mask = mask[bdx]
-        pos_ref = torch.atleast_2d(y[bdx, pos_mask, :])
-        pos_hat = torch.atleast_2d(y_hat[bdx, pos_mask, :])
+        pos_ref = y[bdx, pos_mask, :].view(-1, 3)
+        pos_hat = y_hat[bdx, pos_mask, :].view(-1, 3)
 
         # Limit to one set of comparisons and skip self
         dist_hat = torch.cdist(pos_hat, pos_hat).triu(1)
@@ -53,8 +53,8 @@ def masked_procustes_loss(
     nelem = torch.tensor(0).to(device=y_hat.device)
     for bdx in range(y_hat.shape[0]):
         pos_mask = mask[bdx]
-        pos_ref = torch.atleast_2d(y[bdx, pos_mask, :])
-        pos_hat = torch.atleast_2d(y_hat[bdx, pos_mask, :])
+        pos_ref = y[bdx, pos_mask, :].view(-1, 3)
+        pos_hat = y_hat[bdx, pos_mask, :].view(-1, 3)
         n = pos_mask.count_nonzero()
         if chunk is not None and n > chunk:
             pos_ref, _ = sliding_window(pos_ref, chunk)
@@ -81,8 +81,8 @@ def masked_procustes_pw_loss(
     for bdx in range(B):
         m = mask[bdx]
         d = torch.atleast_2d(y_dist[bdx][m][:, m])
-        coords = pubchem_qc.mds_svd(d)
-        coords_ref = torch.atleast_2d(y_coords[bdx, m, :])
+        coords = pubchem_qc.mds_svd(d).view(-1, 3)
+        coords_ref = y_coords[bdx, m, :].view(-1, 3)
         atom_dists = OrthoProcrustes.procrustes_disparity(coords_ref, coords)
         rmsd += atom_dists.square().mean().sqrt()
         loss += F.huber_loss(

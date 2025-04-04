@@ -519,17 +519,20 @@ def test_distance_loss():
     assert not loss.isclose(torch.tensor(0.0))
 
 
-def test_mds_svd():
-    N = 32
+@pytest.mark.parametrize("N", [32, 1, 2])
+def test_mds_svd(N):
     coords = torch.rand(N, 3)
     D = torch.cdist(coords, coords)
+    assert D.shape == (N, N)
     est_coords = pubchem_qc.mds_svd(D)
+    assert est_coords.shape == (N, 3)
     D_est = torch.cdist(est_coords, est_coords)
+    logging.info({"max_error": (D - D_est).max().item()})
     assert D.isclose(D_est, atol=5e-4).all()
 
 
-def test_masked_mds_svd():
-    B, N = 8, 16
+@pytest.mark.parametrize("B,N", [(8, 32), (1, 1), (1, 8), (8, 1)])
+def test_masked_mds_svd(B, N):
     mask = torch.rand(B, N) > 0.8
     mask_pw = mask.unsqueeze(2) & mask.unsqueeze(1)
     coords = torch.rand(B, N, 3)
@@ -538,6 +541,7 @@ def test_masked_mds_svd():
     assert D.shape == (B, N, N)
 
     est_coords = pubchem_qc.masked_mds_svd(D, mask)
+    assert est_coords.shape == (B, N, 3)
     est_ref_coords = pubchem_qc.mds_svd(D[0])
     D_est = torch.cdist(est_coords, est_coords)
     D_est_ref = torch.cdist(est_ref_coords, est_ref_coords)

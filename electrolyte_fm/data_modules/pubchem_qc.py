@@ -657,11 +657,11 @@ def mds_svd(D: torch.Tensor, dim=3):
     factory_kwargs = {"device": D.device, "dtype": D.dtype}
 
     if n == 1:
-        return torch.zeros(dim, **factory_kwargs)
+        return torch.zeros(*D.shape[:-1], dim, **factory_kwargs)
     elif n == 2:
-        p1 = torch.zeros(dim, **factory_kwargs)
-        p2 = torch.zeros(dim, **factory_kwargs)
-        p2[-1] += D[0, 1]
+        p1 = torch.zeros(*D.shape[1:-1], dim, **factory_kwargs)
+        p2 = torch.zeros(*D.shape[1:-1], dim, **factory_kwargs)
+        p2[..., -1] += D[..., 0, 1]
         return torch.stack([p1, p2])
     elif n < dim:
         raise RuntimeError(
@@ -674,15 +674,17 @@ def mds_svd(D: torch.Tensor, dim=3):
     B -= B.mean(-2, keepdim=True)
     B *= 0.5
 
-    with torch.autocast("cuda", dtype=torch.promote_types(D.dtype, torch.float32)):
-        u, s, _ = torch.linalg.svd(B)
+    # Run SVD in at least float32 precision
+    dtype = torch.promote_types(D.dtype, torch.float32)
+    u, s, _ = torch.linalg.svd(B.to(dtype=dtype))
 
     # Select the top 'dim' components, clamping to avoid numerical issues
-    u = u[:, :dim]
+    u = u[..., :dim]
     s = s[:dim].clamp(min=0)
+    s = torch.diag_embed(s.sqrt())
 
     # Compute the coordinates: X = U * sqrt(S)
-    return u * torch.sqrt(s)
+    return u @ s
 
 
 @torch.cuda.nvtx.range("batched_mds_svd")
@@ -698,11 +700,12 @@ def masked_mds_svd(D: torch.Tensor, mask: torch.Tensor, dim=3):
     B *= -0.5
     B[~mask_pw] = 0
 
-    with torch.autocast("cuda", dtype=torch.promote_types(D.dtype, torch.float32)):
-        u, s, _ = torch.linalg.svd(B)
+    # Run SVD in at least float32 precision
+    dtype = torch.promote_types(D.dtype, torch.float32)
+    u, s, _ = torch.linalg.svd(B.to(dtype=dtype))
 
-    u = u[:, :, :dim]
-    s = s[:, :dim].clamp(min=0)
+    u = u[..., :dim]
+    s = s[..., :dim].clamp(min=0)
     s = torch.diag_embed(s.sqrt())
     coords_raw = u @ s
     return coords_raw
