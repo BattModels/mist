@@ -690,14 +690,12 @@ def masked_mds_svd(D: torch.Tensor, mask: torch.Tensor, dim=3):
     # Zero Mask
     mask_pw = mask.unsqueeze(-1) & mask.unsqueeze(-2)
     assert mask_pw.shape == D.shape
-    D = torch.masked.masked_tensor(D, mask_pw)
 
     # Gram matrix from distance matrix
     B = D.pow(2)
-    B = B - B.mean(-1, keepdim=True).get_data()
-    B = B - B.mean(-2, keepdim=True).get_data()
-    B = -0.5 * B
-    B = B.get_data()
+    B -= B.sum(-1, keepdim=True) / mask_pw.sum(-1, keepdim=True).clamp(min=1)
+    B -= B.sum(-2, keepdim=True) / mask_pw.sum(-2, keepdim=True).clamp(min=1)
+    B *= -0.5
     B[~mask_pw] = 0
 
     with torch.autocast("cuda", dtype=torch.promote_types(D.dtype, torch.float32)):
@@ -708,15 +706,6 @@ def masked_mds_svd(D: torch.Tensor, mask: torch.Tensor, dim=3):
     s = torch.diag_embed(s.sqrt())
     coords_raw = u @ s
     return coords_raw
-
-    # Scatter coords per mask
-    coords = torch.zeros_like(coords_raw)
-    for bdx in range(D.shape[0]):
-        m = mask[bdx]
-        n = m.count_nonzero()
-        coords[bdx, m, :] = coords_raw[bdx, :n, :]
-
-    return coords
 
 
 def mol_from_pairwise(
