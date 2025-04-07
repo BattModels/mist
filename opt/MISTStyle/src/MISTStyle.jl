@@ -64,6 +64,7 @@ end
 
 include("errorcross.jl")
 include("powerlaw.jl")
+include("tantext.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
@@ -136,6 +137,7 @@ function theme()
             ygridwidth=0.5,
             xminorgridwidth=0.5,
             yminorgridwidth=0.5,
+            titlegap=2pt,
         ),
         Legend=(;
             titlegap=0,
