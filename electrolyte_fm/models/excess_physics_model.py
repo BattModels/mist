@@ -6,7 +6,6 @@ import torch
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
-from torchmetrics import MeanAbsoluteError
 
 from ..utils.metrics import get_metrics, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
@@ -24,9 +23,9 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self,
         encoder_ckpt: str,
         freeze_encoder: bool = False,
+        include_linear_mixing: bool = True,
         tokenizer: Optional[str] = None,
         vocab_size: Optional[int] = None,
-        hidden_size: int = 768,
         dropout: float = 0.1,
         n_components: int = 2,
         polynomial_order: int = 4,
@@ -38,6 +37,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         super().__init__()
         self.freeze_encoder = freeze_encoder
         self.encoder_ckpt = encoder_ckpt
+        self.include_linear_mixing = include_linear_mixing
         self.tokenizer = load_tokenizer(tokenizer or encoder_ckpt)
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
@@ -57,7 +57,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 encoder_ckpt,
                 trust_remote_code=True,
             )
-
+        self.hidden_size = self.encoder.config.hidden_size
         # Validate the vocab size
         if vocab_size is not None:
             if hasattr(self.encoder, "config") and hasattr(
@@ -68,9 +68,10 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
 
         task_head_args = {
-            "embed_dim": hidden_size,
+            "embed_dim": self.hidden_size,
             "polynomial_order": polynomial_order,
             "n_components": n_components,
+            "include_linear_mixing": self.include_linear_mixing,
         }
 
         self.task_network = self.basis.get_class()(**task_head_args)
