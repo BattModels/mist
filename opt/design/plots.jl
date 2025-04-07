@@ -62,9 +62,9 @@ end |> MISTStyle.savefig("electrolytes")
 
 # Permutation sensitivity
 df_perm = simple_hydrocarbons(25)
-f(m) = :smi => ByRow(smi -> DesignRules.sample_encodings(smi, m)) => AsTable
-df_perm_ref = transform(df_perm, f(models[1]))          # QM9 finetuned on kekule
-df_perm_rand = transform(df_perm, f(last(models[2])))   # QM9 finetuned with random
+sample_smi(m) = :smi => ByRow(smi -> DesignRules.sample_encodings(smi, m)) => AsTable
+df_perm_ref = transform(df_perm, sample_smi(models[1]))          # QM9 finetuned on kekule
+df_perm_rand = transform(df_perm, sample_smi(last(models[2])))   # QM9 finetuned with random
 
 # Order sensitivity
 df_order_rand = DesignRules.alkene_sweep(25, last(models[2]))

@@ -94,14 +94,8 @@ function hydrocarbon_trends(df)
         scatter!(ax_dn, HARTREE_TO_EV .* mean.(gdf.homo), mean.(gdf.g298); kwargs...)
         scatter!(ax_mp_bp, mean.(gdf.mp), mean.(gdf.bp); kwargs...)
     end
-    ablines!(ax_mp_bp, 0, 1; color=:black, linestyle=:dash)
-    text!(ax_mp_bp, 20, 20;
-        text=L"T_m = T_b",
-        align=(:left, :bottom),
-        rotation=pi / 4,
-        markerspace=:data,
-        fontsize=24,
-    )
+    h = ablines!(ax_mp_bp, 0, 1; color=:black, linestyle=:dash)
+    MISTStyle.tantext!(ax_mp_bp, h, 25; text=L"T_m = T_b", align=(:center, :bottom))
 
     # Exceptions to BP > MP
     df_except = subset(df, [:mp, :bp] => ByRow((mp, bp) -> mean(mp) > mean(bp)))
@@ -175,9 +169,9 @@ function electrolyte_trends(df)
     scatter!(ax, mean.(df.beta_kt), mean.(df.dn); marker, color)
     # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
 
-    ax = Axis(gl[1, 3]; ylabel=L"$\mu$ [D]", xlabel=L"Partial Charge Range$$")
-    scatter!(ax, df.range_lowdin, mean.(df.mu); marker, color)
-    ax = Axis(gl[1, 4]; ylabel=L"$\mu$ [D]", xlabel=L"Minimum Partial Charge$$")
+    # ax = Axis(gl[1, 3]; ylabel=L"$\mu$ [D]", xlabel=L"Partial Charge Range$$")
+    # scatter!(ax, df.range_lowdin, mean.(df.mu); marker, color)
+    ax = Axis(gl[1, 3]; ylabel=L"$\mu$ [D]", xlabel=L"Minimum Partial Charge$$")
     scatter!(ax, df.min_lowdin, mean.(df.mu); marker, color)
     # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
 
@@ -192,7 +186,15 @@ function electrolyte_trends(df)
     scatter!(ax, mean.(df.mp), mean.(df.bp); marker, color)
 
     ax = Axis(gl[2, 3]; xlabel=L"HOMO [eV]$$", ylabel=L"Gap [eV]$$")
-    scatter!(ax, mean.(df.homo) .* HARTREE_TO_EV, mean.(df.gap) .* HARTREE_TO_EV; marker, color)
+    scatter!(ax, mean.(df.homo_rand) .* HARTREE_TO_EV, mean.(df.gap_rand) .* HARTREE_TO_EV; marker, color)
+    ablines!(ax, 0, -1; color=:black, linestyle=:dash)
+    # text!(ax, -7, 7;
+    #     text=L"LUMO = 0eV",
+    #     align=(:left, :bottom),
+    #     markerspace=:data,
+    #     rotation=-pi / 4,
+    #     fontsize=0.3,
+    # )
     # vlines!(ax, -11.444; color=:black) # 10.1021/jz500485r
     # hlines!(ax, 5; color=:black) # 10.1021/acsenergylett.3c00004 (Really just says 5eV is good
 
