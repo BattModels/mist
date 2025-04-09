@@ -13,6 +13,7 @@ from sklearn.metrics import roc_auc_score
 
 from syba.syba import SybaClassifier
 from BRSAScore import SAScorer as BRSAScorer
+from assembly_theory import molecular_assembly
 from transformers import AutoModelForMaskedLM, DataCollatorWithPadding
 
 from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
@@ -126,8 +127,8 @@ def evaluate_dataset(
     ds = encode_molecules(
         ds,
         "smiles",
-        output_column="smiles-keukle",
-        encoding=MolEncoding.KEUKLE_SMILES,
+        output_column="smiles-kekule",
+        encoding=MolEncoding.KEKULE,
     )
     ds = encode_molecules(
         ds,
@@ -184,6 +185,7 @@ if __name__ == "__main__":
         "BR-SAScore": lambda smi: ba_sascorer.calculateScore(smi)[0],
         "MolFormer": "ibm/MoLFormer-XL-both-10pct",
         "ChemBERTa": "seyonec/ChemBERTa-zinc-base-v1",
+        "assembly-index": lambda smi: molecular_assembly(Chem.MolFromSmiles(smi)),
     }
     for file in Path("models").iterdir():
         if file.is_dir():
@@ -216,17 +218,4 @@ if __name__ == "__main__":
     ds = ds.map(lambda x: {"is_complex": x["meanComplexity"] > 2.85}, batched=False)
     stats = evaluate_dataset(metrics, ds, target="is_complex", smi_column="SMILES")
     with open("crowdsourced.json", "w") as fid:
-        json.dump(stats, fid, indent=4)
-
-    # Assembly Index
-    ds = load_dataset(
-        "csv",
-        name="combined_results_ms",
-        data_files=["./data/combined_results_ms.csv"],
-    )
-    ds = ds["train"]
-    ds = ds.select_columns(["SMILES", "MA", "MA (est.)", "MA (mean est.)"])
-    ds = ds.map(lambda x: {"biosignature": x["MA"] > 15}, batched=False)
-    stats = evaluate_dataset(metrics, ds, target="biosignature", smi_column="SMILES")
-    with open("assembly_index.json", "w") as fid:
         json.dump(stats, fid, indent=4)
