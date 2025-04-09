@@ -2,14 +2,9 @@
 {%- from "./utils.j2" import cliopts, export_env, export_job_config %}
 #SBATCH --job-name {{ name or "mist" }}
 #SBATCH --partition {{ partition or "defq" }}
-{%- if job_queue is defined %}
-#SBATCH --ntasks {{ nodes * job_queue.tasks * gpus_per_node }}
-#SBATCH --gpus {{ nodes * job_queue.tasks * gpus_per_node }}
-{%- else %}
 #SBATCH --nodes {{ nodes or 1 }}
 #SBATCH --ntasks-per-node {{ gpus_per_node or 8 }}
 #SBATCH --gpus-per-node {{ gpus_per_node or 8 }}
-{%- endif %}
 #SBATCH --time {{ walltime or "4:0:0" }}
 #SBATCH --cpus-per-task 12
 #SBATCH --mem-per-cpu 200G
@@ -19,51 +14,37 @@
 #SBATCH --requeue
 #SBATCH --open-mode=append
 {%- endif %}
-{%- if job_array is defined %}
-#SBATCH --array={{ job_array.spec }}
-{%- endif %}
+
 set -ex
 module load slurm
 
 # Move to git root
 cd $(git rev-parse --show-toplevel)
 
+TMPDIR=${TMPDIR:-/tmp}
+
 # Set env variables
+env_file="${TMPDIR}/env-${SLURM_JOB_ID}.sh"
+cat > ${env_file}<<EOF
 {{- export_env( env ) }}
-
-# Create job-specific temp dir
-TMPDIR=${TMPDIR:-/tmp}/mist-${SLURM_JOB_ID}/
-mkdir -p $TMPDIR
-
-{%- if job_queue is defined %}
-submit/sweep.py scheduler --num-workers {{ job_queue.tasks }} {{ job_queue.queue }}
-
-{%- else -%}
-{% if deepspeed is defined %}
-# Write out deepspeed config
-cat > $TMPDIR/deepspeed.json<<EOF
-{{ deepspeed | tojson(indent=4) }}
 EOF
-export PL_DEEPSPEED_CONFIG_PATH="$TMPDIR/deepspeed.json"
-export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
-sbcast -fp $PL_DEEPSPEED_CONFIG_PATH $PL_DEEPSPEED_CONFIG_PATH
-{%- endif %}
+source ${env_file}
+sbcast -fp ${env_file} ${env_file}
 
-{% if job_array is defined %}
-export PL_CONFIG=$TMPDIR/lightning_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.json
-sed "${SLURM_ARRAY_TASK_ID}q;d" {{ job_array.file }} > $PL_CONFIG
-export JOB_CONFIG=$(cat $PL_CONFIG)
-{% else %}
-
-{{- export_job_config( __config__ ) }}
+{{ export_job_config( __config__ ) }}
 
 # Write out  lightning config
-export PL_CONFIG=$TMPDIR/lightning.json
+PL_CONFIG="${TMPDIR}/lightning-${SLURM_JOB_ID}.json"
 cat > ${PL_CONFIG}<<EOF
-{{ {"fit": train } | tojson }}
+{%- if stage is not none %}
+{{ {stage: train } | tojson }}
+{%- else %}
+{{ train | tojson }}
+{%- endif %}
 EOF
-{% endif %}
-sbcast -fp ${PL_CONFIG} ${PL_CONFIG}
+
+sbcast -fp "${PL_CONFIG}" "${PL_CONFIG}"
+cat ${PL_CONFIG}
 
 {%- if requeue %}
 # Look for a requeue checkpoint
@@ -77,8 +58,9 @@ fi
 
 srun --mpi=pmix \
 $(which apptainer) exec \
---bind /lustre/fs0,/tmp,$TMPDIR \
+--bind /lustre/fs0,$TMPDIR \
 --nv \
+--env-file ${env_file} \
 {{ container }} \
 ${PWD}/submit/set_node_rank \
 {%- if nsys is defined %}
@@ -86,4 +68,3 @@ nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
     /mist/.venv/bin/python {{ program or "${PWD}/train.py" }} --config ${PL_CONFIG}
-{%- endif %}
