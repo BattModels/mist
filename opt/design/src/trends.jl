@@ -27,7 +27,7 @@ function hydrocarbon_trends(df)
     # Trends with Size
     gl_trends = GridLayout(f[1, 1])
     axes = [
-        :u298 => L"$G\degree$\n[kJ/mol]",
+        :g298 => L"$G\degree$\n[eV]",
         :mu => L"$\mu$ [D]",
         :r2 => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
         :gap => L"Gap\n[eV]$$",
@@ -56,10 +56,7 @@ function hydrocarbon_trends(df)
     end |> Dict
     foreach(groupby(df, :type)) do gdf
         for (col, ax) in pairs(axes)
-            y = gdf[:, col]
-            if col in [:gap]
-                y .*= HARTREE_TO_EV
-            end
+            y = convert_units(gdf[:, col], col)
             lines!(ax, gdf.n_carbon, mean.(y);
                 label=string(first(gdf.type)),
                 color=levelcode.(gdf.type),
@@ -78,7 +75,7 @@ function hydrocarbon_trends(df)
 
     # Design Rules
     gl_dr = GridLayout(f[1, 2])
-    ax_dn = Axis(gl_dr[1, 1]; ylabel=L"$G\degree$ [kJ/mol]", xlabel=L"HOMO [eV]$$")
+    ax_dn = Axis(gl_dr[1, 1]; ylabel=L"$G\degree$ [eV]", xlabel=L"HOMO [eV]$$")
     ax_mp_bp = Axis(gl_dr[2, 1];
         xlabel=L"Melting Point [$\degree C$ ]",
         ylabel=L"Boiling Point [$\degree C$ ]",
@@ -91,7 +88,7 @@ function hydrocarbon_trends(df)
             label=string(first(gdf.type)),
             marker=:circle
         )
-        scatter!(ax_dn, HARTREE_TO_EV .* mean.(gdf.homo), mean.(gdf.g298); kwargs...)
+        scatter!(ax_dn, HARTREE_TO_EV .* mean.(gdf.homo), HARTREE_TO_EV .* mean.(gdf.g298); kwargs...)
         scatter!(ax_mp_bp, mean.(gdf.mp), mean.(gdf.bp); kwargs...)
     end
     h = ablines!(ax_mp_bp, 0, 1; color=:black, linestyle=:dash)
@@ -161,42 +158,45 @@ function electrolyte_trends(df)
     )
 
     ax = Axis(gl[1, 1]; ylabel=L"DN [kcal/mol, BF3]$$", xlabel=L"HOMO [eV]$$")
-    scatter!(ax, mean.(df.homo) .* HARTREE_TO_EV, mean.(df.dn); marker, color)
-    # vlines!(ax, -11.444; color=:black) # 10.1021/jz500485r
-    # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
+    scatter!(ax, mean.(df.homo) .* HARTREE_TO_EV, mean.(df.dn .* JOULES_TO_CALORIES); marker, color)
 
-    ax = Axis(gl[1, 2]; ylabel=L"DN [kcal/mol, BF3]$$", xlabel=L"KT $\beta$")
-    scatter!(ax, mean.(df.beta_kt), mean.(df.dn); marker, color)
-    # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
+    ax = Axis(gl[1, 2];
+        ylabel=L"DN [kcal/mol, BF3]$$", xlabel=L"KT $\beta$",
+        limits=((0, nothing), nothing),
+    )
+    beta_kt = 2 .* sigmoid.(mean.(df.beta_kt))
+    scatter!(ax, beta_kt, mean.(df.dn .* JOULES_TO_CALORIES); marker, color)
 
-    # ax = Axis(gl[1, 3]; ylabel=L"$\mu$ [D]", xlabel=L"Partial Charge Range$$")
-    # scatter!(ax, df.range_lowdin, mean.(df.mu); marker, color)
+
     ax = Axis(gl[1, 3]; ylabel=L"$\mu$ [D]", xlabel=L"Minimum Partial Charge$$")
-    scatter!(ax, df.min_lowdin, mean.(df.mu); marker, color)
-    # hlines!(ax, 10; color=:black) # 10.1021/acsenergylett.3c00004
+    scatter!(ax, df.min_lowdin, mean.(df.pKa_kt); marker, color)
 
-    ax = Axis(gl[2, 1]; xlabel=L"Melting Point $[\degree C ]$", ylabel=L"Flash Point $[\degree C ]$")
-    # vlines!(ax, -100; color=:black)
-    # hlines!(ax, 60; color=:black)
-    scatter!(ax, mean.(df.mp), mean.(df.fp); marker, color)
+    ax = Axis(gl[2, 1]; xlabel=L"Boiling Point $[\degree C ]$", ylabel=L"Flash Point $[\degree C ]$")
+    # Fit coefficients from 10.1149/2.0121502jes
+    b = 0.7099
+    a = 26.62
+    C_TO_K = 273.15
+    a = a + (b * C_TO_K) - C_TO_K
+    scatter!(ax, mean.(df.bp), mean.(df.fp); marker, color)
+    h = ablines!(ax, a, b; color=MISTStyle.UM_COLORS.blue, label="Hess et al.")
+    axislegend(ax, position=:rb, padding=(1, 1, 1, 1), margin=(1, 1, 1, 1))
 
     ax = Axis(gl[2, 2]; xlabel=L"Melting Point $[\degree C]$", ylabel=L"Boiling Point $[\degree C ]$")
-    # vlines!(ax, -100; color=:black)
-    # hlines!(ax, 60; color=:black)
-    scatter!(ax, mean.(df.mp), mean.(df.bp); marker, color)
+    quadrant!(ax, 0, 75, :lt)
 
-    ax = Axis(gl[2, 3]; xlabel=L"HOMO [eV]$$", ylabel=L"Gap [eV]$$")
+    scatter!(ax, mean.(df.mp), mean.(df.bp); marker, color)
+    tantext!(ax, ablines!(ax, 0, 1; color=:black, linestyle=:dash), -2;
+        text=L"T_m = T_b",
+        align=(:left, :top),
+    )
+
+    ax = Axis(gl[2, 3];
+        xlabel=L"HOMO [eV]$$", ylabel=L"Gap [eV]$$",
+        limits=((-11, -5.5), (3, 10.75)),
+    )
+    @show dme_homo = mean(first(df[df[!, :name].=="DME", :homo]) * HARTREE_TO_EV)
+    quadrant!(ax, dme_homo, 5.0, :lt)
     scatter!(ax, mean.(df.homo_rand) .* HARTREE_TO_EV, mean.(df.gap_rand) .* HARTREE_TO_EV; marker, color)
-    ablines!(ax, 0, -1; color=:black, linestyle=:dash)
-    # text!(ax, -7, 7;
-    #     text=L"LUMO = 0eV",
-    #     align=(:left, :bottom),
-    #     markerspace=:data,
-    #     rotation=-pi / 4,
-    #     fontsize=0.3,
-    # )
-    # vlines!(ax, -11.444; color=:black) # 10.1021/jz500485r
-    # hlines!(ax, 5; color=:black) # 10.1021/acsenergylett.3c00004 (Really just says 5eV is good
 
     resize_to_layout!(f)
 
@@ -204,8 +204,13 @@ function electrolyte_trends(df)
 end
 
 function convert_units(y, col)
-    if col in [:homo, :lumo, :gap, :cv, :zpve]
+    if endswith(string(col), "_rand")
+        col = Symbol(string(col)[1:end-5])
+    end
+    if col in [:homo, :lumo, :gap, :zpve, :u0, :g298, :u298, :h298]
         y .*= HARTREE_TO_EV
+    elseif col in [:dn]
+        y .*= JOULES_TO_CALORIES
     end
     return y
 end
@@ -220,14 +225,12 @@ function figure_permutations(name_df::Pair...; name_df_order)
         :gap => L"Gap$$",
         :lumo => L"LUMO$$",
         :zpve => L"ZPVE$$",
-        # :cv => L"CV$$",
         :g298 => L"$G\degree$",
     ]
     limits = Dict(
         :homo => (nothing, (3e-3, 2)),
         :gap => (nothing, (5e-3, 2)),
         :zpve => (nothing, (5e-3, 3e-1)),
-        :g298 => (nothing, (1e-1, 4e1)),
     )
     dfs = []
     for (name, df) in name_df
@@ -333,6 +336,7 @@ function figure_permutations(name_df::Pair...; name_df_order)
             xlabelvisible=is_last,
             xticksvisible=is_last,
             xticklabelsvisible=is_last,
+            yticks=WilkinsonTicks(5),
         )
         push!(axes, ax)
         df = subset(df, :n_carbon => ByRow(>(4)))
@@ -358,8 +362,8 @@ function figure_permutations(name_df::Pair...; name_df_order)
     colsize!(f.layout, 2, Relative(3 / 4))
 
 
-    sublabel!(gl_order[2, 1, TopLeft()], "a"; left=5)
-    sublabel!(gl_order[3, 1, TopLeft()], "b"; left=5)
+    sublabel!(gl_order[2, 1, TopLeft()], "a"; left=15)
+    sublabel!(gl_order[3, 1, TopLeft()], "b"; left=15)
     sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=13)
 
     resize_to_layout!(f)
@@ -424,7 +428,7 @@ function figure_fatty_acids(df; omega=3, alpha=0.8)
 
     # Trends with ω-n
     axes = [
-        :u298_rand => L"$G\degree$\n[kJ/mol]",
+        :g298_rand => L"$G\degree$\n[eV]",
         :mu_rand => L"$\mu$\n[D]",
         # :r2 => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
         # :gap => L"Gap\n[eV]$$",

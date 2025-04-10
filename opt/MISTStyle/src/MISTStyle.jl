@@ -65,6 +65,7 @@ end
 include("errorcross.jl")
 include("powerlaw.jl")
 include("tantext.jl")
+include("quadrant.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
@@ -83,8 +84,8 @@ const CAT_COLORS = cgrad(
 )
 
 UM_COLORS = (;
-    blue=RGBf(0, 39 / 255, 76 / 255),
-    maize=RGBf(1, 203 / 255, 5 / 255),
+    blue=colorant"#00274C",
+    maize=colorant"#FFCB05",
 )
 
 
@@ -174,6 +175,12 @@ function theme()
         ErrorCross=(;
             markersize=5pt,
             whiskerwidth=3,
+        ),
+        Quadrant=(;
+            color=UM_COLORS.maize,
+            linestyle=:solid,
+            linecolor=UM_COLORS.blue,
+            alpha=0.2,
         )
     )
 end

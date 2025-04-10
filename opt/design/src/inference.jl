@@ -66,8 +66,8 @@ end
 
 model_spec(model::Py) = (nothing, model, Colon())
 model_spec(name_model::Pair{String,Py}) = (first(name_model), last(name_model), Colon())
-model_spec(name_model_cols::Pair{String,Pair{Py,<:Vector}}) = (first(name_model_cols), last(name_model_cols)...)
-model_spec(model_cols::Pair{Py,<:Vector}) = (nothing, first(model_cols), last(model_cols))
+model_spec(name_model_cols::Pair{String,<:Pair{Py,<:AbstractVector}}) = (first(name_model_cols), last(name_model_cols)...)
+model_spec(model_cols::Pair{Py,<:AbstractVector}) = (nothing, first(model_cols), last(model_cols))
 
 """
 Run all models against a DataFrame of smiles in the `smi_column`

@@ -7,14 +7,15 @@ MISTFinetuned = pyimport("electrolyte_fm.models.prod_finetune").MISTFinetuned
 MISTMultiTask = pyimport("electrolyte_fm.models.prod_finetune").MISTMultiTask
 
 models = (
-    MISTFinetuned.from_pretrained("../../models/mist-x4i8qzuq-qm9"),
-    "rand" => MISTFinetuned.from_pretrained("../../models/mist-26.9M-kkgx0omx-qm9"),
-    "kt" => MISTMultiTask.from_pretrained("../../models/solvent-properties"),
-    MISTFinetuned.from_pretrained("../../models/mist-26.9M-6hk5coof-dn"),
-    MISTFinetuned.from_pretrained("../../models/mist-26.9M-b302p09x-bp"),
-    MISTFinetuned.from_pretrained("../../models/mist-26.9M-y3ge5pf9-mp"),
-    MISTFinetuned.from_pretrained("../../models/mist-26.9M-cyuo2xb6-fp"),
-    "lyte" => MISTMultiTask.from_pretrained("../../models/electrolyte-solvent/"),
+    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-x4i8qzuq-qm9")),
+    "rand" => MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-kkgx0omx-qm9")),
+    "kt" => MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-0vxdbm36-kt/")),
+    "kt" => MISTMultiTask.from_pretrained(joinpath(@__DIR__, "../../models/solvent-properties")) => [:pKa],
+    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-6hk5coof-dn")),
+    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-b302p09x-bp")),
+    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-y3ge5pf9-mp")),
+    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-cyuo2xb6-fp")),
+    "lyte" => MISTMultiTask.from_pretrained(joinpath(@__DIR__, "../../models/electrolyte-solvent/")),
 )
 
 # Generate Plots
