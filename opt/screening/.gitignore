@@ -1,0 +1,4 @@
+vendor/
+*.smi
+*.frag
+out/
