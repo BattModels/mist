@@ -16,3 +16,13 @@ dependencies = [
 [tool.uv.sources]
 electrolyte_fm = { path = "../../", editable = true }
 
+[dependency-groups]
+dev = [
+    "pytest~=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = [".", "test"]
+addopts = "--color yes"
+
