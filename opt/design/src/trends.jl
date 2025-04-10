@@ -1,4 +1,4 @@
-function hydrocarbon_trends(df)
+function hydrocarbon_trends(df; qm_model="")
     f = Figure(size=(2.9inch, 2inch))
 
     func_groups = [
@@ -27,14 +27,16 @@ function hydrocarbon_trends(df)
     # Trends with Size
     gl_trends = GridLayout(f[1, 1])
     axes = [
-        :g298 => L"$G\degree$\n[eV]",
-        :mu => L"$\mu$ [D]",
-        :r2 => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
-        :gap => L"Gap\n[eV]$$",
+        Symbol("g298" * qm_model) => L"$G\degree$\n[eV]",
+        Symbol("alpha" * qm_model) => L"$\alpha$\n$[\alpha_0^3]$",
+        Symbol("gap" * qm_model) => L"Gap\n[eV]$$",
+        Symbol("homo" * qm_model) => L"HOMO\n[eV]$$",
         :mp => L"$$Melt\n[$\degree C$ ]",
         :bp => L"$$Boil\n[$\degree C$ ]",
+        # Symbol("mu" * qm_model) => L"$\mu$ [D]",
+        # Symbol("r2" * qm_model) => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
         # :dn => L"$$DN\n[kJ/mol]",
-        :pKa_kt => L"pKa",
+        # :pKa_kt => L"pKa",
         # :alpha_kt => L"KT $\alpha$",
         # :beta_kt => L"KT $\beta$",
     ]
@@ -57,7 +59,7 @@ function hydrocarbon_trends(df)
     foreach(groupby(df, :type)) do gdf
         for (col, ax) in pairs(axes)
             y = convert_units(gdf[:, col], col)
-            lines!(ax, gdf.n_carbon, mean.(y);
+            errorlines!(ax, gdf.n_carbon, y;
                 label=string(first(gdf.type)),
                 color=levelcode.(gdf.type),
                 colormap,
@@ -86,10 +88,16 @@ function hydrocarbon_trends(df)
             colorrange,
             color=levelcode.(gdf.type),
             label=string(first(gdf.type)),
-            marker=:circle
+            marker=:circle,
+            # whiskerwidth=2pt,
+            # markervisible=false,
         )
-        scatter!(ax_dn, HARTREE_TO_EV .* mean.(gdf.homo), HARTREE_TO_EV .* mean.(gdf.g298); kwargs...)
+        homo = gdf[:, Symbol("homo" * qm_model)] .* HARTREE_TO_EV
+        g298 = gdf[:, Symbol("g298" * qm_model)] .* HARTREE_TO_EV
+        scatter!(ax_dn, mean.(homo), mean.(g298); kwargs...)
         scatter!(ax_mp_bp, mean.(gdf.mp), mean.(gdf.bp); kwargs...)
+        # errorcross!(ax_dn, homo, g298; kwargs...)
+        # errorcross!(ax_mp_bp, gdf.mp, gdf.bp; kwargs...)
     end
     h = ablines!(ax_mp_bp, 0, 1; color=:black, linestyle=:dash)
     MISTStyle.tantext!(ax_mp_bp, h, 25; text=L"T_m = T_b", align=(:center, :bottom))
@@ -413,7 +421,7 @@ function figure_order2(name_df::Pair...)
     return f
 end
 
-function figure_fatty_acids(df; omega=3, alpha=0.8)
+function figure_fatty_acids(df; omega=3, alpha=0.8, qm_model="")
     f = Figure(size=(3.42inch, 2inch))
 
     gl_trends = GridLayout(f[1, 1])
@@ -428,18 +436,14 @@ function figure_fatty_acids(df; omega=3, alpha=0.8)
 
     # Trends with ω-n
     axes = [
-        :g298_rand => L"$G\degree$\n[eV]",
-        :mu_rand => L"$\mu$\n[D]",
-        # :r2 => L"$\langle R^2 \rangle$\n$[\alpha_0^2]$",
-        # :gap => L"Gap\n[eV]$$",
+        Symbol("g298" * qm_model) => L"$G\degree$\n[eV]",
+        Symbol("mu" * qm_model) => L"$\mu$\n[D]",
+        # Symbol("alpha" * qm_model) => L"$\alpha$\n$[\alpha_0^3]$",
+        # Symbol("gap" * qm_model) => L"Gap\n[eV]$$",
         :mp => L"$$Melt\n[$\degree C$ ]",
         :bp => L"$$Boil\n[$\degree C$ ]",
         :fp => L"$$Flash\n[$\degree C$ ]",
-        # :dn => L"$$DN\n[kJ/mol]",
-        # :pKa_kt => L"pKa",
-        # :beta_kt => L"KT $\beta$",
     ]
-    x_sat = 0.3
     axes = map(enumerate(axes)) do (idx, (col, ylabel))
         is_last = idx == length(axes)
         col => Axis(gl_trends[idx, 1];
@@ -534,30 +538,29 @@ function figure_fatty_acids(df; omega=3, alpha=0.8)
         tickformat="{:.0%}",
         colorrange=extrema(df.saturation),
     )
-    # colgap!(gl_cross, 1, 4)
 
     sort!(df_unsat, :saturation)
+    mu = mean.(df_unsat[:, Symbol("mu" * qm_model)])
     scatter!(ax_fp_c, df_unsat.c, mean.(df_unsat.fp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
-    scatter!(ax_fp_mu, mean.(df_unsat.mu), mean.(df_unsat.fp);
+    scatter!(ax_fp_mu, mu, mean.(df_unsat.fp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
 
-    sort!(df_unsat, :saturation)
     scatter!(ax_mp_c, df_unsat.c, mean.(df_unsat.mp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
-    scatter!(ax_mp_mu, mean.(df_unsat.mu), mean.(df_unsat.mp);
+    scatter!(ax_mp_mu, mu, mean.(df_unsat.mp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha,
