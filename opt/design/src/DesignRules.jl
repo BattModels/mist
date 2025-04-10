@@ -11,6 +11,9 @@ using CategoricalArrays: levelcode, categorical
 using JSON: JSON
 
 const HARTREE_TO_EV = 27.211_386_245_981
+const JOULES_TO_CALORIES = inv(4.184)
+
+sigmoid(x) = 1 / (1 + exp(-x))
 
 include("uq.jl")
 include("inference.jl")
