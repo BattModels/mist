@@ -33,9 +33,11 @@ df_hydrocarbons = DesignRules.predict_all(
     n=10
 )
 
-with_theme(MISTStyle.theme()) do
-    DesignRules.hydrocarbon_trends(df_hydrocarbons)
-end |> MISTStyle.savefig("hydrocarbons")
+for qm_model in ["", "_rand"]
+    with_theme(MISTStyle.theme()) do
+        DesignRules.hydrocarbon_trends(df_hydrocarbons; qm_model)
+    end |> MISTStyle.savefig("hydrocarbons" * qm_model)
+end
 
 df_sat = DesignRules.predict_all(
     DesignRules.saturated_fats(24; n_max=9, d_max=6),
@@ -43,10 +45,12 @@ df_sat = DesignRules.predict_all(
     n=3,
 )
 
-for omega in [3, 6, 9]
-    with_theme(MISTStyle.theme()) do
-        DesignRules.figure_fatty_acids(df_sat; omega)
-    end |> MISTStyle.savefig("omega-$omega-saturated-fats")
+for qm_model in ["", "_rand"]
+    for omega in [3, 6, 9]
+        with_theme(MISTStyle.theme()) do
+            DesignRules.figure_fatty_acids(df_sat; omega, qm_model)
+        end |> MISTStyle.savefig("omega-$omega-saturated-fats$qm_model")
+    end
 end
 
 
