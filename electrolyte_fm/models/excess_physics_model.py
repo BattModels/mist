@@ -57,6 +57,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 encoder_ckpt,
                 trust_remote_code=True,
             )
+
         self.hidden_size = self.encoder.config.hidden_size
         # Validate the vocab size
         if vocab_size is not None:
@@ -112,7 +113,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         pred = self.task_network(batch)
         if transform:
             pred = self.transform.forward(pred)
-        return pred.flatten()  # needed since poly eval results in [batch_size, 1]
+        return pred  # [batch_size, 1]
 
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
