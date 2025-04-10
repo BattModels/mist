@@ -59,7 +59,7 @@ function hydrocarbon_trends(df; qm_model="")
     foreach(groupby(df, :type)) do gdf
         for (col, ax) in pairs(axes)
             y = convert_units(gdf[:, col], col)
-            lines!(ax, gdf.n_carbon, mean.(y);
+            errorlines!(ax, gdf.n_carbon, y;
                 label=string(first(gdf.type)),
                 color=levelcode.(gdf.type),
                 colormap,
@@ -444,7 +444,6 @@ function figure_fatty_acids(df; omega=3, alpha=0.8, qm_model="")
         :bp => L"$$Boil\n[$\degree C$ ]",
         :fp => L"$$Flash\n[$\degree C$ ]",
     ]
-    x_sat = 0.3
     axes = map(enumerate(axes)) do (idx, (col, ylabel))
         is_last = idx == length(axes)
         col => Axis(gl_trends[idx, 1];
