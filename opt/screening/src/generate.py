@@ -47,19 +47,26 @@ class QuadrantCritic(nn.Module):
         super().__init__()
         lower = []
         upper = []
+        assert limits.keys() <= set(channels), (
+            f"limits must be a subset of channels: {limits.keys()} ⊆ {channels}"
+        )
         for chn in channels:
             if chn in limits:
                 lb, ub = limits[chn]
             else:
                 lb, ub = None, None
-            lower.append(lb or -torch.inf)
-            upper.append(ub or torch.inf)
+            lower.append(-torch.inf if lb is None else lb)
+            upper.append(torch.inf if ub is None else ub)
 
         self.register_buffer("lower", torch.tensor(lower).view(1, -1))
         self.register_buffer("upper", torch.tensor(upper).view(1, -1))
 
+    @property
+    def active_channels(self):
+        return ~(self.lower.isinf() & self.upper.isinf()).view(-1)
+
     def __call__(self, y: torch.Tensor):
-        return ((self.lower < y) & (y < self.upper)).all(-1)
+        return (self.lower < y) & (y < self.upper)
 
 
 class CriticPanel(nn.Module):
@@ -75,12 +82,12 @@ class CriticPanel(nn.Module):
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None
     ):
         net_score = torch.ones(
-            input_ids.shape[0], dtype=input_ids.dtype, device=input_ids.device
+            input_ids.shape[0], dtype=torch.bool, device=input_ids.device
         )
         y = []
         for critic in self.critics:
             yc, score = critic(input_ids, attention_mask=attention_mask)
-            net_score &= score
+            net_score &= score.all(-1)
             y.append(yc)
 
         return torch.cat(y, dim=-1), net_score
@@ -111,7 +118,7 @@ def generate(fabric, critics, ref_mol_file, encoding: str | None = None):
 
     # Setup Critics
     panel = CriticPanel(critics).to(fabric.device, dtype=torch.bfloat16).eval()
-    panel = torch.compile(panel, dynamic=True, fullgraph=True)
+    # panel = torch.compile(panel, dynamic=True, fullgraph=True)
 
     # Setup Timing
     batch_time = 0.0
@@ -126,7 +133,7 @@ def generate(fabric, critics, ref_mol_file, encoding: str | None = None):
         ref_mol_file,
         critics[0].oracle.tokenizer,
         encoding=encoding,
-        batch_size=256,
+        batch_size=32,
     )
 
     # Generate molecules

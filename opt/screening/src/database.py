@@ -3,6 +3,7 @@ import logging
 import queue
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -56,6 +57,7 @@ def _sqlite_writer(db_path, q: queue.Queue):
     error_count = 0
     invalid_count = 0
     wab_count = 0
+    wab_timeout = time.monotonic()
     try:
         while True:
             item = q.get()
@@ -75,9 +77,10 @@ def _sqlite_writer(db_path, q: queue.Queue):
 
                 # Periodically commit
                 wab_count += 1
-                if wab_count >= 50:
+                if wab_count >= 50 or ((time.monotonic() - wab_timeout) > 10):
                     conn.commit()
                     wab_count = 0
+                    wab_timeout = time.monotonic()
 
             except Exception as e:
                 logger.error(f"Failed to insert molecule: {e}")
