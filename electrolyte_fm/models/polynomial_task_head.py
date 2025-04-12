@@ -313,12 +313,11 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
             [
                 torch.cos((2 * k + 1) * pi / (2 * polynomial_order))
                 for k in range(polynomial_order)
-            ]
+            ][::-1]
         ).view(polynomial_order, 1)
         self.scale = chebyshev_nodes.max() - chebyshev_nodes.min()
-        self.shift = 0 - chebyshev_nodes.min()
-        self.parametric_var = (chebyshev_nodes + self.shift) / self.scale
-
+        self.shift = chebyshev_nodes.min()
+        self.parametric_var = (chebyshev_nodes - self.shift) / self.scale
         embed_dim += 1  # include temperature
 
         self.mlp = nn.Sequential(
@@ -337,7 +336,7 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
 
     def chebyshev_poly(self, t, i):
         # Chebyshev polynomials of the first kind
-        return torch.cos(i * torch.arccos(t * self.scale - self.shift))
+        return torch.cos(i * torch.arccos(t * self.scale + self.shift))
 
     def forward(self, batch):
         P_m = 0
@@ -371,6 +370,12 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         P[:, 3, :] = P2[:, 0].unsqueeze(1)
         P[:, 4, :] = P2[:, -1].unsqueeze(1)
         c = torch.linalg.solve(B, P)  # Size([batch_size, polynomial_order, 1])
+        is_close = torch.allclose(
+            B @ c,
+            P,
+            atol=1e-05,
+        )
+        assert is_close
         c = c.to(embedding_BA.device)  # linalg.solve moves tensor to cpu
 
         # Binary excess term at input composition
@@ -402,3 +407,5 @@ class PolynomialHead(Enum):
             return LegendrePredictionTaskHead
         elif self == PolynomialHead.BEZIER:
             return BezierPredictionTaskHead
+        elif self == PolynomialHead.BEZIERFOURTH:
+            return BezierFourthPredictionTaskHead
