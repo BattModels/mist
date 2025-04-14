@@ -1,11 +1,9 @@
 using Makie
+using MISTStyle
 using JLD2: jldopen
 using StatsBase: mean
 using Format: format
 using BayesianScaling: BayesianScaling, compute_optimal_loss, predictionband!, hoffman_compute_scaling, compute_optimal_model_size, expected_penalties, expected_lr_sensitivity, credible_interval, pf_day
-
-include("../../style.jl")
-using .MISTStyle: MISTStyle, savefig, inch, pt
 
 function load_prediction(dir)
     return jldopen(joinpath(dir, "chains.jld2")) do data

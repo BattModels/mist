@@ -1,18 +1,7 @@
 using DataFrames
 using Dates: Dates, DateTime
 using JSON: JSON
-using BayesianScaling: find
-using StatsBase: mean, weights
-
-function average_last(x::Vector; n::Number=1)
-    n_eff = ceil(Int, n)
-    w = ones(n_eff)
-    w[1] = n_eff - n
-    n_eff > length(x) && return missing
-    x_eff = @view x[end-n_eff+1:end]
-    return mean(x_eff, weights(w))
-end
-
+using BayesianScaling: find, average_last
 
 function pretraining_runs(dir::AbstractString; smoothed_eval_batch=1e6)
     row = []

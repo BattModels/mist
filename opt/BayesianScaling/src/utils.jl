@@ -39,3 +39,15 @@ function symmetric_polynomial(x, coefs::T...) where {T <: Real}
 end
 symmetric_polynomial(x, coef::T) where {T <: Real} = coef * x^2
 
+"""
+Average the last `n` samples of `x`; if `n` is a float will
+assign weight to the `x[end - floor(n)]` of `ceil(n) - n`
+"""
+function average_last(x::Vector; n::Number=1)
+    n_eff = ceil(Int, n)
+    w = ones(n_eff)
+    w[1] = n_eff - n
+    n_eff > length(x) && return missing
+    x_eff = @view x[end-n_eff+1:end]
+    return mean(x_eff, StatsBase.weights(w))
+end

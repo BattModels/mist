@@ -12,7 +12,7 @@ function residual_correlations(error::Vector, df)
 end
 
 function StatsBase.aic(model::BayesianRegression, chains::AbstractChains)
-    ℓ_mle = maximum(θ -> logpdf(:likilhood, model, θ), eachslice(chains; dims=(1, 2)))
+    ℓ_mle = maximum(θ -> logpdf(:likelihood, model, θ), eachslice(chains; dims=(1, 2)))
     k = dimension(model)
     return 2 * (k - ℓ_mle)
 end

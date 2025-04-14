@@ -29,17 +29,16 @@ huber_loss(x::Real, δ::Real=1e-3) = abs(x) < δ ? 0.5 * x^2 : δ * (abs(x) - 0.
 function fit_model_huber(model::BayesianRegression{HoffmanScaling}; p=0.95, n=7, delta=1e-3)
     # Initial grid search over the credible prior
     θ = priors(model)
-    lb, ub = credible_prior(model, p)
     grid = Iterators.product(
-        range(quantile(θ.α, [p, 1-p])...; length=n),
-        range(quantile(θ.β, [p, 1-p])...; length=n),
-        range(quantile(θ.A, [p, 1-p])...; length=n) .|> log,
-        range(quantile(θ.B, [p, 1-p])...; length=n) .|> log,
-        range(quantile(θ.E, [p, 1-p])...; length=n) .|> log,
+        range(quantile(θ.α, [p, 1 - p])...; length=n),
+        range(quantile(θ.β, [p, 1 - p])...; length=n),
+        range(quantile(θ.A, [p, 1 - p])...; length=n) .|> log,
+        range(quantile(θ.B, [p, 1 - p])...; length=n) .|> log,
+        range(quantile(θ.E, [p, 1 - p])...; length=n) .|> log,
     )
     @assert length(first(grid)) == (dimension(model) - 1)
 
-    function lossfn(θ::Union{Vector, Tuple}, p=nothing)
+    function lossfn(θ::Union{Vector,Tuple}, p=nothing)
         loss = zero(eltype(θ))
         α, β, a, b, e = θ
         for (y, x) in zip(response(model), observations(model))
@@ -87,7 +86,8 @@ function priors(::Type{ShapedScaling})
 end
 
 function init_model(f::ShapedScaling, df; priors=priors(HoffmanScaling))
-    cols = [:model_size, :data_size, :lr, :ff_ratio, :aspect_ratio, :kv_size, :effective_batch_size]
+    cols = [f.lr_model_size, :model_size, :data_size, :lr, :ff_ratio, :aspect_ratio, :kv_size, :effective_batch_size]
+    unique!(cols)
     observations = NamedTuple.(eachrow(df[!, cols]))
     response = df[:, :loss]
     return BayesianRegression(f, priors, response, observations, LogNormal())
@@ -100,10 +100,15 @@ function (m::ShapedScaling)(run, θ)
 
     # Compute Penalties
     P = geometric_penalty(run.lr, lr_opt, θ.lr.penalty...)
-    sp = m.harmonic_shape_penalty ? harmonic_penalty : geometric_penalty
-    P += sp(run.ff_ratio, ff_ratio...)
-    P += sp(run.kv_size, kv_size...)
-    P += sp(run.aspect_ratio, aspect_ratio...)
+    if m.harmonic_shape_penalty
+        P += harmonic_penalty(run.ff_ratio, ff_ratio...)
+        P += harmonic_penalty(run.kv_size, kv_size...)
+        P += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
+    else
+        P += geometric_penalty(run.ff_ratio, ff_ratio...)
+        P += geometric_penalty(run.kv_size, kv_size...)
+        P += geometric_penalty(run.aspect_ratio, aspect_ratio...)
+    end
 
     # Estimate model loss
     return m.geometric_penalty ? xexpy(loss, P) : loss + P
@@ -111,7 +116,7 @@ end
 
 function ideal_lr(m::ShapedScaling, θ, run)
     (; a, b, c) = θ.lr.ideal
-    N = get(run, m.lr_model_size)
+    N = convert(Float64, run[m.lr_model_size]::Int)
     return exp(log(a) + b * log(run.effective_batch_size) + c * log(N))
 end
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -p cpuq
-#SBATCH -c 64
+#SBATCH -c 16
 #SBATCH --mem-per-cpu=1800M
 #SBATCH --time 12:0:0
 

@@ -1,5 +1,6 @@
 module BayesianScaling
 
+using Dates: Dates
 using Statistics: Statistics, mean, std, median
 
 using Makie

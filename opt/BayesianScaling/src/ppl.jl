@@ -1,6 +1,6 @@
 const AbstractChains{T} = AbstractArray{T,3} where {T}
 
-const Fitted{M,T} = Tuple{M, AbstractChains{T}} where {M,T}
+const Fitted{M,T} = Tuple{M,AbstractChains{T}} where {M,T}
 
 struct BayesModel{P,X}
     priors::P
@@ -49,6 +49,7 @@ Base.eltype(m::BayesianRegression) = eltype(m.response)
 priors(m::BayesianRegression) = m.priors
 StatsBase.response(m::BayesianRegression) = m.response
 observations(m::BayesianRegression) = m.observations
+StatsBase.nobs(m::BayesianRegression) = length(m.observations)
 predict(m::BayesianRegression, θ, x) = m.formula(x, θ)
 deviance_logdensity(m::BayesianRegression, y, ŷ; θ) = loglike_obs(m.dist, y, ŷ, dispersion(m, θ))
 dispersion(::BayesianRegression, θ) = θ.sigma
@@ -113,7 +114,7 @@ end
 logpdf_prior(prior::Distribution, θ::Number) = logpdf(prior, θ)
 
 """ Loglikelihood of an observation `y ~ D(ŷ, ϕ)` """
-loglike_obs(::D, y, ŷ, ϕ) where {D <: UnivariateDistribution} = logpdf(D(ŷ, ϕ), y)
+loglike_obs(::D, y, ŷ, ϕ) where {D<:UnivariateDistribution} = logpdf(D(ŷ, ϕ), y)
 
 """
     logpdf_prior_vec(priors::NamedTuple, θ::AbstractVector)
@@ -247,14 +248,17 @@ function transfrom_axis(t::TransformVariables.ArrayTransformation)
     end
 end
 
-function sample_chains(ℓ; nchains=15, draws=1_000, adtype=:Enzyme)
+function sample_chains(ℓ; nchains=15, draws=1_000, adtype=:Enzyme, reporter=DynamicHMC.NoProgressReport())
     model = init_logdensity_model(ℓ, adtype)
-    reporter = DynamicHMC.NoProgressReport()
     posterior = Vector{Matrix{Float64}}(undef, nchains)
     tt = model.ℓ.transformation
     Threads.@threads :dynamic for i in 1:nchains
-        y_raw = mcmc_with_warmup(Random.default_rng(), model, draws; reporter).posterior_matrix
-        posterior[i] = transform_samples(tt, y_raw)
+        q = TransformVariables.inverse(tt, sample_priors(ℓ))
+        out = mcmc_with_warmup(Random.default_rng(), model, draws;
+            reporter,
+            initialization=(; q),
+        )
+        posterior[i] = transform_samples(tt, out.posterior_matrix)
     end
     y = stack(posterior'; dims=2)
     @assert size(y) == (draws, nchains, dimension(model))
@@ -381,6 +385,11 @@ function maximum_posterior_estimate(model::BayesianRegression, chains::AbstractC
     ℓ = θ -> logpdf(:likelihood, model, θ)
     return argmax(ℓ, eachslice(chains; dims=(1, 2))) |> copy
 end
+
+"""
+The expectation `E[θ]` of the posterior distribution for the sampled parameters `θ` in `chains`
+"""
+posterior_expectation(chains::AbstractChains) = mean(eachslice(chains; dims=(1, 2)))
 
 function maximum_posterior_estimate(model::BayesianRegression; p=0.95, n=7, adtype=:Enzyme, alg=LBFGS(), kwargs...)
     L = init_logdensity_model(model, adtype)
