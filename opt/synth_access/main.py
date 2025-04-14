@@ -1,30 +1,65 @@
+import functools
 import gzip
-from pathlib import Path
-from typing import Optional, List, Callable
 import json
+import logging
+import multiprocessing
+from pathlib import Path
+from time import perf_counter
+from typing import Callable, List, Optional
 
 import torch
-from time import perf_counter
-from torch.nn import functional as F
+from assembly_theory import molecular_assembly
+from BRSAScore import SAScorer as BRSAScorer
 from datasets import Dataset, load_dataset
 from rdkit import Chem, rdBase
 from rdkit.Contrib.SA_Score import sascorer
 from sklearn.metrics import roc_auc_score
-
 from syba.syba import SybaClassifier
-from BRSAScore import SAScorer as BRSAScorer
-from assembly_theory import molecular_assembly
+from torch.nn import functional as F
 from transformers import AutoModelForMaskedLM, DataCollatorWithPadding
+from vendor.scscore.scscore import SCScorer
 
 from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
 from electrolyte_fm.models.model_utils import DeepSpeedMixin
-from electrolyte_fm.utils.tokenizer import load_tokenizer
 from electrolyte_fm.utils.cache import cached_download, extract_file
-
-from vendor.scscore.scscore import SCScorer
+from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 # Suppress DeprecationWarnings for MorganGenerator
 rdBase.DisableLog("rdApp.warning")
+
+
+def timeout(seconds):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            def target(q, *args, **kwargs):
+                try:
+                    result = func(*args, **kwargs)
+                    q.put(result)
+                except Exception as e:
+                    q.put(e)
+
+            q = multiprocessing.Queue()
+            p = multiprocessing.Process(target=target, args=(q, *args), kwargs=kwargs)
+            p.start()
+            p.join(seconds)
+
+            if p.is_alive():
+                p.terminate()
+                p.join()
+                logging.warning(
+                    f"Function '{func.__name__}' timed out after {seconds} seconds with args={args}, kwargs={kwargs}"
+                )
+                return None
+
+            result = q.get()
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 def sascore(smiles: str) -> Optional[float]:
@@ -142,13 +177,14 @@ def evaluate_dataset(
     for name, metric in metrics.items():
         if isinstance(metric, str):
             model = SynthAccessFM.from_pretrained(metric).to(get_accelerator())
-            for encoding in ["smiles", "smiles-keukle", "smiles-canonical"]:
+            for encoding in ["smiles", "smiles-kekule", "smiles-canonical"]:
                 name = f"{metric}-{encoding}"
                 start = perf_counter()
                 ds = ds.map(
-                    lambda x: {name: model.score(x[encoding])},
+                    lambda x: {name: model.score},
                     batched=True,
                     batch_size=64,
+                    input_columns=encoding,
                     desc=name,
                 )
                 stats["time"][name] = perf_counter() - start
@@ -158,13 +194,17 @@ def evaluate_dataset(
         else:
             start = perf_counter()
             ds = ds.map(
-                lambda x: {name: metric(x[smi_column])},
+                lambda x: {name: metric(x)},
+                input_columns=smi_column,
                 batched=False,
                 desc=name,
             )
             stats["time"][name] = perf_counter() - start
             if target:
-                stats["auroc"][name] = roc_auc_score(ds[target], ds[name])
+                ds_auroc = ds.filter(
+                    lambda x: x is not None, batched=False, input_columns=name
+                )
+                stats["auroc"][name] = roc_auc_score(ds_auroc[target], ds_auroc[name])
 
     # Score Molecules
     df = ds.to_pandas()
@@ -185,7 +225,9 @@ if __name__ == "__main__":
         "BR-SAScore": lambda smi: ba_sascorer.calculateScore(smi)[0],
         "MolFormer": "ibm/MoLFormer-XL-both-10pct",
         "ChemBERTa": "seyonec/ChemBERTa-zinc-base-v1",
-        "assembly-index": lambda smi: molecular_assembly(Chem.MolFromSmiles(smi)),
+        "assembly-index": lambda smi: timeout(10)(
+            molecular_assembly(Chem.MolFromSmiles(smi))
+        ),
     }
     for file in Path("models").iterdir():
         if file.is_dir():
