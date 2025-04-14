@@ -103,16 +103,24 @@ function run_models(models)
     end
 end
 
-function model_summary(models)
+function fit_summary()
     rows = []
-    for model_dir in keys(models)
-        isfile(joinpath(model_dir, "chains.jld2")) || continue
-        data = jldopen(joinpath(model_dir, "chains.jld2"), "r")
+    for dir in readdir(joinpath(pkgdir(BayesianScaling), "out"); join=true)
+        name = basename(dir)
+        startswith(name, "dec-3-sweep") || continue
+        isfile(joinpath(dir, "chains.jld2")) || continue
+        data = jldopen(joinpath(dir, "chains.jld2"), "r")
         model = data["model"]
         chains = data["chains"]
         G, a, E = BayesianScaling.scaling_summary(chains)
+        m = match(r"-([+\-e0-9\.]+)--(.*)", name)
+        eff_batch_size=parse(Float64, m.captures[1])
+        model_type=m.captures[2]
+        eff_batch_size = eff_batch_size == 1 ? nothing : eff_batch_size
         push!(rows, (;
-            model=basename(model_dir),
+            # name,
+            eff_batch_size,
+            model_type,
             nobs=nobs(model),
             G,
             a,
