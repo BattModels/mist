@@ -3,6 +3,7 @@ import gzip
 import json
 import logging
 import multiprocessing
+from os import environ
 from pathlib import Path
 from time import perf_counter
 from typing import Callable, List, Optional
@@ -26,6 +27,8 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 # Suppress DeprecationWarnings for MorganGenerator
 rdBase.DisableLog("rdApp.warning")
+
+NUM_PROCS = int(environ.get("SLURM_CPUS_PER_TASK", 4))
 
 
 def timeout(seconds):
@@ -137,16 +140,18 @@ class SynthAccessFM(torch.nn.Module):
         return cls(encoder, tokenizer, **kwargs)
 
 
-def bascore(smiles: str) -> Optional[float]:
-    pass
-
-
 def get_accelerator():
     if torch.cuda.is_available():
         return torch.device("cuda")
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
+
+@timeout(5)  # molecular_assembly (v0.2.0) timeout flag doesn't timeout
+def molecular_assembly_timeout(smi: str) -> int:
+    mol = Chem.MolFromSmiles(smi)
+    return molecular_assembly(mol)
 
 
 def evaluate_dataset(
@@ -164,12 +169,14 @@ def evaluate_dataset(
         "smiles",
         output_column="smiles-kekule",
         encoding=MolEncoding.KEKULE,
+        num_proc=NUM_PROCS,
     )
     ds = encode_molecules(
         ds,
         "smiles",
         output_column="smiles-canonical",
         encoding=MolEncoding.CANONICAL_SMILES,
+        num_proc=NUM_PROCS,
     )
 
     stats = {"auroc": {}} if target is not None else {}
@@ -181,7 +188,7 @@ def evaluate_dataset(
                 name = f"{metric}-{encoding}"
                 start = perf_counter()
                 ds = ds.map(
-                    lambda x: {name: model.score},
+                    lambda x: {name: model.score(x)},
                     batched=True,
                     batch_size=64,
                     input_columns=encoding,
@@ -198,6 +205,7 @@ def evaluate_dataset(
                 input_columns=smi_column,
                 batched=False,
                 desc=name,
+                num_proc=NUM_PROCS,
             )
             stats["time"][name] = perf_counter() - start
             if target:
@@ -223,15 +231,14 @@ if __name__ == "__main__":
         "SyBA": lambda smi: -syba.predict(smi),
         "SCScore": lambda smi: scscore.get_score_from_smi(smi)[1],
         "BR-SAScore": lambda smi: ba_sascorer.calculateScore(smi)[0],
-        "MolFormer": "ibm/MoLFormer-XL-both-10pct",
+        "MolFormer": "ibm-research/MoLFormer-XL-both-10pct",
         "ChemBERTa": "seyonec/ChemBERTa-zinc-base-v1",
-        "assembly-index": lambda smi: timeout(10)(
-            molecular_assembly(Chem.MolFromSmiles(smi))
-        ),
+        "assembly-index": molecular_assembly_timeout,
     }
-    for file in Path("models").iterdir():
-        if file.is_dir():
-            metrics[file.name] = str(file)
+
+    # for file in Path("models").iterdir():
+    #     if file.is_dir():
+    #         metrics[file.name] = str(file)
 
     # BA-SAScore's Dataset
     ds = load_dataset(
