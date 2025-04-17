@@ -51,6 +51,7 @@ StatsBase.response(m::BayesianRegression) = m.response
 observations(m::BayesianRegression) = m.observations
 StatsBase.nobs(m::BayesianRegression) = length(m.observations)
 predict(m::BayesianRegression, θ, x) = m.formula(x, θ)
+predict(m::BayesianRegression, θ) = map(obs -> predict(m, θ, obs), m.observations)
 deviance_logdensity(m::BayesianRegression, y, ŷ; θ) = loglike_obs(m.dist, y, ŷ, dispersion(m, θ))
 dispersion(::BayesianRegression, θ) = θ.sigma
 
@@ -69,6 +70,25 @@ transform_support(m::BayesianRegression) = transform_support(priors(m))
 LogDensityProblems.logdensity(m::BayesianRegression, θ) = logpdf(:joint, m, θ)
 
 Distributions.logpdf(s::Symbol, m::BayesianRegression, θ) = logpdf(Val(s), m, θ)
+
+function BayesianRegression(f::FormulaTerm, priors::Dict{String, <:Distribution}, df, dist=Normal())
+    f = apply_schema(f, schema(f, df))
+    @assert all(in(keys(priors)), coefnames(f.rhs)) lazy"Missing coefficients in priors: $(setdiff(coefnames(f), keys(priors)))"
+    response = StatsModels.modelcols(f.lhs, df)
+    observations = map(NamedTuple, eachrow(df))
+    priors = tuple([priors[coef] for coef in coefnames(f.rhs)]..., priors["(sigma)"])
+    return BayesianRegression(f, priors, response, observations, dist)
+end
+
+transfrom_support(m::BayesianRegression{<:FormulaTerm}) = as(tuple(map(BayesianScaling.transform_support, m.priors)...))
+predict(m::BayesianRegression{<:FormulaTerm}, θ, x) = StatsModels.modelcols(m.formula.rhs, x)' * θ[1:end-1]
+dispersion(m::BayesianRegression{<:FormulaTerm}, θ) = θ[end]
+function predict(m::BayesianRegression{<:FormulaTerm}, θ::NamedTuple, x)
+    m = StatsModels.modelcols(m.formula.rhs, x)
+    θ = [getindex(θ, Symbol(coef)) for coef in coefnames(m.formula.rhs)]
+    return m' * θ
+end
+
 
 """ log-density of the parameters given the prior: `log p(θ)` """
 Distributions.logpdf(::Val{:prior}, m::BayesianRegression, θ) = logpdf_prior(priors(m), θ)
@@ -113,8 +133,11 @@ end
 
 logpdf_prior(prior::Distribution, θ::Number) = logpdf(prior, θ)
 
-""" Loglikelihood of an observation `y ~ D(ŷ, ϕ)` """
-loglike_obs(::D, y, ŷ, ϕ) where {D<:UnivariateDistribution} = logpdf(D(ŷ, ϕ), y)
+""" Loglikelihood of an observation `y ~ D(ŷ, ϕ)`
+`D` is parameterized by it's expectation `ŷ` and shape `ϕ`
+"""
+loglike_obs(::LogNormal, y, ŷ, ϕ) = logpdf(LogNormal(log(ŷ) - 0.5 * ϕ^2, ϕ), y)
+loglike_obs(::Normal, y, ŷ, ϕ) = logpdf(Normal(ŷ, ϕ), y)
 
 """
     logpdf_prior_vec(priors::NamedTuple, θ::AbstractVector)
@@ -285,10 +308,7 @@ end
 Save the model and sample chains to the output directory
 """
 function save_results(model, chains; outdir=nothing, kwargs...)
-    if outdir === nothing
-        model_name = string(uuid4())
-        outdir = joinpath(outdir, model_name)
-    end
+    outdir = isnothing(outdir) ? joinpath("out", string(uuid4())) : outdir
     mkpath(outdir)
     metadata = (;
         git=readchomp(`git describe --all --long --dirty`),

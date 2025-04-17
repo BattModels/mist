@@ -3,8 +3,8 @@ using DataFrames
 using StatsBase
 using Enzyme: Enzyme
 using Dates: DateTime
-using BayesianScaling: BayesianScaling, ShapedScaling, sample_chains, init_model
-using Distributions: Normal, LogNormal, Exponential, truncated
+using BayesianScaling: BayesianScaling, ShapedScaling, HoffmanScaling, sample_chains, init_model
+using Distributions: Normal, LogNormal, Exponential, Gamma, truncated
 using JLD2: jldopen
 using Setfield: @set!
 
@@ -25,6 +25,7 @@ end
 function build_models()
     formulas = Dict(
         "baseline" => ShapedScaling(),
+        "hoffman" => HoffmanScaling(),
         "additive-penalty" => ShapedScaling(geometric_penalty=false),
         "geometric-shape" => ShapedScaling(harmonic_shape_penalty=false),
         "lr-d-model" => ShapedScaling(lr_model_size=:d_model),
@@ -59,16 +60,21 @@ function build_models()
         subset!(df, :loss => ByRow(x -> 1e-6 < x < 1.0); skipmissing=true)
 
         for (name, f) in pairs(formulas)
-            out = joinpath(@__DIR__, "..", "out", "dec-3-sweep-smoothed-$eval_batch--$name")
+            out = joinpath(@__DIR__, "..", "out", "dec-3-sweep-smoothed-$eval_batch--$name-gamma")
+            f = deepcopy(f)
             priors = BayesianScaling.priors(f)
-            if f.lr_model_size == :d_model
-                priors = prior_d_model_lr!(priors)
+            if f isa ShapedScaling
+                if f.lr_model_size == :d_model
+                    priors = prior_d_model_lr!(priors)
+                end
+                if f.harmonic_shape_penalty
+                    @set! priors.ff_ratio[2] = truncated(Exponential(1e-3); upper=1e-2)
+                    @set! priors.kv_size[2] = truncated(Exponential(1e-3); upper=1e-2)
+                    @set! priors.aspect_ratio[2] = truncated(Exponential(1e-3); upper=1e-2)
+                end
             end
-            if f.harmonic_shape_penalty
-                @set! priors.ff_ratio[2] = truncated(Exponential(1e-3); upper=1e-2)
-                @set! priors.kv_size[2] = truncated(Exponential(1e-3); upper=1e-2)
-                @set! priors.aspect_ratio[2] = truncated(Exponential(1e-3); upper=1e-2)
-            end
+
+            @set! priors.sigma = Gamma(2, 0.1)
 
             model = init_model(f, df; priors)
 
@@ -80,8 +86,9 @@ function build_models()
                 continue
             end
 
+
             @info "Queuing Model" out model
-            models[out] = deepcopy(model)
+            models[out] = model
         end
     end
     return models

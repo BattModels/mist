@@ -2,12 +2,12 @@ struct HoffmanScaling end
 
 function priors(::Type{HoffmanScaling})
     return (;
-        A=LogNormal(log(500), 3.0),
-        B=LogNormal(log(500), 3.0),
-        α=Uniform(0, 3),
-        β=Uniform(0, 3),
-        E=LogNormal(log(1e-2), 5),
-        sigma=Exponential(1.0),
+        A=LogNormal(log(500), 2.0),
+        B=LogNormal(log(500), 2.0),
+        α=Uniform(0, 2),
+        β=Uniform(0, 2),
+        E=LogNormal(log(1e-2), 2),
+        sigma=Exponential(0.1),
     )
 end
 
@@ -81,7 +81,7 @@ function priors(::Type{ShapedScaling})
         ff_ratio=(LogNormal(log(4), 0.5), Exponential(1.0)),
         kv_size=(LogNormal(log(64), 0.1), Exponential(1.0)),
         aspect_ratio=(LogNormal(log(64), 0.1), Exponential(1.0)),
-        sigma=Exponential(1.0),
+        sigma=Exponential(0.1),
     )
 end
 

@@ -24,6 +24,22 @@ function StatsBase.bic(model::BayesianRegression, chains::AbstractChains)
     return 2 * (k * log(n) - ℓ_mle)
 end
 
+function StatsBase.rmsd(model::BayesianRegression, chains::AbstractChains)
+    y = response(model)
+    θ = maximum_posterior_estimate(model, chains)
+    ŷ = predict(model, θ)
+    return StatsBase.rmsd(y, ŷ)
+end
+
+function mape(model::BayesianRegression, chains::AbstractChains)
+    y = response(model)
+    θ = maximum_posterior_estimate(model, chains)
+    ŷ = predict(model, θ)
+    return mean(zip(ŷ, y)) do (ŷ, y)
+        abs(ŷ - y) / y
+    end
+end
+
 """
 Deviance Information Criterion of a Bayesian model
 """
@@ -85,6 +101,8 @@ function score_model(model, chains::AbstractChains)
         dic=dic(model, chains),
         waic=waic(model, chains),
         bic=bic(model, chains),
+        mape=mape(model, chains),
+        rmse=StatsBase.rmsd(model, chains),
         ess_worse=minimum(values(ess)),
         rhat_worse=maximum(values(rhat)),
     )
