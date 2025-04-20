@@ -7,7 +7,7 @@ class HyperLogLogSet:
     def __init__(
         self,
         b: int = 12,
-        hash: Callable = hashlib.sha256,
+        hash: Callable = hashlib.sha1,
     ):
         if not (4 <= b <= 16):
             raise ValueError("Precision 'b' must be between 4 and 16.")
@@ -78,3 +78,13 @@ class HyperLogLogSet:
             return 0.709
         else:
             return 0.7213 / (1 + 1.079 / self.m)
+
+
+if __name__ == "__main__":
+    import sys
+
+    hll = HyperLogLogSet()
+    for line in sys.stdin:
+        hll.insert(line.strip())
+
+    print(len(hll))

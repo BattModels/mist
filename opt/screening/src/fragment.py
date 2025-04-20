@@ -1,26 +1,45 @@
-import sys
 import csv
+import sqlite3
 import subprocess
-import argparse
+import logging
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from electrolyte_fm.data_modules.utils import MolEncoding
+from itertools import islice
+
+import typer
+
+cli = typer.Typer()
+
+logging.basicConfig(level=logging.INFO)
 
 
-def fragment_smi(file, frag_file: str | None = None):
+def batched(iterable, n, *, strict=False):
+    # batched('ABCDEFG', 3) → ABC DEF G
+    if n < 1:
+        raise ValueError("n must be at least one")
+    iterator = iter(iterable)
+    while batch := tuple(islice(iterator, n)):
+        if strict and len(batch) != n:
+            raise ValueError("batched(): incomplete batch")
+        yield batch
+
+
+@cli.command()
+def fragment_smi(file, frag_file: str | None = None, w: int = 150):
+    # Delay import to reduce startup time
     frag_file = frag_file or "fragments.smi"
-    encoder = MolEncoding.KEKULE
     with NamedTemporaryFile() as outfile:
         with (
             open(file, "r", newline="") as infile,
             open(outfile.name, "w", newline="") as outfile,
         ):
             fieldnames = None if str(file).endswith(".csv") else ["smi", "name"]
-            reader = csv.DictReader(infile, fieldnames)
+            delimiter = "," if str(file).endswith(".csv") else "\t"
+            reader = csv.DictReader(infile, fieldnames, delimiter=delimiter)
             writer = csv.writer(outfile, delimiter="\t")
             # Write filtered rows
             for row in reader:
-                writer.writerow([encoder(row["smi"]), row["name"] or row["smi"]])
+                writer.writerow([row["smi"], row["name"] or row["smi"]])
 
         subprocess.run(
             [
@@ -30,7 +49,7 @@ def fragment_smi(file, frag_file: str | None = None):
                 "-i",
                 outfile.name,
                 "-w",
-                "6",
+                str(w),
                 "-o",
                 str(frag_file),
             ]
@@ -38,9 +57,39 @@ def fragment_smi(file, frag_file: str | None = None):
     return frag_file
 
 
+@cli.command("store-fragments")
+def store_fragments_in_sqlite(folder):
+    db_path = Path(folder, "fragments.sqlite")
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    def extract_fragments(folder_path):
+        folder = Path(folder_path)
+        for file_path in folder.glob("*.frag"):
+            logging.info("processing %s", file_path)
+            with file_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():  # skip empty lines
+                        yield (line.strip().split()[0],)
+
+    # Create table if it doesn't exist
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS fragments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fragment TEXT UNIQUE
+        )
+    """)
+
+    # Insert patterns, ignoring duplicates
+    for batch in batched(extract_fragments(folder), 100_000):
+        c.executemany(
+            "INSERT OR IGNORE INTO fragments (fragment) VALUES (?)",
+            batch,
+        )
+        conn.commit()
+
+    conn.close()
+
+
 if __name__ == "__main__":
-    p = argparse.ArgumentParser()
-    p.add_argument("smi", type=str, help="SMILES file to fragment")
-    p.add_argument("frag_file", type=str, help="Fragment file to write")
-    args = p.parse_args()
-    fragment_smi(args.smi, args.frag_file)
+    cli()
