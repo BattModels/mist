@@ -1,16 +1,15 @@
-import time
 import logging
-import itertools
+import time
+from itertools import islice
 
 import torch
 from lightning.fabric import Fabric
 from torch import nn
 
-
 from electrolyte_fm.models.prod_finetune import MISTFinetuned
-from .fasmifra import dataloader as fasmifra_dataloader
-from .utils import RateLimitedAdapter
+from src.hyperloglog import HyperLogLogSet
 
+from .utils import RateLimitedAdapter
 
 logger = RateLimitedAdapter(logging.getLogger(__name__), min_interval=30)
 
@@ -93,51 +92,26 @@ class CriticPanel(nn.Module):
         return torch.cat(y, dim=-1), net_score
 
 
-def randomized_dataloader(
-    fabric: Fabric,
-    ref_mol_file,
-    tokenizer,
-    batch_size: int = 128,
-    encoding=None,
-    epoch: int = 1024,
-):
-    while True:
-        logger.info("Reloading dataloader on rank %d", fabric.global_rank)
-        dl = fasmifra_dataloader(
-            ref_mol_file,
-            tokenizer,
-            batch_size=batch_size,
-            encoding=encoding,
-            fabric=fabric,
-        )
-        yield from itertools.islice(dl, epoch)
-
-
-def generate(fabric, critics, ref_mol_file, encoding: str | None = None):
+def generate(fabric: Fabric, critics, mol_dataloader):
     assert len(critics) > 0, "No critics provided"
 
     # Setup Critics
     panel = CriticPanel(critics).to(fabric.device, dtype=torch.bfloat16).eval()
-    # panel = torch.compile(panel, dynamic=True, fullgraph=True)
+    panel = torch.compile(panel, dynamic=True, fullgraph=True)
 
     # Setup Timing
     batch_time = 0.0
     time_exp = 0.95
     n_passing = 0
     n_evaluated = 0
+    generated_molecules = HyperLogLogSet()
+    passing_molecules = HyperLogLogSet()
     start_time = time.perf_counter()
-
-    # Reshuffling Dataloader
-    dl = randomized_dataloader(
-        fabric,
-        ref_mol_file,
-        critics[0].oracle.tokenizer,
-        encoding=encoding,
-        batch_size=32,
-    )
+    world_size = fabric.world_size
+    last_sync = 0
 
     # Generate molecules
-    for batch in dl:
+    for batch in mol_dataloader:
         start_batch = time.perf_counter()
         n_evaluated += batch["input_ids"].shape[0]
 
@@ -149,19 +123,30 @@ def generate(fabric, critics, ref_mol_file, encoding: str | None = None):
 
         # Track performance metrics
         net_time = time.perf_counter() - start_time
+        generated_molecules.extend(batch["smi"])
         batch_time = (
             time_exp * (time.perf_counter() - start_batch) + (1 - time_exp) * batch_time
         )
         batch_passing = net_score.count_nonzero().item()
         n_passing += batch_passing
-        logging.info(
+        n_passing_world = len(passing_molecules)
+        if n_passing_world > 0:
+            time_per_passing = (net_time * world_size) / n_passing_world
+        else:
+            time_per_passing = None
+        logger.info(
             {
-                "generated": n_passing,
-                "evaluated": n_evaluated,
-                "net_throughput": n_passing / net_time,
-                "yield": n_passing / n_evaluated,
-                "eval_throughput": n_evaluated / net_time,
-                "current_throughput": batch_passing / batch_time,
+                "passing_rank": n_passing,
+                "passing_world": n_passing_world,
+                "unique_molecules_world": len(generated_molecules),
+                "evaluated_rank": n_evaluated,
+                "net_throughput_rank": n_passing / net_time,
+                "yield_rank": n_passing / n_evaluated,
+                "eval_throughput_rank": n_evaluated / net_time,
+                "eval_throughput_world": len(generated_molecules)
+                / (net_time * world_size),
+                "current_throughput_rank": batch_passing / batch_time,
+                "time_per_passing_world": time_per_passing,
             }
         )
 
@@ -171,9 +156,18 @@ def generate(fabric, critics, ref_mol_file, encoding: str | None = None):
                 smiles: list[str] = [
                     smi for smi, s in zip(batch["smi"], net_score.tolist()) if s
                 ]
+                passing_molecules.extend(smiles)
                 y = y[net_score].view(-1, y.shape[-1]).tolist()
                 for smi, y in zip(smiles, y):
                     yield {"smi": smi, **{k: v for k, v in zip(panel.channels, y)}}
+
+        # Synchronize generated cardinality
+        last_sync += 1
+        if last_sync >= 64:
+            logger.info("Synchronizing generated cardinality")
+            generated_molecules.reduce(fabric)
+            passing_molecules.reduce(fabric)
+            last_sync = 0
 
     logging.info("Rank %d: Finished", fabric.global_rank)
     return None

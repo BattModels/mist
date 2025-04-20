@@ -3,11 +3,12 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-import torch
 import typer
+from torch.autograd.profiler import emit_nvtx
 from lightning.fabric import Fabric
 from src.database import dump_to_sqlite_threaded
 from src.generate import OracleCritic, generate
+from src.dataloader import DatabaseFragmentDataset
 
 from electrolyte_fm.models.prod_finetune import MISTFinetuned, MISTMultiTask
 
@@ -59,15 +60,25 @@ def main(
         ),
     ]
 
+    # Fragment dataset
+    mol_generator = DatabaseFragmentDataset(
+        fabric,
+        critics[0].oracle.tokenizer,
+        db_path="zinc_fragment/fragments.sqlite",
+        n_fragments=1_000,
+        ref_frag_file="electrolyte.smi.frag",
+        epoch_size=1_000,
+    )
     if db_name is None:
         db_name = fabric.broadcast(str(uuid4()))
 
     out_dir = Path("out", db_name)
     out_dir.mkdir(exist_ok=True, parents=True)
-    dump_to_sqlite_threaded(
-        generate(fabric, critics, "./frag_extend.smi.frag", encoding="smiles-kekule"),
-        out_dir.joinpath(f"rank_{fabric.global_rank}.sqlite"),
-    )
+    with emit_nvtx():
+        dump_to_sqlite_threaded(
+            generate(fabric, critics, mol_generator.dataloader()),
+            out_dir.joinpath(f"rank_{fabric.global_rank}.sqlite"),
+        )
 
 
 if __name__ == "__main__":

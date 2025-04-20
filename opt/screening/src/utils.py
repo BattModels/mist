@@ -10,6 +10,8 @@ class RateLimitedAdapter(logging.LoggerAdapter):
 
     def _rate_limited(self, key):
         now = time.time()
+        # If log is a dict, we use the keys as the log key
+        key = key if not isinstance(key, dict) else "\0".join(key.keys())
         last_time = self._last_log_time.get(key, None)
         if last_time is None or now - last_time >= self.min_interval:
             self._last_log_time[key] = now
