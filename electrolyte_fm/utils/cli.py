@@ -33,6 +33,7 @@ def mlm_from_pretrained(
     )
 
 
+<<<<<<< HEAD
 def recursive_update(original, updates):
     """
     Recursively updates a dictionary with another dictionary.
@@ -51,6 +52,8 @@ def recursive_update(original, updates):
     return original
 
 
+=======
+>>>>>>> 3b1a4ae (add linear probe submission and analysis scripts)
 class MistLightningCLI(LightningCLI):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("parser_kwargs", {"parser_mode": "jsonnet"})
