@@ -71,7 +71,7 @@ LogDensityProblems.logdensity(m::BayesianRegression, θ) = logpdf(:joint, m, θ)
 
 Distributions.logpdf(s::Symbol, m::BayesianRegression, θ) = logpdf(Val(s), m, θ)
 
-function BayesianRegression(f::FormulaTerm, priors::Dict{String, <:Distribution}, df, dist=Normal())
+function BayesianRegression(f::FormulaTerm, priors::Dict{String,<:Distribution}, df, dist=Normal())
     f = apply_schema(f, schema(f, df))
     @assert all(in(keys(priors)), coefnames(f.rhs)) lazy"Missing coefficients in priors: $(setdiff(coefnames(f), keys(priors)))"
     response = StatsModels.modelcols(f.lhs, df)
@@ -362,18 +362,11 @@ end
 Return the expectation of `chains` and the `p`-percentile credible interval
 """
 function credible_interval(chains::AbstractArray{T,3}; p=0.95) where {T}
-    p = (1 - p) / 2
-    μ = vec(mean(chains; dims=(1, 2)))
-    l = similar(μ)
-    u = similar(l)
-    for (idx, chains) in enumerate(eachslice(chains; dims=3))
-        l[idx], u[idx] = quantile(chains, (p, 1 - p))
+    map(eachslice(chains; dims=3)) do chains
+        v = credible_interval(p)
+        fit!(v, vec(chains))
+        return OnlineStats.value(v)
     end
-    return μ, l, u
-end
-function credible_interval(chains::AbstractMatrix{T}; p::AbstractFloat=0.95) where {T}
-    p = (1 - p) / 2
-    return mean(chains), quantile(vec(chains), (p, 1 - p))...
 end
 
 function credible_interval(p=0.90)

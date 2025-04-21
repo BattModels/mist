@@ -116,7 +116,26 @@ end
 
 function ideal_lr(m::ShapedScaling, θ, run)
     (; a, b, c) = θ.lr.ideal
-    N = convert(Float64, run[m.lr_model_size]::Int)
+    N = convert(Float64, run[m.lr_model_size])
     return exp(log(a) + b * log(run.effective_batch_size) + c * log(N))
+end
+
+function ideal_lr(m::ShapedScaling, chains::AbstractChains, N::Real, B::Real; p=0.95)
+    lr = credible_interval(p)
+    for J in CartesianIndices(axes(chains)[1:2])
+        θ = chains[J.I..., :]
+        fit!(lr, ideal_lr(m, θ, (; m.lr_model_size => N, :effective_batch_size => B)))
+    end
+    return OnlineStats.value(lr)
+end
+
+function ideal_lr(model::ShapedScaling, chains::AbstractChains, N, B; p=0.95)
+    mu = similar(chains, length(N), length(B))
+    lower = similar(mu)
+    upper = similar(mu)
+    for J in eachindex(IndexCartesian(), mu)
+        mu[J], lower[J], upper[J] = ideal_lr(model, chains, N[J[1]], B[J[2]]; p)
+    end
+    return mu, lower, upper
 end
 

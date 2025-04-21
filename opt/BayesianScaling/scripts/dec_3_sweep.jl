@@ -3,7 +3,7 @@ using DataFrames
 using StatsBase
 using Enzyme: Enzyme
 using Dates: DateTime
-using BayesianScaling: BayesianScaling, ShapedScaling, HoffmanScaling, sample_chains, init_model
+using BayesianScaling: BayesianScaling, ShapedScaling, HoffmanScaling, sample_chains, init_model, pf_day
 using Distributions: Normal, LogNormal, Exponential, Gamma, truncated
 using JLD2: jldopen
 using Setfield: @set!
@@ -119,19 +119,43 @@ function fit_summary()
         data = jldopen(joinpath(dir, "chains.jld2"), "r")
         model = data["model"]
         chains = data["chains"]
-        G, a, E = BayesianScaling.scaling_summary(chains)
+        chains_scaling = haskey(chains[1, 1, :], :scaling) ? selectdim(chains, 3, :scaling) : chains
+        G, a, E, ζ, r = BayesianScaling.scaling_summary(chains_scaling)
         m = match(r"-([+\-e0-9\.]+)--(.*)", name)
-        eff_batch_size=parse(Float64, m.captures[1])
-        model_type=m.captures[2]
+        eff_batch_size = parse(Float64, m.captures[1])
+        model_type = m.captures[2]
         eff_batch_size = eff_batch_size == 1 ? nothing : eff_batch_size
+
+        # Track number need for full factorial
+        df = DataFrame(model.observations)
+        model_size = unique(df.model_size)
+        data_size = unique(df.data_size)
+        if "lr" in names(df)
+            lr_0 = unique(@.(df.lr / sqrt(df.effective_batch_size)))
+        else
+            lr_0 = 1
+        end
+        n_fullfact = length(model_size) * length(data_size) * length(lr_0)
+        fullfact_compute = sum(@.(6 * Float64(model_size) * Float64(data_size)')) * length(lr_0)
+        net_compute = sum(@.(6 * Float64(df.model_size) * Float64(df.data_size))) * length(lr_0)
+
         push!(rows, (;
             # name,
             eff_batch_size,
             model_type,
             nobs=nobs(model),
+            n_fullfact,
+            fullfact_compute=fullfact_compute / pf_day,
+            net_compute=net_compute / pf_day,
+            n_model_size=length(model_size),
+            n_data_size=length(data_size),
+            lr_0=length(lr_0),
+            compute_saving=net_compute / fullfact_compute,
             G,
             a,
             E,
+            ζ,
+            r,
             data["score"]...
         ))
     end

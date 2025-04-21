@@ -7,7 +7,7 @@ using CairoMakie: CairoMakie
 const pt = 3 / 4
 const inch = 96
 
-export pt, inch
+export pt, inch, sublabel!
 
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
