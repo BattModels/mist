@@ -11,7 +11,10 @@ from electrolyte_fm.data_modules import (
     tmQMDataModule,
 )
 from electrolyte_fm.data_modules.molnet_dataset import strip_unk_tokens
-from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
+from electrolyte_fm.data_modules.utils import (
+    MolEncoding,
+    encode_molecules,
+)
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 
@@ -26,7 +29,7 @@ def check_datamodule(dm: LightningDataModule, stage="fit", limit_batches=100):
 def check_dataloader(dl, limit_batches):
     for idx, batch in enumerate(dl):
         assert "input_ids" in batch
-        assert "labels" in batch
+        assert "labels" in batch or "target" in batch
         if idx >= limit_batches:
             break
 
@@ -54,9 +57,29 @@ def fake_dataset():
         yield dir
 
 
-@pytest.mark.parametrize("encoding", ["smiles", "selfies", "smiles-canonical"])
-def test_realspace_dataset(fake_dataset, encoding):
-    dm = RobertaDataSet(fake_dataset, "smirk", encoding=encoding)
+@pytest.fixture(params=[e.value for e in MolEncoding])
+def mol_encoding(request):
+    return MolEncoding(request.param)
+
+
+def test_encode(mol_encoding):
+    assert isinstance(mol_encoding("O(c1cc(cc(OC)c1OC)CCN)C"), str)
+    # Invalid Smiles are rejected if transcoded
+    invalid = mol_encoding("Not A 🙂 String")
+    if mol_encoding != MolEncoding.SMILES:
+        assert invalid is None
+    else:
+        assert isinstance(invalid, str)
+
+
+def test_random(mol_encoding):
+    assert isinstance(mol_encoding.random("O=C1c2ccccc2C(=O)N1C3CCC(=O)NC3=O"), str)
+    # Invalid Smiles are rejected if transcoded
+    assert mol_encoding.random("Not A 🙂 String") is None
+
+
+def test_realspace_dataset(fake_dataset, mol_encoding):
+    dm = RobertaDataSet(fake_dataset, "smirk", encoding=mol_encoding)
     check_datamodule(dm)
 
 
@@ -65,22 +88,29 @@ def test_canonical_dataset(fake_dataset):
     assert dm.encoding == MolEncoding.CANONICAL_SMILES
 
 
-@pytest.mark.parametrize("encoding", [e.value for e in MolEncoding])
-def test_encoding(encoding):
+@pytest.mark.parametrize("random", [True, False])
+def test_encoding(mol_encoding, random):
     ds = Dataset.from_dict(
         {"text": ["CC(=O)O", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C", "CCCC"]}
     )
-    encode_molecules(ds, "text", encoding=MolEncoding(encoding))
+    encode_molecules(ds, "text", encoding=mol_encoding, random=random)
 
 
 def has_tmQm():
-    return Path(__file__).parent.parent.joinpath("opt", "tmQM", "data").exists()
+    files = Path(__file__).parent.parent.joinpath("opt", "tmQM", "data")
+    if files.exists():
+        return files
+    return None
 
 
-@pytest.mark.parametrize("encoding", ["smiles", "selfies", "smiles-canonical"])
-@pytest.mark.skipif(has_tmQm(), reason="Skipping tmQM tests")
-def test_tmQM_dataset(fake_dataset, encoding):
-    dm = tmQMDataModule(fake_dataset, tokenizer="smirk", encoding=encoding)
+@pytest.mark.skipif(has_tmQm() is None, reason="Skipping tmQM tests")
+def test_tmQM_dataset(mol_encoding):
+    dm = tmQMDataModule(
+        has_tmQm(),
+        target_columns=["Electronic_E", "Dispersion_E"],
+        tokenizer="smirk",
+        encoding=mol_encoding,
+    )
     check_datamodule(dm)
 
 
@@ -97,3 +127,15 @@ def test_strip_unknown_tokens():
     assert strip_encoding.pop("is_oov")
     for k, v in strip_encoding.items():
         assert len(v) == 32
+
+
+def test_randomize(mol_encoding):
+    mols = set()
+    for _ in range(10):
+        mols.add(mol_encoding.random("CN1C=NC2=C1C(=O)N(C(=O)N2C)C"))
+
+    if mol_encoding == MolEncoding.SELFIES:
+        assert len(mols) == 1
+        pytest.xfail("random selfies are not supported")
+    else:
+        assert len(mols) > 1

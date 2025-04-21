@@ -1,4 +1,5 @@
 from enum import Enum
+import random
 from typing import Optional, TypeVar
 from rdkit import Chem
 from datasets import Dataset, DatasetDict, IterableDatasetDict
@@ -32,6 +33,53 @@ class MolEncoding(Enum):
     CANONICAL_SMILES = "smiles-canonical"
     KEKULE = "smiles-kekule"
 
+    def __call__(self, smi: str):
+        if self == MolEncoding.SMILES:
+            return smi
+
+        elif self == MolEncoding.SELFIES:
+            import selfies
+
+            try:
+                return selfies.encoder(smi)
+            except selfies.EncoderError:
+                return None
+
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            return None
+
+        if self == MolEncoding.CANONICAL_SMILES:
+            return Chem.MolToSmiles(mol, canonical=True)
+        elif self == MolEncoding.KEKULE:
+            return Chem.MolToSmiles(mol, kekuleSmiles=True)
+
+        assert False, "Not Reachable, missing Enum Branch"
+
+    def random(self, smi: str):
+        if self == MolEncoding.SELFIES:
+            return self(smi)  # Randomization not possible
+
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            return None
+
+        if self == MolEncoding.SMILES:
+            return Chem.MolToSmiles(
+                mol,
+                canonical=False,
+                doRandom=True,
+                kekuleSmiles=(random.random() > 0.5),
+            )
+        elif self == MolEncoding.KEKULE:
+            return Chem.MolToSmiles(
+                mol, canonical=False, kekuleSmiles=True, doRandom=True
+            )
+        elif self == MolEncoding.CANONICAL_SMILES:
+            return Chem.MolToSmiles(mol, canonical=True, doRandom=True)
+
+        assert False, "Not Reachable, missing Enum Branch"
+
 
 def filter_invalid_smi(
     ds: AbstractDataset, input_column: str, **kwargs
@@ -48,6 +96,7 @@ def encode_molecules(
     input_column: str,
     output_column: Optional[str] = None,
     encoding: MolEncoding = MolEncoding.SMILES,
+    random: bool = False,
     **kwargs,
 ) -> AbstractDataset:
     """Convert SMILES encoding in `input_column` to desired `encoding` and save to `output_column`.
@@ -57,86 +106,11 @@ def encode_molecules(
     assert isinstance(input_column, str)
     output_column = output_column or input_column
 
-    if encoding == MolEncoding.SMILES:
-        assert output_column == input_column
-        return ds
-
-    elif encoding == MolEncoding.SELFIES:
-        return encode_selfies(ds, input_column, output_column, **kwargs)
-
-    elif encoding == MolEncoding.CANONICAL_SMILES:
-        return encode_canonical_smiles(ds, input_column, output_column, **kwargs)
-
-    elif encoding == MolEncoding.KEKULE:
-        return encode_keukle(ds, input_column, output_column, **kwargs)
-
-    else:
-        raise RuntimeError(f"Unknown encoding: {encoding}")
-
-
-def encode_selfies(ds, input_column: str, output_column: str, **kwargs):
-    """Encode SMILES to selfies, if possible, filtering out encoding failures"""
+    encode = encoding if not random else encoding.random
     ds = ds.map(
-        lambda x: {output_column: _maybe_encode_selfies(x)},
+        lambda smi: {output_column: encode(smi)},
         input_columns=input_column,
         batched=False,
         **kwargs,
     )
-    ds = ds.filter(lambda x: x[output_column] is not None, batched=False, **kwargs)
-    return ds
-
-
-def _maybe_encode_selfies(smi: str) -> Optional[str]:
-    import selfies
-
-    try:
-        return selfies.encoder(smi)
-    except selfies.EncoderError:
-        return None
-
-
-def encode_canonical_smiles(
-    ds, input_column: str, output_column: str, filter_failures: bool = False, **kwargs
-):
-    """Encode SMILES to canonical SMILES, if possible, filtering out encoding failures"""
-
-    ds = ds.map(
-        lambda x: {output_column: _maybe_encode_canonical_smiles(x)},
-        input_columns=input_column,
-        batched=False,
-        **kwargs,
-    )
-
-    if filter_failures:
-        ds = ds.filter(lambda x: x[output_column] is not None, batched=False, **kwargs)
-
-    return ds
-
-
-def _maybe_encode_canonical_smiles(
-    smi: str, filter_failures: bool = False
-) -> Optional[str]:
-    try:
-        return Chem.CanonSmiles(smi)
-    except Exception:
-        return None if filter_failures else smi
-
-
-def encode_keukle(ds, input_column: str, output_column: str, **kwargs):
-    """Encode SMILES to keukle form, if possible, filtering out encoding failures"""
-
-    def _maybe_encode_keukle(smi: str) -> Optional[str]:
-        try:
-            mol = Chem.MolFromSmiles(smi)
-            return Chem.MolToSmiles(mol, kekuleSmiles=True, canonical=False)
-        except Exception:
-            return None
-
-    ds = ds.map(
-        lambda x: {output_column: _maybe_encode_keukle(x)},
-        input_columns=input_column,
-        batched=False,
-        **kwargs,
-    )
-    ds = ds.filter(lambda x: x[output_column] is not None, batched=False, **kwargs)
-    return ds
+    return ds.filter(lambda x: x[output_column] is not None, batched=False, **kwargs)

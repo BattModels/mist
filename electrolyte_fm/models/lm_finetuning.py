@@ -14,19 +14,23 @@ from ..utils.metrics import (
     masked_metric_update,
 )
 from ..utils.tokenizer import load_tokenizer
+from ..utils.ckpt import SaveConfigWithCkpts
+
 from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
-from .normalize import get_normalizer
+from .normalize import AbstractNormalizer
 from .prediction_task_head import PredictionTaskHead
 
 
-def load_encoder(encoder: str | Path | torch.nn.Module):
+def load_encoder(encoder: str | Path | torch.nn.Module, load_weights: bool = True):
+    config_path = Path(encoder).parent.parent.joinpath("config.json")
+    hparams_path = Path(encoder).parent.parent.joinpath("model_hparams.json")
     if isinstance(encoder, torch.nn.Module):
         return encoder
-    elif (
-        Path(encoder).exists()
-        and Path(encoder).parent.parent.joinpath("config.json").is_file()
-    ):
-        return DeepSpeedMixin.load(encoder).get_encoder()
+    elif Path(encoder).exists() and hparams_path.is_file() and config_path.is_file():
+        if load_weights is False:
+            return SaveConfigWithCkpts.instantiate(hparams_path).get_encoder()
+        else:
+            return DeepSpeedMixin.load(encoder).get_encoder()
     else:
         from transformers import AutoModel
 
@@ -51,11 +55,12 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         metrics: List[str] = ["auroc"],
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
-        transform: Optional[str] = None,
+        transform: Optional[str | list[str]] = None,
         tokenizer: Optional[str] = None,
         bootstrap: Union[bool, int] = False,
         target_columns: Optional[List[str]] = None,
         track_oov: bool = True,
+        from_pretrained: bool = True,
     ) -> None:
         super().__init__()
 
@@ -66,6 +71,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
+        self.from_pretrained = from_pretrained
 
         if self.task == "binary":
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
@@ -74,7 +80,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             transform = transform or "standardize"
         else:
             raise ValueError(f"Unknown task type {self.task}")
-        self.transform = get_normalizer(transform, self.output_size).eval()
+        self.transform = AbstractNormalizer.get(transform, self.output_size).eval()
 
         self.save_hyperparameters()
 
@@ -101,12 +107,15 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             self.test_metrics = metrics.clone(prefix="test/")
 
     def configure_model(self):
-        self.encoder = load_encoder(self.encoder_ckpt)
-        self.task_network = PredictionTaskHead(
-            embed_dim=self.encoder.config.hidden_size,
-            output_size=self.output_size,
-            dropout=self.dropout,
-        )
+        if not hasattr(self, "encoder"):
+            self.encoder = load_encoder(
+                self.encoder_ckpt, load_weights=self.from_pretrained
+            )
+            self.task_network = PredictionTaskHead(
+                embed_dim=self.encoder.config.hidden_size,
+                output_size=self.output_size,
+                dropout=self.dropout,
+            )
 
     def setup(self, stage: str) -> None:
         """Setup additional summary stats for logging"""
@@ -244,7 +253,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         preds = self.transform.forward(preds)
 
         out = {"embedding": embedding, "prediction": preds}
-        for key in ["target", "is_oov"]:
+        for key in ["target", "is_oov", "input_ids", "target_mask"]:
             if key in batch.keys():
                 out[key] = batch[key]
 

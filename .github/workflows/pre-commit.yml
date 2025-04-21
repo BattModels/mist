@@ -1,22 +1,16 @@
+name: pre-commit
 on:
-  workflow_dispatch:
   pull_request:
   push:
-    branches: [master]
-
+    branches:
+      - master
 jobs:
-  test:
+  pre-commit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - run: pipx install poetry
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v3
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: 3.11.8
-          cache: 'poetry'
-      - name: Install deploy key for BattModels/smirk
-        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 #v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SMIRK_PRIVATE_KEY }}
-      - run: poetry install
-      - uses: pre-commit/action@v3.0.1
+          enable-cache: true
+      - run: uv run --only-group dev pre-commit run --all
