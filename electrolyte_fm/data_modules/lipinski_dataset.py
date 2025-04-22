@@ -1,10 +1,8 @@
 import asyncio
 from pathlib import Path
 
-import torch
 import pandas as pd
 import numpy as np
-from sklearn.utils import resample
 from sklearn.model_selection import StratifiedShuffleSplit
 from datasets import DatasetDict, Dataset, load_dataset, concatenate_datasets
 from rdkit.Chem import Lipinski, MolFromSmiles, MolToInchiKey
@@ -17,52 +15,34 @@ from .utils import AbstractDataset, MolEncoding, filter_invalid_smi
 
 
 class LipinskiDataModule(PropertyPredictionDataModule):
-    def __init__(self, name_or_path: str, **kwargs):
-        self.name_or_path = name_or_path
-        if not Path(name_or_path).exists():
-            # Set default smi_column
-            assert name_or_path in _URLS.keys()
-            self.name_or_path = _URLS[name_or_path]
-            kwargs["smi_column"] = (
-                kwargs.get("smi_column", None) or "smiles"
-                if name_or_path != "bace"
-                else "mol"
-            )
-        assert isinstance(kwargs["smi_column"], str)
-        kwargs["additonal_columns"] = [
-            "probe_target",
-            *(kwargs.get("additonal_columns", None) or []),
+    def __init__(self, path: str, **kwargs):
+        self.path = Path(path)
+        assert self.path.exists()
+
+        kwargs["target_columns"] = [
+            "lipinki_h_donor",
+            "lipinki_h_acceptor",
+            "lipinki_mwt",
+            "lipinki_log_p",
+            "lipinki",
         ]
+        kwargs["smi_column"] = kwargs.get("smi_column", "smi")
         super().__init__(**kwargs)
         assert self.encoding != MolEncoding.SELFIES
 
-    def _get_dataset(cls, name_or_path) -> AbstractDataset:
-        # Load the dataset
-        ds: AbstractDataset = load_dataset(
-            "csv",
-            name=name,
-            data_files=[name_or_path],
-            split="train",
+    def _get_dataset(self) -> AbstractDataset:
+        return load_dataset(
+            "arrow",
+            name=str(self.path.name),
+            data_files={
+                "train": str(self.path.joinpath("data/train/*.arrow")),
+                "validation": str(self.path.joinpath("data/validation/*.arrow")),
+                "test": str(self.path.joinpath("data/test/*.arrow")),
+            },
             keep_in_memory=False,
+            streaming=True,
             save_infos=False,
         )  # type: ignore
-        ds = ds.select_columns(smi_column)
-        ds = filter_invalid_smi(self.smi_column)
-        ds = ds.map(
-            lipinki_rule_of_five,
-            batched=False,
-            fn_kwargs={"smi_column": self.smi_column},
-        )
-        return ds
-
-    def collate_fn(self, batch):
-        output = super().collate_fn(batch)
-        output = self.token_collator(batch)
-        output["probe_target"] = torch.stack(
-            [torch.tensor(x["probe_target"]) for x in batch]
-        )
-
-        return output
 
 
 def get_molnet_dataset(name: str):
