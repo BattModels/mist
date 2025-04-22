@@ -59,6 +59,8 @@ class LightningProbe(pl.LightningModule):
             hook.remove()
         state_dict.pop("_hooks_installed", None)
         state_dict["_prob_points"] = self._probe_points
+        state_dict["hookpoints"] = self.hookpoints
+        checkpoint["state_dict"] = state_dict
 
         # Don't save activations
         state_dict.pop("_activations", None)

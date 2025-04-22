@@ -7,16 +7,18 @@ function load_fitted_probes(ckpt_dir)
             _, ckpt_meta = load_linear_probes(ckpt)
             continue
         end
-        m = match(r"layer-(\d+)-(\w+).*?--auroc-([\d\.]+)\.ckpt", basename(ckpt))
+        m = match(r"layer-(\d+)-([\w\-]+?)--.*?--loss-([\d\.]+)--auroc-([\d\.]+)\.ckpt$", basename(ckpt))
         layer = parse(Int, m[1]) + 1
         location = m[2]
-        auroc = parse(Float64, m[3])
+        val_loss = parse(Float64, m[3])
+        auroc = parse(Float64, m[4])
         try
             ckpt_probes, ckpt_meta = load_linear_probes(ckpt)
             push!(probes, (;
                 ckpt_probes[layer]...,
                 location,
                 auroc,
+                val_loss
             ))
         catch e
             e isa InterruptException && rethrow()
