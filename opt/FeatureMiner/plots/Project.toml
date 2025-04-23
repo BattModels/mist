@@ -1,0 +1,15 @@
+[deps]
+CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+FeatureMiner = "83091abd-1720-4da7-94ca-5ff8667e187f"
+GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MISTStyle = "0a43f4a4-3db7-4939-b247-26273f54b603"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+RegressionTables = "d519eb52-b820-54da-95a6-98e1306fdade"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+
+[sources]
+FeatureMiner = {path = "../"}
+MISTStyle = {path = "../../MISTStyle"}
