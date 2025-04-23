@@ -169,6 +169,9 @@ function theme()
             markersize=5pt,
             marker=:x,
         ),
+        BoxPlot=(;
+            markersize=4pt,
+        ),
         ErrorLines=(;
             whiskerwidth=3,
         ),
