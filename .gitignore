@@ -45,3 +45,5 @@ spack.lock
 *.tar.xz
 *.tar.gz
 *.tar
+*.jsonl
+*.jld2
