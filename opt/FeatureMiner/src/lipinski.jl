@@ -32,8 +32,8 @@ end
 cosine_similarity(a::Vector, b::Vector) = dot(a, b) / (norm(a) * norm(b))
 
 function additive_features(w::Matrix)
-    f_overall = w[end, :]
-    f_componets = vec(sum(w[1:end-1, :]; dims=1))
+    f_overall = w[1, :]
+    f_componets = vec(sum(w[2:end, :]; dims=1))
     return cosine_similarity(f_overall, f_componets)
 end
 
