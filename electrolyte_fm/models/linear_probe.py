@@ -1,5 +1,5 @@
 import logging
-from typing import Iterable, Dict, Any, Callable
+from typing import Iterable, Dict, Any, Callable, Optional
 from collections import defaultdict
 from jsonargparse import lazy_instance
 import torch
@@ -15,10 +15,28 @@ def per_layer_probe(
     hidden_size: int, features: int, n_layers: int, location: str = "output"
 ) -> dict[str, nn.Module]:
     probes = {}
-    template: str = "*.encoder.layer.{layer}.{location}"
+    template: str = "*encoder.layer.{layer}.{location}"
     for layer in range(n_layers):
         hook_name = template.format(layer=layer, location=location)
         probes[hook_name] = nn.Linear(hidden_size, features)
+    return probes
+
+
+def probe_everything(
+    hidden_size: int,
+    features: int,
+    n_layers: int,
+    intermediate_size: Optional[int] = None,
+):
+    probes = {}
+    intermediate_size = intermediate_size or hidden_size
+    for location, size in [
+        ("output", hidden_size),
+        ("intermediate", intermediate_size),
+        ("attention", hidden_size),
+        ("output.dense", hidden_size),
+    ]:
+        probes.update(per_layer_probe(size, features, n_layers, location))
     return probes
 
 
@@ -35,11 +53,12 @@ class LightningProbe(pl.LightningModule):
     ):
         super().__init__()
 
-        self.model = model
+        self.model = model.requires_grad_(False)
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.save_hyperparameters()
         self.hookpoints = self._identify_hookpoints(probes.keys())
+        assert len(self.hookpoints) > 0
 
         # Setup probes
         self._probes = nn.ModuleList(probes.values())
@@ -51,6 +70,14 @@ class LightningProbe(pl.LightningModule):
         self.val_metrics = nn.ModuleList(
             AUROC(task="binary", thresholds=100) for probe in self._probe_points
         )
+        print(self.val_metrics)
+
+        # Don't error due to missing model weights
+        self.strict_loading = False
+
+    def state_dict(self):
+        # Don't save the model, it is not being trained
+        return {k: v for k, v in super().state_dict().items() if "model" not in k}
 
     def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
         state_dict = checkpoint["state_dict"]
@@ -59,6 +86,8 @@ class LightningProbe(pl.LightningModule):
             hook.remove()
         state_dict.pop("_hooks_installed", None)
         state_dict["_prob_points"] = self._probe_points
+        state_dict["hookpoints"] = self.hookpoints
+        checkpoint["state_dict"] = state_dict
 
         # Don't save activations
         state_dict.pop("_activations", None)
@@ -91,6 +120,8 @@ class LightningProbe(pl.LightningModule):
     @staticmethod
     def _create_act_hook(name: str, results: dict):
         def hook(module: nn.Module, input, output: torch.Tensor):
+            if isinstance(output, tuple):
+                output = output[0]
             assert isinstance(output, torch.Tensor)
             results[name] = output[:, 0, :].detach()
             return None
@@ -114,8 +145,8 @@ class LightningProbe(pl.LightningModule):
     def forward_fit(self, batch: dict):
         self.model.eval()
         activations = self._install_hooks()
-        target = batch.pop("probe_target")
-        self.model(**batch)
+        target = batch.pop("target")
+        self.model(batch["input_ids"], attention_mask=batch["attention_mask"])
         loss = []
         out = {}
         for name, probe in self.named_probes():
@@ -142,8 +173,8 @@ class LightningProbe(pl.LightningModule):
         return out["loss"]
 
     def validation_step(self, batch):
-        target = batch.pop("probe_target")
-        out = self.forward(**batch)
+        target = batch.pop("target")
+        out = self.forward(batch["input_ids"], attention_mask=batch["attention_mask"])
         metrics = {}
         loss = []
         for probe, probe_metrics in zip(self._probe_points, self.val_metrics):
@@ -188,12 +219,12 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
 
-    def mlm_from_pretrained(name_or_path: str) -> nn.Module:
-        from transformers import AutoModelForMaskedLM
+    def encoder_from_finetuned(name_or_path: str) -> nn.Module:
+        from .prod_finetune import MISTFinetuned
 
-        return AutoModelForMaskedLM.from_pretrained(
-            name_or_path, trust_remote_code=True
-        )
+        model = MISTFinetuned.from_pretrained(name_or_path)
+        print(model.encoder)
+        return model.encoder
 
     cli = MistLightningCLI(
         LightningProbe,

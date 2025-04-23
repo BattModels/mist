@@ -12,26 +12,27 @@ config = """
 function(
     encoder_class,
     encoder_path,
-    location,
-    dataset,
     tokenizer="smirk",
     encoding="smiles-kekule",
     batch_size,
     hidden_size,
+    intermediate_size,
     n_layers,
 )
 
 {
   nodes: 1,
   gpus_per_node: 1,
-  container: '/lustre/fs0/awadell/sqsh-files/mist+pytorch+25.01+v2.sif',
+  container: '/nfs/turbo/coe-venkvis/mist/mist+pytorch+25.01+v4.sif',
+    walltime: "1:0:0",
   env: {
     JOBID: '$SLURM_JOB_ID',
-    PMIX_MCA_gds: 'hash',
-    NCCL_TOPO_FILE: '/cm/shared/etc/ndv4-topo.xml',
-    MELLANOC_VISIBLE_DEVICES: 'all',
+    TORCH_EXTENSIONS_DIR: '${PWD}/.cache/torch_extensions',
+    HF_HOME: '${PWD}/.cache/huggingface',
+    TOKENIZERS_PARALLELISM: true,
   },
   program: "-m electrolyte_fm.models.linear_probe",
+  stage: null,
   train: {
     trainer: {
         max_epochs: 1000, 
@@ -44,11 +45,11 @@ function(
         },
         },
         probes: {
-        class_path: 'electrolyte_fm.models.linear_probe.per_layer_probe',
+        class_path: 'electrolyte_fm.models.linear_probe.probe_everything',
         init_args: {
             hidden_size: std.parseInt(hidden_size),
+            intermediate_size: std.parseInt(intermediate_size),
             features: 5,
-            location: location,
             n_layers: std.parseInt(n_layers),
         },
         },
@@ -56,50 +57,49 @@ function(
     data: {
         class_path: 'electrolyte_fm.data_modules.lipinski_dataset.LipinskiDataModule',
         init_args: {
-        name_or_path: dataset,
-        tokenizer: tokenizer,
-        encoding: encoding,
-        num_workers: 16,
-        batch_size: std.parseInt(batch_size),
+            path: "./lipinski",
+            tokenizer: tokenizer,
+            encoding: encoding,
+            num_workers: 16,
+            batch_size: std.parseInt(batch_size),
+            randomize: true,
         },
     },
   },
 }
 """
 
-template = "submit/dgx.j2"
+template = "submit/artemis.j2"
 
 
 def submit(config: dict):
     script = render(template, config)
     print(script)
+    exit()
     subprocess.run("sbatch", input=script, text=True)
 
 
 # Pretrained Models
-datasets = ["tox21", "toxcast", "hiv"]
-locations = ["output", "intermediate", "output.dense"]
 models = [
     {
-        "encoder_path": "ibm/MoLFormer-XL-both-10pct",
-        "encoding": "smiles-canonical",
-        "tokenizer": "ibm/MoLFormer-XL-both-10pct",
-    },
-    {
         "encoder_path": "./models/mist-ti624ev1-moleculenet/pretrained",
-    },
-    {
-        "encoder_path": "./models/mist-1.8B-dh61satti",
-        "batch_size": 16,
-    },
+    }
 ]
 models.extend(
     [
         {
-            "encoder_class": "electrolyte_fm.models.prod_finetune.MISTFinetuned.from_pretrained",
+            "encoder_class": "__main__.encoder_from_finetuned",
             "encoder_path": f"./models/mist-ti624ev1-moleculenet/{dataset}",
         }
-        for dataset in ["bace", "qm9", "bbbp", "muv", "qm8", "tmQM"]
+        for dataset in [
+            "bace",
+            "qm9",
+            "bbbp",
+            "muv",
+            "qm8",
+            "tmQM",
+            "clintox",
+        ]
     ]
 )
 
@@ -114,9 +114,10 @@ def get_mist_finetune_config(path):
 runs = []
 for model in models:
     run = deepcopy(model)
-    run.setdefault("encoder_class", "__main__.mlm_from_pretrained")
-    run.setdefault("batch_size", 64)
-    if run["encoder_class"] == "__main__.mlm_from_pretrained":
+    default_encoder = "electrolyte_fm.utils.cli.mlm_from_pretrained"
+    run.setdefault("encoder_class", default_encoder)
+    run.setdefault("batch_size", 128)
+    if run["encoder_class"] == default_encoder:
         model_config = AutoConfig.from_pretrained(
             run["encoder_path"],
             trust_remote_code=True,
@@ -124,20 +125,13 @@ for model in models:
     else:
         model_config = get_mist_finetune_config(run["encoder_path"])
 
-    run.setdefault("n_layers", model_config.num_hidden_layers)
-
-    for c in dict_product({"location": locations, "dataset": datasets}):
-        run.update(c)
-        if run["location"] == "intermediate":
-            hidden_size = model_config.intermediate_size
-        else:
-            hidden_size = model_config.hidden_size
-
-        run["hidden_size"] = hidden_size
-        run_config = jsonnet.evaluate_snippet(
-            "snippet",
-            config,
-            tla_vars={k: str(v) for k, v in run.items()},
-        )
-        run_config = json.loads(run_config)
-        submit(run_config)
+    run["n_layers"] = model_config.num_hidden_layers
+    run["hidden_size"] = model_config.hidden_size
+    run["intermediate_size"] = model_config.intermediate_size
+    run_config = jsonnet.evaluate_snippet(
+        "snippet",
+        config,
+        tla_vars={k: str(v) for k, v in run.items()},
+    )
+    run_config = json.loads(run_config)
+    submit(run_config)

@@ -1,3 +1,4 @@
+import asyncio
 from enum import Enum
 import random
 from typing import Optional, TypeVar
@@ -82,11 +83,14 @@ class MolEncoding(Enum):
 
 
 def filter_invalid_smi(
-    ds: AbstractDataset, input_column: str, **kwargs
+    ds: AbstractDataset, input_column: str, max_procs: int = 20, **kwargs
 ) -> AbstractDataset:
-    def is_valid(x: dict):
-        mol = Chem.MolFromSmiles(x[input_column])
-        return mol is not None
+    sem = asyncio.Semaphore(max_procs)
+
+    async def is_valid(x: dict):
+        async with sem:
+            mol = Chem.MolFromSmiles(x[input_column])
+            return mol is not None
 
     return ds.filter(is_valid, batched=False, **kwargs)
 
