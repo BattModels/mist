@@ -84,65 +84,6 @@ class MixtureMolecularOptimization:
         ).last_hidden_state.mean(axis=1)
         return embedding.detach()
 
-    def run_optimization(
-        self,
-        target_prop_value: float = 1.4,
-        max_iter: int = 100,
-        abs_ftol: int = -2.5,
-        lr: float = 3e-5,
-    ):
-        max_iter = int(max_iter)
-        initial_guess_x = torch.randn(self.inventory.shape[0])
-
-        # Design variables
-        x_comp = torch.nn.Parameter(initial_guess_x)
-
-        # Define the optimizer
-        optimizer = torch.optim.LBFGS(
-            [x_comp],
-            max_iter=max_iter,
-            lr=lr,
-        )
-
-        inv = torch.from_numpy(self.inventory.T).float()
-        x = self.norm(initial_guess_x)
-        e_k = torch.matmul(inv, x.T).view(1, -1)
-
-        # Track the optimizer trajectory
-        trajectory = []
-
-        def closure():
-            optimizer.zero_grad()
-            x = self.norm(x_comp)
-            e_k = torch.matmul(inv, x.T).view(1, -1)
-            lg_k, _, _, _ = self.model.task_network(e_k, torch.tensor(self.temperature))
-            salt_comp_loss = (x[self.Li] - x[self.TFSI] - x[self.PF6]) ** 2
-            exploitation_loss = -target_prop_value
-
-            loss = exploitation_loss + salt_comp_loss
-
-            self.exploitation_loss.append(float(exploitation_loss))
-            self.salt_comp_loss.append(float(salt_comp_loss))
-            print(f"exploitation_loss {exploitation_loss}")
-            print(f"salt_comp_loss {salt_comp_loss}")
-
-            loss.backward(retain_graph=True)
-            return loss
-
-        # Perform optimization
-        for it in range(max_iter):
-            loss = optimizer.step(closure)
-            x = self.norm(x_comp)
-            e_k = torch.matmul(inv, x.T).view(1, -1)
-            P, _, _, _ = self.model.task_network(e_k, torch.tensor(self.temperature))
-            trajectory.append(float(P.detach()[0]))
-            print(f"Iteration {it} P {P.detach()[0]} loss {loss.detach().item()}")
-            if it > 5 and loss < abs_ftol:
-                print(f"P {P} target_prop_value {target_prop_value}")
-                break
-        print(f"Iterations required {it}")
-        return e_k.detach(), self.norm(x_comp).detach(), trajectory
-
     def save_inventory(self, run_id):
         df = pd.read_csv(
             "/home/abhutani/electrolyte-fm/diffmix_data/Ion_Cond_Tle20.csv"
@@ -273,101 +214,21 @@ class MixtureMolecularOptimization:
         sol = ipopt(
             optProb, sens=sensitivity_function, storeHistory="trial", storeSens=True
         )
-        hist = History("trial")
 
-        trajectory = hist.getValues("obj")["obj"]
-
-        # Post processing
-        x_opt = np.array(sol.getDVs()["x_comp"], dtype=np.float32)
-        x_tensor_opt = torch.tensor(x_opt)
-        x_soft_opt = self.norm(x_tensor_opt)
-        e_k_opt = torch.matmul(inv, x_soft_opt).view(1, -1)
-        return (
-            e_k_opt.detach().numpy(),
-            x_soft_opt.detach().numpy(),
-            trajectory,
-        )
+        return sol, History("trial")
 
 
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    import niceplots
-
     run_id = "ur7v2a6y"
     pretrained_ckpt = (
         f"/home/abhutani/electrolyte-fm/mist/{run_id}/checkpoints/last.ckpt"
     )
 
-    temp = 293.15
-
-    opt = MixtureMolecularOptimization(pretrained_ckpt, temp)
+    opt = MixtureMolecularOptimization(pretrained_ckpt, temperature=293.15)
     opt.save_inventory(
         run_id,
     )
-    inventory_size = opt.inventory_size
-    inventory = f"inventory_{run_id}_{inventory_size}.npy"
-    target_prop_value = 2.7
-    e_k, x, trajectory = opt.run_optimization_ipopt(
-        max_iter=300,
-        abs_ftol=1e-16,
-        target_prop_value=target_prop_value,
-    )
-    trajectory = trajectory.flatten()
-    smiles = pd.read_csv(
-        f"inventory_smiles_{run_id}_{inventory_size}.csv"
-    ).smiles.values
-    results = pd.DataFrame({"smiles": smiles, "x": x})
-    results.sort_values(by="x", inplace=True)
-    results.to_csv(f"results_{run_id}_{inventory_size}.csv")
-    pd.DataFrame({"trajectory": trajectory}).to_csv(
-        f"trajectory_{run_id}_{inventory_size}.csv"
-    )
 
-    with open(f"optimized_emb_{run_id}_{inventory_size}.npy", "wb") as f:
-        np.save(f, e_k)
-
-    fig, ax = plt.subplots()
-    plt.style.use(niceplots.get_style())
-    colors = niceplots.get_colors()
-
-    trajectory = [np.exp(i) for i in trajectory]
-    (line,) = ax.plot(
-        trajectory,
-        "-",
-        markeredgecolor="w",
-        linewidth=2.0,
-        markersize=8,
-        clip_on=False,
+    solution, history = opt.run_optimization_ipopt(
+        max_iter=300, abs_ftol=1e-16, target_prop_value=2.7
     )
-    ax.set_xlabel("Optimization Iteration")
-    ax.set_ylabel("Ionic Conductivity [mS/cm]", rotation="horizontal", ha="right")
-    niceplots.adjust_spines(ax)
-    niceplots.save_figs(fig, f"ionic_cond_traj_{run_id}_{inventory_size}", ["pdf"])
-
-    plt.clf()
-    fig, ax = plt.subplots()
-    print(opt.trajectory)
-    ax.plot(
-        opt.trajectory,
-        "-",
-        label="Ionic Conductivity",
-        markeredgecolor="w",
-        linewidth=2.0,
-        markersize=8,
-        clip_on=False,
-    )
-    ax.plot(
-        [i.detach() for i in opt.constraint],
-        "-",
-        label="Salt Composition Constraint",
-        markeredgecolor="w",
-        linewidth=2.0,
-        markersize=8,
-        clip_on=False,
-    )
-    fig.legend()
-    ax.set_xlabel("Optimization Iteration")
-    # ax.set_yscale("log", base=10)
-    ax.set_ylabel("Loss", rotation="horizontal", ha="right")
-    niceplots.adjust_spines(ax)
-    niceplots.save_figs(fig, f"ionic_cond_loss_{run_id}_{inventory_size}", ["pdf"])

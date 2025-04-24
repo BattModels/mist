@@ -1,14 +1,9 @@
-import glob
 from pathlib import Path
-import pandas as pd
 import numpy as np
 import torch
-from torch.func import jacrev, hessian, vmap
-from torchmin import minimize
 from transformers import DataCollatorWithPadding
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 from scipy.spatial.distance import cosine
-from pytorch_lightning import LightningModule
 
 from electrolyte_fm.models.model_utils import DeepSpeedMixin
 from electrolyte_fm.data_modules.mixture_dataset import (
