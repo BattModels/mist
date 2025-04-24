@@ -1,0 +1,93 @@
+name,class,subsitute,smi
+"1,1,2,2-Tetrachloroethane",Alkane,Chloro,C(C(Cl)Cl)(Cl)Cl
+"1,2-Dichloroethane",Alkane,Chloro,C(CCl)Cl
+"1,3-Dichloropropane",Alkane,Chloro,C(CCl)CCl
+1-Fluoropentane,Alkane,Fluoro,CCCCCF
+Chloroform-d,Alkane,Chloro,[2H]C(Cl)(Cl)Cl
+Dichloromethane,Alkane,Chloro,C(Cl)Cl
+EMS,Alkane,Sulfone,CCS(=O)(=O)C
+EiBS,Alkane,Sulfone,CCS(=O)(=O)CC(C)C
+EiPS,Alkane,Sulfone,CCS(=O)(=O)C(C)C
+iPiBS,Alkane,Sulfone,CC(C)CS(=O)(=O)C(C)C
+iPsBS,Alkane,Sulfone,CCC(C)S(=O)(=O)C(C)C
+EVS,Alkene,Sulfone,CCS(=O)(=O)C=C
+"1,2,3-Trifluorobenzene (123-FB)",Arene,Fluoro,C1=CC(=C(C(=C1)F)F)F
+"1,2,4-Trifluorobenzene",Arene,Fluoro,C1=CC(=C(C=C1F)F)F
+"1,2-Difluorobenzene",Arene,Fluoro,C1=CC=C(C(=C1)F)F
+"1,3-Difluorobenzene",Arene,Fluoro,C1=CC(=CC(=C1)F)F
+"1,4-Difluorobenzene",Arene,Fluoro,C1=CC(=CC=C1F)F
+FS,Arene,"Fluoro, Sulfone",CS(=O)(=O)C1=CC=CC=C1F
+Fluorobenzene,Arene,Fluoro,C1=CC=C(C=C1)F
+Methyl phenyl sulfone,Arene,Sulfone,CS(=O)(=O)C1=CC=CC=C1
+Diethyl carbonate,Carbonate ester,,CCOC(=O)OCC
+Dimethyl carbonate,Carbonate ester,,COC(=O)OC
+"2,2,2-trifluoroethyl methyl carbonate",Carbonate ester,Fluoro,COC(=O)OCC(F)(F)F
+"2,2,2-trifluoroethyl trifluoromethyl carbonate",Carbonate ester,Fluoro,C(C(F)(F)F)OC(=O)OC(F)(F)F
+"2,2,2-trifluoromethyl ethyl carbonate",Carbonate ester,Fluoro,CCOC(=O)OC(F)(F)F
+"bis(2,2,2-trifluoroethyl) carbonate",Carbonate ester,Fluoro,C(C(F)(F)F)OC(=O)OCC(F)(F)F
+"ethyl 2,2,2-trifluoroethyl carbonate",Carbonate ester,Fluoro,CCOC(=O)OCC(F)(F)F
+Bis(trifluoromethyl) ester,Carbonate ester,Fluoro,C(=O)(OC(F)(F)F)OC(F)(F)F
+DEC,Carbonate ester,,O=C(OCC)OCC
+DMC,Carbonate ester,,COC(=O)OC
+EMC,Carbonate ester,,CCOC(=O)OC
+Ethyl methyl carbonate,Carbonate ester,,CCOC(=O)OC
+methyl trifluoromethyl carbonate,Carbonate ester,Fluoro,COC(=O)OC(F)(F)F
+"1,1,2,2,3,3,4-Heptafluorocyclopentane",Cycloalkane,Fluoro,C1C(C(C(C1(F)F)(F)F)(F)F)F
+Fluorocyclohexane,Cycloalkane,Fluoro,C1CCC(CC1)F
+TMS,Cycloalkane,Sulfone,C1CCS(=O)(=O)C1
+HHTP,Cyclophosphazene,,CCCOP1(=NP(=NP(=N1)(OCCC)OCCC)(OCCC)OCCC)OCCC
+HMP,Cyclophosphazene,,COP1(=NP(=NP(=N1)(OC)OC)(OC)OC)OC
+HTP,Cyclophosphazene,,CCOP1(=NP(=NP(=N1)(OCC)OCC)(OCC)OCC)OCC
+DMDC,Dicarbonate,,O=C(OC(=O)OC)OC
+Dimethyl dicarbonate,Dicarbonate,,O=C(OC(=O)OC)OC
+DEMEMP,Ester,Phosphate,CCOP(=O)(COCCOC)OCC
+DMMEMP,Ester,Phosphate,COCCOCP(=O)(OC)OC
+DMMP,Ester,Phosphate,COP(=O)(C)OC
+EMES,Ester,Sulfone,CCS(=O)(=O)CCOC
+ESEME,Ester,Sulfone,CCS(=O)(=O)CCOCCOC
+F1F2,Ether,Fluoro,C(COCC(F)F)OCCF
+"1,1,2,2-Tetrafluoroethyl-2,2,3,3-tetrafluoropropylether",Ether,Fluoro,C(C(C(F)F)(F)F)OC(C(F)F)(F)F
+"1,2-bis(trimethylsilyloxy)ethane",Ether,Silyl,C[Si](C)(C)OCCO[Si](C)(C)C
+"1,3-bis(trimethylsilyloxy)propane",Ether,Silyl,C[Si](C)(C)OCCCO[Si](C)(C)C
+"DEE (1,2-diethoxyethane)",Ether,,CCOCCOCC
+F1F0 (1-Ethoxy-2-(2-fluoroethoxy)ethane),Ether,Fluoro,CCOCCOCCF
+"F1F1 (Ethane, 1,2-bis(2-fluoroethoxy)-)",Ether,Fluoro,C(COCCF)OCCF
+"F3DEE (1-(2,2,2-Trifluoroethoxy)-2-ethoxyethane)",Ether,Fluoro,CCOCCOCC(F)(F)F
+"F4DEE (1,2-Bis(2,2-difluoroethoxy)ethane)",Ether,Fluoro,C(COCC(F)F)OCC(F)F
+F5DEE (1-Difluoroethoxy-2-Trifluoroethoxyethane),Ether,Fluoro,C(COCC(F)(F)F)OCC(F)F
+"F6DEE (1,1,1-Trifluoro-2-[2-(2,2,2-trifluoroethoxy)ethoxy]ethane)",Ether,Fluoro,C(COCC(F)(F)F)OCC(F)(F)F
+"FDMB (2,2,3,3-Tetrafluoro-1,4-dimethoxybutane)",Ether,Fluoro,COCC(C(COC)(F)F)(F)F
+DME,Ether,,COCCOC
+MEEEEEEETMS,Ether,Silyl,COCCOCCOCCOCCOCCOCCOCCO[Si](C)(C)C
+MEEEEEETMS,Ether,Silyl,COCCOCCOCCOCCOCCOCCO[Si](C)(C)C
+MEEEEETMS,Ether,Silyl,COCCOCCOCCOCCOCCO[Si](C)(C)C
+MEEEETMS,Ether,Silyl,COCCOCCOCCOCCO[Si](C)(C)C
+MEEETMS,Ether,Silyl,COCCOCCOCCO[Si](C)(C)C
+MEETMS,Ether,Silyl,COCCOCCO[Si](C)(C)C
+MEMS,Ether,Sulfone,COCCS(=O)(=O)C
+METMS,Ether,Silyl,COCCO[Si](C)(C)C
+Ethylene carbonate,Ethylene carbonate,,C1COC(=O)O1
+cis-difluoroethylene carbonate,Ethylene carbonate,Fluoro,O=C1O[C@@H](F)[C@@H](F)O1
+difluoroethylene carbonate,Ethylene carbonate,Fluoro,C1(C(OC(=O)O1)F)F
+Ethylene carbonate,Ethylene carbonate,,C1COC(=O)O1
+fluoroethylene carbonate,Ethylene carbonate,Fluoro,C1C(OC(=O)O1)F
+tetrafluoroethylene carbonate,Ethylene carbonate,Fluoro,C1(=O)OC(C(O1)(F)F)(F)F
+"trans-difluoroethylene carbonate, R",Ethylene carbonate,Fluoro,O=C1O[C@H](F)[C@@H](F)O1
+"trans-difluoroethylene carbonate, S",Ethylene carbonate,Fluoro,O=C1O[C@@H](F)[C@H](F)O1
+trifluoroethylene carbonate,Ethylene carbonate,Fluoro,C1(C(OC(=O)O1)(F)F)F
+ADN,Alkane,Nitrile,C(CCC#N)CC#N
+AN,Alkane,Nitrile,CC#N
+AZN,Alkane,Nitrile,C(CCCC#N)CCCC#N
+EPN,Ether,Nitrile,CCOCCC#N
+GLN,Alkane,Nitrile,C(CC#N)CC#N
+MAN,Alkane,Nitrile,C(C#N)C#N
+MPN,Ether,Nitrile,COCCC#N
+PMN,Alkane,Nitrile,C(CCC#N)CCC#N
+SCN,Alkane,Nitrile,C(CC#N)C#N
+SEN,Alkane,Nitrile,C(CCCCC#N)CCCC#N
+SUN,Alkane,Nitrile,C(CCCC#N)CCC#N
+FEPN,Ether,"Fluoro, Nitrile",C(COCC(F)(F)F)C#N
+TMP,Ether,Phosphate,COP(=O)(OC)OC
+BS,Alkane,Sulfone,CCCCS(=O)(=O)CCCC
+BiBS,Alkane,Sulfone,CCCCS(=O)(=O)CC(C)C
+MiPS,Alkane,Sulfone,CC(C)S(=O)(=O)C
