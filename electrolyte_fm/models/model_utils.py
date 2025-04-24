@@ -3,7 +3,6 @@ from pathlib import Path
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
 from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import MetricCollection
-from pathlib import Path
 
 from ..utils.ckpt import SaveConfigWithCkpts
 
