@@ -1,3 +1,4 @@
+
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, Union
 
@@ -362,12 +363,12 @@ def masked_metric_update(
     preds: torch.FloatTensor,
     targets: Union[torch.IntTensor, torch.FloatTensor],
     mask: torch.BoolTensor,
-    input_ids: torch.IntTensor,
+    input_ids: Optional[torch.IntTensor] = None,
     is_oov: Optional[torch.BoolTensor] = None,
     int_cast: bool = False,
 ):
     """Update metrics, masking out targets as needed"""
-    targets = targets.masked_fill(mask, IGNORE_INDEX)
+    targets = targets.masked_fill(mask.to(dtype=bool), IGNORE_INDEX)
     if int_cast:
         targets = targets.int()
     if isinstance(metrics, OOVMetric):

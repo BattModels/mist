@@ -6,6 +6,7 @@ import torch
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 
+from ..utils.ckpt import SaveConfigWithCkpts
 from ..utils.metrics import (
     OOVMetric,
     bootstrap_collection,
@@ -14,23 +15,29 @@ from ..utils.metrics import (
     masked_metric_update,
 )
 from ..utils.tokenizer import load_tokenizer
-from ..utils.ckpt import SaveConfigWithCkpts
-
 from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
 from .normalize import AbstractNormalizer
 from .prediction_task_head import PredictionTaskHead
 
 
-def load_encoder(encoder: str | Path | torch.nn.Module, load_weights: bool = True):
+def load_encoder(
+    encoder: str | Path | torch.nn.Module,
+    load_weights: bool = True,
+    max_position_embeddings: Optional[int] = None,
+):
     config_path = Path(encoder).parent.parent.joinpath("config.json")
     hparams_path = Path(encoder).parent.parent.joinpath("model_hparams.json")
     if isinstance(encoder, torch.nn.Module):
         return encoder
     elif Path(encoder).exists() and hparams_path.is_file() and config_path.is_file():
         if load_weights is False:
-            return SaveConfigWithCkpts.instantiate(hparams_path).get_encoder()
+            return SaveConfigWithCkpts.instantiate(
+                hparams_path, max_position_embeddings
+            ).get_encoder()
         else:
-            return DeepSpeedMixin.load(encoder).get_encoder()
+            return DeepSpeedMixin.load(
+                encoder, max_position_embeddings=max_position_embeddings
+            ).get_encoder()
     else:
         from transformers import AutoModel
 
@@ -61,6 +68,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         target_columns: Optional[List[str]] = None,
         track_oov: bool = True,
         from_pretrained: bool = True,
+        max_position_embeddings: Optional[int] = None,
     ) -> None:
         super().__init__()
 
@@ -72,6 +80,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         self.lr_schedule = lr_schedule
         self.freeze_encoder = freeze_encoder
         self.from_pretrained = from_pretrained
+        self.max_position_embeddings = max_position_embeddings
 
         if self.task == "binary":
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
@@ -109,7 +118,9 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
     def configure_model(self):
         if not hasattr(self, "encoder"):
             self.encoder = load_encoder(
-                self.encoder_ckpt, load_weights=self.from_pretrained
+                self.encoder_ckpt,
+                load_weights=self.from_pretrained,
+                max_position_embeddings=self.max_position_embeddings,
             )
             self.task_network = PredictionTaskHead(
                 embed_dim=self.encoder.config.hidden_size,

@@ -1,15 +1,17 @@
-import logging
 import importlib
 import json
+import logging
 import os
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 import torch
 from jsonargparse import Namespace
 from lightning.pytorch import Callback, LightningModule, Trainer
 from lightning.pytorch.cli import LightningArgumentParser
 from lightning.pytorch.loggers import WandbLogger
+
+import torch.nn.functional as F
 
 
 class SaveConfigWithCkpts(Callback):
@@ -98,7 +100,9 @@ class SaveConfigWithCkpts(Callback):
         return config_path
 
     @staticmethod
-    def instantiate(config_path: Path) -> LightningModule:
+    def instantiate(
+        config_path: Path, max_position_embeddings: Optional[int] = None
+    ) -> LightningModule:
         """Instantiate a model from a checkpoint but don't load weights"""
         with open(config_path, "r") as fid:
             config = json.load(fid)
@@ -120,9 +124,12 @@ class SaveConfigWithCkpts(Callback):
 
         # Import the model class and initialize the model
         import_path = cls_name.split(".")
+        if max_position_embeddings is not None:
+            model_config["max_position_embeddings"] = max_position_embeddings
         model_cls = importlib.import_module(
             ".".join(import_path[:-1])
         ).__getattribute__(import_path[-1])
+
         assert import_path[-1] == model_cls.__name__
         model = model_cls(**model_config)
 
@@ -133,7 +140,10 @@ class SaveConfigWithCkpts(Callback):
 
     @staticmethod
     def load(
-        checkpoint_dir: str | Path, config_path=None, map_location=None
+        checkpoint_dir: str | Path,
+        config_path=None,
+        map_location=None,
+        max_position_embeddings: Optional[int] = None,
     ) -> LightningModule:
         """Restore from a deepspeed checkpoint, mainly used for downstream tasks"""
         checkpoint_dir = Path(checkpoint_dir).resolve()
@@ -145,7 +155,7 @@ class SaveConfigWithCkpts(Callback):
         ), f"Missing deepspeed checkpoint directory: {checkpoint_dir}"
         assert config_path.is_file(), f"Missing model config file {config_path}"
 
-        model = SaveConfigWithCkpts.instantiate(config_path)
+        model = SaveConfigWithCkpts.instantiate(config_path, max_position_embeddings)
 
         # Fallback to cpu if no GPU
         if not torch.cuda.is_available() and map_location is None:
@@ -155,6 +165,9 @@ class SaveConfigWithCkpts(Callback):
             state = torch.load(
                 checkpoint_dir, map_location=map_location, weights_only=False
             )
+            if max_position_embeddings is not None:
+                state = adjust_state_position_embeddings(state, max_position_embeddings)
+
             model.load_state_dict(state["state_dict"], strict=True, assign=True)
             return model
 
@@ -165,6 +178,9 @@ class SaveConfigWithCkpts(Callback):
             )
 
             state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
+            if max_position_embeddings is not None:
+                state = adjust_state_position_embeddings(state, max_position_embeddings)
+
             model.load_state_dict(state, strict=False, assign=True)
         except FileNotFoundError:
             logging.error(
@@ -174,9 +190,41 @@ class SaveConfigWithCkpts(Callback):
             file = Path(checkpoint_dir, "checkpoint", "mp_rank_00_model_states.pt")
             state = torch.load(file, map_location=map_location)
             logging.info("loaded %s", file)
+            if max_position_embeddings is not None:
+                state = adjust_state_position_embeddings(state, max_position_embeddings)
+
             model.load_state_dict(state["module"], strict=True, assign=True)
 
         return model
+
+
+def adjust_state_position_embeddings(state, max_position_embeddings):
+    module_state = state["module"]
+    weight_key = "model.roberta_prelayernorm.embeddings.position_embeddings.weight"
+    assert (
+        weight_key in module_state
+    ), "Changing position embedding size only implemented for RoBERTaPreLayerNorm"
+    current_max_pos, embed_size = module_state[weight_key].shape
+    assert (
+        max_position_embeddings > current_max_pos
+    ), "Maximum position embedding cannot be decreased"
+
+    # Scale the current embeddings to the new size using interpolation
+    new_pos_embed = (
+        F.interpolate(
+            module_state[weight_key].unsqueeze(0).permute(0, 2, 1),
+            size=max_position_embeddings,
+            mode="linear",
+            align_corners=False,
+        )
+        .squeeze(0)
+        .permute(1, 0)
+    )
+
+    # Update the state's position embedding
+    module_state[weight_key] = new_pos_embed
+    state["module"] = module_state
+    return state
 
 
 def get_ckpt_tokenizer(path: str | Path) -> str:
