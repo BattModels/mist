@@ -1,8 +1,6 @@
-import logging
 from typing import Any, Dict, Literal, Optional, Union
 
 import torch
-import torch.functional as F
 from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.classification import (

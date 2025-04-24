@@ -86,6 +86,6 @@ def test_cuda():
 
     print(y_gpu)
     print(y_cpu - y_gpu)
-    assert torch.allclose(y_cpu, y_gpu, atol=1e-5), (
-        "Mismatch between CPU and GPU outputs"
-    )
+    assert torch.allclose(
+        y_cpu, y_gpu, atol=1e-5
+    ), "Mismatch between CPU and GPU outputs"

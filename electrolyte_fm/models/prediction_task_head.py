@@ -1,5 +1,4 @@
 import math
-from typing import Optional
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -69,7 +68,6 @@ class TokenPairwiseDistance(nn.Module):
         ff_ratio: int = 2,
     ) -> None:
         super().__init__()
-        kv_size = int(embed_dim / num_attention_heads)
         self.interaction = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_attention_heads,

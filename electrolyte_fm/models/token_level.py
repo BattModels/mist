@@ -3,7 +3,6 @@ from itertools import chain
 from typing import Optional
 
 import lightning.pytorch as pl
-from numpy import count_nonzero
 import torch
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
