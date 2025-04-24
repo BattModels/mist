@@ -20,4 +20,3 @@ end
 
 Base.:*(x::UQReal, y::Real) = UQReal(x.mean * y, x.std * y, x.n)
 Base.:*(x::Real, y::UQReal) = y * x
-

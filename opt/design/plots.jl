@@ -25,6 +25,7 @@ using DesignRules: simple_hydrocarbons
 using MISTStyle
 using DataFrames
 using CSV: CSV
+using StatsBase: mean
 
 # Evaluate hydrocarbons
 df_hydrocarbons = DesignRules.predict_all(
@@ -64,6 +65,15 @@ df_electrolyte = leftjoin(df_electrolyte, df_pc, on=:smi)
 with_theme(MISTStyle.theme()) do
     DesignRules.electrolyte_trends(df_electrolyte)
 end |> MISTStyle.savefig("electrolytes")
+
+# Save predictions
+transform(
+    select(df_electrolyte, [:smi, :homo, :gap, :mp, :bp]),
+    :homo => ByRow(mean),
+    :gap => ByRow(mean),
+    :mp => ByRow(mean),
+    :bp => ByRow(mean),
+) |> CSV.write(joinpath(@__DIR__, "electrolytes_predictons.csv"))
 
 # Permutation sensitivity
 df_perm = simple_hydrocarbons(25)

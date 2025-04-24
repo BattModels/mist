@@ -46,4 +46,3 @@ function corner(quad::Symbol, hr)
         error("Quadrant $quad not recognized")
     end
 end
-

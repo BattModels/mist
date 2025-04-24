@@ -97,4 +97,3 @@ function predict_all(df::DataFrame, models...; smi_column=:smi, n=1)
     end
     return df
 end
-

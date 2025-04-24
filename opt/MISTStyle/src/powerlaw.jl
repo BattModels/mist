@@ -35,4 +35,3 @@ function Makie.plot!(plt::Powerlaw)
     lines!(plt, points; Makie.shared_attributes(plt, Lines)...)
     return plt
 end
-
