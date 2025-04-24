@@ -25,4 +25,3 @@ dev = [
 testpaths = ["test"]
 pythonpath = [".", "test"]
 addopts = "--color yes"
-

@@ -8,11 +8,14 @@ from pathlib import Path
 from typing import Optional
 
 from rdkit import Chem
+from typer import Typer
 
 from .utils import RateLimitedAdapter
 
 # Sentinel for clean shutdown
 _STOP = object()
+
+cli = Typer()
 
 logger = RateLimitedAdapter(logging.getLogger(__name__), min_interval=10)
 
@@ -21,7 +24,7 @@ def write_molecule_to_db(cursor: sqlite3.Cursor, mol: dict):
     smiles = mol["smi"]
     rdkit_mol = Chem.MolFromSmiles(smiles)
     if rdkit_mol is None:
-        logger.warning(f"Invalid SMILES skipped: %s", smiles)
+        logger.warning("Invalid SMILES skipped: %s", smiles)
         return False
 
     inchi = Chem.MolToInchiKey(rdkit_mol)
@@ -118,6 +121,7 @@ def dump_to_sqlite_threaded(mol_iterator, db_path, queue_size=1024):
         writer_thread.join()
 
 
+@cli.command("merge-db")
 def merge_sqlite_dbs(folder: Path, output_db: Optional[Path] = None):
     db_files = list(folder.glob("*.sqlite"))
     if not db_files:

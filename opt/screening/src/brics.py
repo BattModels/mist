@@ -1,9 +1,12 @@
 import itertools
 import math
+import random
 from copy import deepcopy
+
 import torch
 from rdkit import Chem
 from rdkit.Chem import BRICS as brics
+from torch.utils.data import DataLoader
 from transformers import DataCollatorWithPadding
 
 
@@ -60,9 +63,7 @@ class BricsDataset(torch.utils.data.IterableDataset):
         mol_fragments = [Chem.MolFromSmiles(x) for x in self.fragments]
         tokenizer = deepcopy(self.tokenizer)
         while True:
-            # maxDepth = random.randint(1, self.max_depth)
             seed = random.choice(seeds)
-            # fragments = random.choices(mol_fragments, k=self.num_fragments)
 
             for mols in itertools.batched(
                 itertools.islice(

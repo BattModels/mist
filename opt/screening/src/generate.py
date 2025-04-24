@@ -1,6 +1,5 @@
 import logging
 import time
-from itertools import islice
 
 import torch
 from lightning.fabric import Fabric
@@ -46,9 +45,9 @@ class QuadrantCritic(nn.Module):
         super().__init__()
         lower = []
         upper = []
-        assert limits.keys() <= set(channels), (
-            f"limits must be a subset of channels: {limits.keys()} ⊆ {channels}"
-        )
+        assert limits.keys() <= set(
+            channels
+        ), f"limits must be a subset of channels: {limits.keys()} ⊆ {channels}"
         for chn in channels:
             if chn in limits:
                 lb, ub = limits[chn]

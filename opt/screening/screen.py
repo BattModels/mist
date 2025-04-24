@@ -10,7 +10,7 @@ from src.database import dump_to_sqlite_threaded
 from src.generate import OracleCritic, generate
 from src.dataloader import DatabaseFragmentDataset
 
-from electrolyte_fm.models.prod_finetune import MISTFinetuned, MISTMultiTask
+from electrolyte_fm.models.prod_finetune import MISTFinetuned
 
 logging.basicConfig(level=logging.INFO)
 

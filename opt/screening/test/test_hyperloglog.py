@@ -15,9 +15,9 @@ def test_hyperloglog_insertion():
 
     # Estimate cardinality
     estimated_cardinality = len(hll)
-    assert estimated_cardinality >= 3, (
-        f"Expected at least 3 distinct items, got {estimated_cardinality}"
-    )
+    assert (
+        estimated_cardinality >= 3
+    ), f"Expected at least 3 distinct items, got {estimated_cardinality}"
 
 
 def test_hyperloglog_merge():
@@ -38,9 +38,9 @@ def test_hyperloglog_merge():
 
     # Expected cardinality should be at least 5 (since there are no duplicates in the union)
     estimated_cardinality = len(hll1)
-    assert estimated_cardinality >= 5, (
-        f"Expected at least 5 distinct items after merge, got {estimated_cardinality}"
-    )
+    assert (
+        estimated_cardinality >= 5
+    ), f"Expected at least 5 distinct items after merge, got {estimated_cardinality}"
 
 
 def test_hyperloglog_reduce_single():
@@ -53,9 +53,9 @@ def test_hyperloglog_reduce_single():
     # Simulate reduce (no actual distributed computing here)
     reduced_hll = hll1.reduce(Fabric())
     estimated_cardinality = len(reduced_hll)
-    assert estimated_cardinality == 4, (
-        f"Expected 4 distinct items, got {estimated_cardinality}"
-    )
+    assert (
+        estimated_cardinality == 4
+    ), f"Expected 4 distinct items, got {estimated_cardinality}"
 
 
 @pytest.mark.parametrize(
@@ -82,12 +82,12 @@ def test_hyperloglog_cardinality(b, hash):
     estimated_cardinality = len(hll)
 
     # We expect the estimate to be close to the true number of unique items
-    assert estimated_cardinality > 0, (
-        f"Estimated cardinality is {estimated_cardinality}"
-    )
-    assert abs(estimated_cardinality - len(set(items))) <= len(items) * 0.05, (
-        f"Cardinality estimate {estimated_cardinality} is too far from actual {len(set(items))}"
-    )
+    assert (
+        estimated_cardinality > 0
+    ), f"Estimated cardinality is {estimated_cardinality}"
+    assert (
+        abs(estimated_cardinality - len(set(items))) <= len(items) * 0.05
+    ), f"Cardinality estimate {estimated_cardinality} is too far from actual {len(set(items))}"
 
 
 @pytest.mark.parametrize("b", [4, 8, 12, 16])
@@ -100,6 +100,6 @@ def test_hyperloglog_different_precision(b):
 
     # Cardinality should be at least 3
     estimated_cardinality = len(hll)
-    assert estimated_cardinality >= 3, (
-        f"Expected at least 3 distinct items, got {estimated_cardinality}"
-    )
+    assert (
+        estimated_cardinality >= 3
+    ), f"Expected at least 3 distinct items, got {estimated_cardinality}"

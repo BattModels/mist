@@ -1,17 +1,12 @@
 import random
 import sqlite3
 import logging
-import threading
-from itertools import islice
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Iterator, Optional, Union
 
 import torch
 from lightning import Fabric
-from torch.autograd.gradcheck import FAST_FAIL_SLOW_OK_MSG
 from torch.utils.data import DataLoader
-from torch.cuda import nvtx
 from transformers import DataCollatorWithPadding
 
 from electrolyte_fm.data_modules.utils import MolEncoding
