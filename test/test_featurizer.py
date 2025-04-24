@@ -1,6 +1,5 @@
 import re
 from random import choice
-from itertools import chain
 
 import pytest
 import torch
@@ -107,7 +106,7 @@ def test_regex_negatives(feature: str, negatives: list[str]):
     "feature,positives",
     ((x["feature"], x["positive"]) for x in REGEX_TESTS if "positive" in x),
 )
-def test_regex_negatives(feature: str, positives: list[str]):
+def test_regex_positives(feature: str, positives: list[str]):
     f = re.compile(REGEX_FEATURES[feature])
     for pos in positives:
         assert f.match(pos) is not None, f"{feature} should match {pos}"

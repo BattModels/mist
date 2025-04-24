@@ -5,4 +5,3 @@ for ckpt in $(find ../../linear-probes/ -maxdepth 1 -mindepth 1 -type d); do
         sbatch ./run_explore.sh "${ckpt}"
     fi
 done
-

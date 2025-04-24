@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, Union
 
 import torch
