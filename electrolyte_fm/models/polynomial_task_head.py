@@ -383,9 +383,7 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         B_k = self.compute_basis(x.view(-1, 1)).unsqueeze(
             1
         )  # Shape: (batch_size, 1, n)
-
         P_m += torch.bmm(B_k, c).squeeze(1)  # Shape: (batch_size, 1, m)
-
         return P_m  # [batch_size, 1]
 
 
