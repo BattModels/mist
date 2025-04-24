@@ -5,11 +5,14 @@
 #SBATCH --time=0:20:00
 my_job_header
 
+module unload openmpi
+module load gcc
+module load openmpi/4.1.6
 # Move to git root
 cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 
 # Activate Environment
-source ./activate
+source "$(git rev-parse --show-toplevel)/activate"
 export JULIA_PKG_PRECOMPILE_AUTO=0
 export JULIA_PKG_USE_CLI_GIT=true
 export JULIA_NUM_PRECOMPILE_TASKS=$SLURM_CPUS_ON_NODE

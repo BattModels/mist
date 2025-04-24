@@ -25,6 +25,9 @@ end
         if "tmQM" in splitpath(name_or_path)
             dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
             dataset_name = "tmQM"
+        elseif "pubchemqc_jcim2017-split-v2" in splitpath(name_or_path)
+            dm = TokenizerStats.pubchemqc(name_or_path; tokenizer, encoding)
+            dataset_name = "pubchemqc"
         else
             dm = TokenizerStats.pretrain(name_or_path; tokenizer, encoding)
             dataset_name = basename(name_or_path)

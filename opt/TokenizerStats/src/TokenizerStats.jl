@@ -56,6 +56,13 @@ function pretrain(path::AbstractString; tokenizer="smirk", encoding::String="smi
     return dm
 end
 
+function pubchemqc(path::AbstractString; tokenizer="smirk", encoding::String="smiles")
+    data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
+    dm = data_modules.PubChemQC(path; tokenizer, encoding)
+    dm.prepare_data()
+    return dm
+end
+
 include("ngrams.jl")
 include("serialize.jl")
 include("collect.jl")

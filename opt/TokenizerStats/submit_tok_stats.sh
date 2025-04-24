@@ -3,14 +3,19 @@
 #SBATCH --cpus-per-task 1
 #SBATCH --ntasks 16
 #SBATCH --mem-per-cpu 1800M
+#SBATCH --time 22:00:00
+
 set -x
 my_job_header
+module unload openmpi
+module load gcc
+module load openmpi/4.1.6
 
 # Move to git root
 cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 
 # Activate Environment
-source ./activate
+source "$(git rev-parse --show-toplevel)/activate"
 env
 
 # module load cuda/12.2.1
