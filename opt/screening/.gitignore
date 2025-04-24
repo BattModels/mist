@@ -2,3 +2,7 @@ vendor/
 *.smi
 *.frag
 out/
+out
+fig/
+*.csv
+*.sqlite

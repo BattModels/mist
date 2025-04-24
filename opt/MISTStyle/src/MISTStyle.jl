@@ -12,7 +12,7 @@ export pt, inch
 
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
-    mkpath(fig_dir)
+    mkpath(dirname(joinpath(fig_dir, name)))
     save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1, backend=CairoMakie)
     save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=GLMakie)
     return nothing
