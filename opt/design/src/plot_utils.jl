@@ -18,4 +18,3 @@ function Makie.plot!(plt::ErrorLines{<:Tuple{AbstractVector,AbstractVector{<:Rea
 end
 
 Makie.convert_arguments(::Type{<:ErrorCross}, x::AbstractVector{<:UQReal}, y::AbstractVector{<:UQReal}) = (mean.(x), mean.(y), stderror.(x), stderror.(y))
-
