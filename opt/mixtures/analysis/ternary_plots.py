@@ -8,13 +8,26 @@ import torch
 import tqdm
 from electrolyte_fm.data_modules import ComponentDataModule
 import matplotlib.pyplot as plt
-import niceplots
 from electrolyte_fm.models.model_utils import DeepSpeedMixin
 from lipari_cm import lipari10_cmap
 from matplotlib.colors import Normalize
 
-plt.style.use(niceplots.get_style())
 plt.rcParams["figure.constrained_layout.use"] = False
+plt.rcParams["xtick.labelsize"] = 5
+plt.rcParams["ytick.labelsize"] = 5
+plt.rcParams["lines.markersize"] = 2
+plt.rcParams["lines.linewidth"] = 0.1
+plt.rcParams["font.size"] = 6
+plt.rcParams["axes.titlesize"] = 5
+plt.rcParams["axes.labelsize"] = 5
+plt.rcParams["xtick.labelsize"] = 5
+plt.rcParams["ytick.labelsize"] = 5
+plt.rcParams["legend.fontsize"] = 4
+plt.rcParams["font.family"] = "Serif"
+plt.rcParams["grid.linewidth"] = 0.1
+plt.rcParams["figure.dpi"] = 500
+plt.rcParams["savefig.dpi"] = 500
+plt.rcParams["mathtext.fontset"] = "stix"
 
 
 def softmax_rowwise(arr):
@@ -69,7 +82,8 @@ def get_triangular_grid(n=31, prec=1e-6):
 def generate_dataset(
     salt_mole_fraction: float = 0.1,
     save_dir: str = "ternary",
-    solvents: List[str] = ["C1COC(=O)O1", "COC(=O)OC", "CC1COC(=O)O1"],
+    # PC, DMC,
+    solvents: List[str] = ["CC1COC(=O)O1", "COC(=O)OC", "O=C1OCCO1"],
     salt: str = "LiPF6",
 ):
     os.makedirs(save_dir, exist_ok=True)
@@ -90,7 +104,7 @@ def generate_dataset(
     elif salt == "TFSI":
         df["smi4"] = "O=S(=O)([N-]S(=O)(=O)C(F)(F)F)C(F)(F)F"
     df["smi5"] = "[Li+]"
-    df["temperature"] = 273.15
+    df["temperature"] = 298.15
     df["target"] = 0
     df.to_csv(os.path.join(save_dir, "train.csv"))
     df.to_csv(os.path.join(save_dir, "val.csv"))
@@ -217,6 +231,7 @@ def cartesian_to_barycentric(d_cartesian):
 
 
 def plot_vector_fields(data_files: Union[List, str], target: str):
+    print("plotting")
     if isinstance(data_files, str):
         data_files = [
             data_files,
@@ -225,9 +240,9 @@ def plot_vector_fields(data_files: Union[List, str], target: str):
     n_files = len(data_files)
     n_cols = max(1, int(0.5 * n_files))
     fig, axes = plt.subplots(
-        2, n_cols, figsize=(3 * n_files, 9.6), subplot_kw={"projection": "ternary"}
+        2, n_cols, figsize=(n_files, 3.2), subplot_kw={"projection": "ternary"}
     )
-    fig.subplots_adjust(left=0.075, right=0.85, wspace=0.7, hspace=0.5)
+    fig.subplots_adjust(left=0.075, right=0.85, wspace=1.0, hspace=0.5)
 
     data_files = sorted(data_files, key=lambda x: x.split("_")[1])
 
@@ -246,7 +261,7 @@ def plot_vector_fields(data_files: Union[List, str], target: str):
         composition = float(composition.split(".")[0])
         col = int(composition // 5) - 1
         composition = 1e-2 * composition
-        composition = "$x_{" + salt + "}$" + f"= {composition:.2f}"
+        composition = "$\mathbf{x_{" + salt + "}}$" + f"= {composition:.2f}"
         row = i // n_cols
 
         ax = axes[row, col] if n_files > 1 else axes
@@ -258,9 +273,9 @@ def plot_vector_fields(data_files: Union[List, str], target: str):
             df.x2,
             df.x3,
             df.transferance,
-            levels=50,
+            levels=40,
             colors="#989C97",
-            linewidths=0.5,
+            linewidths=0.1,
             zorder=1,
         )
 
@@ -282,7 +297,7 @@ def plot_vector_fields(data_files: Union[List, str], target: str):
             dx[:, 2],
             df.transferance,
             units="dots",
-            width=8,
+            width=4,
             zorder=2,
             # scale=1,
             # scale_units="xy",
@@ -293,11 +308,14 @@ def plot_vector_fields(data_files: Union[List, str], target: str):
         ax.set_tlabel("PC", fontweight="bold")
         ax.set_llabel("DMC", fontweight="bold")
         ax.set_rlabel("EC", fontweight="bold")
-        ax.set_title(composition, pad=10, fontweight="bold")
+        ax.set_title(
+            composition,
+            pad=5,
+        )
 
     # Add a common color bar outside of the loop, aligned to the right of all plots
     cbar_axis = fig.add_axes([0.94, 0.1, 0.015, 0.8])  # Adjust position as needed
     cbar = fig.colorbar(cs, cax=cbar_axis)
-    cbar.ax.set_title(target_names[target], pad=10, fontweight="bold")
+    cbar.ax.set_title(target_names[target], pad=5)
 
-    plt.savefig(f"{target}_salt_composition.png")
+    plt.savefig(f"{target}_salt_composition.png", bbox_inches="tight", dpi=500)
