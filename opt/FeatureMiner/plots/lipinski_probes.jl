@@ -24,21 +24,45 @@ function load_probes()
     return df
 end
 
-function figure_probe_similarity(df::DataFrame, model="dh61satti", dataset="toxcast", location="output")
+function figure_probe_similarity(df::DataFrame; model="dh61satti", dataset="pretrained", location="output")
     df = subset(df,
-        :encoder => ByRow(==(model)),
-        :dataset => ByRow(==(dataset)),
+        :encoder_id => ByRow(==(model)),
         :location => ByRow(==(location)),
         skipmissing=true
     )
     dropmissing!(df)
     f = Figure()
 
-    for (fdx, feat) in enumerate(unique(df.feature_id))
-        @show df_f = subset(df, :feature_id => ByRow(==(feat)))
-        df_f = first(eachrow(df_f))
-        ax = Axis(f[fdx, 1]; title=df_f.id)
-        heatmap!(ax, df_f.probe_similarity)
+
+    feature_name = [
+        "Lipinski",
+        "H-Donor",
+        "H-Acceptor",
+        "MWT",
+        "LogP",
+    ]
+
+    cb = Colorbar(f[1:5, 1+length(levels(df.encoder_dataset))];
+        label="Cosine Similarity",
+        colorrange=(0, 1),
+    )
+
+    for (ddx, dataset) in enumerate(unique(df.encoder_dataset))
+        dfd = subset(df, :encoder_dataset => ByRow(==(dataset)))
+        for fdx in 1:5
+            ax = Axis(f[fdx, ddx])
+            if fdx == 1
+                ax.title = dataset
+            end
+            hidedecorations!(ax)
+            if ddx == 1
+                ax.ylabel = feature_name[fdx]
+                ax.ylabelvisible = true
+            end
+
+            probe_similarity = FeatureMiner.layerwise_similarity(dfd.weight, fdx)
+            heatmap!(ax, probe_similarity; MISTStyle.cb_attrs(cb, Heatmap)...)
+        end
     end
     return f
 end
@@ -128,4 +152,15 @@ function lipinski_fixed_effect(df)
         ) |> string)
     end
     return m
+end
+
+function all_plots()
+    df = load_probes()
+    figure_lipinski_probes(df) |> MISTStyle.savefig("lipinski_linear_probes")
+    for location in unique(df.location)
+        for encoder in unique(df.encoder_id)
+            fig = figure_probe_similarity(df; model=encoder, location=location)
+            MISTStyle.savefig("lipinski-probe-similarity-$encoder-$location", fig)
+        end
+    end
 end
