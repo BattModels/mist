@@ -20,11 +20,11 @@ class LipinskiDataModule(PropertyPredictionDataModule):
         assert self.path.exists()
 
         kwargs["target_columns"] = [
-            "lipinki_h_donor",
-            "lipinki_h_acceptor",
-            "lipinki_mwt",
-            "lipinki_log_p",
-            "lipinki",
+            "lipinski_h_donor",
+            "lipinski_h_acceptor",
+            "lipinski_mwt",
+            "lipinski_log_p",
+            "lipinski",
         ]
         kwargs["smi_column"] = kwargs.get("smi_column", "smi")
         super().__init__(**kwargs)
@@ -94,7 +94,7 @@ def build_probe_dataset():
 
     async def async_lipinski_rule_of_five(x):
         async with sem:
-            return lipinki_rule_of_five(x, "smi")
+            return lipinski_rule_of_five(x, "smi")
 
     ds = ds.map(async_lipinski_rule_of_five, batched=False)
 
@@ -109,10 +109,10 @@ def build_probe_dataset():
     df = ds.to_pandas()
     df.drop_duplicates(subset="inchi_key", inplace=True)
     lip_cols = [
-        "lipinki_h_donor",
-        "lipinki_h_acceptor",
-        "lipinki_mwt",
-        "lipinki_log_p",
+        "lipinski_h_donor",
+        "lipinski_h_acceptor",
+        "lipinski_mwt",
+        "lipinski_log_p",
     ]
 
     # Rebalance and report stats
@@ -126,7 +126,7 @@ def build_probe_dataset():
 
     # Split preserving the frequency of each subgroup
     spliter = StratifiedShuffleSplit(train_size=0.80, random_state=721153)
-    train_idx, test_idx = next(spliter.split(df["smi"], df["lipinki"]))
+    train_idx, test_idx = next(spliter.split(df["smi"], df["lipinski"]))
 
     # Save to disk
     ds = DatasetDict(
@@ -259,19 +259,19 @@ def downsample_ipf_binary(
 SEM_LIPINSKI = asyncio.Semaphore(20)
 
 
-def lipinki_rule_of_five(x: dict, smi_column: str = "smi") -> dict:
+def lipinski_rule_of_five(x: dict, smi_column: str = "smi") -> dict:
     smi = x[smi_column]
     mol = MolFromSmiles(smi)
     assert mol is not None, "invalid smi: %s" % smi
     x["num_h_bond_donors"] = Lipinski.NumHDonors(mol)
-    x["lipinki_h_donor"] = x["num_h_bond_donors"] <= 5
+    x["lipinski_h_donor"] = x["num_h_bond_donors"] <= 5
     x["num_h_bond_acceptors"] = Lipinski.NumHAcceptors(mol)
-    x["lipinki_h_acceptor"] = x["num_h_bond_acceptors"] <= 10
+    x["lipinski_h_acceptor"] = x["num_h_bond_acceptors"] <= 10
     x["molecular_weight"] = ExactMolWt(mol)
-    x["lipinki_mwt"] = x["molecular_weight"] <= 500
+    x["lipinski_mwt"] = x["molecular_weight"] <= 500
     x["log_p"] = MolLogP(mol)
-    x["lipinki_log_p"] = x["log_p"] <= 5
-    x["lipinki"] = all(v for k, v in x.items() if k.startswith("lipinki"))
+    x["lipinski_log_p"] = x["log_p"] <= 5
+    x["lipinski"] = all(v for k, v in x.items() if k.startswith("lipinski"))
     return x
 
 
