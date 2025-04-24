@@ -1,24 +1,19 @@
 import json
-import logging
 from math import floor
 from pathlib import Path
 from typing import Optional
 
 import torch
 from datasets import load_dataset
-from rdkit import Chem
 from torch import nn
 from torch.utils.data import DataLoader
 from transformers import DataCollatorWithPadding
-from torchmetrics import MetricCollection
 
-from ..data_modules.sae_dataset import extract_hidden_state
 from ..data_modules.feature_tagger import FeatureCollection
 from ..data_modules.utils import MolEncoding, encode_molecules
 from ..models.model_utils import load_encoder
 from ..models.sae import SAE
 from .tokenizer import load_tokenizer
-from .metrics import FeatureCorrelation
 
 
 class FeatureExtractor(nn.Module):
@@ -122,7 +117,7 @@ class FeaturePipeline:
             streaming=True,
             save_infos=True,
         )
-        ds = encode_molecules(ds, "text", encoding=MolEncoding.KEUKLE_SMILES)
+        ds = encode_molecules(ds, "text", encoding=MolEncoding.KEKULE)
         ds = ds.map(self.miner.tokenize, batched=True, input_columns="text")
         ds = ds.map(self.features, batched=False, input_columns="text")
         self.dataset = ds

@@ -4,7 +4,6 @@ import json
 import _jsonnet as jsonnet
 import subprocess
 from submit.submit import render
-from submit.utils import dict_product
 from transformers import AutoConfig
 
 # jsonnet
@@ -35,7 +34,7 @@ function(
   stage: null,
   train: {
     trainer: {
-        max_epochs: 1000, 
+        max_epochs: 1000,
     },
     model: {
         model: {

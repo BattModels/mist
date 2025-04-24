@@ -45,4 +45,3 @@ function layerwise_similarity(weights::Vector{W}, feature::Int) where {W<:Matrix
     end
     return s
 end
-

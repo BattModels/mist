@@ -113,7 +113,7 @@ class LightningProbe(pl.LightningModule):
                 self._hooks_installed[name] = self.model.get_submodule(
                     name
                 ).register_forward_hook(hook)
-                logging.debug(f"Installed hook for %s", name)
+                logging.debug("Installed hook for %s", name)
 
         return self._activations
 
@@ -210,8 +210,6 @@ class LightningProbe(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    import smirk
-    import json
     from jsonargparse import lazy_instance
     from lightning.pytorch.loggers import WandbLogger
     from lightning.pytorch.callbacks import ModelCheckpoint

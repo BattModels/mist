@@ -64,4 +64,3 @@ include("stats.jl")
 include("lipinski.jl")
 
 end
-

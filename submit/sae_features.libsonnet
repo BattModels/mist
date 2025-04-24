@@ -1,3 +1,3 @@
 {
-    aromatic_elements: "[a-z]{1,2}"
+  aromatic_elements: '[a-z]{1,2}',
 }

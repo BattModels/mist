@@ -8,11 +8,9 @@ import torch
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from torch import nn
 from torch.nn import functional as F
-from torchmetrics import MetricCollection
-from transformers import PreTrainedModel, AutoModel
+from transformers import PreTrainedModel
 
 from .model_utils import load_encoder
-from ..utils.metrics import AliveFeatures, FeatureDensity, MaxFeatureDensity
 
 
 def init_bias(bias, w):

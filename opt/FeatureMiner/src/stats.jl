@@ -41,5 +41,3 @@ end
 StatsBase.var(o::ElementwiseVariance) = OnlineStatsBase.value(o)
 StatsBase.mean(o::ElementwiseVariance) = o.μ
 StatsBase.nobs(o::ElementwiseVariance) = o.n[]
-
-
