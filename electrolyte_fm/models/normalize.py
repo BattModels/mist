@@ -1,7 +1,6 @@
-from typing import Optional, List, Union
-
 import torch
 from datasets import IterableDataset
+from typing import Any, Dict, Optional, List, Union
 from sklearn.preprocessing import PowerTransformer as _PowerTransformer
 from torch.masked import MaskedTensor
 
@@ -61,6 +60,8 @@ class AbstractNormalizer(torch.nn.Module):
             return PowerTransform(num_outputs)
         elif transform in ["log_transform", LogTransform.__name__]:
             return LogTransform(num_outputs)
+        elif transform in ["max_scale", MaxScaleTransform.__name__]:
+            return MaxScaleTransform(num_outputs)
         else:
             return IdentityTransform()
 
@@ -118,6 +119,11 @@ class Standardize(AbstractNormalizer):
         self.mean = target.mean(0).get_data().to(self.mean)
         self.std = target.std(0).get_data().to(self.std) + self.eps
         return self.state_dict()
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        if "transform.mean" in state_dict.keys():
+            state_dict["transform.mean"] = state_dict["transform.mean"].view(1)
+            state_dict["transform.std"] = state_dict["transform.std"].view(1)
 
 
 class LogTransform(Standardize):
@@ -220,6 +226,31 @@ class PowerTransform(AbstractNormalizer):
         # Fit standardization scaling
         self.mean = target.mean(0).to(self.mean)
         self.std = target.std(0).to(self.std) + self.eps
+        return self.state_dict()
+
+
+class MaxScaleTransform(AbstractNormalizer):
+    """
+    Divide by maximum value in training dataset.
+    """
+
+    def __init__(self, mx: int, eps: float = 1e-8):
+        super().__init__(1)
+        self.num_outputs = 1
+        self.max = mx
+        self.eps = float(eps)
+        assert 0 <= self.eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Undo standardization
+        x_out = self.max * x
+        return x_out
+
+    def inverse(self, x: torch.Tensor) -> torch.Tensor:
+        x_out = x / self.max
+        return x_out
+
+    def _fit(self, target: MaskedTensor) -> dict:
         return self.state_dict()
 
 

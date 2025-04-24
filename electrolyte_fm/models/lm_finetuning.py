@@ -6,6 +6,7 @@ import torch
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 
+from ..utils.ckpt import SaveConfigWithCkpts
 from ..utils.metrics import (
     OOVMetric,
     bootstrap_collection,
@@ -14,8 +15,6 @@ from ..utils.metrics import (
     masked_metric_update,
 )
 from ..utils.tokenizer import load_tokenizer
-from ..utils.ckpt import SaveConfigWithCkpts
-
 from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
 from .normalize import AbstractNormalizer
 from .prediction_task_head import PredictionTaskHead

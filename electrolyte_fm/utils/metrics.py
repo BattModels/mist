@@ -1,10 +1,8 @@
-from typing import Union, Dict, Optional, Any, Literal
+from typing import Any, Dict, Literal, Optional, Union
 
 import torch
 from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
-from torchmetrics.wrappers import BootStrapper
-from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 from torchmetrics.classification import (
     AUROC,
     AveragePrecision,
@@ -12,12 +10,13 @@ from torchmetrics.classification import (
 )
 from torchmetrics.regression import (
     MeanAbsoluteError,
-    MeanSquaredError,
-    R2Score,
     MeanAbsolutePercentageError,
+    MeanSquaredError,
     PearsonCorrCoef,
+    R2Score,
 )
-
+from torchmetrics.wrappers import BootStrapper
+from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 
 """ Target Value to indicate missing data """
 IGNORE_INDEX = -100
@@ -358,12 +357,12 @@ def masked_metric_update(
     preds: torch.FloatTensor,
     targets: Union[torch.IntTensor, torch.FloatTensor],
     mask: torch.BoolTensor,
-    input_ids: torch.IntTensor,
+    input_ids: Optional[torch.IntTensor] = None,
     is_oov: Optional[torch.BoolTensor] = None,
     int_cast: bool = False,
 ):
     """Update metrics, masking out targets as needed"""
-    targets = targets.masked_fill(mask, IGNORE_INDEX)
+    targets = targets.masked_fill(mask.to(dtype=bool), IGNORE_INDEX)
     if int_cast:
         targets = targets.int()
     if isinstance(metrics, OOVMetric):

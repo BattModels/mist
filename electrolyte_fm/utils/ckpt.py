@@ -1,9 +1,9 @@
-import logging
 import importlib
 import json
+import logging
 import os
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 import torch
 from jsonargparse import Namespace
@@ -129,6 +129,7 @@ class SaveConfigWithCkpts(Callback):
         model_cls = importlib.import_module(
             ".".join(import_path[:-1])
         ).__getattribute__(import_path[-1])
+
         assert import_path[-1] == model_cls.__name__
         model = model_cls(**model_config)
 
