@@ -14,6 +14,7 @@
           'log_transform',
           'standardize',
           'identity',
+          'identity',
         ],
         encoder_ckpt: '/nfs/turbo/coe-venkvis/mist/atleto2u/checkpoints/last.ckpt',
         output_size: std.length($.train.data.init_args.target_col),
