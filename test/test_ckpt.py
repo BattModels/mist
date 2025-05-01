@@ -66,7 +66,7 @@ def test_ckpt(cli):
 
     # Check that the dataloader config is saved
     data_config = {
-        "class_path": "test.test_ckpt.MockedData",
+        "class_path": __name__ + ".MockedData",
         "init_args": {"tokenizer": "smirk", "batch_size": 32},
     }
     with open(cb.config_path.joinpath("config.json"), "r") as fid:
@@ -77,17 +77,49 @@ def test_ckpt(cli):
         model_config = json.load(fid)
     assert model_config["class_path"] == __name__ + ".MockedModel"
     assert model_config["lightning_module"] == {
-        "class_path": __name__ + ".MockedModel",
+        "_class_path": __name__ + ".MockedModel",
         "_instantiator": "lightning.pytorch.cli.instantiate_module",
-        "init_args": {"vocab_size": None},
+        "vocab_size": None,
     }
     assert model_config["datamodule"] == {
         "_instantiator": "lightning.pytorch.cli.instantiate_module",
+        "_class_path": __name__ + ".MockedData",
+        "batch_size": cli.datamodule.batch_size,
         "vocab_size": cli.datamodule.vocab_size,
-        **data_config,
+        "tokenizer": "smirk",
     }
     assert "version" in model_config.keys()
     assert model_config["version"] == "0.3.0"
+
+
+def test_legacy_ckpt(cli):
+    trainer = cli.trainer
+    cb = get_single_callback(SaveConfigWithCkpts, trainer.callbacks)
+    assert cb.config_path is not None
+    assert cb.config_path.is_dir()
+    assert isinstance(trainer.checkpoint_callback, ModelCheckpoint)
+    assert Path(trainer.checkpoint_callback.last_model_path).exists()
+    config_path = cb.config_path.joinpath("model_hparams.json")
+    config_path.write_text(
+        json.dumps(
+            {
+                "version": "0.3.0",
+                "class_path": __name__ + ".MockedModel",
+                "lightning_module": {
+                    "class_path": __name__ + ".MockedModel",
+                    "init_args": {
+                        "vocab_size": None,
+                    },
+                },
+                "datamodule": {
+                    "class_path": __name__ + ".MockedData",
+                    "vocab_size": 167,
+                },
+            }
+        )
+    )
+    model = SaveConfigWithCkpts.instantiate(config_path)
+    assert isinstance(model, MockedModel)
 
 
 def test_ckpt_load(cli):

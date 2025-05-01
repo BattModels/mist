@@ -1,8 +1,22 @@
+from pathlib import Path
+
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
+from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import MetricCollection
-from lightning.pytorch.loggers import WandbLogger
 
 from ..utils.ckpt import SaveConfigWithCkpts
+
+
+def load_encoder(name_or_path: str):
+    if Path(name_or_path).exists():
+        return DeepSpeedMixin.load(name_or_path).get_encoder()
+    else:
+        from transformers import AutoModel
+
+        return AutoModel.from_pretrained(
+            name_or_path,
+            trust_remote_code=True,
+        )
 
 
 class DeepSpeedMixin:
@@ -52,8 +66,8 @@ def record_summary_stats(logger, metrics: MetricCollection):
 
 
 def record_loss_summary_stats(logger):
-    define_metric = logger.experiment.define_metric
     if isinstance(logger, WandbLogger):
+        define_metric = logger.experiment.define_metric
         for m in ["train/loss", "val/loss", "test/loss"]:
             for s in ["", "_step", "_epoch"]:
                 define_metric(m + s, summary="last,best,min", goal="minimize")

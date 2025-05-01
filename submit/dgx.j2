@@ -31,6 +31,10 @@ cd $(git rev-parse --show-toplevel)
 # Set env variables
 {{- export_env( env ) }}
 
+# Create job-specific temp dir
+TMPDIR=${TMPDIR:-/tmp}/mist-${SLURM_JOB_ID}/
+mkdir -p $TMPDIR
+
 {%- if job_queue is defined %}
 submit/sweep.py scheduler --num-workers {{ job_queue.tasks }} {{ job_queue.queue }}
 
@@ -74,7 +78,7 @@ fi
 
 srun --mpi=pmix \
 $(which apptainer) run \
---bind /lustre/fs0,/tmp \
+--bind /lustre/fs0,/tmp,$TMPDIR \
 --nv \
 {{ container }} \
 ${PWD}/submit/set_node_rank \
@@ -83,4 +87,5 @@ nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
     python ${PWD}/train.py --config ${PL_CONFIG}
+    /mist/.venv/bin/python {{ program or "${PWD}/train.py" }} --config ${PL_CONFIG}
 {%- endif %}

@@ -1,4 +1,5 @@
 from .molnet_dataset import MolNetDataModule
-from .roberta_dataset import RobertaDataSet
 from .property_prediction_dataset import PropertyPredictionDataModule
 from .tmqm_dataset import tmQMDataModule
+from .roberta_dataset import RobertaDataSet
+from .mixture_dataset import ComponentDataModule
