@@ -3,36 +3,39 @@ From: nvcr.io/nvidia/pytorch:{{ NGC_VERSION }}
 
 %arguments
     NGC_VERSION=25.01-py3
-    POETRY_VERSION=1.8.3
     PROJECT_DIR=/mist
 
 %files
     pyproject.toml {{ PROJECT_DIR }}/pyproject.toml
-    poetry.lock {{ PROJECT_DIR }}/poetry.lock
+    uv.lock {{ PROJECT_DIR }}/uv.lock
     README.md {{ PROJECT_DIR }}/README.md
 
 %post
-    apt-get update
-    apt-get install -y python3-venv cargo
+    # Install cargo
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile=minimal
+    source $HOME/.cargo/env
 
-    # Install Poetry
-    export POETRY_HOME=/opt/poetry
-    export POETRY_VERSION={{ POETRY_VERSION }}
-    export POETRY_VIRTUALENVS_IN_PROJECT=1
-    export POETRY_VIRTUALENVS_CREATE=1 \
-    export POETRY_NO_INTERACTION=1
-    export POETRY_CACHE_DIR=/tmp/poetry_cache
-    curl -sSL https://install.python-poetry.org | python3 -
+    # Install UV
+    export UV_UNMANAGED_INSTALL=/opt/uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
 
     # Setup SSH
     export SSH_AUTH_SOCK={{ SSH_AUTH_SOCK }}
     mkdir -p -m 0600 ~/.ssh
-    ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+    ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+    ssh git@github.com || echo "success"
 
-    # Install project
-    $POETRY_HOME/bin/poetry install --compile --no-root --all-extras --directory {{ PROJECT_DIR }}
-    rm -rf $POETRY_CACHE_DIR
+    # Install dependencies
+    $UV_UNMANAGED_INSTALL/uv sync \
+        --directory {{ PROJECT_DIR }} \
+        --frozen \
+        --no-install-project \
+        --link-mode=copy \
+        --compile-bytecode \
+        --no-cache
 
 %runscript
-    source {{ PROJECT_DIR }}/.venv/bin/activate
-    exec $@
+    /opt/uv/uv run --project {{ PROJECT_DIR }} $@
+
+%environment
+    export TRITON_LIBCUDA_PATH=/usr/local/cuda/compat/lib.real/libcuda.so
