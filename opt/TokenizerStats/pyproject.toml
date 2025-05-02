@@ -1,15 +1,18 @@
-[tool.poetry]
-package-mode = false
-authors = ["Alexius Wadell <awadell@umich.edu>"]
+[project]
+name = "TokenizerStats"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    {name = "Alexius Wadell", email = "awadell@umich.edu"},
+]
+requires-python = ">=3.10, <3.14"
+dependencies = [
+    "mendeleev >= 0.16",
+    "selfies == 2.1.2",
+    "jsonnet ~= 0.20.0",
+    "electrolyte-fm",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<3.13"
-mendeleev = "^0.16"
-electrolyte_fm = {path = "../..", extras = ["tokenizers"], develop = true}
-selfies = "^2.1.2"
-jsonnet = "^0.20.0"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv.sources]
+electrolyte-fm = { path = "../../" }
