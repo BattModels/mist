@@ -22,7 +22,6 @@
             num_warmup_steps: 'beta2',
           },
         },
-
       },
     },
     data: {
@@ -31,6 +30,7 @@
         batch_size: 128,
         val_batch_size: 2 * self.batch_size,
         tokenizer: 'smirk',
+        path: '/lustre/fs0/awadell/realspace',
       },
     },
     trainer: {
@@ -38,7 +38,8 @@
       val_check_interval: 100,
       limit_val_batches: 12,
       precision: 'bf16-true',
-      enable_progress_bar: false,
+      enable_progress_bar: 'false',
+      strategy: 'ddp',
     },
   },
   env: {
