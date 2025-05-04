@@ -61,7 +61,7 @@ fi
 {%- endif %}
 
 srun --mpi=pmix \
-/home/abhutani/.local/bin/apptainer exec \
+$(which apptainer) run  \
 --bind /lustre/fs0,$TMPDIR \
 --nv \
 --env-file $ENV_FILE \
@@ -71,4 +71,4 @@ ${PWD}/submit/set_node_rank \
 nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
-    /mist/.venv/bin/python {{ program or "${PWD}/train.py" }} --config ${PL_CONFIG}
+    python {{ program or "${PWD}/train.py" }} --config ${PL_CONFIG}
