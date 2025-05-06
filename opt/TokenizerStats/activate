@@ -6,6 +6,8 @@ DIR="$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 if command -v module > /dev/null; then
     module purge
     module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
+    export SSL_CERT_DIR=/etc/pki/tls/certs
+    export SSL_CERT_FILE=/etc/pki/tls/cert.pem
 fi
 
 # Activate virtual environment
