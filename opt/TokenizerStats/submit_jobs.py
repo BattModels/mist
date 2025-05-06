@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env -S uv run python
 import time
 import logging
 import subprocess
@@ -278,12 +278,17 @@ def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles"):
     )
 
 
-def ngram_loss(dataset, tokenizer, slurm=None, encoding="smiles", ds_name=None):
-    input = STATS_DIR.joinpath(tokenizer, "realspace", "usage.jld2")
+def ngram_loss(dataset, tokenizer, slurm=None, encoding="smiles", ngram="realspace", ds_name=None):
+    input = STATS_DIR.joinpath(tokenizer, ngram, "usage.jld2")
     ds_name = ds_name or str(dataset)
-    output = STATS_DIR.joinpath(tokenizer, ds_name, "model_loss.jld2")
+    outfile = "model_loss.jld2" if ngram == "realspace" else f"model_loss_{ngram}.jld2"
+    output = STATS_DIR.joinpath(tokenizer, ds_name, outfile)
     slurm = slurm or {}
-    slurm.setdefault("job-name", f"loss-{ds_name}")
+    if ngram == "realspace":
+        slurm.setdefault("job-name", f"loss-{ds_name}")
+    else:
+        slurm.setdefault("job-name", f"loss-{ds_name}-{ngram}")
+
     slurm.setdefault("mem-per-cpu", "2G")
     slurm.setdefault("partition", "venkvis-cpu,venkvis-largemem")
     slurm.setdefault("ntasks", 4)
@@ -373,12 +378,12 @@ if __name__ == "__main__":
     for tok in tokenizers:
         tok_name = tok["name_or_path"]
 
-        # # Tabulate OOVs
-        # output = STATS_DIR.joinpath(tok_name, "oov.json")
-        # p = wk.add_process(
-        #     ["submit_oov.sh", "--output", output, tok_name],
-        #     output=output,
-        # )
+        # Tabulate OOVs
+        output = STATS_DIR.joinpath(tok_name, "oov.json")
+        p = wk.add_process(
+            ["submit_oov.sh", "--output", output, tok_name],
+            output=output,
+        )
 
         # Tokenize RealSpace
         wk.add_process(
@@ -401,65 +406,45 @@ if __name__ == "__main__":
         )
 
         # Tokenize MoleculeNet
-        for ds in MOLNET_DATASETS:
+        for ds in [*MOLNET_DATASETS, "tmqm"]:
+            dataset = ds if ds != "tmqm" else args.tmqm
+            ds_name = None if ds != "tmqm" else "tmqm"
             wk.add_process(
                 usage(
-                    ds,
+                    dataset,
                     tok_name,
+                    ds_name=ds_name,
                     encoding=tok["encoding"],
                 )
             )
-            wk.add_process(
-                ngram_loss(
-                    ds,
-                    tok_name,
-                    encoding=tok["encoding"],
+            for ngram in ["realspace", ds]:
+                wk.add_process(
+                    ngram_loss(
+                        dataset,
+                        tok_name,
+                        encoding=tok["encoding"],
+                        ngram=ngram,
+                        ds_name=ds_name,
+                        slurm={"time": "8:0:0" if ds == "tmqm" else "4:0:0"},
+                    )
                 )
-            )
 
             for ref in REF_INFO_LOSS:
+                if ds == "tmqm" and tok["encoding"] == "selfies":
+                    continue # Majority of selfies fail
+
                 if tok["name_or_path"] == "ncfrey/ChemGPT-4.7M":
                     continue  # Token Alignment will fail
 
                 wk.add_process(
-                    ngram_info_loss(ds, tok_name, ref, encoding=tok["encoding"])
+                    ngram_info_loss(
+                        dataset,
+                        tok_name,
+                        ref,
+                        ds_name=ds_name,
+                        encoding=tok["encoding"],
+                    )
                 )
-
-        wk.add_process(
-            usage(
-                args.tmqm,
-                tok_name,
-                ds_name="tmqm",
-                encoding=tok["encoding"],
-                slurm={"ntasks": 4, "time": "8:0:0", "job-name": "usage-tmqm"},
-            )
-        )
-        wk.add_process(
-            ngram_loss(
-                args.tmqm,
-                tok_name,
-                ds_name="tmqm",
-                encoding=tok["encoding"],
-                slurm={"ntasks": 4, "time": "8:0:0", "job-name": "loss-tmqm"},
-            )
-        )
-        for ref in REF_INFO_LOSS:
-            if tok["encoding"] == "selfies":
-                continue
-
-            if tok["name_or_path"] == "ncfrey/ChemGPT-4.7M":
-                continue  # Token Alignment will fail
-
-            wk.add_process(
-                ngram_info_loss(
-                    args.tmqm,
-                    tok_name,
-                    ref,
-                    ds_name="tmqm",
-                    encoding=tok["encoding"],
-                    slurm={"job-name": "dist-tmqm"},
-                )
-            )
 
     wk.show()
     wk.run(dry_run=args.dry_run)
