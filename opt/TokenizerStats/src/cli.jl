@@ -21,6 +21,7 @@ end
 
 @annotate function get_dataset(name_or_path, tokenizer, encoding)
     start = time()
+    tokenizer = isdir(tokenizer) ? realpath(tokenizer) : tokenizer
     if isdir(name_or_path)
         if "tmQM" in splitpath(name_or_path)
             dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
@@ -117,7 +118,7 @@ end
         # Load the tokenizer
         tokenizer = args_cmd["tokenizer"]
         tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        dm, dataset = get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"])
+        dm = () -> first(get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"]))
         model_loss(dm, args_cmd["model"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "merge"

@@ -162,12 +162,17 @@ function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_na
     return 0
 end
 
-function model_loss(datamodule::Py, ref_file::String, output::String)
+function model_loss(constructor, ref_file::String, output::String)
     # Init MPI
     MPI.Init()
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
     size = MPI.Comm_size(comm)
+    @info "Rank $rank of $size is ready" now()
+
+    # Create datamodule
+    datamodule = constructor()
+    MPI.Barrier(comm)
     @info "Rank $rank of $size is starting" now()
 
     # Load Reference Tokenizer / n-gram model

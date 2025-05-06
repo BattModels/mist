@@ -12,7 +12,9 @@ dependencies = [
     "selfies == 2.1.2",
     "jsonnet ~= 0.20.0",
     "electrolyte-fm",
+    "smilespe==0.0.3",
+    "apetokenizer @ git+https://github.com/mikemayuare/apetokenizer.git@8b070d6278503bcf8ad2eedc1756ac34f4bbd981",
 ]
 
 [tool.uv.sources]
-electrolyte-fm = { path = "../../" }
+electrolyte-fm = { path = "../../", editable = true }
