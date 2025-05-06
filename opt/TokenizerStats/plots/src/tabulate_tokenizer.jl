@@ -6,12 +6,24 @@ function usage_stats(stats_dir)
             tokenizer = joinpath(splitpath(file)[1:end-2])
             dataset = splitpath(file)[end-1]
             dataset = dataset == "tmqm" ? "tmQM" : dataset
+            unk_id = data["tokenizer"][:unk_token_id]
+
             for split in ["train", "val", "test"]
                 split ∉ keys(data) && continue
                 Set(keys(data[split])) >= Set(["samples", "out_of_vocab", "fertility"]) || continue
                 samples = data[split]["samples"]
                 fertility = CountMap(data[split]["fertility"], samples)
+                unigram = data[split]["ngrams"]["1"]
+                unk_count = get(unigram, (unk_id,), 0)
+                tokens_seen = sum(values(unigram))
                 nunique = CountMap(data[split]["fertility"], samples)
+
+                entropy = sum(values(unigram)) do c
+                    p = c / tokens_seen
+                    -p * log(p)
+                end
+                normalized_entropy = entropy / log(data["tokenizer"][:vocab_size])
+
                 push!(rows, (;
                     file,
                     tokenizer,
@@ -20,7 +32,11 @@ function usage_stats(stats_dir)
                     samples,
                     out_of_vocab=data[split]["out_of_vocab"],
                     fertility,
+                    entropy,
+                    normalized_entropy,
                     nunique,
+                    unk_count,
+                    tokens_seen,
                     avg_fertility=mean(fertility),
                     std_fertility=std(fertility),
                     max_fertility=maximum(keys(data[split]["fertility"])),
@@ -138,4 +154,17 @@ function find_oov_samples(results::Dict)
     transform!(df, :tokenizer => ByRow(length) => :ntokenizers)
     sort!(df, :ntokenizers; rev=true)
     return df
+end
+
+function fertility_summary(df_tokenizer, df_usage)
+    df_usage = transform(df_usage,
+        :dataset => ByRow(x -> lowercase(x) in ["tmqm", "realspace"] ? x : "MoleculeNet") => :dataset
+    )
+    df_usage = combine(groupby(df_usage, [:tokenizer, :dataset, :encoding])) do gdf
+        return (;
+            loss_per_token_moments=reduce(merge, gdf.loss_per_token_moments),
+            loss_moments=reduce(merge, gdf.loss_per_token_moments),
+        )
+    end
+    return df_usage
 end

@@ -19,6 +19,7 @@ OnlineStats = "a15396b6-48d5-5d58-9928-6d29437db91e"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+RegressionTables = "d519eb52-b820-54da-95a6-98e1306fdade"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 TokenizerStats = "ca7eb560-02c0-4cfb-b1b2-ae9b1b03b10c"
 
