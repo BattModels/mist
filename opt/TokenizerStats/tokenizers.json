@@ -240,7 +240,7 @@
   {
     "name": "ChemGPT",
     "name_or_path": "ncfrey/ChemGPT-4.7M",
-    "encoding": "smiles",
+    "encoding": "selfies",
     "tokenizer_class": "bpe",
     "domain": "chemistry",
     "source": "huggingface",
