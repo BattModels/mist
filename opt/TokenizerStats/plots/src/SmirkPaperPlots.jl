@@ -75,3 +75,4 @@ function savefig(name::String, f::Figure; dpi=300)
     return nothing
 end
 
+end

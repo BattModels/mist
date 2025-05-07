@@ -5,9 +5,10 @@ using SmirkPaperPlots
 using TokenizerStats
 using SmirkPaperPlots: savefig
 using StatsBase
+using JLD2: JLD2
 using Format
 
-stats_dir=joinpath(pkgdir(TokenizerStats), "stats")
+stats_dir = joinpath(pkgdir(TokenizerStats), "stats")
 
 # Tokenizer Statistics
 loss_stats = SmirkPaperPlots.model_loss_stats(stats_dir)
@@ -21,17 +22,17 @@ function fertility_summary(token_usage)
         :dataset => ByRow(x -> x ∉ ["tmQM", "realspace"] ? "MoleculeNet" : x) => :dataset,
         :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
     )
-    combine(groupby(df_usage_summary, [:tokenizer_class, :dataset])) do gdf
+    combine(groupby(token_usage, [:tokenizer_class, :dataset])) do gdf
         dataset = first(gdf.dataset)
         fertility = reduce(merge, gdf.fertility)
         avg_fertility = mean(fertility)
         std_fertility = std(fertility)
         return (;
-            dataset = lowercase(dataset) in ("tmqm", "realspace") ? dataset : "MoleculeNet",
+            dataset=lowercase(dataset) in ("tmqm", "realspace") ? dataset : "MoleculeNet",
             fertility,
             avg_fertility,
             std_fertility,
-            fmt_fertility = format("{}\\pm{}", round(avg_fertility; sigdigits=3), round(std_fertility; sigdigits=3)),
+            fmt_fertility=format("{}\\pm{}", round(avg_fertility; sigdigits=3), round(std_fertility; sigdigits=3)),
         )
     end
 end
@@ -50,7 +51,7 @@ function unk_freq(token_usage)
         unk_freq = unk_count / tokens_seen
         return (;
             unk_freq,
-            fmt_unk_freq = format("{:.2f}%", round(100*unk_freq; sigdigits=3)),
+            fmt_unk_freq=format("{:.2f}%", round(100 * unk_freq; sigdigits=3)),
         )
     end
 end
@@ -63,8 +64,9 @@ function norm_entropy_summary(token_usage)
     )
     # Combine splits
     df = combine(groupby(token_usage, :tokenizer)) do gdf
-        return (; normalized_entropy = mean(gdf.normalized_entropy, fweights(gdf.tokens_seen)))
+        return (; normalized_entropy=mean(gdf.normalized_entropy, fweights(gdf.tokens_seen)))
     end
+    tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
     df = transform(df,
         :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
         :tokenizer => ByRow(x -> tok_info[x]["domain"]) => :domain,
@@ -73,10 +75,10 @@ function norm_entropy_summary(token_usage)
     df.tokenizer_class .= replace.(df.tokenizer_class, "smirk-gpe" => "smirk")
     # Combine over tokenizer classes
     df = combine(groupby(df, [:tokenizer_class, :domain])) do gdf
-        return(;
-            norm_entropy_avg = mean(gdf.normalized_entropy),
-            norm_entropy_std = std(gdf.normalized_entropy),
-            norm_entropy_n = nrow(gdf),
+        return (;
+            norm_entropy_avg=mean(gdf.normalized_entropy),
+            norm_entropy_std=std(gdf.normalized_entropy),
+            norm_entropy_n=nrow(gdf),
         )
     end
     sort!(df, [:norm_entropy_avg, :norm_entropy_std, :norm_entropy_n])
@@ -87,6 +89,11 @@ norm_entropy_summary(token_usage) |> display
 
 # Transformer Models
 dfp, dff, dft = SmirkPaperPlots.transformer_models(stats_dir)
+
+# Fixed Effects models for results
+fe_models = SmirkPaperPlots.ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
+JLD2.jldsave("fe_models.jld2"; fe_models)
+
 
 # Tokenizer Summary
 df_tok = SmirkPaperPlots.tokenizer_summary(stats_dir; k=5)

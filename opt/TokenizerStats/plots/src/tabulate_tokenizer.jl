@@ -99,11 +99,12 @@ end
 
 function model_loss_stats(stats_dir)
     rows = []
-    for file in find(stats_dir, r"/model_loss\.jld2$")
+    for file in find(stats_dir, r"/model_loss.*\.jld2$")
         jldopen(file) do data
             tokenizer = data["ref_tokenizer"][:name]
             dataset = basename(dirname(file))
             dataset = dataset == "tmqm" ? "tmQM" : dataset
+            finetuned = occursin(dataset, basename(file))
             for split in ["train", "val", "test"]
                 split ∉ keys(data) && continue
                 split_data = data[split]
@@ -114,6 +115,7 @@ function model_loss_stats(stats_dir)
                     push!(rows, (;
                         tokenizer,
                         dataset,
+                        finetuned,
                         split,
                         ngram,
                         vocab_size=data["tokenizer"][:vocab_size],
