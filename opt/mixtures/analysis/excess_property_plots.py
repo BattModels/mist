@@ -9,44 +9,24 @@ import matplotlib.pyplot as plt
 from electrolyte_fm.models.model_utils import DeepSpeedMixin
 from lipari_cm import lipari10_cmap
 from matplotlib.colors import Normalize
-from itertools import product
 import glob
 from re import sub
+
+excess_data_paths = glob.glob(
+    "/home/abhutani/electrolyte-fm/diffmix_data/published_excess_molar_**.csv"
+)
+solvents = pd.concat([pd.read_csv(fp) for fp in excess_data_paths]).sub2_name.unique()
+symbols = dict(
+    zip(
+        [s for s in solvents if not s.endswith("ate") and not s.endswith("ol")],
+        Line2D.filled_markers,
+    )
+)
 
 
 def camel_case(s):
     s = sub(r"(_|-)+", " ", s).title().replace(" ", "")
     return "".join([s[0].lower(), s[1:]])
-
-
-plt.rcParams["figure.constrained_layout.use"] = True
-plt.rcParams["xtick.labelsize"] = 5
-plt.rcParams["ytick.labelsize"] = 5
-plt.rcParams["lines.markersize"] = 2
-plt.rcParams["lines.linewidth"] = 1
-plt.rcParams["font.size"] = 6
-plt.rcParams["axes.titlesize"] = 5
-plt.rcParams["axes.labelsize"] = 5
-plt.rcParams["xtick.labelsize"] = 5
-plt.rcParams["ytick.labelsize"] = 5
-plt.rcParams["legend.fontsize"] = 6
-plt.rcParams["font.family"] = "Serif"
-plt.rcParams["grid.linewidth"] = 0.1
-plt.rcParams["figure.dpi"] = 500
-plt.rcParams["savefig.dpi"] = 500
-plt.rcParams["mathtext.fontset"] = "stix"
-
-excess_data_paths = glob.glob(
-    "/home/abhutani/electrolyte-fm/diffmix_data/published_excess_molar_**.csv"
-)
-solvents = pd.concat([pd.read_csv(fp) for fp in excess_data_paths])
-solvents = solvents.sub2_name.unique()
-# random.shuffle(solvents)
-solvents = [s for s in solvents if not s.endswith("ate") and not s.endswith("ol")]
-# np.append(solvents.sub1_name.unique(), solvents.sub2_name.unique())
-symbols = list(Line2D.filled_markers)
-symbols = list(product(Line2D.fillStyles, Line2D.filled_markers))
-symbols = dict(zip(solvents, Line2D.filled_markers))
 
 
 def interpolate_color(value, vmin, vmax):
@@ -167,14 +147,9 @@ def plot(
             ["sub1_name", "sub2_name", "temperature"]
         ).groups.items():
             sub1_name, sub2_name, temperature = group
-            # if line_num < 5 and temperature in t2:
-            #     continue
             t2.add(temperature)
 
-            _data_df = data_df[
-                (data_df.sub2_name == sub2_name)
-                # & (data_df.temperature == temperature)
-            ]
+            _data_df = data_df[(data_df.sub2_name == sub2_name)]
             if sub2_name not in symbols:
                 continue
 
@@ -256,18 +231,18 @@ if __name__ == "__main__":
     }
 
     for k, v in properties.items():
-        # generate_data(
-        #     source_dir=f"/home/abhutani/electrolyte-fm/diffmix_data/published_excess_molar_{k}",
-        #     save_dir=v["data_dir"],
-        #     target_col=v["target_col"],
-        # )
-        # pretrained_ckpt = (
-        #     f"/home/abhutani/electrolyte-fm/mist/{v['run_id']}/checkpoints/last.ckpt"
-        # )
-        # run_inference(
-        #     pretrained_ckpt=pretrained_ckpt,
-        #     data_dir=v['data_dir'],
-        #     val_batch_size=2,
-        #     target_col=v['target_col']
-        # )
+        generate_data(
+            source_dir=f"/home/abhutani/electrolyte-fm/diffmix_data/published_excess_molar_{k}",
+            save_dir=v["data_dir"],
+            target_col=v["target_col"],
+        )
+        pretrained_ckpt = (
+            f"/home/abhutani/electrolyte-fm/mist/{v['run_id']}/checkpoints/last.ckpt"
+        )
+        run_inference(
+            pretrained_ckpt=pretrained_ckpt,
+            data_dir=v["data_dir"],
+            val_batch_size=2,
+            target_col=v["target_col"],
+        )
         plot(properties)
