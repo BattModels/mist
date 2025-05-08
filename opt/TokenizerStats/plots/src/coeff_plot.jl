@@ -19,6 +19,7 @@ Base.:-(::Missing, ::CoeffInternal) = missing
 Base.:/(::Missing, ::CoeffInternal) = missing
 Base.:*(x::CoeffInternal, y::Real) = CoeffInternal(y * mean(x), y .* x.credible_interval)
 Base.:*(x::Real, y::CoeffInternal) = y * x
+Base.:/(x::CoeffInternal, y::Real) = x * inv(y)
 
 function Base.:/(x::CoeffInternal, y::CoeffInternal)
     μ = mean(x) / mean(y)
