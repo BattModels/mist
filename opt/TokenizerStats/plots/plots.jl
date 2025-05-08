@@ -14,6 +14,7 @@ stats_dir = joinpath(pkgdir(TokenizerStats), "stats")
 loss_stats = SmirkPaperPlots.model_loss_stats(stats_dir)
 info_loss = SmirkPaperPlots.info_loss_stats(stats_dir)
 token_usage = SmirkPaperPlots.usage_stats(stats_dir)
+tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
 
 # Tokenizer Fertility by Dataset
 function fertility_summary(token_usage)
@@ -90,10 +91,14 @@ norm_entropy_summary(token_usage) |> display
 # Transformer Models
 dfp, dff, dft = SmirkPaperPlots.transformer_models(stats_dir)
 
-# Fixed Effects models for results
-fe_models = SmirkPaperPlots.ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
-JLD2.jldsave("fe_models.jld2"; fe_models)
+# NGrams Stats vs. FM Performance
+df_prog = SmirkPaperPlots.df_ngram_stats_v_fm_perf(tok_info, loss_stats, info_loss, df_f)
+CSV.write(joinpath("stats", "ngram_stats_vs_fm.csv"), df_prog)
 
+# Predictive and Fixed-Effect Models
+fe_models, df_predict = SmirkPaperPlots.ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
+prog_models = SmirkPaperPlots.ngram_prognostic_fits(df_prog)
+JLD2.jldsave(joinpath("stats", "quality_models.jld2"); fe_models, df_predict, prog_models)
 
 # Tokenizer Summary
 df_tok = SmirkPaperPlots.tokenizer_summary(stats_dir; k=5)

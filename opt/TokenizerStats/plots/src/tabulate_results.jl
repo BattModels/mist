@@ -282,6 +282,7 @@ function ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
     # Pretraining models
     models = []
     df_ng.val_loss = mean.(df_ng.loss_per_token_moments)
+    df_ng.ng_loss_std = std.(df_ng.loss_per_token_moments)
     df_ng.wts = inv.(var.(df_ng.loss_per_token_moments))
     df_ng_pt = subset(df_ng, :dataset => ByRow(==("realspace")))
     model = lm(@formula(val_loss ~ 1 + tokenizer_class + encoding), df_ng_pt;
@@ -289,25 +290,24 @@ function ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
         wts=aweights(df_ng_pt.wts),
     )
     df_ng_pt.ng_est_loss = predict(model)
+
+    # Dataframe for predictions
     df_predict = leftjoin(
-        select(df_ng_pt, :tokenizer, :val_loss => :ng_loss, :ng_est_loss),
-        select(df_p, :tokenizer, :val_loss => :fm_loss);
-        on=:tokenizer,
+        select(df_ng_pt, :tokenizer, :val_loss => :ng_loss_avg, :ng_loss_std, :encoding),
+        select(df_p, :tokenizer, :val_loss => :fm_loss_avg, :encoding);
+        on=[:tokenizer, :encoding],
     )
-    dropmissing!(df_predict)
-    rho = corspearman(df_predict.ng_loss, df_predict.fm_loss)
-    rho_est = corspearman(df_predict.ng_est_loss, df_predict.fm_loss)
+    df_predict.fm_loss_std .= missing
+    df_predict.finetuned .= false
+    df_predict.dataset .= "realspace"
 
-
-    push!(models, (; model, dataset="REALSpace", ngram=true, metric="CE", rho, rho_est))
+    push!(models, (; model, dataset="realspace", ngram=true, metric="CE"))
     model = lm(@formula(val_loss ~ 1 + tokenizer_class + encoding), df_p; contrasts)
-    push!(models, (; model, dataset="REALSpace", ngram=false, metric="CE"))
+    push!(models, (; model, dataset="realspace", ngram=false, metric="CE"))
 
-    subset!(df_f, :dataset => ByRow(!=("freesolv"))) # fit issue
     for dataset in unique(df_f.dataset)
         df_f_fm = subset(df_f, :dataset => ByRow(==(dataset)))
         task = first(df_f_fm.task)
-        link = task == "regression" ? LogLink() : LogitLink()
 
         # Foundation Model
         df_f_fm.val_loss = df_f_fm.mean
@@ -319,8 +319,8 @@ function ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
         )
         push!(models, (; model, dataset, ngram=false, metric=first(df_f_fm.metric)))
 
+        # NGram
         for finetuned in [true, false]
-            # NGram
             df_f_ng = subset(df_ng, :dataset => ByRow(==(dataset)), :finetuned => ByRow(==(finetuned)))
             nrow(df_f_ng) == 0 && continue
             df_f_ng.val_loss = mean.(df_f_ng.loss_per_token_moments)
@@ -330,26 +330,22 @@ function ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
                 contrasts,
                 wts=aweights(df_f_ng.wts),
             )
+            push!(models, (; model, dataset, ngram=true, finetuned, metric="CE"))
 
-            # Spearman's for n-gram fit vs. fm results
-            df_f_ng.ng_est_loss = predict(model)
-            df_predict = leftjoin(
-                select(df_f_ng, :tokenizer, :val_loss => :ng_loss, :ng_est_loss),
-                select(df_f_fm, :tokenizer, :val_loss => :fm_loss);
-                on=:tokenizer,
+            ds_predict = leftjoin(
+                select(df_f_ng, :tokenizer, :val_loss => :ng_loss_avg, :ng_loss_std, :encoding),
+                select(df_f_fm, :tokenizer, :val_loss => :fm_loss_avg, :std => :fm_loss_std, :encoding);
+                on=[:tokenizer, :encoding],
             )
-            dropmissing!(df_predict)
-            fm_loss = first(df_f_fm.metric) in ["auroc"] ? -df_predict.fm_loss : df_predict.fm_loss
-            rho = corspearman(df_predict.ng_loss, fm_loss)
-            rho_est = corspearman(df_predict.ng_est_loss, fm_loss)
-
-            push!(models, (; model, dataset, ngram=true, finetuned, metric="CE", rho, rho_est))
+            ds_predict.dataset .= dataset
+            ds_predict.finetuned .= finetuned
+            df_predict = vcat(df_predict, ds_predict)
         end
+
     end
 
     models = map(models) do m
-        m = haskey(m, :rho) ? m : (; m..., rho=missing, rho_est=missing)
-        m = haskey(m, :finetuned) ? m : (; m..., finetuned=missing)
+        m = haskey(m, :finetuned) ? m : (; m..., finetuned=false)
     end
 
     df_model = DataFrame(models)
@@ -357,92 +353,8 @@ function ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
         :model => ByRow(m -> cor(response(m), predict(m))) => :r2,
         :model => ByRow(m -> corspearman(response(m), predict(m))) => :spearman,
         :model => ByRow(nobs_nonwts) => :nobs,
-        :model => ByRow(confint) => :confint,
-        :model => ByRow(coef) => :coef,
     )
-    return df_model
-
-    tbl_datasets = ["REALSpace", "tmQM", "qm9", "bbbp", "hiv"]
-    models_tbl = subset(models, :dataset => ByRow(in(tbl_datasets)))
-    models_tbl.dataset .= categorical(models_tbl.dataset, levels=tbl_datasets, ordered=true)
-    sort!(models_tbl, [:dataset, :ngram])
-    transform!(models_tbl,
-        :metric => ByRow(m -> replace(m,
-            "auroc" => L"AUROC ($\uparrow$)",
-            "mae" => L"MAE ($\downarrow$)",
-            "CE" => L"CE ($\downarrow$)",
-        )) => :metric
-    )
-
-    return regtable(
-        models_tbl.model...;
-        groups=string.(models_tbl.dataset),
-        stat_below=false,
-        print_depvar=false,
-        number_regressions=false,
-        align=:r,
-        regression_statistics=[
-            nobs_nonwts => "N",
-            (model -> corspearman(response(model), predict(model))) => L"Spearman's $\rho$",
-            (model -> cor(response(model), predict(model))) => L"R^2",],
-        extralines=[
-            ["N-Gram:", map(x -> x ? "Yes" : "No", models_tbl.ngram)...],
-            ["Metric:", models_tbl.metric...],
-            [L"Spearman's $\rho$, N-Gram vs. FM:", models_tbl.rho...],
-        ],
-        labels=Dict(
-            "tokenizer_class: spe" => "SPE/APE Tokenizers",
-            "tokenizer_class: bpe" => "BPE Tokenizers",
-            "tokenizer_class: smirk" => "Smirk",
-            "tokenizer_class: smirk-gpe" => "Smirk-GPE",
-            "tokenizer_class: character" => "Character-level",
-            "tokenizer_class: unigram" => "Unigram Tokenizers",
-            "encoding: selfies" => "SELFIES",
-            "encoding: smiles-canonical" => "Canonical SMILES",
-        ),
-        # render=LatexTable(),
-    )
-
-
-
-    # Test impact of encoding on pretraining
-    null = lm(@formula(val_loss ~ 1), df)
-    @show tok = lm(
-        @formula(val_loss ~ 1 + tokenizer_class + encoding),
-        df; contrasts
-    )
-    @show tok_ngram = lm(
-        @formula(ngram_token_loss ~ 1 + tokenizer_class + encoding),
-        df; contrasts
-    )
-    LogLikelihoodRatioTest(tok, null) |> display
-    LogLikelihoodRatioTest(tok_ngram, null) |> display
-
-    # Test impact of encoding on pretraining
-    tokenizers = tokenizers_info(stats_dir)
-    best_models.tokenizer_class = map(tok -> tokenizers[tok]["tokenizer_class"], best_models.tokenizer)
-    best_models.encoding = map(tok -> tokenizers[tok]["encoding"], best_models.tokenizer)
-    replace!(best_models.encoding,
-        "smiles" => "SMILES",
-        "smiles-canonical" => "Canonical SMILES",
-        "selfies" => "SELFIES"
-    )
-
-    null = lm(@formula(ngram_token_loss ~ 1), best_models)
-    @show tok = lm(
-        @formula(ngram_token_loss ~ 1 + tokenizer_class + encoding),
-        best_models; contrasts
-    )
-    LogLikelihoodRatioTest(tok, null) |> display
-
-
-    # Predict pretraining loss using n-gram model
-    null = glm(@formula(val_loss ~ 1), df, Normal(), LogLink())
-    @show ngram = glm(@formula(val_loss ~ 1 + log(ngram_token_loss)), df, Normal(), LogLink(); contrasts)
-    LogLikelihoodRatioTest(ngram, null) |> display
-    r2(ngram.model, :devianceratio) |> display
-
-    return df
+    return df_model, df_predict
 end
 
 function tmqm_finetune(stats_dir, dff, dft)

@@ -29,6 +29,7 @@ using TokenizerStats: load_tokenizer, find
 include("tabulate_results.jl")
 include("tabulate_tokenizer.jl")
 include("tokenizer_summary.jl")
+include("prognostics.jl")
 
 # Helper for plotting
 include("plot_utils.jl")

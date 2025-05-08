@@ -102,9 +102,10 @@ function model_loss_stats(stats_dir)
     for file in find(stats_dir, r"/model_loss.*\.jld2$")
         jldopen(file) do data
             tokenizer = data["ref_tokenizer"][:name]
+            tokenizer = dirname(tokenizer) == "." ? basename(tokenizer) : tokenizer
             dataset = basename(dirname(file))
-            dataset = dataset == "tmqm" ? "tmQM" : dataset
             finetuned = occursin(dataset, basename(file))
+            dataset = lowercase(dataset) == "tmqm" ? "tmQM" : dataset
             for split in ["train", "val", "test"]
                 split ∉ keys(data) && continue
                 split_data = data[split]

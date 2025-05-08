@@ -221,13 +221,8 @@ function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_cod
 end
 
 
-function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; reference="character")
-    tokenizers = tokenizers_info(stats_dir)
+function figure_kl_v_info_loss(tok_info, model_loss, info_loss, df_tf; reference="character")
 
-    model_loss = subset(model_loss,
-        :dataset => ByRow(∉(["realspace"])),
-        :split => ByRow(==("val")),
-    )
     model_loss.dataset = map(d -> d == "tmQM" ? d : "MoleculeNet", model_loss.dataset)
     model_loss = combine(groupby(model_loss, [:tokenizer, :split, :ngram, :dataset])) do gdf
         loss_per_token_moments = reduce(merge, gdf.loss_per_token_moments)
