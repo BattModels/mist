@@ -105,7 +105,7 @@ function collate_atomic_oov(key::Regex, results::Dict)
     return (covered / nobs), (failed_encode / nobs)
 end
 
-function figure_oov_rate(stats_dir)
+function figure_oov_rate(stats_dir; include_transcode_errors=true)
     datasets = OrderedDict(
         "Elements" => "elements",
         "Bonds" => "bonds",
@@ -156,10 +156,17 @@ function figure_oov_rate(stats_dir)
         tok_info["oov_rate"] = Dict{String,Float64}()
         for (gdx, group_key) in enumerate(collect(values(datasets)))
             group_oov_rate, group_encode_rate = collate_atomic_oov(group_key, oov_stats)
-            append!(tok_id, (idx, idx))
-            append!(oov_rate, (group_oov_rate, group_encode_rate))
-            append!(ds_grp, (gdx, gdx))
-            append!(enc_grp, (0, 1))
+            if include_transcode_errors
+                append!(tok_id, (idx, idx))
+                append!(oov_rate, (group_oov_rate, group_encode_rate))
+                append!(ds_grp, (gdx, gdx))
+                append!(enc_grp, (0, 1))
+            else
+                push!(tok_id, idx)
+                push!(oov_rate, group_oov_rate)
+                push!(ds_grp, gdx)
+                push!(enc_grp, 0)
+            end
         end
     end
 

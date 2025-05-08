@@ -2,6 +2,7 @@ module SmirkPaperPlots
 
 using Makie
 using OnlineStats
+using StatsBase
 using OnlineStats: Moments
 using GLM
 using DataFrames
@@ -9,9 +10,8 @@ using CairoMakie: CairoMakie
 using Colors: distinguishable_colors, weighted_color_mean, RGBA
 using CategoricalArrays: categorical
 using Format: format
-using PythonCall: Py, pyconvert
-using StatsBase: StatsBase, mean, stderr, mean_and_std, quantile, AbstractWeights, Weights, aweights, corspearman, cor
 using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
+using PythonCall: Py, pyconvert
 using JLD2: jldopen
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode

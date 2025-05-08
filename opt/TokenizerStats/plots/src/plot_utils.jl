@@ -127,8 +127,8 @@ function collate_token_usage(ids::AbstractVector{<:Integer}, counts::Dict{<:Abst
     counts = Dict((parse(Int, k) => v for (k, v) in pairs(counts)))
     return collate_token_usage(ids, counts; smoothing)
 end
-collate_token_usage(counts::Dict, vocab_size::Integer; kwargs...) = collate_token_usage(0:vocab_size-1, counts; kwargs...)
-function collate_token_usage(ids::AbstractVector{T}, counts::Dict{T,<:Integer}; smoothing) where {T}
+collate_token_usage(counts::Dict, vocab_size::Integer; kwargs...) = collate_token_usage(collect(0:vocab_size-1), counts; kwargs...)
+function collate_token_usage(ids::AbstractVector{T}, counts::Dict; smoothing) where {T}
     usage = Vector{Int}(undef, length(ids))
     for (idx, token_id) in enumerate(ids)
         usage[idx] = get(counts, token_id, 0) + smoothing

@@ -7,6 +7,7 @@ function usage_stats(stats_dir)
             dataset = splitpath(file)[end-1]
             dataset = dataset == "tmqm" ? "tmQM" : dataset
             unk_id = data["tokenizer"][:unk_token_id]
+            vocab_size = data["tokenizer"][:vocab_size]
 
             for split in ["train", "val", "test"]
                 split ∉ keys(data) && continue
@@ -18,11 +19,21 @@ function usage_stats(stats_dir)
                 tokens_seen = sum(values(unigram))
                 nunique = CountMap(data[split]["fertility"], samples)
 
-                entropy = sum(values(unigram)) do c
-                    p = c / tokens_seen
+                token_prob = values(unigram) ./ tokens_seen
+                entropy = sum(token_prob) do p
                     -p * log(p)
                 end
                 normalized_entropy = entropy / log(data["tokenizer"][:vocab_size])
+
+                divergence = 0.5 * sum(token_prob) do p
+                    abs(p - (1 / vocab_size))
+                end
+
+                c_all = collate_token_usage(unigram, vocab_size; smoothing=0)
+                f95_all = tokens_seen .* percentile(c_all ./ tokens_seen, 5)
+                p_smooth = @. (c_all + 1) / (tokens_seen + length(c_all))
+                f95_smooth = tokens_seen .* percentile(p_smooth, 5)
+                f95 = tokens_seen .* percentile(token_prob, 5)
 
                 push!(rows, (;
                     file,
@@ -33,15 +44,14 @@ function usage_stats(stats_dir)
                     out_of_vocab=data[split]["out_of_vocab"],
                     fertility,
                     entropy,
+                    divergence,
+                    f95,
+                    f95_all,
+                    f95_smooth,
                     normalized_entropy,
                     nunique,
                     unk_count,
                     tokens_seen,
-                    avg_fertility=mean(fertility),
-                    std_fertility=std(fertility),
-                    max_fertility=maximum(keys(data[split]["fertility"])),
-                    avg_nunique=mean(nunique),
-                    std_nunique=std(nunique),
                 ))
             end
         end

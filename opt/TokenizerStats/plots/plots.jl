@@ -16,6 +16,30 @@ info_loss = SmirkPaperPlots.info_loss_stats(stats_dir)
 token_usage = SmirkPaperPlots.usage_stats(stats_dir)
 tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
 
+function intrinsic_metrics(token_usage)
+    tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
+    token_usage = transform(token_usage,
+        [:unk_count, :tokens_seen] => ByRow(/) => :oov_rate,
+    )
+    wmean = (x, s) -> mean(x, fweights(s))
+    df = combine(groupby(token_usage, [:tokenizer, :dataset]),
+        :fertility => (x -> mean(reduce(merge, x))) => :fertility,
+        [:divergence, :samples] => wmean => :divergence,
+        [:f95_all, :samples] => wmean => :f95,
+        [:oov_rate, :tokens_seen] => wmean => :oov_rate,
+        [:normalized_entropy, :samples] => wmean => :normalized_entropy,
+        [:entropy, :samples] => wmean => :entropy,
+    )
+    transform!(df,
+        :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
+        :tokenizer => ByRow(x -> tok_info[x]["domain"]) => :tokenizer_domain,
+        :tokenizer => ByRow(x -> tok_info[x]["encoding"]) => :encoding,
+    )
+    return df
+end
+df_intrinsic = intrinsic_metrics(token_usage)
+CSV.write(joinpath("stats", "intrinsic_metrics.csv"), df_intrinsic)
+
 # Tokenizer Fertility by Dataset
 function fertility_summary(token_usage)
     tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
@@ -90,15 +114,17 @@ norm_entropy_summary(token_usage) |> display
 
 # Transformer Models
 dfp, dff, dft = SmirkPaperPlots.transformer_models(stats_dir)
+df_ng, df_p, df_f = SmirkPaperPlots.df_ngrams_vs_transformer(stats_dir, loss_stats, dfp, dff, dft)
 
 # NGrams Stats vs. FM Performance
 df_prog = SmirkPaperPlots.df_ngram_stats_v_fm_perf(tok_info, loss_stats, info_loss, df_f)
 CSV.write(joinpath("stats", "ngram_stats_vs_fm.csv"), df_prog)
 
 # Predictive and Fixed-Effect Models
-fe_models, df_predict = SmirkPaperPlots.ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
+fe_models, df_predict = SmirkPaperPlots.ngram_vs_transformer_fits(df_ng, df_p, df_f)
 prog_models = SmirkPaperPlots.ngram_prognostic_fits(df_prog)
 JLD2.jldsave(joinpath("stats", "quality_models.jld2"); fe_models, df_predict, prog_models)
+CSV.write(joinpath("stats", "ngram_vs_transformer.csv"), df_predict)
 
 # Tokenizer Summary
 df_tok = SmirkPaperPlots.tokenizer_summary(stats_dir; k=5)
@@ -110,12 +136,12 @@ with_theme(SmirkPaperPlots.theme()) do
     # Token Usage
     savefig("token_usage", SmirkPaperPlots.figure_token_usage(stats_dir))
     savefig("oov_rate", SmirkPaperPlots.figure_oov_rate(stats_dir))
+    savefig("oov_rate_no_transcode",
+        SmirkPaperPlots.figure_oov_rate(stats_dir; include_transcode_errors=false)
+    )
     savefig("jaccard", SmirkPaperPlots.figure_jaccard(stats_dir))
 
     # Transformers vs. N-Grams
-    df = SmirkPaperPlots.ngram_vs_transformer_fits(stats_dir, loss_stats, dfp)
-    savefig("ngram_vs_transformer", SmirkPaperPlots.figure_ngram_vs_transformer(stats_dir, df))
-
     savefig("prognostic", SmirkPaperPlots.figure_fe_models(fe_models, prog_models))
     savefig("prognostic_abs", SmirkPaperPlots.figure_fe_models(fe_models, prog_models; scale=:absolute))
     savefig("prognostic_std", SmirkPaperPlots.figure_fe_models(fe_models, prog_models; scale=:std))
@@ -123,11 +149,11 @@ with_theme(SmirkPaperPlots.theme()) do
     # Transformer Model Summary
     f, df = SmirkPaperPlots.figure_tf_finetune(stats_dir, dff, dft)
     savefig("tf_finetune", f)
-    CSV.write(joinpath("stats/tf_model_summary.csv"), df)
+    CSV.write(joinpath("stats", "tf_model_summary.csv"), df)
 
     # N-Gram Analysis
     savefig("ngram_fits", SmirkPaperPlots.figure_ngram_fits(loss_stats, stats_dir))
-    savefig("kl_v_info_loss", SmirkPaperPlots.figure_kl_v_info_loss(stats_dir, loss_stats, info_loss, df))
+    savefig("kl_v_info_loss", SmirkPaperPlots.figure_kl_v_info_loss(tok_info, loss_stats, info_loss, df_f))
 
     # Example n-gram predictions
     compunds = [
