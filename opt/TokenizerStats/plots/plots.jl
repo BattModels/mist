@@ -140,6 +140,7 @@ with_theme(SmirkPaperPlots.theme()) do
         SmirkPaperPlots.figure_oov_rate(stats_dir; include_transcode_errors=false)
     )
     savefig("jaccard", SmirkPaperPlots.figure_jaccard(stats_dir))
+    savefig("intrinsic_metrics", SmirkPaperPlots.figure_intrinsic(df_intrinsic))
 
     # Transformers vs. N-Grams
     savefig("prognostic", SmirkPaperPlots.figure_fe_models(fe_models, prog_models))

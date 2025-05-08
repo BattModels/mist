@@ -41,6 +41,7 @@ include("figures/ngram.jl")
 include("figures/transfromer.jl")
 include("figures/jaccard.jl")
 include("figures/fe_models.jl")
+include("figures/intrinsic.jl")
 
 
 const CLASS_MARKER = Dict(

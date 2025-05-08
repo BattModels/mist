@@ -22,6 +22,8 @@ function theme()
         Lines=(;
             cycle=Cycle([:color, :linestyle], covary=true),
         ),
+        markersize=4pt,
+        linewidth=1pt,
         Axis=(;
             spinewidth=0.5,
             ylabelpadding=3pt,
@@ -32,7 +34,7 @@ function theme()
             xtickwidth=0.5,
             xticksize=3,
             xminortickwidth=0.5,
-            xminorticksize=2,
+            xminorticksize=1.5,
             xgridwidth=0.5,
             ygridwidth=0.5,
             xminorgridwidth=0.5,
@@ -69,7 +71,7 @@ function theme()
             colormap=[:red, :blue],
             whiskerwidth=8pt,
             noeffect_linewidth=1pt,
-        )
+        ),
     )
 end
 
@@ -82,6 +84,11 @@ Asinh() = Asinh(1)
 Makie.inverse_transform(m::Asinh) = x -> m.a * sinh(x / m.a)
 Makie.defined_interval(::Asinh) = Makie.defined_interval(identity)
 Makie.defaultlimits(m::Asinh) = (0.0, 10 * m.a)
+
+my_sqrt(x) = sqrt(x)
+Makie.inverse_transform(::typeof(my_sqrt)) = x -> x^2
+Makie.defaultlimits(::typeof(my_sqrt)) = (0.0, 10.0)
+Makie.defined_interval(::typeof(my_sqrt)) = Makie.defined_interval(sqrt)
 
 Makie.inverse_transform(::typeof(asinh)) = sinh
 Makie.defined_interval(::typeof(asinh)) = Makie.defined_interval(identity)
