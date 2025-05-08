@@ -354,7 +354,177 @@ function ngram_vs_transformer_fits(stats_dir, loss_stats, dfp, dff, dft)
         :model => ByRow(m -> corspearman(response(m), predict(m))) => :spearman,
         :model => ByRow(nobs_nonwts) => :nobs,
     )
+<<<<<<< Updated upstream
     return df_model, df_predict
+||||||| Stash base
+    return df_model
+
+    tbl_datasets = ["REALSpace", "tmQM", "qm9", "bbbp", "hiv"]
+    models_tbl = subset(models, :dataset => ByRow(in(tbl_datasets)))
+    models_tbl.dataset .= categorical(models_tbl.dataset, levels=tbl_datasets, ordered=true)
+    sort!(models_tbl, [:dataset, :ngram])
+    transform!(models_tbl,
+        :metric => ByRow(m -> replace(m,
+            "auroc" => L"AUROC ($\uparrow$)",
+            "mae" => L"MAE ($\downarrow$)",
+            "CE" => L"CE ($\downarrow$)",
+        )) => :metric
+    )
+
+    return regtable(
+        models_tbl.model...;
+        groups=string.(models_tbl.dataset),
+        stat_below=false,
+        print_depvar=false,
+        number_regressions=false,
+        align=:r,
+        regression_statistics=[
+            nobs_nonwts => "N",
+            (model -> corspearman(response(model), predict(model))) => L"Spearman's $\rho$",
+            (model -> cor(response(model), predict(model))) => L"R^2",],
+        extralines=[
+            ["N-Gram:", map(x -> x ? "Yes" : "No", models_tbl.ngram)...],
+            ["Metric:", models_tbl.metric...],
+            [L"Spearman's $\rho$, N-Gram vs. FM:", models_tbl.rho...],
+        ],
+        labels=Dict(
+            "tokenizer_class: spe" => "SPE/APE Tokenizers",
+            "tokenizer_class: bpe" => "BPE Tokenizers",
+            "tokenizer_class: smirk" => "Smirk",
+            "tokenizer_class: smirk-gpe" => "Smirk-GPE",
+            "tokenizer_class: character" => "Character-level",
+            "tokenizer_class: unigram" => "Unigram Tokenizers",
+            "encoding: selfies" => "SELFIES",
+            "encoding: smiles-canonical" => "Canonical SMILES",
+        ),
+        # render=LatexTable(),
+    )
+
+
+
+    # Test impact of encoding on pretraining
+    null = lm(@formula(val_loss ~ 1), df)
+    @show tok = lm(
+        @formula(val_loss ~ 1 + tokenizer_class + encoding),
+        df; contrasts
+    )
+    @show tok_ngram = lm(
+        @formula(ngram_token_loss ~ 1 + tokenizer_class + encoding),
+        df; contrasts
+    )
+    LogLikelihoodRatioTest(tok, null) |> display
+    LogLikelihoodRatioTest(tok_ngram, null) |> display
+
+    # Test impact of encoding on pretraining
+    tokenizers = tokenizers_info(stats_dir)
+    best_models.tokenizer_class = map(tok -> tokenizers[tok]["tokenizer_class"], best_models.tokenizer)
+    best_models.encoding = map(tok -> tokenizers[tok]["encoding"], best_models.tokenizer)
+    replace!(best_models.encoding,
+        "smiles" => "SMILES",
+        "smiles-canonical" => "Canonical SMILES",
+        "selfies" => "SELFIES"
+    )
+
+    null = lm(@formula(ngram_token_loss ~ 1), best_models)
+    @show tok = lm(
+        @formula(ngram_token_loss ~ 1 + tokenizer_class + encoding),
+        best_models; contrasts
+    )
+    LogLikelihoodRatioTest(tok, null) |> display
+
+
+    # Predict pretraining loss using n-gram model
+    null = glm(@formula(val_loss ~ 1), df, Normal(), LogLink())
+    @show ngram = glm(@formula(val_loss ~ 1 + log(ngram_token_loss)), df, Normal(), LogLink(); contrasts)
+    LogLikelihoodRatioTest(ngram, null) |> display
+    r2(ngram.model, :devianceratio) |> display
+
+    return df
+=======
+    return df_model
+
+    tbl_datasets = ["realspace", "tmQM", "qm9", "bbbp", "hiv"]
+    models_tbl = subset(models, :dataset => ByRow(in(tbl_datasets)))
+    models_tbl.dataset .= categorical(models_tbl.dataset, levels=tbl_datasets, ordered=true)
+    sort!(models_tbl, [:dataset, :ngram])
+    transform!(models_tbl,
+        :metric => ByRow(m -> replace(m,
+            "auroc" => L"AUROC ($\uparrow$)",
+            "mae" => L"MAE ($\downarrow$)",
+            "CE" => L"CE ($\downarrow$)",
+        )) => :metric
+    )
+
+    return regtable(
+        models_tbl.model...;
+        groups=string.(models_tbl.dataset),
+        stat_below=false,
+        print_depvar=false,
+        number_regressions=false,
+        align=:r,
+        regression_statistics=[
+            nobs_nonwts => "N",
+            (model -> corspearman(response(model), predict(model))) => L"Spearman's $\rho$",
+            (model -> cor(response(model), predict(model))) => L"R^2",],
+        extralines=[
+            ["N-Gram:", map(x -> x ? "Yes" : "No", models_tbl.ngram)...],
+            ["Metric:", models_tbl.metric...],
+            [L"Spearman's $\rho$, N-Gram vs. FM:", models_tbl.rho...],
+        ],
+        labels=Dict(
+            "tokenizer_class: spe" => "SPE/APE Tokenizers",
+            "tokenizer_class: bpe" => "BPE Tokenizers",
+            "tokenizer_class: smirk" => "Smirk",
+            "tokenizer_class: smirk-gpe" => "Smirk-GPE",
+            "tokenizer_class: character" => "Character-level",
+            "tokenizer_class: unigram" => "Unigram Tokenizers",
+            "encoding: selfies" => "SELFIES",
+            "encoding: smiles-canonical" => "Canonical SMILES",
+        ),
+        # render=LatexTable(),
+    )
+
+
+
+    # Test impact of encoding on pretraining
+    null = lm(@formula(val_loss ~ 1), df)
+    @show tok = lm(
+        @formula(val_loss ~ 1 + tokenizer_class + encoding),
+        df; contrasts
+    )
+    @show tok_ngram = lm(
+        @formula(ngram_token_loss ~ 1 + tokenizer_class + encoding),
+        df; contrasts
+    )
+    LogLikelihoodRatioTest(tok, null) |> display
+    LogLikelihoodRatioTest(tok_ngram, null) |> display
+
+    # Test impact of encoding on pretraining
+    tokenizers = tokenizers_info(stats_dir)
+    best_models.tokenizer_class = map(tok -> tokenizers[tok]["tokenizer_class"], best_models.tokenizer)
+    best_models.encoding = map(tok -> tokenizers[tok]["encoding"], best_models.tokenizer)
+    replace!(best_models.encoding,
+        "smiles" => "SMILES",
+        "smiles-canonical" => "Canonical SMILES",
+        "selfies" => "SELFIES"
+    )
+
+    null = lm(@formula(ngram_token_loss ~ 1), best_models)
+    @show tok = lm(
+        @formula(ngram_token_loss ~ 1 + tokenizer_class + encoding),
+        best_models; contrasts
+    )
+    LogLikelihoodRatioTest(tok, null) |> display
+
+
+    # Predict pretraining loss using n-gram model
+    null = glm(@formula(val_loss ~ 1), df, Normal(), LogLink())
+    @show ngram = glm(@formula(val_loss ~ 1 + log(ngram_token_loss)), df, Normal(), LogLink(); contrasts)
+    LogLikelihoodRatioTest(ngram, null) |> display
+    r2(ngram.model, :devianceratio) |> display
+
+    return df
+>>>>>>> Stashed changes
 end
 
 function tmqm_finetune(stats_dir, dff, dft)

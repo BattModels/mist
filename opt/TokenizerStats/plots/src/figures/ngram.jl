@@ -351,7 +351,6 @@ function figure_ngram_fits(df, stats_dir; colormap=:Set2_5)
             colorrange=h.colorrange
         )
     end
-    labels(x) = map(e -> e.label[], x)
 
     Legend(f[2, 1:2],
         [domains, classes],

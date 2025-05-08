@@ -33,12 +33,14 @@ include("prognostics.jl")
 
 # Helper for plotting
 include("plot_utils.jl")
+include("coeff_plot.jl")
 
 # Figures
 include("figures/info_loss.jl")
 include("figures/ngram.jl")
 include("figures/transfromer.jl")
 include("figures/jaccard.jl")
+include("figures/fe_models.jl")
 
 
 const CLASS_MARKER = Dict(

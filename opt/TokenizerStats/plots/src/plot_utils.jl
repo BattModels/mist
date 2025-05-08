@@ -61,6 +61,14 @@ function theme()
         ErrrorBar=(;
             whiskerwidth=2,
             linewidth=0.5,
+        ),
+        EffectBars=(;
+            linewidth=1pt,
+            marker=:circle,
+            markersize=3pt,
+            colormap=[:red, :blue],
+            whiskerwidth=8pt,
+            noeffect_linewidth=1pt,
         )
     )
 end
@@ -79,6 +87,7 @@ Makie.inverse_transform(::typeof(asinh)) = sinh
 Makie.defined_interval(::typeof(asinh)) = Makie.defined_interval(identity)
 Makie.defaultlimits(::typeof(asinh)) = (0.0, 10.0)
 
+labels(x) = map(e -> e.label[], x)
 
 # Estimate Number of Histogram Bins from data
 hist_nbins(x::AbstractVector, w::AbstractWeights) = hist_nbins(:scott, x)

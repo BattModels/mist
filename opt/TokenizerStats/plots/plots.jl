@@ -116,6 +116,9 @@ with_theme(SmirkPaperPlots.theme()) do
     df = SmirkPaperPlots.ngram_vs_transformer_fits(stats_dir, loss_stats, dfp)
     savefig("ngram_vs_transformer", SmirkPaperPlots.figure_ngram_vs_transformer(stats_dir, df))
 
+    savefig("prognostic", SmirkPaperPlots.figure_fe_models(fe_models, prog_models))
+    savefig("prognostic_abs", SmirkPaperPlots.figure_fe_models(fe_models, prog_models; relative=false))
+
     # Transformer Model Summary
     f, df = SmirkPaperPlots.figure_tf_finetune(stats_dir, dff, dft)
     savefig("tf_finetune", f)
