@@ -155,7 +155,7 @@ class Workflow:
         job_file.unlink()
         return None
 
-    def run(self, dry_run=False, rate_limit=100):
+    def run(self, dry_run=False, rate_limit=100, preflight=list[Process]):
         outputs = {
             process.output: process
             for process in self.processes
@@ -166,6 +166,11 @@ class Workflow:
         last_launch = time.time()
         jobs_launched = 0
         tasks_launched = defaultdict(int)
+
+        preflight_ids = []
+        for process in preflight:
+            preflight_ids.append(process.launch([], dry_run))
+
         for file in topological_sort(self.work):
             # Skip input files
             if file not in outputs:
@@ -183,6 +188,8 @@ class Workflow:
             # Get the process that writes to this file
             process = outputs[file]
             deps = self._get_deps(process, jobs)
+            deps.extend(preflight_ids)
+            deps = list(set(deps))
 
             # Launch the process
             job_id = process.launch(deps, dry_run)
@@ -361,6 +368,7 @@ def set_logging_level(verbosity):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", "-n", action="store_true")
+    parser.add_argument("--precompile", action="store_true")
     parser.add_argument("-v", "--verbose", action="count", default=0)
     parser.add_argument(
         "--realspace", type=str, default="/nfs/turbo/coe-venkvis/mist/realspace_v4_dev2"
@@ -447,4 +455,8 @@ if __name__ == "__main__":
                 )
 
     wk.show()
-    wk.run(dry_run=args.dry_run)
+    preflight = []
+    if args.precompile:
+        preflight.append(Process(["submit_precompile.sh"], []))
+
+    wk.run(dry_run=args.dry_run, preflight=preflight)
