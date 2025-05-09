@@ -158,7 +158,7 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
             \\begin{landscape}
             \\begin{table}
             \\resizebox{\\linewidth}{!}{%
-            \begin{tabular}{llllc|cc|cc|cc}
+            \\begin{tabular}{llllc|cc|cc|cc}
                 &
                 &
                 &

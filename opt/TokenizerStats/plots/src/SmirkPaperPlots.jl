@@ -16,7 +16,7 @@ using JLD2: jldopen
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode
 using HypothesisTests: HypothesisTests, HypothesisTest, VarianceEqualityTest, pvalue
-using Distributions: Chisq, FDist, Normal
+using Distributions: Chisq, FDist, Normal, TDist
 using OrderedCollections: OrderedDict
 using CSV: CSV
 using Clustering: hclust

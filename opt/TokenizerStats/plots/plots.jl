@@ -123,6 +123,7 @@ CSV.write(joinpath("stats", "ngram_stats_vs_fm.csv"), df_prog)
 # Predictive and Fixed-Effect Models
 fe_models, df_predict = SmirkPaperPlots.ngram_vs_transformer_fits(df_ng, df_p, df_f)
 prog_models = SmirkPaperPlots.ngram_prognostic_fits(df_prog)
+display(prog_models[!, [:dataset, :finetuned, :all_rho, :all_rho_p]])
 JLD2.jldsave(joinpath("stats", "quality_models.jld2"); fe_models, df_predict, prog_models)
 CSV.write(joinpath("stats", "ngram_vs_transformer.csv"), df_predict)
 

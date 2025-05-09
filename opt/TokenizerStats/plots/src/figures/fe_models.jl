@@ -109,17 +109,20 @@ function figure_fe_models(models, prog_models; scale=:relative, colormap=:tab10,
 
         # Plot Predictions
         if adx != 1
-            qm = subset(prog_models,
+            row = subset(prog_models,
                 :dataset => ByRow(==(ds)),
                 :finetuned => ByRow(==(true)),
             ) |> only
-            qm = qm.loss_and_info_and_ft
-            rho = round(corspearman(predict(qm), response(qm)); sigdigits=3)
+            qm = row.loss_and_info_and_ft
+            spearman = SpearmanTTest(qm)
+            rho = round(spearman.rho; sigdigits=3)
             qm_r2 = round(r2(qm); sigdigits=3)
             ax = Axis(gl_parity[1, adx-1];
                 title = L"%$plt_ds, $R^2: %$qm_r2$ $\rho: %$rho$",
                 ylabel="Transformer - $metric",
                 xlabel="N-Gram Based Estimate $metric",
+                xticks=WilkinsonTicks(3),
+                yticks=WilkinsonTicks(3),
             )
             ablines!(ax, 0, 1; color=:black, linestyle=:dash, label="Parity")
             scatter!(ax, predict(qm), response(qm))

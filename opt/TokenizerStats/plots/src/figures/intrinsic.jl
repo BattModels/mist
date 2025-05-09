@@ -55,10 +55,11 @@ function figure_intrinsic(df; p=90)
             title="UNK Freq.",
             limits=((0, 1), nothing),
             xtickformat="{:.0%}",
-            xscale=my_sqrt,
+            xscale=sqrt,
+            xticks=[0.25, 0.5, 1],
         ),
         :normalized_entropy => (;
-            title=L"\eta",
+            title=L"Normalized Entropy ($\eta$)",
             limits=((0, 1), nothing),
             xticks=[0.25, 0.75],
             xtickformat="{:.0%}",

@@ -327,11 +327,7 @@ function figure_kl_v_info_loss(tok_info, model_loss, info_loss, df_tf; reference
     )
 
     # Check correlation
-    @show rho = corspearman(df.avg_info_loss, df.test_loss)
-    @info length(df.avg_info_loss) factorial(length(df.avg_info_loss))
-    @show rho_p_value = mean(HypothesisTests.permutations(df.avg_info_loss)) do x
-        rho <= corspearman(x, df.test_loss)
-    end
+    @info "info loss vs. test loss spearman" SpearmanTTest(df.avg_info_loss, df.test_loss)
     @show t = HypothesisTests.CorrelationTest(df.avg_info_loss, df.test_loss)
 
     Label(f[1, 1, TopLeft()], "a)";

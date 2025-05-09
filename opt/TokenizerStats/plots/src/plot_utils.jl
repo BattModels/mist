@@ -232,3 +232,8 @@ function Makie.plot!(plt::Powerlaw)
     lines!(plt, points; Makie.shared_attributes(plt, Lines)...)
     return plt
 end
+
+function siglevel(p::Real; cutoff=[0.05, 0.01, 0.001], symbol="*")
+    l = findlast(sort(cutoff; rev=true) .>= p)
+    return isnothing(l) ? "" : symbol ^ l
+end
