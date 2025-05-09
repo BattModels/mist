@@ -279,7 +279,7 @@ end
 
 categorical_ticks(x) = (1:length(levels(x)), levels(x))
 
-function barploterrors!(ax, x, y; dodge=Makie.automatic(), std=nothing, colormap, colorrange=nothing, direction=:y)
+function barploterrors!(ax, x, y, dodge; std=nothing, colormap, colorrange=nothing)
     if isnothing(colorrange)
         colorrange = extrema(levelcode.(dodge))
     end
@@ -289,7 +289,6 @@ function barploterrors!(ax, x, y; dodge=Makie.automatic(), std=nothing, colormap
         colormap,
         colorrange,
         color=levelcode.(dodge),
-        direction,
     )
 
     if !isnothing(std)
@@ -301,7 +300,6 @@ function barploterrors!(ax, x, y; dodge=Makie.automatic(), std=nothing, colormap
             dodge_gap=h.dodge_gap,
             linewidth=1,
             color=:black,
-            direction,
         )
     end
 

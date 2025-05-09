@@ -113,8 +113,7 @@ function figure_tf_finetune(stats_dir, dff, dft)
         ytickformat="{:.0%}",
         xgridvisible=false,
     )
-    h = barploterrors!(ax, dfr.dataset, dfr.test_loss;
-        dodge=dfr.tokenizer,
+    h = barploterrors!(ax, dfr.dataset, dfr.test_loss, dfr.tokenizer;
         std=dfr.test_loss_std,
         colormap,
         colorrange=(1, length(colormap)),
@@ -131,7 +130,7 @@ function figure_tf_finetune(stats_dir, dff, dft)
         yticks=LinearTicks(5),
         ytickformat="{:.0%}",
     )
-    _finetune_results!(ax, dfc.dataset, dfc.test_loss, dfc.tokenizer;
+    barploterrors!(ax, dfc.dataset, dfc.test_loss, dfc.tokenizer;
         std=dfc.test_loss_std,
         colormap=h.colormap,
         colorrange=h.colorrange

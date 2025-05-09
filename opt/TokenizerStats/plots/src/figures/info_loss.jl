@@ -494,7 +494,10 @@ function figure_ngram_metrics(tok_info, df_loss, df_info; ngram=5)
     ax = Axis(f[1, 1];
         xlabel="N-Gram Cross Entropy [nats/token]",
         limits=((0, nothing), nothing),
-        yticks=categorical_ticks(df.tokenizer_class)
+        yticks=categorical_ticks(df.tokenizer_class),
+        xminorticks=IntervalsBetween(4),
+        xminorticksvisible=true,
+        yticksvisible=false,
     )
     colormap=:Set1_3
     colorrange=(1, 3)
