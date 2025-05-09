@@ -144,7 +144,7 @@ with_theme(SmirkPaperPlots.theme()) do
     savefig("jaccard", SmirkPaperPlots.figure_jaccard(stats_dir))
     savefig("intrinsic_metrics", SmirkPaperPlots.figure_intrinsic(df_intrinsic; p=90))
     savefig("intrinsic_metrics_95", SmirkPaperPlots.figure_intrinsic(df_intrinsic; p=95))
-    savefig("ngram_metrics", SmirkPaperPlots.figure_ngram_metrics(tok_info, loss_stats, info_loss)
+    savefig("ngram_metrics", SmirkPaperPlots.figure_ngram_metrics(tok_info, loss_stats, info_loss))
 
     # Transformers vs. N-Grams
     savefig("prognostic", SmirkPaperPlots.figure_fe_models(fe_models, prog_models))
