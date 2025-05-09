@@ -474,3 +474,97 @@ function figure_info_loss_ref_tokenizer(model_loss)
 
     return f
 end
+
+function figure_ngram_metrics(tok_info, df_loss, df_info; ngram=5)
+    mergereduce(x) = reduce(merge, x)
+    df_loss = subset(df_loss, :finetuned => ByRow(==(false)), :split=>ByRow(==("val")))
+    df = leftjoin(df_loss, select(df_info, Not(:vocab_size));
+        on=[:tokenizer, :dataset, :ngram],
+        makeunique=true,
+    )
+    transform!(df,
+        :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
+        :tokenizer => ByRow(x -> tok_info[x]["domain"]) => :tokenizer_domain,
+        :dataset => ByRow(x -> x ∈ ["realspace", "tmQM"] ? x : "MoleculeNet") => :dataset,
+    )
+    label_tokenizers!(df)
+    label_datasets!(df)
+
+    f = Figure(; size=(3.42inch, 2.1inch), figure_padding=(1, 8, 1, 4))
+    ax = Axis(f[1, 1];
+        xlabel="N-Gram Cross Entropy [nats/token]",
+        limits=((0, nothing), nothing),
+        yticks=categorical_ticks(df.tokenizer_class)
+    )
+    colormap=:Set1_3
+    colorrange=(1, 3)
+
+    df_loss = combine(groupby(df, [:tokenizer_class, :dataset, :ngram]),
+        :loss_per_token_moments => mean∘mergereduce => :ng_loss,
+        :samples => sum => :samples,
+    )
+    barplot!(ax, levelcode.(df_loss.tokenizer_class), df_loss.ng_loss;
+        dodge=levelcode.(df_loss.dataset),
+        color=levelcode.(df_loss.dataset),
+        stack=df_loss.ngram,
+        direction=:x,
+        colormap,
+        colorrange,
+        strokewidth=0.5pt,
+        strokecolor=:white,
+        bar_labels=format.("{:d}", df_loss.ngram),
+        label_position=:center,
+        label_color=:white,
+        label_size=6pt,
+        label_font=:bold,
+    )
+    power2ticks(r) = (2.0 .^r, [L"2^{%$p}" for p in r])
+    xticks = power2ticks(-1:2:12)
+    xticks = ([0, xticks[1]...], [L"0", xticks[2]...])
+    ax = Axis(f[1, 2];
+        xscale=Asinh(1),
+        limits=((0, 1024), nothing),
+        xticks=[0, 1, 4, 16, 64, 256, 1024],
+        xlabel="Information Loss [nats/molecule]",
+        xminorticksvisible=true,
+        xminorticks=IntervalsBetween(4),
+        ylabelvisible=false,
+        yticksvisible=false,
+        yticklabelsvisible=false,
+    )
+    df_info = dropmissing(df, :info_loss_moments)
+    df_info = combine(groupby(df_info, [:tokenizer_class, :dataset, :ngram]),
+        :info_loss_moments => mean∘mergereduce => :info_loss,
+        :samples => sum => :samples,
+    )
+    df_info = subset(df_info, :ngram => ByRow(==(ngram)))
+    barplot!(ax, levelcode.(df_info.tokenizer_class), df_info.info_loss;
+        dodge=levelcode.(df_info.dataset),
+        color=levelcode.(df_info.dataset),
+        # stack=df_info.ngram,
+        direction=:x,
+        colormap,
+        colorrange,
+    )
+
+
+    ds_elements = map(enumerate(levels(df.dataset))) do (color, label)
+        PolyElement(; label, color, colorrange, colormap)
+    end
+    Legend(f[1, end], ds_elements, labels(ds_elements);
+        tellheight=false, tellwidth=false, orientation=:vertical,
+        framevisible=true,
+        margin=(2, 2, 2, 2),
+        fontsize=6pt,
+        patchsize=(6pt, 6pt),
+        padding=2pt,
+        rowgap=1pt,
+        valign=:top,
+        halign=:right,
+    )
+
+    resize_to_layout!(f)
+
+    return f
+end
+

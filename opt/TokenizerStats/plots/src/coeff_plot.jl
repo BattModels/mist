@@ -7,6 +7,11 @@ lower(x::CoeffInternal) = first(x.credible_interval)
 upper(x::CoeffInternal) = last(x.credible_interval)
 StatsBase.mean(x::CoeffInternal) = x.expectation
 
+function CoeffInternal(μ::Real, σ²::Real; p=0.95)
+    ci = quantile(Normal(μ, σ²), [(1 - p) / 2, (1 + p) / 2])
+    return CoeffInternal(μ, tuple(ci...))
+end
+
 function Base.:-(x::CoeffInternal, y::CoeffInternal)
     μ = mean(x) - mean(y)
     lb = lower(x) - upper(y)

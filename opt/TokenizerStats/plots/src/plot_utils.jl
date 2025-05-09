@@ -163,6 +163,7 @@ Makie.@recipe(DodgedErrorBars, x, y, error) do scene
         n_dodge=Makie.inherit(scene, :BarPlot, :n_dodge),
         gap=Makie.inherit(scene, :BarPlot, :gap),
         dodge_gap=Makie.inherit(scene, :BarPlot, :dodge_gap),
+        direction=:y,
     )
 end
 
@@ -171,7 +172,11 @@ function Makie.plot!(plt::DodgedErrorBars)
         first(Makie.compute_x_and_width(x, width, gap, dodge, n_dodge, dodge_gap))
     end
     attr = Makie.shared_attributes(plt, Errorbars)
-    errorbars!(plt, x, plt[:y], plt[:error]; attr...)
+    if plt[:direction][] == :y
+        errorbars!(plt, x, plt[:y], plt[:error]; direction=:y, attr...)
+    else
+        errorbars!(plt, plt[:y], plt[:x], plt[:error]; direction=:x, attr...)
+    end
     return plt
 end
 
@@ -237,3 +242,70 @@ function siglevel(p::Real; cutoff=[0.05, 0.01, 0.001], symbol="*")
     l = findlast(sort(cutoff; rev=true) .>= p)
     return isnothing(l) ? "" : symbol ^ l
 end
+
+function label_tokenizers!(df)
+    tokenizer_classes = OrderedDict(
+        "nlp" => "NLP",
+        "character" => "Character",
+        "unigram" => "Unigram",
+        "bpe" => "BPE",
+        "atomwise" => "Atom-wise",
+        "spe" => "SPE/APE",
+        "smirk-gpe" => "Smirk-GPE",
+        "smirk" => "Smirk",
+    )
+    df.tokenizer_class = map(df.tokenizer_domain, df.tokenizer_class) do domain, tokenizer_class
+        if domain == "chemistry"
+            return tokenizer_class
+        elseif domain in ["nlp", "nlp-science"]
+            return "nlp"
+        else
+            return "$tokenizer_class, $domain"
+        end
+    end
+    ckeys = collect∘keys
+    subset!(df, :tokenizer_class => ByRow(in(ckeys(tokenizer_classes))))
+    transform!(df, :tokenizer_class => ByRow(x -> tokenizer_classes[x]) => :tokenizer_class)
+    df.tokenizer_class = categorical(df.tokenizer_class, levels=(collect∘values)(tokenizer_classes), ordered=true)
+    return df
+end
+
+function label_datasets!(df)
+    df.dataset = map(ds -> ds in ["realspace", "tmQM"] ? ds : "MoleculeNet", df.dataset)
+    df.dataset = map(ds -> ds == "realspace" ? "REALSpace" : ds, df.dataset)
+    df.dataset = categorical(df.dataset, levels=["REALSpace", "tmQM", "MoleculeNet"], ordered=true)
+    return df
+end
+
+categorical_ticks(x) = (1:length(levels(x)), levels(x))
+
+function barploterrors!(ax, x, y; dodge=Makie.automatic(), std=nothing, colormap, colorrange=nothing, direction=:y)
+    if isnothing(colorrange)
+        colorrange = extrema(levelcode.(dodge))
+    end
+
+    h = barplot!(ax, levelcode.(x), y;
+        dodge=levelcode.(dodge),
+        colormap,
+        colorrange,
+        color=levelcode.(dodge),
+        direction,
+    )
+
+    if !isnothing(std)
+        SmirkPaperPlots.dodgederrorbars!(ax, levelcode.(x), y, std;
+            dodge=h.dodge,
+            width=h.width,
+            n_dodge=h.n_dodge,
+            gap=h.gap,
+            dodge_gap=h.dodge_gap,
+            linewidth=1,
+            color=:black,
+            direction,
+        )
+    end
+
+    return h
+end
+
+

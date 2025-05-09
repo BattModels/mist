@@ -96,7 +96,7 @@ function figure_intrinsic(df; p=90)
                 orientation=:horizontal,
                 dodge=levelcode.(gdf.dataset),
                 color=levelcode.(gdf.dataset),
-                show_outliers=false,
+                outliercolor=:black,
                 whiskerwidth=1pt,
                 colormap,
                 colorrange,
