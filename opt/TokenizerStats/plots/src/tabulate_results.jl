@@ -270,8 +270,7 @@ end
 
 nobs_nonwts(model) = size(model.model.pp.X, 1)
 
-function ngram_vs_transformer_fits(df_ng, df_p,)
-    df_ng, df_p, df_f = df_ngrams_vs_transformer(stats_dir, loss_stats, dfp, dff, dft)
+function ngram_vs_transformer_fits(df_ng, df_p, df_f)
     contrasts = Dict(
         :tokenizer_class => EffectsCoding(; base="atomwise"),
         :encoding => EffectsCoding(; base="smiles"),

@@ -15,6 +15,7 @@ loss_stats = SmirkPaperPlots.model_loss_stats(stats_dir)
 info_loss = SmirkPaperPlots.info_loss_stats(stats_dir)
 token_usage = SmirkPaperPlots.usage_stats(stats_dir)
 tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
+JLD2.jldsave(joinpath(stats_dir, "tokenizer_stats.jld2"); loss_stats, info_loss, token_usage, tok_info)
 
 function intrinsic_metrics(token_usage)
     tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
