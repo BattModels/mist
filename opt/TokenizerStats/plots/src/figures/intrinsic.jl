@@ -1,25 +1,38 @@
-function figure_intrinsic(df)
+function figure_intrinsic(df; p=90)
     f = Figure(; size=(3.42inch, 1.5inch))
     colgap!(f.layout, 3pt)
     tokenizer_classes = OrderedDict(
-        "bpe, nlp" => "BPE, NLP",
-        "bpe" => "BPE, Chemistry",
-        "atomwise" => "Atom-wise",
-        "spe" => "SPE/APE",
+        "nlp" => "NLP",
         "character" => "Character",
         "unigram" => "Unigram",
+        "bpe" => "BPE",
+        "atomwise" => "Atom-wise",
+        "spe" => "SPE/APE",
         "smirk-gpe" => "Smirk-GPE",
         "smirk" => "Smirk",
     )
-    df = subset(df, :tokenizer_domain => ByRow(in(["nlp", "chemistry"])))
+    df = deepcopy(df)
     df.tokenizer_class = map(df.tokenizer_domain, df.tokenizer_class) do domain, tokenizer_class
         if domain == "chemistry"
             return tokenizer_class
+        elseif domain in ["nlp", "nlp-science"]
+            return "nlp"
         else
             return "$tokenizer_class, $domain"
         end
     end
-    df.tokenizer_class = categorical(df.tokenizer_class, levels=(collect∘keys)(tokenizer_classes), ordered=true)
+    ckeys = collect∘keys
+    @info unique(df.tokenizer_class)
+    subset!(df, :tokenizer_class => ByRow(in(ckeys(tokenizer_classes))))
+    df.tokenizer_class = categorical(df.tokenizer_class, levels=ckeys(tokenizer_classes), ordered=true)
+
+    # Label classes with the number of examples
+    foreach(eachrow(combine(groupby(df, :tokenizer_class), :tokenizer => length∘unique => :nclass))) do r
+        (; tokenizer_class, nclass) = r
+        plt_class = tokenizer_classes[tokenizer_class]
+        tokenizer_classes[tokenizer_class] = "$plt_class (n=$nclass)"
+    end
+    @info tokenizer_classes
 
     df.dataset = map(ds -> ds in ["realspace", "tmQM"] ? ds : "MoleculeNet", df.dataset)
     df.dataset = map(ds -> ds == "realspace" ? "REALSpace" : ds, df.dataset)
@@ -34,7 +47,7 @@ function figure_intrinsic(df)
             limits=((0, nothing), nothing),
         ),
         :divergence => (;
-            title="Imbalance",
+            title=L"Imbalance ($D$)",
             limits=((0.4, nothing), nothing),
             xtickformat="{:.0%}",
         ),
@@ -51,11 +64,11 @@ function figure_intrinsic(df)
             xtickformat="{:.0%}",
         ),
     )
-    # ax_kwargs = Dict()
 
     for (mdx, metric) in enumerate(metrics)
         kwargs = get(ax_kwargs, metric, (;))
         ax = Axis(f[1, mdx];
+            titlefont=:regular,
             yticks=(1:length(tokenizer_classes), collect(values(tokenizer_classes))),
             yticksvisible=false,
             yticklabelsvisible=mdx == 1,
@@ -63,6 +76,16 @@ function figure_intrinsic(df)
             xminorticks=IntervalsBetween(4),
             xminorticksvisible=true,
             kwargs...
+        )
+        vspan!(ax,
+            percentile(df[!, metric], (100 - p) / 2),
+            percentile(df[!, metric], (100 + p) / 2),
+            color=:black,
+            alpha=0.2,
+        )
+        vlines!(ax, mean(df[!, metric]);
+            color=:black,
+            linestyle=:dash,
         )
         for (gdx, gdf) in enumerate(keys(tokenizer_classes))
             gdf = subset(df, :tokenizer_class => ByRow(==(gdf)))
@@ -93,7 +116,30 @@ function figure_intrinsic(df)
         valign=:top,
         halign=:right,
     )
-    resize_to_layout!(f)
 
     return f
 end
+
+function vspan!(ax, lb, ub, n; kwargs...)
+    points = Point2f[(lb, 0), (lb, n), (ub, n), (ub, 0)]
+    poly!(ax, points; kwargs...)
+end
+
+@recipe(VSpan, lb, ub) do scene
+    Attributes(;
+    )
+end
+
+function Makie.plot!(plt::VSpan)
+    ax= Makie.current_axis()
+    limits = ax.finallimits
+    p = lift(limits, plt[:lb], plt[:ub]) do limits, lb, ub
+        ly = limits.origin[2]
+        uy = limits.origin[2] + limits.widths[2]
+        ly, uy = ly < uy ? (ly, uy) : (uy, ly)
+        Point2f[(lb, ly), (lb, uy), (ub, uy), (ub, ly)]
+    end
+    poly!(plt, p; Makie.shared_attributes(plt, Poly)...)
+    return plt
+end
+

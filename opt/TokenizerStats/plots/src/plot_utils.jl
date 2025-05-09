@@ -25,6 +25,7 @@ function theme()
         markersize=4pt,
         linewidth=1pt,
         Axis=(;
+            titlegap=2pt,
             spinewidth=0.5,
             ylabelpadding=3pt,
             yticksize=3,
