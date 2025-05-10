@@ -61,6 +61,11 @@ function theme()
             markersize=8pt,
             marker=:x,
         ),
+        BarPlot=(;
+            whiskerwidth=1pt,
+            markersize=2pt,
+            medianlinewidth=0.5pt,
+        ),
         ErrrorBar=(;
             whiskerwidth=2,
             linewidth=0.5,
@@ -243,7 +248,7 @@ function siglevel(p::Real; cutoff=[0.05, 0.01, 0.001], symbol="*")
     return isnothing(l) ? "" : symbol ^ l
 end
 
-function label_tokenizers!(df)
+function label_tokenizers!(df; include_count=true)
     tokenizer_classes = OrderedDict(
         "nlp" => "NLP",
         "character" => "Character",
@@ -267,6 +272,15 @@ function label_tokenizers!(df)
     subset!(df, :tokenizer_class => ByRow(in(ckeys(tokenizer_classes))))
     transform!(df, :tokenizer_class => ByRow(x -> tokenizer_classes[x]) => :tokenizer_class)
     df.tokenizer_class = categorical(df.tokenizer_class, levels=(collect∘values)(tokenizer_classes), ordered=true)
+
+    # if include_count
+    #     map(eachrow(combine(groupby(df, :tokenizer_class), :tokenizer => length∘unique => :nclass))) do r
+    #         (; tokenizer_class, nclass) = r
+    #         plt_class = tokenizer_classes[tokenizer_class]
+    #         tokenizer_class => "$plt_class (n=$nclass)"
+    #     end
+    # end
+
     return df
 end
 

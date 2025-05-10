@@ -22,7 +22,6 @@ function figure_intrinsic(df; p=90)
         end
     end
     ckeys = collect∘keys
-    @info unique(df.tokenizer_class)
     subset!(df, :tokenizer_class => ByRow(in(ckeys(tokenizer_classes))))
     df.tokenizer_class = categorical(df.tokenizer_class, levels=ckeys(tokenizer_classes), ordered=true)
 
@@ -32,7 +31,6 @@ function figure_intrinsic(df; p=90)
         plt_class = tokenizer_classes[tokenizer_class]
         tokenizer_classes[tokenizer_class] = "$plt_class (n=$nclass)"
     end
-    @info tokenizer_classes
 
     df.dataset = map(ds -> ds in ["realspace", "tmQM"] ? ds : "MoleculeNet", df.dataset)
     df.dataset = map(ds -> ds == "realspace" ? "REALSpace" : ds, df.dataset)
@@ -41,27 +39,31 @@ function figure_intrinsic(df; p=90)
     colorrange=(1, 3)
 
     metrics = [:fertility, :divergence, :normalized_entropy, :oov_rate]
+    ylims = (0.5, length(tokenizer_classes) + 0.5)
     ax_kwargs = Dict(
         :fertility => (;
-            title="Fertility",
-            limits=((0, nothing), nothing),
+            xlabel="Fertility",
+            limits=((0, nothing), ylims),
+            xticks=WilkinsonTicks(3),
         ),
         :divergence => (;
-            title=L"Imbalance ($D$)",
-            limits=((0.4, nothing), nothing),
+            xlabel=L"Imbalance ($D$)",
+            limits=((0, nothing), ylims),
             xtickformat="{:.0%}",
+            xticks=WilkinsonTicks(3),
         ),
         :oov_rate => (;
-            title="UNK Freq.",
-            limits=((0, 1), nothing),
+            xlabel="UNK Freq.",
+            limits=((0, 1), ylims),
             xtickformat="{:.0%}",
             xscale=sqrt,
             xticks=[0.25, 0.5, 1],
         ),
         :normalized_entropy => (;
-            title=L"Normalized Entropy ($\eta$)",
-            limits=((0, 1), nothing),
-            xticks=[0.25, 0.75],
+            xlabel=L"Normalized Entropy ($\eta$)",
+            limits=((0, 1), ylims),
+            # xticks=[0.25, 0.75],
+            xticks=WilkinsonTicks(3),
             xtickformat="{:.0%}",
         ),
     )
@@ -69,11 +71,11 @@ function figure_intrinsic(df; p=90)
     for (mdx, metric) in enumerate(metrics)
         kwargs = get(ax_kwargs, metric, (;))
         ax = Axis(f[1, mdx];
-            titlefont=:regular,
+            xlabelfont=:regular,
             yticks=(1:length(tokenizer_classes), collect(values(tokenizer_classes))),
             yticksvisible=false,
             yticklabelsvisible=mdx == 1,
-            xticklabelrotation=-pi/4,
+            # xticklabelrotation=-pi/4,
             xminorticks=IntervalsBetween(4),
             xminorticksvisible=true,
             kwargs...
@@ -97,7 +99,6 @@ function figure_intrinsic(df; p=90)
                 dodge=levelcode.(gdf.dataset),
                 color=levelcode.(gdf.dataset),
                 outliercolor=:black,
-                whiskerwidth=1pt,
                 colormap,
                 colorrange,
             )

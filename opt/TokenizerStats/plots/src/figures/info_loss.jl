@@ -490,11 +490,22 @@ function figure_ngram_metrics(tok_info, df_loss, df_info; ngram=5)
     label_tokenizers!(df)
     label_datasets!(df)
 
+    df_loss = combine(groupby(df, [:tokenizer_class, :dataset, :ngram]),
+        :loss_per_token_moments => mean∘mergereduce => :ng_loss,
+        :samples => sum => :samples,
+    )
+
+    plt_label = map(eachrow(combine(groupby(df, :tokenizer_class), :tokenizer => length∘unique => :nclass))) do r
+        (; tokenizer_class, nclass) = r
+        tokenizer_class => "$tokenizer_class (n=$nclass)"
+    end |> Dict
+
     f = Figure(; size=(3.42inch, 2.1inch), figure_padding=(1, 8, 1, 4))
+    yticks = (1:length(plt_label), [plt_label[k] for k in levels(df.tokenizer_class)])
     ax = Axis(f[1, 1];
         xlabel="N-Gram Cross Entropy [nats/token]",
         limits=((0, nothing), nothing),
-        yticks=categorical_ticks(df.tokenizer_class),
+        yticks,
         xminorticks=IntervalsBetween(4),
         xminorticksvisible=true,
         yticksvisible=false,
@@ -502,10 +513,6 @@ function figure_ngram_metrics(tok_info, df_loss, df_info; ngram=5)
     colormap=:Set1_3
     colorrange=(1, 3)
 
-    df_loss = combine(groupby(df, [:tokenizer_class, :dataset, :ngram]),
-        :loss_per_token_moments => mean∘mergereduce => :ng_loss,
-        :samples => sum => :samples,
-    )
     barplot!(ax, levelcode.(df_loss.tokenizer_class), df_loss.ng_loss;
         dodge=levelcode.(df_loss.dataset),
         color=levelcode.(df_loss.dataset),
@@ -517,6 +524,7 @@ function figure_ngram_metrics(tok_info, df_loss, df_info; ngram=5)
         strokecolor=:white,
         bar_labels=format.("{:d}", df_loss.ngram),
         label_position=:center,
+        label_align=(:center, :center),
         label_color=:white,
         label_size=6pt,
         label_font=:bold,
@@ -554,7 +562,7 @@ function figure_ngram_metrics(tok_info, df_loss, df_info; ngram=5)
     ds_elements = map(enumerate(levels(df.dataset))) do (color, label)
         PolyElement(; label, color, colorrange, colormap)
     end
-    Legend(f[1, end], ds_elements, labels(ds_elements);
+    Legend(f[1, 1], ds_elements, labels(ds_elements);
         tellheight=false, tellwidth=false, orientation=:vertical,
         framevisible=true,
         margin=(2, 2, 2, 2),
