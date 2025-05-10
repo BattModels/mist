@@ -22,7 +22,7 @@ LOG_FILE.parent.mkdir(exist_ok=True, parents=True)
 @dataclass
 class Process:
     cmd: list[str]
-    inputs: list[str] = field(default_factory=list)
+    inputs: list[Path] = field(default_factory=list)
     output: Optional[Path] = None
     slurm: Optional[dict] = None
     meta: dict[str, Any] = field(default_factory=dict)
@@ -285,7 +285,9 @@ def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles"):
     )
 
 
-def ngram_loss(dataset, tokenizer, slurm=None, encoding="smiles", ngram="realspace", ds_name=None):
+def ngram_loss(
+    dataset, tokenizer, slurm=None, encoding="smiles", ngram="realspace", ds_name=None
+):
     input = STATS_DIR.joinpath(tokenizer, ngram, "usage.jld2")
     ds_name = ds_name or str(dataset)
     outfile = "model_loss.jld2" if ngram == "realspace" else f"model_loss_{ngram}.jld2"
@@ -309,13 +311,13 @@ def ngram_loss(dataset, tokenizer, slurm=None, encoding="smiles", ngram="realspa
             "--encoding",
             encoding,
             "--output",
-            output,
+            str(output),
             "--model",
-            input,
+            str(input),
             dataset,
             tokenizer,
         ],
-        inputs=input,
+        inputs=[input],
         output=output,
         slurm=slurm,
         meta={"dataset": dataset, "tokenizer": tokenizer, "task": "model_loss"},
@@ -345,9 +347,9 @@ def ngram_info_loss(
             "--encoding",
             encoding,
             "--output",
-            output,
+            str(output),
             "--reference",
-            ref_usage,
+            str(ref_usage),
             dataset,
             tokenizer,
         ],
@@ -412,6 +414,16 @@ if __name__ == "__main__":
                 slurm={"ntasks": 32, "time": "8:0:0"},
             )
         )
+        wk.add_process(
+            ngram_info_loss(
+                args.realspace,
+                tok_name,
+                ref="character",
+                ds_name="realspace",
+                encoding=tok["encoding"],
+                slurm={"ntasks": 48, "time": "1-0:0:0"},
+            )
+        )
 
         # Tokenize MoleculeNet
         for ds in [*MOLNET_DATASETS, "tmqm"]:
@@ -439,7 +451,7 @@ if __name__ == "__main__":
 
             for ref in REF_INFO_LOSS:
                 if ds == "tmqm" and tok["encoding"] == "selfies":
-                    continue # Majority of selfies fail
+                    continue  # Majority of selfies fail
 
                 if tok["name_or_path"] == "ncfrey/ChemGPT-4.7M":
                     continue  # Token Alignment will fail

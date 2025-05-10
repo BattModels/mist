@@ -61,7 +61,7 @@ function tokenizer(dc::DatasetConfig)
 end
 
 function dataset_name(dc::DatasetConfig)
-    if isdir(dc.name_or_path):
+    if isdir(dc.name_or_path)
         if "tmQM" in splitpath(dc.name_or_path)
             return "tmQM"
         else

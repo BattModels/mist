@@ -18,19 +18,6 @@ function common_args!(s)
     end
 end
 
-
-@annotate function get_dataset(name_or_path::String, tokenizer::String, encoding::String)
-    dataset_name = name_or_path
-    if isdir(name_or_path):
-        if "tmQM" in splitpath(name_or_path)
-            dataset_name = "tmQM"
-        else
-            dataset_name = basename(name_or_path)
-        end
-    end
-    return DatasetConfig(name_or_path, tokenizer, encoding), dataset_name
-end
-
 function maybe_parse_env(T::Type, x::String)
     env = get(ENV, x, nothing)
     if !isnothing(env)
@@ -102,12 +89,12 @@ end
 
     # Run command
     if args["%COMMAND%"] == "distortion"
-        ds, _ = get_dataset(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        ds = DatasetConfig(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
         avg_information_loss(ds, args_cmd["reference"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "loss"
         # Load the tokenizer
-        ds, _ = get_dataset(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        ds = DatasetConfig(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
         model_loss(ds, args_cmd["model"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "merge"
@@ -119,7 +106,7 @@ end
         merge_usage_stats(files; output)
 
     elseif args["%COMMAND%"] == "usage"
-        ds, _ = get_dataset(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        ds = DatasetConfig(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
         splits = parse_splits(args_cmd["splits"])
 
         # Distribute computation
