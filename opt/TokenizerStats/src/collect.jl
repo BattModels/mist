@@ -1,7 +1,3 @@
-# Maximum number of oov samples to track
-const MAX_OOV_SAMPLES = 100
-
-
 function tracked_stats()
     return (;
         fertility=CountMap(Int),
@@ -40,40 +36,25 @@ function leader_reduce(f, x; comm=MPI.COMM_WORLD)
     return nothing
 end
 
-function setup_dm_mpi(dm::Py, split::AbstractString; rank::Int=0, size::Int=1)
-    dm.trainer = (; global_rank=rank, world_size=size)
-    dm.setup("fit")
-    if split == "train"
-        ds = dm.train_dataset
-    elseif split == "val"
-        ds = dm.val_dataset
-    elseif split == "test"
-        ds = dm.test_dataset
-    else
-        throw(ArgumentError(lazy"Invalid split: $split"))
-    end
-    return ds
-end
-
-function rank_usage_stats(datamodule, split; rank, size)
-    ds = setup_dm_mpi(datamodule, split; rank, size)
-    tokenizer = datamodule.tokenizer
-    unk_token_id = pyconvert(Int, tokenizer.unk_token_id)
+function rank_usage_stats(dataset::DatasetConfig, split::String; global_rank::Int, world_size::Int)
+    ds = dataset_split(dataset, split; global_rank, world_size)
+    tokenizer, tok_info = tokenizer(dataset)
+    unk_token_id = tok_info.unk_token_id
     local_stats = tracked_stats()
     start_time = time()
-    @info "rank $rank: started processing $split" now()
+    @info "rank $global_rank: started processing $split" now()
     for (idx, example) in enumerate(ds)
         input_ids = pyconvert(Vector{Int}, example["input_ids"])
         is_oov = unk_token_id in input_ids
         usage_stats!(local_stats, input_ids, is_oov)
         if idx % 1_000_000 == 0
             elapsed = time() - start_time
-            @info "rank $rank on molecule $idx" idx elapsed idx / elapsed now()
+            @info "rank $global_rank on molecule $idx" idx elapsed idx / elapsed now()
         end
     end
     n_obs = nobs(local_stats[:fertility])
     elapsed = time() - start_time
-    @info "Rank $rank has finished tokenizer stats" n_obs elapsed n_obs / elapsed now()
+    @info "Rank $global_rank has finished tokenizer stats" n_obs elapsed n_obs / elapsed now()
 
     return OnlineStats.Series(;
         fertility=local_stats.fertility,
@@ -83,25 +64,19 @@ function rank_usage_stats(datamodule, split; rank, size)
     )
 end
 
-function job_array_usage_stats(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="", splits=["train"], size::Int=1, rank::Int=0)
+function job_array_usage_stats(dataset::DatasetConfig, out_file::AbstractString; splits=["train"], world_size::Int=1, global_rank::Int=0)
     # Load Dataset and Tokenizer
-    tokenizer = datamodule.tokenizer
-    tokenizer_info = (;
-        name=tokenizer_name,
-        vocab_size=pyconvert(Int, length(tokenizer)),
-        unk_token_id=pyconvert(Union{Int,Nothing}, tokenizer.unk_token_id),
-    )
-
-    splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
-    out_file = out_file * "_split_$(join(splits, "_"))_rank_$rank.jld2"
+    tokenizer, tokenizer_info = tokenizer(dataset)
+    out_file = out_file * "_split_$(join(splits, "_"))_rank_$global_rank.jld2"
     mkpath(dirname(out_file))
     jldopen(out_file * ".tmp", "w+") do f
         f["tokenizer"] = tokenizer_info
+        f["dataset"] = (; dataset_name=dataset_name(dataset), encoding=dataset.encoding)
     end
 
     for split in splits
-        tokenizer_stats = rank_usage_stats(datamodule, split; rank, size)
-        @info "Saving results for $split on rank $rank" now()
+        tokenizer_stats = rank_usage_stats(dataset, split; global_rank, world_size)
+        @info "Saving results for $split on rank $global_rank" now()
         jldopen(out_file * ".tmp", "a+") do f
             serialize_usage!(f, split, tokenizer_stats)
         end
@@ -114,87 +89,80 @@ function job_array_usage_stats(datamodule::Py, out_file::AbstractString; tokeniz
     return 0
 end
 
-function tabulate_dataset(datamodule::Py, out_file::AbstractString; tokenizer_name::AbstractString="", splits=["train"])
+function tabulate_dataset(dataset::DatasetConfig, out_file::AbstractString, splits::Vector{String}=["train"])
     # Setup mpi
     MPI.Init()
     comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    size = MPI.Comm_size(comm)
-    @info "Rank $rank of $size is starting" now()
+    global_rank = MPI.Comm_rank(comm)
+    world_size = MPI.Comm_size(comm)
+    @info "Rank $global_rank of $world_size is starting" now()
 
     # Load Dataset and Tokenizer
-    tokenizer = datamodule.tokenizer
-    tokenizer_info = (;
-        name=tokenizer_name,
-        vocab_size=pyconvert(Int, length(tokenizer)),
-        unk_token_id=pyconvert(Union{Int,Nothing}, tokenizer.unk_token_id),
-    )
-    splits = (length(splits) == 1 && first(splits) == "all") ? ["val", "train", "test"] : splits
-    if rank == 0
-        @debug "rank $rank: created $out_file" now()
+    tokenizer, tokenizer_info = tokenizer(dataset)
+    if global_rank == 0
+        @debug "rank $global_rank: created $out_file" now()
         mkpath(dirname(out_file))
         jldopen(out_file * ".tmp", "w+") do f
             f["tokenizer"] = tokenizer_info
+            f["dataset"] = (; dataset_name=dataset_name(dataset), encoding=dataset.encoding)
         end
     end
 
     MPI.Barrier(comm)
     for split in splits
-        rank_stats = rank_usage_stats(datamodule, split; rank, size)
+        rank_stats = rank_usage_stats(dataset, split; global_rank, world_size)
         tokenizer_stats = leader_reduce(merge!, rank_stats; comm)
-        if rank == 0
+        if global_rank == 0
             jldopen(out_file * ".tmp", "a+") do f
                 serialize_usage!(f, split, tokenizer_stats)
             end
-            @info "rank $rank: saved results for $split" now()
+            @info "rank $global_rank: saved results for $split" now()
         end
     end
 
-    if rank == 0
+    if global_rank == 0
         mv(out_file * ".tmp", out_file; force=true)
         chmod(out_file, 0o444)
-        @info "Saved stats on rank $rank to $out_file" now()
+        @info "Saved stats on rank $global_rank to $out_file" now()
     end
 
     MPI.Barrier(comm)
     MPI.Finalize()
-    @debug "rank $rank: finished" now()
+    @debug "rank $global_rank: finished" now()
     return 0
 end
 
-function model_loss(constructor, ref_file::String, output::String)
+function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
     # Init MPI
     MPI.Init()
     comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    size = MPI.Comm_size(comm)
-    @info "Rank $rank of $size is ready" now()
+    global_rank = MPI.Comm_rank(comm)
+    world_size = MPI.Comm_size(comm)
+    @info "Rank $global_rank of $world_size is ready" now()
 
     # Create datamodule
-    datamodule = constructor()
+    ds = tokenizer_dataset(dataset)
+    tok, tok_info = tokenizer(dataset)
     MPI.Barrier(comm)
-    @info "Rank $rank of $size is starting" now()
+    @info "Rank $global_rank of $world_size is starting" now()
 
     # Load Reference Tokenizer / n-gram model
     ngram, _, ref_info = load_ngram_model(ref_file)
-    rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
+    global_rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
 
     # Init Fit Stats
     tok = datamodule.tokenizer
-    if rank == 0
+    if global_rank == 0
         mkpath(dirname(output))
         jldopen(output * ".tmp", "w+") do f
-            f["tokenizer"] = (;
-                vocab_size=pyconvert(Int, length(tok)),
-                unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
-            )
+            f["tokenizer"] = tok_info
             f["ref_tokenizer"] = ref_info
+            f["dataset"] = (; dataset_name=dataset_name(dataset), encoding=dataset.encoding)
         end
     end
 
     MPI.Barrier(comm)
     for split in ["val", "train", "test"]
-        ds = setup_dm_mpi(datamodule, split; rank, size)
         stats = map(1:length(ngram)) do _
             OnlineStats.Series(;
                 moments=OnlineStats.Moments(),
@@ -204,7 +172,7 @@ function model_loss(constructor, ref_file::String, output::String)
         end |> OnlineStats.Group
         stats = (; cross_entropy=deepcopy(stats), cross_entropy_per_token=deepcopy(stats))
 
-        @info "rank $rank: started processing $split" now()
+        @info "rank $global_rank: started processing $split" now()
         loss = zeros(length(ngram))
         start_time = time()
         for (idx, encoding) in enumerate(ds)
@@ -214,29 +182,32 @@ function model_loss(constructor, ref_file::String, output::String)
             end
             fit!(stats.cross_entropy, tuple(loss))
             fit!(stats.cross_entropy_per_token, tuple(loss ./ length(code)))
-            if idx % 1_000_000 == 0 && rank == 0
+            if idx % 1_000_000 == 0 && global_rank == 0
                 elapsed = time() - start_time
-                @info "rank $rank on molecule $idx" idx elapsed idx / elapsed
+                @info "rank $global_rank on molecule $idx" idx elapsed idx / elapsed
             end
         end
         # Reduce stats over ranks
         stats = leader_reduce(merge!, OnlineStats.Group(; stats...); comm)
-        if rank == 0
+        split_wall_time = time() - start_time
+        if global_rank == 0
             jldopen(output * ".tmp", "a+") do f
                 f[split] = (;
                     samples=nobs(stats),
                     cross_entropy=map(value, stats[:cross_entropy]),
                     cross_entropy_per_token=map(value, stats[:cross_entropy_per_token]),
+                    walltime=split_wall_time,
+                    world_size,
                 )
             end
         end
         MPI.Barrier(comm)
     end
 
-    if rank == 0
+    if global_rank == 0
         mv(output * ".tmp", output; force=true)
         chmod(output, 0o444)
-        @info "rank $rank: saved stats to $output" now()
+        @info "rank $global_rank: saved stats to $output" now()
     end
 
     MPI.Barrier(comm)
@@ -245,28 +216,25 @@ function model_loss(constructor, ref_file::String, output::String)
 
 end
 
-@annotate function avg_information_loss(datamodule::Py, ref_file::String, output::String)
+@annotate function avg_information_loss(dataset::DatasetConfig, ref_file::String, output::String; split="val")
     # Init MPI
     MPI.Init()
     comm = MPI.COMM_WORLD
-    rank = MPI.Comm_rank(comm)
-    size = MPI.Comm_size(comm)
-    @info "Rank $rank of $size is starting" now()
+    global_rank = MPI.Comm_rank(comm)
+    world_size = MPI.Comm_size(comm)
+    @info "Rank $global_rank of $world_size is starting" now()
 
     # Load Reference Tokenizer / n-gram model
-    tokenizer = datamodule.tokenizer
+    tokenizer, tok_info = tokenizer(dataset)
     ngram, ref_tok, ref_info = load_ngram_model(ref_file)
-    rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
+    global_rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
 
-    if rank == 0
+    if global_rank == 0
         mkpath(dirname(output))
         jldopen(output * ".tmp", "w+") do f
-            tok = datamodule.tokenizer
-            f["tokenizer"] = (;
-                vocab_size=pyconvert(Int, length(tok)),
-                unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
-            )
+            f["tokenizer"] = tokenizer_info
             f["ref_tokenizer"] = ref_info
+            f["system"] = (; world_size)
         end
     end
 
@@ -280,25 +248,26 @@ end
     end |> OnlineStats.Group
     info_loss = zeros(length(ngram))
 
-    @info "rank $rank: started processing" now()
-    ds = setup_dm_mpi(datamodule, "val"; rank, size)
+    @info "rank $global_rank: started processing" now()
+    ds = dataset_split(dataset, split; global_rank, world_size)
 
     MPI.Barrier(comm)
-    smi_column = pyconvert(String, datamodule.smi_column)
     start_time = time()
     for (idx, encoding) in enumerate(ds)
-        info_loss = unk_information_loss(ngram, ref_tok, tokenizer, encoding; smi_column)
+        info_loss = unk_information_loss(ngram, ref_tok, tokenizer, encoding; smi_column="smi")
         fit!(stats, tuple(info_loss))
-        if idx % 100 == 0 && rank == 0
+        if idx % 100 == 0 && global_rank == 0
             elapsed = time() - start_time
-            @info "rank $rank on molecule $idx" idx elapsed idx / elapsed now()
+            @info "rank $global_rank on molecule $idx" idx elapsed idx / elapsed now()
         end
     end
     stats = leader_reduce(merge!, stats; comm)
-    if rank == 0
+    walltime = time() - start_time
+    if global_rank == 0
         jldopen(output * ".tmp", "a+") do f
             f["samples"] = nobs(stats)
             f["info_loss"] = map(value, stats)
+            f["walltime"] = walltime
         end
         mv(output * ".tmp", output; force=true)
         @info "saved results to $output" now()

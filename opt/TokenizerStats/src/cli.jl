@@ -19,23 +19,16 @@ function common_args!(s)
 end
 
 
-@annotate function get_dataset(name_or_path, tokenizer, encoding)
-    start = time()
-    tokenizer = isdir(tokenizer) ? realpath(tokenizer) : tokenizer
-    if isdir(name_or_path)
+@annotate function get_dataset(name_or_path::String, tokenizer::String, encoding::String)
+    dataset_name = name_or_path
+    if isdir(name_or_path):
         if "tmQM" in splitpath(name_or_path)
-            dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
             dataset_name = "tmQM"
         else
-            dm = TokenizerStats.pretrain(name_or_path; tokenizer, encoding)
             dataset_name = basename(name_or_path)
         end
-    else
-        dm = TokenizerStats.molnet(name_or_path; tokenizer, encoding)
-        dataset_name = name_or_path
     end
-    @info "loaded $dataset_name in $(time() - start) s"
-    return dm, dataset_name
+    return DatasetConfig(name_or_path, tokenizer, encoding), dataset_name
 end
 
 function maybe_parse_env(T::Type, x::String)
@@ -109,17 +102,13 @@ end
 
     # Run command
     if args["%COMMAND%"] == "distortion"
-        tokenizer = args_cmd["tokenizer"]
-        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        dm, dataset = get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"])
-        avg_information_loss(dm, args_cmd["reference"], args_cmd["output"])
+        ds, _ = get_dataset(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        avg_information_loss(ds, args_cmd["reference"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "loss"
         # Load the tokenizer
-        tokenizer = args_cmd["tokenizer"]
-        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        dm = () -> first(get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"]))
-        model_loss(dm, args_cmd["model"], args_cmd["output"])
+        ds, _ = get_dataset(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        model_loss(ds, args_cmd["model"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "merge"
         directory = args_cmd["directory"]
@@ -130,25 +119,32 @@ end
         merge_usage_stats(files; output)
 
     elseif args["%COMMAND%"] == "usage"
-        tokenizer = args_cmd["tokenizer"]
-        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        dm, dataset = get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"])
-        splits = split(args_cmd["splits"], ",")
+        ds, _ = get_dataset(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        splits = parse_splits(args_cmd["splits"])
 
         # Distribute computation
         if args_cmd["mode"] == "mpi"
-            tabulate_dataset(dm, args_cmd["output"]; tokenizer_name, splits)
+            tabulate_dataset(ds, args_cmd["output"], splits)
         elseif args_cmd["mode"] == "batch"
             size = maybe_parse_env(Int, args_cmd["size"])
             rank = maybe_parse_env(Int, args_cmd["rank"])
             @info "Using batch mode: $rank of $size (0-indexed)"
-            job_array_usage_stats(dm, args_cmd["output"]; tokenizer_name, splits, size, rank)
+            job_array_usage_stats(ds, args_cmd["output"]; splits, size, rank)
         else
             error("Unknown mode $(args_cmd["mode"])")
         end
     end
 
     return 0
+end
+
+parse_splits(x::String) = parse_splits(split(x, ","))
+function parse_splits(x::Vector{String})
+    if length(x) == 1 && first(x)
+        return ["val", "train", "test"]
+    else
+        return x
+    end
 end
 
 function merge_usage_stats(files::Vector{String}; output::String="merged.jld2", splits::Vector{String}=["train", "val", "test"])

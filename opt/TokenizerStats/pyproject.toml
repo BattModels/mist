@@ -1,5 +1,5 @@
 [project]
-name = "TokenizerStats"
+name = "tokenizer_stats"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -8,13 +8,27 @@ authors = [
 ]
 requires-python = ">=3.10, <3.14"
 dependencies = [
+    "smirk",
     "mendeleev >= 0.16",
     "selfies == 2.1.2",
     "jsonnet ~= 0.20.0",
-    "electrolyte-fm",
     "smilespe==0.0.3",
+    "datasets~=3.5",
     "apetokenizer @ git+https://github.com/mikemayuare/apetokenizer.git@8b070d6278503bcf8ad2eedc1756ac34f4bbd981",
+    "transformers>=4.51.3",
+    "rdkit>=2025.3.1",
+    "scikit-learn>=1.6.1",
 ]
 
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
 [tool.uv.sources]
-electrolyte-fm = { path = "../../", editable = true }
+smirk = { git = "ssh://git@github.com/BattModels/smirk.git", rev = "dfdd9dc27c066f956b69d1f55c2d4717beb7838d" }

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 import selfies
-from build_vocab import (
+from .build_vocab import (
     ALIPHATIC_ORGANIC,
     AROMATIC_ORGANIC,
     AROMATIC_SYMBOLS,
@@ -21,7 +21,7 @@ from build_vocab import (
 from datasets import load_dataset
 from mendeleev import element
 
-from electrolyte_fm.utils.tokenizer import PreTrainedTokenizerBase, load_tokenizer
+from .tokenizer import PreTrainedTokenizerBase, load_tokenizer
 
 logging.basicConfig(
     level=logging.INFO,
