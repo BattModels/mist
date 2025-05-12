@@ -29,4 +29,4 @@ tar -cavf "$(realpath ~/scratch)/tokenizer_stats_$(date +"%d%m%Y").tar.xz" \
 # Compress Code (Smirk)
 SMIRK_VERSION="v0.1.1"
 curl -L https://github.com/BattModels/smirk/archive/refs/tags/$(SMIRK_VERSION).tar.gz \
-    --output "$(realpath ~/scratch)/smrik_${SMIRK_VERSION}.tar.xz"
+    --output "$(realpath ~/scratch)/smirk_${SMIRK_VERSION}.tar.gz"
