@@ -15,7 +15,7 @@ tar -cavf "$(realpath ~/scratch)/tokenizer_stats_$(date +"%d%m%Y").tar.xz" \
     --xz \
     --exclude="*.slurm" \
     --exclude="*.tmp" \
-    --exclude=".unmerged" \
+    --exclude='*/.unmerged/*'
     -C stats \
     .
 
