@@ -20,7 +20,7 @@ tar -cavf "$(realpath ~/scratch)/tokenizer_stats_$(date +"%d%m%Y").tar.xz" \
     .
 
 # Compress Code (TokenizerStats)
-{ git ls-files; find fig/ -type f; find -name Manifest.toml; } | \
+{ git ls-files; find fig/ -type f |  sed 's|^\./||'; find -name Manifest.toml | sed 's|^\./||'; } | \
     tar -cav \
     -f "$(realpath ~/scratch)/TokenizerStats.jl_$(date +"%d%m%Y").tar.xz" \
     --dereference \
