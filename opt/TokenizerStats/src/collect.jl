@@ -38,7 +38,7 @@ end
 
 function rank_usage_stats(dataset::DatasetConfig, split::String; global_rank::Int, world_size::Int)
     ds = dataset_split(dataset, split; global_rank, world_size)
-    tokenizer, tok_info = tokenizer(dataset)
+    _, tok_info = tokenizer(dataset)
     unk_token_id = tok_info.unk_token_id
     local_stats = tracked_stats()
     start_time = time()
@@ -66,11 +66,11 @@ end
 
 function job_array_usage_stats(dataset::DatasetConfig, out_file::AbstractString; splits=["train"], world_size::Int=1, global_rank::Int=0)
     # Load Dataset and Tokenizer
-    tokenizer, tokenizer_info = tokenizer(dataset)
+    _, tok_info = tokenizer(dataset)
     out_file = out_file * "_split_$(join(splits, "_"))_rank_$global_rank.jld2"
     mkpath(dirname(out_file))
     jldopen(out_file * ".tmp", "w+") do f
-        f["tokenizer"] = tokenizer_info
+        f["tokenizer"] = tok_info
         f["dataset"] = (; dataset_name=dataset_name(dataset), encoding=dataset.encoding)
     end
 
@@ -98,12 +98,12 @@ function tabulate_dataset(dataset::DatasetConfig, out_file::AbstractString, spli
     @info "Rank $global_rank of $world_size is starting" now()
 
     # Load Dataset and Tokenizer
-    tokenizer, tokenizer_info = tokenizer(dataset)
+    _, tok_info = tokenizer(dataset)
     if global_rank == 0
         @debug "rank $global_rank: created $out_file" now()
         mkpath(dirname(out_file))
         jldopen(out_file * ".tmp", "w+") do f
-            f["tokenizer"] = tokenizer_info
+            f["tokenizer"] = tok_info
             f["dataset"] = (; dataset_name=dataset_name(dataset), encoding=dataset.encoding)
         end
     end
@@ -141,7 +141,6 @@ function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
     @info "Rank $global_rank of $world_size is ready" now()
 
     # Create datamodule
-    ds = tokenizer_dataset(dataset)
     tok, tok_info = tokenizer(dataset)
     MPI.Barrier(comm)
     @info "Rank $global_rank of $world_size is starting" now()
@@ -151,7 +150,6 @@ function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
     global_rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
 
     # Init Fit Stats
-    tok = datamodule.tokenizer
     if global_rank == 0
         mkpath(dirname(output))
         jldopen(output * ".tmp", "w+") do f
@@ -163,6 +161,7 @@ function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
 
     MPI.Barrier(comm)
     for split in ["val", "train", "test"]
+        ds = dataset_split(dataset, split; global_rank, world_size)
         stats = map(1:length(ngram)) do _
             OnlineStats.Series(;
                 moments=OnlineStats.Moments(),
@@ -225,14 +224,14 @@ end
     @info "Rank $global_rank of $world_size is starting" now()
 
     # Load Reference Tokenizer / n-gram model
-    tokenizer, tok_info = tokenizer(dataset)
+    tok, tok_info = tokenizer(dataset)
     ngram, ref_tok, ref_info = load_ngram_model(ref_file)
     global_rank == 0 && @info "Loaded n-gram model for $(ref_info.name) from $ref_file ($(ref_info.sha256[1:8]))"
 
     if global_rank == 0
         mkpath(dirname(output))
         jldopen(output * ".tmp", "w+") do f
-            f["tokenizer"] = tokenizer_info
+            f["tokenizer"] = tok_info
             f["ref_tokenizer"] = ref_info
             f["system"] = (; world_size)
         end
@@ -254,7 +253,7 @@ end
     MPI.Barrier(comm)
     start_time = time()
     for (idx, encoding) in enumerate(ds)
-        info_loss = unk_information_loss(ngram, ref_tok, tokenizer, encoding; smi_column="smi")
+        info_loss = unk_information_loss(ngram, ref_tok, tok, encoding; smi_column="smi")
         fit!(stats, tuple(info_loss))
         if idx % 100 == 0 && global_rank == 0
             elapsed = time() - start_time

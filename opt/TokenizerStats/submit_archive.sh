@@ -15,5 +15,18 @@ tar -cavf "$(realpath ~/scratch)/tokenizer_stats_$(date +"%d%m%Y").tar.xz" \
     --xz \
     --exclude="*.slurm" \
     --exclude="*.tmp" \
+    --exclude=".unmerged" \
     -C stats \
     .
+
+# Compress Code (TokenizerStats)
+{ git ls-files; find fig/ -type f; find -name Manifest.toml; } | \
+    tar -cav \
+    -f "$(realpath ~/scratch)/TokenizerStats.jl_$(date +"%d%m%Y").tar.xz" \
+    --dereference \
+    --files-from -
+
+# Compress Code (Smirk)
+SMIRK_VERSION="v0.1.1"
+curl -L https://github.com/BattModels/smirk/archive/refs/tags/$(SMIRK_VERSION).tar.gz \
+    --output "$(realpath ~/scratch)/smrik_${SMIRK_VERSION}.tar.xz"

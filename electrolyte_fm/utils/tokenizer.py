@@ -24,7 +24,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         raise unk_name
 
     elif name == "SmilesPE/SPE_ChEMBL":
-        from ..tokenize.spe import pretrained_spe_tokenizer
+        from .spe import pretrained_spe_tokenizer
 
         return pretrained_spe_tokenizer(cache_generated=True)
 

@@ -30,6 +30,7 @@ end
 
 
 const __loader = Ref{Py}()
+const __tokenizer = Ref{Py}()
 function __init__()
     __loader[] = pyimport("helper.loader")
     __tokenizer[] = pyimport("helper.tokenizer")
@@ -46,6 +47,7 @@ struct DatasetConfig
 end
 
 function dataset_split(dc::DatasetConfig, split::String; kwargs...)
+    split = split == "val" ? "validation" : split
     return tokenizer_dataset(dc.tokenizer, dc.name_or_path, dc.encoding; kwargs...)[split]
 end
 
@@ -54,8 +56,8 @@ function tokenizer(dc::DatasetConfig)
     tok = load_tokenizer(dc.tokenizer)
     info = (;
         tokenizer_name = isdir(dc.tokenizer) ? basename(dc.tokenizer) : dc.tokenizer,
-            vocab_size=pyconvert(Int, length(tokenizer)),
-            unk_token_id=pyconvert(Union{Int,Nothing}, tokenizer.unk_token_id),
+        vocab_size=pyconvert(Int, length(tok)),
+        unk_token_id=pyconvert(Union{Int,Nothing}, tok.unk_token_id),
     )
     return tok, info
 end
@@ -69,33 +71,6 @@ function dataset_name(dc::DatasetConfig)
         end
     end
     return dc.name_or_path
-end
-
-function split_dataset_by_node(args...; kwargs...)
-    m = @pyconst(pyimport("datasets.distributed"))
-    return m.split_dataset_by_node(args...; kwargs...)
-end
-
-function molnet(name::AbstractString; tokenizer="smirk", encoding::String="smiles")
-    data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
-    target_columns = String[]
-    dm = data_modules.MolNetDataModule(name; tokenizer, encoding, target_columns, include_encoding=true)
-    dm.prepare_data()
-    return dm
-end
-
-function tmqm(path::AbstractString; tokenizer="smirk", encoding::String="smiles")
-    data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
-    dm = data_modules.tmQMDataModule(path; tokenizer, encoding, include_encoding=true)
-    dm.prepare_data()
-    return dm
-end
-
-function pretrain(path::AbstractString; tokenizer="smirk", encoding::String="smiles")
-    data_modules = @pyconst(pyimport("electrolyte_fm.data_modules"))
-    dm = data_modules.RobertaDataSet(path; tokenizer, encoding)
-    dm.prepare_data()
-    return dm
 end
 
 include("ngrams.jl")

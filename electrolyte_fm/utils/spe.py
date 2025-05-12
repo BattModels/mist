@@ -10,7 +10,7 @@ from SmilesPE.tokenizer import SPE_Tokenizer
 from transformers import PreTrainedTokenizerBase
 from transformers.tokenization_utils_base import BatchEncoding
 
-from ..utils.cache import cached_download
+from .cache import cached_download
 
 
 class PreTrainedSPETokenizer(PreTrainedTokenizerBase):

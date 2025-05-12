@@ -121,34 +121,14 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
         replace.(top_k_tokens, "#" => "\\#", "<unk>" => "[UNK]")
     end
 
-    leftjoin!(df_out,
-        select(subset(df, :dataset => ByRow(==("realspace"))), :tokenizer, :cross_entropy => :cross_entropy_realspace);
-        on="name_or_path" => "tokenizer"
-    )
-    leftjoin!(df_out,
-        select(subset(df, :dataset => ByRow(==("realspace"))), :tokenizer, :fertility => :fertility_realspace);
-        on="name_or_path" => "tokenizer"
-    )
-
-    # MoleculeNet
-    leftjoin!(df_out,
-        select(subset(df, :dataset => ByRow(==("MoleculeNet"))), :tokenizer, :cross_entropy => :cross_entropy_molnet);
-        on="name_or_path" => "tokenizer"
-    )
-    leftjoin!(df_out,
-        select(subset(df, :dataset => ByRow(==("MoleculeNet"))), :tokenizer, :info_loss => :info_loss_molnet);
-        on="name_or_path" => "tokenizer"
-    )
-
-    # tmQM
-    leftjoin!(df_out,
-        select(subset(df, :dataset => ByRow(==("tmQM"))), :tokenizer, :cross_entropy => :cross_entropy_tmqm);
-        on="name_or_path" => "tokenizer"
-    )
-    leftjoin!(df_out,
-        select(subset(df, :dataset => ByRow(==("tmQM"))), :tokenizer, :info_loss => :info_loss_tmqm);
-        on="name_or_path" => "tokenizer"
-    )
+    # Stack dataset specific metrics
+    @info describe(df)
+    rename_cols(col, x) = Symbol(col, "_", lowercase(x))
+    for col in [:info_loss, :cross_entropy, :fertility]
+        df_col = select(df, :dataset, :tokenizer, col)
+        df_col = unstack(df_col, :dataset, col; renamecols=Base.Fix1(rename_cols, col))
+        leftjoin!(df_out, df_col; on="name_or_path" => "tokenizer")
+    end
     select!(df_out, Not("name_or_path"))
 
     fig_dir = joinpath(pkgdir(TokenizerStats), "fig")
@@ -158,24 +138,28 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
             \\begin{landscape}
             \\begin{table}
             \\resizebox{\\linewidth}{!}{%
-            \\begin{tabular}{llllc|cc|cc|cc}
+            \\begin{tabular}{llllrc|cc|ccc|ccc}
                 &
                 &
                 &
                 &
                 &
-                \\multicolumn{2}{c|}{REAL Space} &
-                \\multicolumn{2}{c|}{MoleculeNet} &
-                \\multicolumn{2}{c}{tmQM} \\\\
+                &
+                \\multicolumn{2}{c|}{REALSpace} &
+                \\multicolumn{3}{c|}{MoleculeNet} &
+                \\multicolumn{3}{c}{tmQM} \\\\
                 Tokenizer &
                 Domain &
                 Encoding &
                 Class &
+                Vocab. Size &
                 Top-$k &
+                Fertility &
                 \\(H\\) &
                 Fertility &
                 \\(H\\) &
                 \\(D_{KL}\\) &
+                Fertility &
                 \\(H\\) &
                 \\(D_{KL}\\) \\\\ \\hline
             """
@@ -192,11 +176,14 @@ function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_
                 $(row["Domain"]) &
                 $(row["Encoding"]) &
                 $(row["Class"]) &
+                $(format("{:,d}", row["Vocab. Size"])) &
                 $top_k_tokens &
-                $(row["cross_entropy_realspace"]) &
                 $(row["fertility_realspace"]) &
-                $(row["cross_entropy_molnet"]) &
-                $(coalesce(row["info_loss_molnet"], "---")) &
+                $(row["cross_entropy_realspace"]) &
+                $(row["fertility_moleculenet"]) &
+                $(row["cross_entropy_moleculenet"]) &
+                $(coalesce(row["info_loss_moleculenet"], "---")) &
+                $(row["fertility_tmqm"]) &
                 $(row["cross_entropy_tmqm"]) &
                 $(coalesce(row["info_loss_tmqm"], "---")) \\\\
             """
