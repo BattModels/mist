@@ -11,10 +11,11 @@ def test_legendre():
         embed_dim=1, polynomial_order=4, n_components=2
     )
     x = torch.ones(2)
-    assert task_head.legendre_poly(n=0, x=x) == torch.ones(1)
-    assert task_head.legendre_poly(n=1, x=x) == x
-    assert task_head.legendre_poly(n=8, x=x) == 0.125 * (
-        63 * torch.pow(x, 5) - 70 * torch.pow(x, 3) + 15 * torch.pow(x, 1)
+    assert torch.allclose(task_head.legendre_poly(n=0, x=x), torch.ones(1))
+    assert torch.allclose(task_head.legendre_poly(n=1, x=x), x)
+    assert torch.allclose(
+        task_head.legendre_poly(n=8, x=x),
+        0.125 * (63 * torch.pow(x, 5) - 70 * torch.pow(x, 3) + 15 * torch.pow(x, 1)),
     )
 
 
