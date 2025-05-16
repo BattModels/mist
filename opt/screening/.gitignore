@@ -2,3 +2,6 @@ vendor/
 *.smi
 *.frag
 out/
+*.bin_cache
+models/
+models
