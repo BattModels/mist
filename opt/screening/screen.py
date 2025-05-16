@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
+from itertools import islice
 
 import typer
 import yaml
@@ -11,7 +12,7 @@ from lightning.fabric import Fabric
 from src.database import dump_to_sqlite_threaded
 from src.dataloader import DatabaseFragmentDataset
 from src.generate import OracleCritic, generate
-from src.utils import configure_logging
+from src.utils import configure_logging, take_for_seconds
 from torch.autograd.profiler import emit_nvtx
 
 from electrolyte_fm.models.prod_finetune import MISTFinetuned, MISTMultiTask
@@ -94,15 +95,20 @@ def main(
         epoch_size=config["generation"]["epoch_size"],
         limit_db_fragments=config["generation"]["limit_db_fragments"],
         limit_ref_fragments=config["generation"]["limit_ref_fragments"],
-    )
+    ).dataloader(config["generation"]["batch_size"])
+
+    if (limit := config.get("limit", None)) is not None:
+        mol_generator = islice(mol_generator, limit)
+
+    if (limit := config.get("limit_walltime", None)) is not None:
+        mol_generator = take_for_seconds(mol_generator, limit)
 
     with emit_nvtx():
         dump_to_sqlite_threaded(
             generate(
                 fabric,
                 critics,
-                mol_generator.dataloader(config["generation"]["batch_size"]),
-                limit=config.get("limit", None),
+                mol_generator,
             ),
             out_dir.joinpath(f"rank_{fabric.global_rank}.sqlite"),
         )

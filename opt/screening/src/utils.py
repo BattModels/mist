@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from itertools import takewhile
 
 START_TIME = time.perf_counter()
 
@@ -68,3 +69,8 @@ def configure_logging(fabric, log_file, logger=None):
     logger.setLevel(logging.INFO)
     logger.addFilter(FabricRankFilter(fabric))
     logger.addFilter(ElapsedTimeFilter())
+
+
+def take_for_seconds(iterable, duration_sec):
+    start = time.perf_counter()
+    return takewhile(lambda _: time.perf_counter() - start < duration_sec, iterable)
