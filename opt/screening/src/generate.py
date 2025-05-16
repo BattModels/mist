@@ -8,9 +8,7 @@ from torch import nn
 from electrolyte_fm.models.prod_finetune import MISTFinetuned
 from src.hyperloglog import HyperLogLogSet
 
-from .utils import RateLimitedAdapter
-
-logger = RateLimitedAdapter(logging.getLogger(__name__), min_interval=30)
+from .utils import RateLimitedAdapter, configure_logging
 
 
 class OracleCritic(nn.Module):
@@ -91,7 +89,7 @@ class CriticPanel(nn.Module):
         return torch.cat(y, dim=-1), net_score
 
 
-def generate(fabric: Fabric, critics, mol_dataloader):
+def generate(fabric: Fabric, critics, mol_dataloader, limit=None):
     assert len(critics) > 0, "No critics provided"
 
     # Setup Critics
@@ -108,9 +106,10 @@ def generate(fabric: Fabric, critics, mol_dataloader):
     start_time = time.perf_counter()
     world_size = fabric.world_size
     last_sync = 0
+    log_rate = 1000
 
     # Generate molecules
-    for batch in mol_dataloader:
+    for idx, batch in enumerate(mol_dataloader):
         start_batch = time.perf_counter()
         n_evaluated += batch["input_ids"].shape[0]
 
@@ -133,21 +132,23 @@ def generate(fabric: Fabric, critics, mol_dataloader):
             time_per_passing = (net_time * world_size) / n_passing_world
         else:
             time_per_passing = None
-        logger.info(
-            {
-                "passing_rank": n_passing,
-                "passing_world": n_passing_world,
-                "unique_molecules_world": len(generated_molecules),
-                "evaluated_rank": n_evaluated,
-                "net_throughput_rank": n_passing / net_time,
-                "yield_rank": n_passing / n_evaluated,
-                "eval_throughput_rank": n_evaluated / net_time,
-                "eval_throughput_world": len(generated_molecules)
-                / (net_time * world_size),
-                "current_throughput_rank": batch_passing / batch_time,
-                "time_per_passing_world": time_per_passing,
-            }
-        )
+
+        if idx % log_rate == 0:
+            logging.info(
+                {
+                    "passing_rank": n_passing,
+                    "passing_world": n_passing_world,
+                    "unique_molecules_world": len(generated_molecules),
+                    "evaluated_rank": n_evaluated,
+                    "net_throughput_rank": n_passing / net_time,
+                    "yield_rank": n_passing / n_evaluated,
+                    "eval_throughput_rank": n_evaluated / net_time,
+                    "eval_throughput_world": len(generated_molecules)
+                    / (net_time * world_size),
+                    "current_throughput_rank": batch_passing / batch_time,
+                    "time_per_passing_world": time_per_passing,
+                }
+            )
 
         # Yield Passing Molecules
         if net_score.any():
@@ -163,10 +164,13 @@ def generate(fabric: Fabric, critics, mol_dataloader):
         # Synchronize generated cardinality
         last_sync += 1
         if last_sync >= 64:
-            logger.info("Synchronizing generated cardinality")
+            logging.debug("Synchronizing generated cardinality")
             generated_molecules.reduce(fabric)
             passing_molecules.reduce(fabric)
             last_sync = 0
+
+        if limit is not None and idx > limit:
+            break
 
     logging.info("Rank %d: Finished", fabric.global_rank)
     return None
