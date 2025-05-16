@@ -89,7 +89,7 @@ class CriticPanel(nn.Module):
         return torch.cat(y, dim=-1), net_score
 
 
-def generate(fabric: Fabric, critics, mol_dataloader, limit=None):
+def generate(fabric: Fabric, critics, mol_dataloader):
     assert len(critics) > 0, "No critics provided"
 
     # Setup Critics
@@ -168,9 +168,6 @@ def generate(fabric: Fabric, critics, mol_dataloader, limit=None):
             generated_molecules.reduce(fabric)
             passing_molecules.reduce(fabric)
             last_sync = 0
-
-        if limit is not None and idx > limit:
-            break
 
     logging.info("Rank %d: Finished", fabric.global_rank)
     return None

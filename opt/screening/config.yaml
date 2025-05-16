@@ -1,4 +1,5 @@
 limit: 1_000_000
+limit_walltime: 300
 generation:
   db_path: zinc_fragment/fragments.sqlite
   n_fragments: 1000
