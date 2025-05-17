@@ -46,6 +46,10 @@ def load_encoder(
         )
 
 
+def is_pure_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 class LMFinetuning(LightningModule, DeepSpeedMixin):
     """
     PyTorch Lightning module for finetuning LM encoder model on multiple tasks.
@@ -102,7 +106,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         )
 
         if bootstrap:
-            n = bootstrap if isinstance(bootstrap, int) else 50
+            n = bootstrap if is_pure_int(bootstrap) else 50
             metrics = bootstrap_collection(metrics, num_bootstraps=n)
 
         if track_oov:
