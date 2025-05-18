@@ -41,11 +41,16 @@ def tokenizer_dataset(
     encoding: str,
     world_size: int = 1,
     global_rank: int = 0,
+    limit: int | None = None,
 ) -> AbstractDataset:
     tokenizer = load_tokenizer(tokenizer)
     encoding = MolEncoding(encoding)
     ds = get_dataset(name_or_path)
     ds = maybe_shard_dataset(GlobalComm(global_rank, world_size), ds)
+
+    if limit is not None:
+        ds = ds.shuffle(seed=42).take(limit)
+
     ds = encode_molecules(ds, "smi", encoding=encoding)
     return ds.map(
         tokenizer,
@@ -75,7 +80,7 @@ def molnet(name: str):
         save_infos=False,
     )
     ds = ds.rename_column("smiles" if name != "bace" else "mol", "smi")
-    return ds.select_columns("smi")
+    ds = ds.select_columns("smi")
 
 
 def tmqm(name_or_path: str):
@@ -92,7 +97,13 @@ def tmqm(name_or_path: str):
         streaming=True,
         save_infos=False,
     )
-    return ds.select_columns("smiles").rename_column("smiles", "smi")
+    ds = ds.select_columns("smiles").rename_column("smiles", "smi")
+
+    # Split dataset
+    if name_or_path in ["bace", "bbbp", "hiv"]:
+        return scaffold_split(ds, "smi")
+    else:
+        return train_val_test_split(ds)
 
 
 def smiles_dataset(name_or_path: str):

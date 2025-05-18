@@ -38,12 +38,7 @@ function __init__()
 end
 
 tokenizer_dataset(args...; kwargs...) = __loader[].tokenizer_dataset(args...; kwargs...)
-function load_tokenizer(name_or_path)
-    if isdir(name_or_path)
-        name_or_path = realpath(name_or_path)
-    end
-    return __tokenizer[].load_tokenizer(name_or_path)
-end
+load_tokenizer(name_or_path) = __tokenizer[].load_tokenizer(name_or_path)
 
 struct DatasetConfig
     name_or_path::String

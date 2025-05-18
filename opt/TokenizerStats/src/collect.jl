@@ -248,7 +248,7 @@ end
     info_loss = zeros(length(ngram))
 
     @info "rank $global_rank: started processing" now()
-    ds = dataset_split(dataset, split; global_rank, world_size)
+    ds = dataset_split(dataset, split; global_rank, world_size, limit=1000)
 
     MPI.Barrier(comm)
     start_time = time()

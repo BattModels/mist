@@ -1,4 +1,5 @@
 #!/usr/bin/env -S uv run python
+from os import posix_spawn
 import time
 import logging
 import subprocess
@@ -55,8 +56,50 @@ class Process:
             print(p.stdout)
             print(p.stderr)
             assert p.returncode == 0, f"Non-zero return code: {p.returncode}"
-            return int(p.stdout.split(" ")[-1])
+
+            # Add a marker file with the job id
+            job_id = int(p.stdout.split(" ")[-1])
+            if output := self.output:
+                output.parent.mkdir(exist_ok=True, parents=True)
+                output.with_suffix(output.suffix + ".slurm").write_text(str(job_id))
+
+            return job_id
+
         return randint(1, 967_296)
+
+    def active_job(self) -> int | None:
+        if self.output is None:
+            return None
+
+        job_file = self.output.with_suffix(self.output.suffix + ".slurm")
+        if not job_file.exists():
+            return None
+
+        # Get the job id
+        job_id = job_file.read_text()
+        if not job_id:
+            job_file.unlink(missing_ok=True)
+            return None
+        job_id = int(job_id)
+
+        # Get the job state
+        p = subprocess.run(
+            ["scontrol", "show", "--json", "job", str(job_id)], capture_output=True
+        )
+        job_info = json.loads(p.stdout)
+        try:
+            state = job_info["jobs"][0]["job_state"][0]
+            if state in ["RUNNING", "PENDING"]:
+                return job_id
+        except KeyError:
+            pass
+
+        except IndexError:
+            pass
+
+        # Job is no longer active
+        job_file.unlink()
+        return None
 
 
 class Workflow:
@@ -124,38 +167,20 @@ class Workflow:
 
         return deps
 
-    def active_jobs(self, file: Path) -> Optional[int]:
-        job_file = file.with_suffix(file.suffix + ".slurm")
-        if not job_file.exists():
-            return None
+    def launch(self, process: Process, deps, dry_run: bool = False):
+        # Launch the process
+        job_id = process.launch(deps, dry_run)
+        assert job_id is not None and isinstance(job_id, int)
 
-        # Get the job id
-        job_id = job_file.read_text()
-        if not job_id:
-            job_file.unlink(missing_ok=True)
-            return None
-        job_id = int(job_id)
+        return job_id
 
-        # Get the job state
-        p = subprocess.run(
-            ["scontrol", "show", "--json", "job", str(job_id)], capture_output=True
-        )
-        job_info = json.loads(p.stdout)
-        try:
-            state = job_info["jobs"][0]["job_state"][0]
-            if state in ["RUNNING", "PENDING"]:
-                return job_id
-        except KeyError:
-            pass
-
-        except IndexError:
-            pass
-
-        # Job is no longer active
-        job_file.unlink()
-        return None
-
-    def run(self, dry_run=False, rate_limit=100, preflight=list[Process]):
+    def run(
+        self,
+        dry_run=False,
+        rate_limit=100,
+        preflight=list[Process],
+        postflight=list[Process],
+    ):
         outputs = {
             process.output: process
             for process in self.processes
@@ -175,9 +200,10 @@ class Workflow:
             # Skip input files
             if file not in outputs:
                 continue
+            process = outputs[file]
 
             # Check for an active job and clean up marker files
-            if job_id := self.active_jobs(file):
+            if job_id := process.active_job():
                 logging.info("found active job for %s", file)
                 jobs[file] = job_id
                 continue
@@ -185,23 +211,15 @@ class Workflow:
             if file.exists():
                 continue
 
-            # Get the process that writes to this file
-            process = outputs[file]
+            # Get the dependencies for this process
             deps = self._get_deps(process, jobs)
             deps.extend(preflight_ids)
             deps = list(set(deps))
 
             # Launch the process
-            job_id = process.launch(deps, dry_run)
-            assert job_id is not None and isinstance(job_id, int)
-            jobs[file] = job_id
+            jobs[file] = self.launch(process, deps, dry_run)
             jobs_launched += 1
             tasks_launched[process.meta.get("task", "misc")] += 1
-
-            # Add a marker file with the job id
-            if not dry_run:
-                file.parent.mkdir(exist_ok=True, parents=True)
-                file.with_suffix(file.suffix + ".slurm").write_text(str(job_id))
 
             # Sleep to avoid hitting the rate limit
             sleep_time = max(1 / rate_limit - (time.time() - last_launch), 0)
@@ -209,6 +227,14 @@ class Workflow:
             if not dry_run:
                 time.sleep(sleep_time)
             last_launch = time.time()
+
+        # Launch postflight jobs
+        for process in postflight:
+            if process.active_job() is not None:
+                logging.info("found active job for %s", process.output)
+                continue
+
+            process.launch(jobs.values(), dry_run)
 
         print(f"Launched {jobs_launched} jobs")
         for task, count in tasks_launched.items():
@@ -471,4 +497,8 @@ if __name__ == "__main__":
     if args.precompile:
         preflight.append(Process(["submit_precompile.sh"], []))
 
-    wk.run(dry_run=args.dry_run, preflight=preflight)
+    postflight = [
+        Process(["submit_archive.sh"], output=Path("archive")),
+    ]
+
+    wk.run(dry_run=args.dry_run, preflight=preflight, postflight=postflight)
