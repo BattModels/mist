@@ -109,6 +109,7 @@ function tabulate_dataset(dataset::DatasetConfig, out_file::AbstractString, spli
     end
 
     MPI.Barrier(comm)
+    start_time = time()
     for split in splits
         rank_stats = rank_usage_stats(dataset, split; global_rank, world_size)
         tokenizer_stats = leader_reduce(merge!, rank_stats; comm)
@@ -121,6 +122,10 @@ function tabulate_dataset(dataset::DatasetConfig, out_file::AbstractString, spli
     end
 
     if global_rank == 0
+        jldopen(out_file * ".tmp", "a+") do f
+            out_file["walltime"] = time() - start_time
+            out_file["world_size"] = world_size
+        end
         mv(out_file * ".tmp", out_file; force=true)
         chmod(out_file, 0o444)
         @info "Saved stats on rank $global_rank to $out_file" now()
@@ -160,6 +165,7 @@ function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
     end
 
     MPI.Barrier(comm)
+    start_time = time()
     for split in ["val", "train", "test"]
         ds = dataset_split(dataset, split; global_rank, world_size)
         stats = map(1:length(ngram)) do _
@@ -204,6 +210,9 @@ function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
     end
 
     if global_rank == 0
+        jldopen(output * ".tmp", "a+") do f
+            f["walltime"] = time() - start_time
+        end
         mv(output * ".tmp", output; force=true)
         chmod(output, 0o444)
         @info "rank $global_rank: saved stats to $output" now()
@@ -248,7 +257,7 @@ end
     info_loss = zeros(length(ngram))
 
     @info "rank $global_rank: started processing" now()
-    ds = dataset_split(dataset, split; global_rank, world_size, limit=1000)
+    ds = dataset_split(dataset, split; global_rank, world_size)
 
     MPI.Barrier(comm)
     start_time = time()

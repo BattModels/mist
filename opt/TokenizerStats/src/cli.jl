@@ -126,8 +126,8 @@ end
 end
 
 parse_splits(x::String) = parse_splits(split(x, ","))
-function parse_splits(x::Vector{String})
-    if length(x) == 1 && first(x)
+function parse_splits(x::Vector{<:AbstractString})
+    if length(x) == 1 && first(x) == "all"
         return ["val", "train", "test"]
     else
         return x
