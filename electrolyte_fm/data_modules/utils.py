@@ -1,11 +1,13 @@
-from enum import Enum
 import random
+from asyncio import Semaphore
+from enum import Enum
 from typing import Optional, TypeVar
+
+from datasets import Dataset, DatasetDict, IterableDatasetDict
+from datasets.distributed import split_dataset_by_node
 from rdkit import Chem
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from sklearn.model_selection import GroupShuffleSplit
-from datasets import Dataset, DatasetDict, IterableDatasetDict
-from datasets.distributed import split_dataset_by_node
 
 
 def is_fast(tokenizer):
@@ -89,6 +91,7 @@ def encode_molecules(
     output_column: Optional[str] = None,
     encoding: MolEncoding = MolEncoding.SMILES,
     random: bool = False,
+    max_workers: int = 8,
     **kwargs,
 ) -> AbstractDataset:
     """Convert SMILES encoding in `input_column` to desired `encoding` and save to `output_column`.
@@ -97,10 +100,16 @@ def encode_molecules(
     """
     assert isinstance(input_column, str)
     output_column = output_column or input_column
-
     encode = encoding if not random else encoding.random
+
+    tasks = Semaphore(max_workers)
+
+    async def async_encode(smi):
+        async with tasks:
+            return {output_column: encode(smi)}
+
     ds = ds.map(
-        lambda smi: {output_column: encode(smi)},
+        async_encode,
         input_columns=input_column,
         batched=False,
         **kwargs,

@@ -1,3 +1,4 @@
+from itertools import islice
 from pathlib import Path
 from dataclasses import dataclass
 from datasets import load_dataset
@@ -9,6 +10,8 @@ from .utils import (
     maybe_shard_dataset,
     encode_molecules,
     is_fast,
+    scaffold_split,
+    train_val_test_split,
 )
 
 
@@ -42,21 +45,24 @@ def tokenizer_dataset(
     world_size: int = 1,
     global_rank: int = 0,
     limit: int | None = None,
+    max_workers: int = 8,
 ) -> AbstractDataset:
     tokenizer = load_tokenizer(tokenizer)
     encoding = MolEncoding(encoding)
     ds = get_dataset(name_or_path)
     ds = maybe_shard_dataset(GlobalComm(global_rank, world_size), ds)
 
-    if limit is not None:
-        ds = ds.shuffle(seed=42).take(limit)
-
-    ds = encode_molecules(ds, "smi", encoding=encoding)
-    return ds.map(
+    ds = encode_molecules(ds, "smi", encoding=encoding, max_workers=max_workers)
+    ds = ds.map(
         tokenizer,
         batched=is_fast(tokenizer),
         input_columns="smi",
     )
+
+    if limit is not None:
+        return ds.shuffle(seed=42).take(limit)
+    else:
+        return ds
 
 
 def get_dataset(name_or_path: str):
@@ -76,11 +82,16 @@ def molnet(name: str):
         name=name,
         data_files=[MOLNET_URLS[name]],
         split="train",
-        streaming=True,
+        streaming=False,
         save_infos=False,
     )
     ds = ds.rename_column("smiles" if name != "bace" else "mol", "smi")
     ds = ds.select_columns("smi")
+
+    if name in ["hiv", "bace", "bbbp"]:
+        return scaffold_split(ds, "smi")
+    else:
+        return train_val_test_split(ds)
 
 
 def tmqm(name_or_path: str):
@@ -97,13 +108,7 @@ def tmqm(name_or_path: str):
         streaming=True,
         save_infos=False,
     )
-    ds = ds.select_columns("smiles").rename_column("smiles", "smi")
-
-    # Split dataset
-    if name_or_path in ["bace", "bbbp", "hiv"]:
-        return scaffold_split(ds, "smi")
-    else:
-        return train_val_test_split(ds)
+    return ds.select_columns("smiles").rename_column("smiles", "smi")
 
 
 def smiles_dataset(name_or_path: str):

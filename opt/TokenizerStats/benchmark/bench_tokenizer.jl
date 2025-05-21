@@ -1,5 +1,5 @@
 using BenchmarkTools
-using TokenizerStats
+using TokenizerStats: DatasetConfig, dataset_split
 using PythonCall: pyconvert
 
 const suite = BenchmarkGroup()
@@ -28,7 +28,14 @@ TOKENIZERS = [
     "meta-llama/Meta-Llama-3-8B",
 ]
 
-setup_dataset(tokenizer) = Iterators.take(TokenizerStats.molnet("freesolv"; tokenizer).train_dataset, 10)
+function setup_dataset(tokenizer, encoding)
+    dc = DatasetConfig("qm9", tokenizer, encoding)
+    ds = dataset_split(dc, "val")
+    return Iterators.take(ds, 1000)
+end
 for name in TOKENIZERS
-    suite[name] = @benchmarkable map(obs -> pyconvert(Vector{Int}, obs["input_ids"]), ds) setup=(ds = setup_dataset($name))
+    suite[name] = tok_suite = BenchmarkGroup()
+    for encoding in ["smiles", "smiles-canonical", "smiles-kekule"]
+        tok_suite[encoding] = @benchmarkable foreach(identity, ds) setup=(ds = setup_dataset($name, $encoding))
+    end
 end
