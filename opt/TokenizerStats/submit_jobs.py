@@ -469,7 +469,7 @@ def tokenizer_jobs(wk, tok, realspace_path, tmqm_path):
                 slurm={"ntasks": 32, "time": "1-0:0:0"},
             )
         )
-    return
+
     wk.add_process(
         ngram_loss(
             realspace_path,
