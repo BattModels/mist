@@ -148,7 +148,7 @@ class DatabaseFragmentDataset(FragmentDataset):
                     ref_frags.add(line.strip())
         if limit_ref_fragments:
             random.seed(42)
-            ref_frags = random.sample(ref_frags, k=limit_ref_fragments)
+            ref_frags = random.sample(list(ref_frags), k=limit_ref_fragments)
         self.ref_fragments = list(ref_frags)
 
         logging.info(

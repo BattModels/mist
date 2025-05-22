@@ -66,7 +66,7 @@ def main(
     out_dir.mkdir(exist_ok=True, parents=True)
 
     # Configure logging
-    configure_logging(fabric, out_dir.joinpath("screen.log"))
+    configure_logging(fabric, out_dir.joinpath("screen.jsonl"))
 
     # Load critic config
     config = load_config(config_path)
