@@ -32,7 +32,7 @@ nunique_ref_fragments = 122
 sweep_dir = "initial-sweep"
 
 ref = yaml.safe_load(Path("config.yaml").read_text())
-hs = HyperSpace(sweep).gsd(r=3)
+hs = HyperSpace(sweep).gsd(r=4)
 for c in sorted(hs, key=lambda d: d["gpus"]):
     print(c)
     config = deepcopy(ref)
@@ -62,6 +62,7 @@ for c in sorted(hs, key=lambda d: d["gpus"]):
             "--nodes=1",
             f"--ntasks-per-node={c['gpus']}",
             f"--gpus-per-node={c['gpus']}",
+            f"--output={out_dir}/slurm-%A_%a.out",
             "launch.sh",
             "--out-dir",
             Path(sweep_dir).resolve(),
