@@ -109,9 +109,14 @@ struct MaskedCode{T,C<:AbstractVector{T},M<:AbstractVector{Bool}} <: AbstractVec
     code::C
     mask::M
     mask_value::T
+    function MaskedCode{T,C,M}(code, mask, mask_value) where {T,C,M}
+        @assert length(mask) == length(code) "length of code and mask must match"
+        @assert !any(==(mask_value), code[.!mask]) "mask value ($mask_value) occurs in unmasked code"
+        new(code, mask, mask_value)
+    end
 end
-MaskedCode(code::Vector{T}, mask::Union{BitVector,Vector{Bool}}, mask_value::Integer) where {T} = MaskedCode{T}(code, BitVector(mask), T(mask_value))
-MaskedCode{T}(code::C, mask::M, mask_value) where {T,C<:AbstractVector{T},M<:AbstractVector{Bool}} = MaskedCode{T,C,M}(code, mask, mask_value)
+MaskedCode(code::Vector{T}, mask::Union{BitVector,Vector{Bool}}, mask_value::Integer=typemax(T)) where {T} = MaskedCode{T}(code, BitVector(mask), mask_value)
+MaskedCode{T}(code::C, mask::M, mask_value) where {T,C<:AbstractVector{T},M<:AbstractVector{Bool}} = MaskedCode{T,C,M}(code, mask, T(mask_value))
 
 Base.getindex(mc::MaskedCode, i::Int) = mc.mask[i] ? mc.mask_value : mc.code[i]
 Base.eltype(::MaskedCode{T}) where {T} = T
@@ -417,7 +422,7 @@ given n-gram model
     ctype = valtype(m.ngrams[N]) isa Integer ? UInt64 : Float64
     P = Vector{ctype}(undef, m.vocab_size)
     Q = similar(P)
-    code = MaskedCode(code, mask, -100)
+    code = MaskedCode(code, mask)
     for idx in eachindex(code)
         # If nothing is masked, the information
         # loss is zero
