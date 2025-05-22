@@ -50,13 +50,13 @@ function cb_attrs(cb::Colorbar, plt)
 end
 
 
-function sublabel!(f, letter; left=0, kwargs...)
+function sublabel!(f, letter; left=0, up=0, kwargs...)
     label_kwargs = (;
         fontsize=8pt,
         font=:bold,
         halign=:right,
         tellheight=false,
-        padding=(0, left, 0, 0),
+        padding=(0, left, up, 0),
     )
     label_kwargs = merge(label_kwargs, kwargs)
     Label(f, "$letter)"; label_kwargs...)

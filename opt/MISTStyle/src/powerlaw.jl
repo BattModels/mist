@@ -33,5 +33,7 @@ function Makie.plot!(plt::Powerlaw)
 
     # Plot response, and translate it forward
     lines!(plt, points; Makie.shared_attributes(plt, Lines)...)
+    notify(limits)
+
     return plt
 end

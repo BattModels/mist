@@ -236,13 +236,16 @@ function figure_permutations(name_df::Pair...; name_df_order)
         :g298 => L"$G\degree$",
     ]
     limits = Dict(
-        :homo => (nothing, (3e-3, 2)),
-        :gap => (nothing, (5e-3, 2)),
-        :zpve => (nothing, (5e-3, 3e-1)),
+        :homo => (nothing, (5e-4, 2e-1)),
+        :lumo => (nothing, (1e-3, 5)),
+        :gap => (nothing, (1e-3, 3e-1)),
+        :zpve => (nothing, (1e-3, 1e-1)),
+        :g298 => (nothing, (3e-4, 1e-1)),
     )
     dfs = []
+    std_isfinite(x...) = all(!isnan∘std, [x...])
     for (name, df) in name_df
-        df = deepcopy(df)
+        df = subset(df, first.(axes) => ByRow(std_isfinite))
         df._plt_name .= name
         push!(dfs, df)
     end
@@ -252,23 +255,29 @@ function figure_permutations(name_df::Pair...; name_df_order)
 
     axes = map(enumerate(axes)) do (idx, (col, ylabel))
         is_last = idx == length(axes)
+        lims = get(limits, col, (nothing, (1e-3, nothing)))
+        yticks = col == :g298 ? LogTicks([-3, -2]) : LogTicks(WilkinsonTicks(3))
         ax_tend = Axis(gl_trends[idx, 1];
+            limits=lims,
             ylabel,
             yscale=log10,
             xticklabelrotation=0.55,
             xticks=MISTStyle.categorical_ticks(df.type),
             xlabelvisible=is_last,
             xticksvisible=is_last,
-            xminorticksvisible=is_last,
             xticklabelsvisible=is_last,
             tellwidth=true,
-            yticks=LogTicks(WilkinsonTicks(3)),
+            yticks,
             yminorticksvisible=true,
-            xminorticks=IntervalsBetween(5),
+            xminorticksvisible=false,
+            yminorticks=IntervalsBetween(5),
         )
         ax_scatter = Axis(gl_trends[idx, 2];
+            limits=(last(lims), last(lims)),
             xscale=ax_tend.yscale,
             yscale=ax_tend.yscale,
+            xticks=ax_tend.yticks,
+            yticks=ax_tend.yticks,
             xlabel="Comparative\nRobustness",
             xlabelvisible=is_last,
             xticksvisible=false,
@@ -280,8 +289,7 @@ function figure_permutations(name_df::Pair...; name_df_order)
     end |> Dict
 
     for (col, (ax, axs)) in axes
-        y = std.(df[:, col])
-        y = convert_units(y, col)
+        y = (abs∘variation).(df[:, col])
         x = df.type
         dodge = levelcode.(df._plt_name)
         idx = @. !isnan(y)
@@ -300,12 +308,8 @@ function figure_permutations(name_df::Pair...; name_df_order)
             alpha=0.2,
             marker=:circle,
         )
-        powerlaw!(axs, 1, 1; color=:black)
-        if haskey(limits, col)
-            ax.limits[] = limits[col]
-            axs.limits[] = (last(limits[col]), last(limits[col]))
-        end
         linkyaxes!(axs, ax)
+        powerlaw!(axs, 1, 1; color=:black)
     end
 
     # Legend
@@ -370,9 +374,11 @@ function figure_permutations(name_df::Pair...; name_df_order)
     colsize!(f.layout, 2, Relative(3 / 4))
 
 
+    up = 5
     sublabel!(gl_order[2, 1, TopLeft()], "a"; left=15)
     sublabel!(gl_order[3, 1, TopLeft()], "b"; left=15)
-    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=13)
+    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=10, up)
+    sublabel!(gl_trends[1, 2, TopLeft()], "d"; up=10, left=-5, tellwidth=false)
 
     resize_to_layout!(f)
 
