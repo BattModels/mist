@@ -358,7 +358,7 @@ def usage_array(
         inputs=[p.output],
         output=output,
         slurm=slurm,
-        meta=p.meta,
+        meta={**p.meta, "task": "merge"},
     )
 
 

@@ -47,7 +47,7 @@ function rank_usage_stats(dataset::DatasetConfig, split::String; global_rank::In
         input_ids = pyconvert(Vector{UInt32}, example["input_ids"])
         is_oov = unk_token_id in input_ids
         usage_stats!(local_stats, input_ids, is_oov)
-        if idx % 10 == 0
+        if idx % 1_000_000 == 0
             elapsed = time() - start_time
             @info "rank $global_rank on molecule $idx" idx elapsed idx / elapsed now()
         end
