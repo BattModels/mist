@@ -3,12 +3,12 @@ function tracked_stats()
         fertility=CountMap(Int),
         nunique=CountMap(Int),
         out_of_vocab=Counter(Int),
-        ngrams=ntuple(i -> CountMap(NTuple{i,Int}), 5),
+        ngrams=ntuple(i -> CountMap(NTuple{i,UInt32}), 5),
     )
 end
 
 usage_stats(example, is_oov) = usage_stats!(tracked_stats(), example, is_oov)
-function usage_stats!(stats, code::Vector{Int}, is_oov::Bool)
+function usage_stats!(stats, code::Vector{UInt32}, is_oov::Bool)
 
     # Track usage stats
     fit!(stats.fertility, length(code))
@@ -44,10 +44,10 @@ function rank_usage_stats(dataset::DatasetConfig, split::String; global_rank::In
     start_time = time()
     @info "rank $global_rank: started processing $split" now()
     for (idx, example) in enumerate(ds)
-        input_ids = pyconvert(Vector{Int}, example["input_ids"])
+        input_ids = pyconvert(Vector{UInt32}, example["input_ids"])
         is_oov = unk_token_id in input_ids
         usage_stats!(local_stats, input_ids, is_oov)
-        if idx % 1_000_000 == 0
+        if idx % 10 == 0
             elapsed = time() - start_time
             @info "rank $global_rank on molecule $idx" idx elapsed idx / elapsed now()
         end
@@ -123,8 +123,8 @@ function tabulate_dataset(dataset::DatasetConfig, out_file::AbstractString, spli
 
     if global_rank == 0
         jldopen(out_file * ".tmp", "a+") do f
-            out_file["walltime"] = time() - start_time
-            out_file["world_size"] = world_size
+            f["walltime"] = time() - start_time
+            f["world_size"] = world_size
         end
         mv(out_file * ".tmp", out_file; force=true)
         chmod(out_file, 0o444)
@@ -181,7 +181,7 @@ function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
         loss = zeros(length(ngram))
         start_time = time()
         for (idx, encoding) in enumerate(ds)
-            code = pyconvert(Vector{Int}, encoding["input_ids"])
+            code = pyconvert(Vector{UInt32}, encoding["input_ids"])
             for N in 1:length(ngram)
                 loss[N] = cross_entropy(ngram, code; N)
             end

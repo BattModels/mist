@@ -31,7 +31,7 @@ end
 
 function tok_log_prob!(f, cb, file, name, smi, max_vocab=50; direction=:forward)
     ngram, tok, info = TokenizerStats.load_ngram_model(file)
-    code = pyconvert(Vector{Int}, tok(smi)["input_ids"])
+    code = pyconvert(Vector{UInt32}, tok(smi)["input_ids"])
 
     if direction == :forward
         P = TokenizerStats.log_probability(ngram, code)
@@ -86,7 +86,7 @@ function figure_ngram_info_loss(;
     # Load model
     ref_file = joinpath(@__DIR__, "stats", "character", "realspace/usage.jld2")
     ngram, ref_tok, ref_info = TokenizerStats.load_ngram_model(ref_file)
-    ref_code = pyconvert(Vector{Int}, ref_tok(smi)["input_ids"])
+    ref_code = pyconvert(Vector{UInt32}, ref_tok(smi)["input_ids"])
     kwargs = (; ngram, ref_tok, ref_code, token_color)
 
     tok_info_loss!(f[1, 1], cb, "smirk", smi; kwargs...)
@@ -165,7 +165,7 @@ function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_cod
     # Load model
     name = tokenizers_info()[tok]["name"]
     tok = TokenizerStats.load_tokenizer(tok)
-    code = pyconvert(Vector{Int}, tok(smi)["input_ids"])
+    code = pyconvert(Vector{UInt32}, tok(smi)["input_ids"])
 
     # Align both tokenizations
     smi_tokens = pyconvert(Vector{String}, tok.tokenize(smi))

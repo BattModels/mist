@@ -98,7 +98,7 @@ def tmqm(name_or_path: str):
     path = Path(name_or_path)
     ds = load_dataset(
         "arrow",
-        name=self.path.name,
+        name=path.name,
         data_files={
             "train": str(path.joinpath("train/*.arrow")),
             "validation": str(path.joinpath("validation/*.arrow")),

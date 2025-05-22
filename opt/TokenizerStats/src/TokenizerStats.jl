@@ -48,7 +48,8 @@ end
 
 function dataset_split(dc::DatasetConfig, split::String; kwargs...)
     split = split == "val" ? "validation" : split
-    return tokenizer_dataset(dc.tokenizer, dc.name_or_path, dc.encoding; kwargs...)[split]
+    ds = tokenizer_dataset(dc.tokenizer, dc.name_or_path, dc.encoding; kwargs...)[split]
+    return ds
 end
 
 tokenizer_name(dc::DatasetConfig) = isdir(dc.tokenizer) ? basename(dc.tokenizer) : dc.tokenizer

@@ -1,3 +1,4 @@
+import logging
 import random
 from asyncio import Semaphore
 from enum import Enum
@@ -135,7 +136,7 @@ def scaffold_hash(smi: str) -> str:
     try:
         scaffold = MurckoScaffoldSmiles(smi)
     except ValueError:
-        logging.warn("No scaffold for %s, using input smiles string", smi)
+        logging.warning("No scaffold for %s, using input smiles string", smi)
         scaffold = smi
     return scaffold
 

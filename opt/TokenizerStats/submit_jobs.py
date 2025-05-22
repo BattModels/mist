@@ -14,7 +14,7 @@ from networkx import DiGraph, topological_sort
 
 logging.basicConfig(level=logging.INFO)
 
-STATS_DIR = Path(__file__).joinpath("..", "stats").resolve()
+STATS_DIR = Path(__file__).joinpath("..", "stats-encoding").resolve()
 
 LOG_FILE = Path(__file__).parent.joinpath("logs", "slurm-%x-%j.log")
 LOG_FILE.parent.mkdir(exist_ok=True, parents=True)
@@ -296,11 +296,13 @@ def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles", mode=
     slurm.setdefault("job-name", f"usage-{ds_name}")
     slurm.setdefault("ntasks", 4)
     slurm.setdefault("time", "1-0:0:0")
-    slurm.setdefault("mem-per-cpu", "3600M")
+    slurm.setdefault("mem-per-cpu", "1800M")
     slurm.setdefault("partition", "venkvis-cpu,venkvis-largemem")
 
     if mode == "batch":
         output = Path(output.parent, ".unmerged", f"usage_{encoding}", output.name)
+        slurm["array"] = f"0-{slurm['ntasks'] - 1}"
+        slurm["ntasks"] = 1
 
     return Process(
         [
@@ -445,7 +447,7 @@ def tokenizer_jobs(wk, tok, realspace_path, tmqm_path):
             tok_name,
             ds_name="realspace",
             encoding=tok["encoding"],
-            slurm={"ntasks": 128, "time": "1-0:0:0"},
+            slurm={"ntasks": 128, "time": "1-0:0:0", "mem-per-cpu": "6G"},
         )
     else:
         wk.add_process(
@@ -454,7 +456,7 @@ def tokenizer_jobs(wk, tok, realspace_path, tmqm_path):
                 tok_name,
                 ds_name="realspace",
                 encoding=tok["encoding"],
-                slurm={"ntasks": 128, "time": "1-0:0:0"},
+                slurm={"ntasks": 32, "time": "1-0:0:0"},
             )
         )
     wk.add_process(
@@ -476,7 +478,6 @@ def tokenizer_jobs(wk, tok, realspace_path, tmqm_path):
             slurm={"ntasks": 128, "time": "1-0:0:0"},
         )
     )
-    return
 
     # Tokenize MoleculeNet
     for ds in [*MOLNET_DATASETS, "tmqm"]:

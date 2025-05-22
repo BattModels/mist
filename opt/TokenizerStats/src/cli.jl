@@ -113,10 +113,10 @@ end
         if args_cmd["mode"] == "mpi"
             tabulate_dataset(ds, args_cmd["output"], splits)
         elseif args_cmd["mode"] == "batch"
-            size = maybe_parse_env(Int, args_cmd["size"])
-            rank = maybe_parse_env(Int, args_cmd["rank"])
-            @info "Using batch mode: $rank of $size (0-indexed)"
-            job_array_usage_stats(ds, args_cmd["output"]; splits, size, rank)
+            world_size = maybe_parse_env(Int, args_cmd["size"])
+            global_rank = maybe_parse_env(Int, args_cmd["rank"])
+            @info "Using batch mode: $global_rank of $world_size (0-indexed)"
+            job_array_usage_stats(ds, args_cmd["output"]; splits, world_size, global_rank)
         else
             error("Unknown mode $(args_cmd["mode"])")
         end

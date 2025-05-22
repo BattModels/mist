@@ -2,7 +2,7 @@ function top_k_tokens(ngram_file; k=5)
     # Load unigram statistics
     unigram, tok = jldopen(ngram_file, "r") do data
         # Load tokenizer
-        name = data["tokenizer"][:name]
+        name = data["tokenizer"][:tokenizer_name]
         name = startswith(name, "smirk-gpe") ? "./" * name : name
         tok = load_tokenizer(name)
 
