@@ -69,6 +69,13 @@ function job_array_usage_stats(dataset::DatasetConfig, out_file::AbstractString;
     _, tok_info = tokenizer(dataset)
     out_file = out_file * "_split_$(join(splits, "_"))_rank_$global_rank.jld2"
     mkpath(dirname(out_file))
+
+    # Early exit if file already exists
+    if isfile(out_file)
+        @info "Found existing file $out_file, skipping"
+        return 0
+    end
+
     jldopen(out_file * ".tmp", "w+") do f
         f["tokenizer"] = tok_info
         f["dataset"] = (; dataset_name=dataset_name(dataset), encoding=dataset.encoding)

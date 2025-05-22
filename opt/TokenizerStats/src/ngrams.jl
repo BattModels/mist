@@ -59,7 +59,8 @@ function load_ngram_model(file::String, split="train")
     jldopen(file, "r") do data
         # Extract tokenizer info
         sha256 = bytes2hex(open(SHA.sha256, file))
-        name = data["tokenizer"][:tokenizer_name]
+        tok_info = data["tokenizer"]
+        name = haskey(tok_info, :name) ? tok_info[:name] : tok_info[:tokenizer_name]
         name = startswith(name, "smirk-gpe") ? "./" * name : name
         tok = load_tokenizer(name)
         vocab_size = pyconvert(Int, length(tok))

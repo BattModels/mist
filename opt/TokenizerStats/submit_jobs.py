@@ -302,6 +302,16 @@ def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles", mode=
     if mode == "batch":
         output = Path(output.parent, ".unmerged", f"usage_{encoding}", output.name)
         slurm["array"] = f"0-{slurm['ntasks'] - 1}"
+
+        # Check if all array outputs are present
+        n_complete = len(list(output.parent.glob("*.jld2")))
+        logging.debug("found %d array output files for %s", n_complete, output.parent)
+        witness = output.parent.with_suffix(".witness")
+        if n_complete == slurm["ntasks"]:
+            witness.touch()
+        else:
+            witness.unlink(missing_ok=True)
+
         slurm["ntasks"] = 1
 
     return Process(
@@ -316,7 +326,7 @@ def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles", mode=
             str(dataset),
             tokenizer,
         ],
-        output=output.parent if mode == "batch" else output,
+        output=output.parent.with_suffix(".witness") if mode == "batch" else output,
         slurm=slurm,
         meta={"dataset": dataset, "tokenizer": tokenizer, "task": "usage"},
     )
@@ -459,6 +469,7 @@ def tokenizer_jobs(wk, tok, realspace_path, tmqm_path):
                 slurm={"ntasks": 32, "time": "1-0:0:0"},
             )
         )
+    return
     wk.add_process(
         ngram_loss(
             realspace_path,
