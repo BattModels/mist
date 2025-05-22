@@ -15,7 +15,9 @@ cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 source ./activate
 env
 
-python src/atomic_oov.py $@
+python -m python.helper.atomic_oov \
+    --tokenizers $(realpath ./tokenizers.json) \
+    $@
 
 exit_code=$?
 echo "`date`: done"

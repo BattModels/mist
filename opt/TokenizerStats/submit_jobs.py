@@ -542,6 +542,7 @@ if __name__ == "__main__":
         wk.add_process(
             ["submit_oov.sh", "--output", output, tok["name_or_path"]],
             output=output,
+            meta={"task": "oov"},
         )
 
         if tok["name_or_path"] == "character":
