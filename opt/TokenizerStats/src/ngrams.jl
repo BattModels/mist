@@ -115,7 +115,7 @@ struct MaskedCode{T,C<:AbstractVector{T},M<:AbstractVector{Bool}} <: AbstractVec
         new(code, mask, mask_value)
     end
 end
-MaskedCode(code::Vector{T}, mask::Union{BitVector,Vector{Bool}}, mask_value::Integer=typemax(T)) where {T} = MaskedCode{T}(code, BitVector(mask), mask_value)
+MaskedCode(code::AbstractVector{T}, mask::Union{BitVector,AbstractVector{Bool}}, mask_value::Integer=typemax(T)) where {T} = MaskedCode{T}(code, BitVector(mask), mask_value)
 MaskedCode{T}(code::C, mask::M, mask_value) where {T,C<:AbstractVector{T},M<:AbstractVector{Bool}} = MaskedCode{T,C,M}(code, mask, T(mask_value))
 
 Base.getindex(mc::MaskedCode, i::Int) = mc.mask[i] ? mc.mask_value : mc.code[i]
@@ -452,10 +452,11 @@ function fb_log_dist!(Pf::Vector{Float64}, m::NGramModel, code::AbstractVector{<
     fgram = condgram(code, idx, N)
     bgram = condgram_backward(code, idx, N)
     V = nonspecial_vocab_size(m)
+    T = eltype(code)
     for (idx, id) in enumerate(token_ids(m))
-        fc = first(gram_odds(m, (fgram..., id)))
+        fc = first(gram_odds(m, (fgram..., T(id))))
         Pf[idx] = fc
-        bc = first(gram_odds(m, (id, bgram...)))
+        bc = first(gram_odds(m, (T(id), bgram...)))
         Pb[idx] = bc
     end
 
@@ -568,7 +569,7 @@ function compute_unknown_mask(tok, ref_tok, smi)
     end
 end
 
-function decode_non_special(tok::Py, ids::Vector{Int})
+function decode_non_special(tok::Py, ids::Vector{<:Integer})
     ids = rm_special_tokens(tok, ids)
     tokens = pyconvert(Vector{String}, tok.convert_ids_to_tokens(ids))
     return rm_special_tokens(tok, tokens)

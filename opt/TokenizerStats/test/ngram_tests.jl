@@ -21,9 +21,9 @@ using OnlineStats
 export randngram
 
 # Build random n-gram counts
-function randngram(N=3; vocab_size=9)
-    stats = map(n -> CountMap(NTuple{n,Int}), 1:N)
-    corpus = rand(range(0; length=vocab_size), 8, 32)
+function randngram(N=3; vocab_size=9, T=Int)
+    stats = map(n -> CountMap(NTuple{n,T}), 1:N)
+    corpus = rand(range(T(0); length=T(vocab_size)), 8, 32)
     for i in axes(corpus, 2)
         for (n, s) in enumerate(stats)
             fit!(s, SlidingWindow(corpus[:, i], n))
@@ -54,6 +54,14 @@ end
         @test n isa Int && d isa Int
         @test 1 <= n <= m.total
         @test d == m.total
+    end
+    @testset "UInt32" begin
+        m = NGramModel(randngram(N; T=UInt32), 9)
+        @test m.total == 8 * 32
+        @test length(m) == N
+        @test TokenizerStats.nonspecial_vocab_size(m) == 9
+        @test isempty(setdiff(token_ids(m), 0:9))
+        c, m = gram_odds(m, (0,))
     end
 end
 

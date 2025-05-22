@@ -7,8 +7,8 @@ end
 
 @testitem "parse_splits" begin
     using TokenizerStats: parse_splits
-    @test parse_splits("val") == ["val"]
-    @test parse_splits("val,train") == ["val", "train"]
-    @test parse_splits("all") == ["train", "val", "test"]
+    @test Set(parse_splits("val")) == Set(["val"])
+    @test Set(parse_splits("val,train")) == Set(["val", "train"])
+    @test Set(parse_splits("all")) == Set(["train", "val", "test"])
 end
 

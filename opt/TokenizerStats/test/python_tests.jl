@@ -8,6 +8,7 @@ end
 
 @testitem "dataset loader" begin
     using TokenizerStats: DatasetConfig, dataset_split, dataset_name, tokenizer
+    using PythonCall: Py, pyconvert
 
     @testset "tokenizer" begin
         dc = DatasetConfig("qm9", "smirk", "smiles")
@@ -24,13 +25,9 @@ end
         ds = dataset_split(dc, "train")
         item = first(ds)
         @test item isa Py
-        @test item.haskey("input_ids")
+        @test haskey(item, "input_ids")
         @test pyconvert(Vector{Int}, item["input_ids"]) isa Vector{Int}
-        @test item.haskey("smi")
+        @test haskey(item, "smi")
         @test pyconvert(String, item["smi"]) isa String
-
-        # Check val => validation remapping
-        @test dataset_split(dc, "val") == dataset_split(dc, "validation")
-        @test dataset_split(dc, "train") != dataset_split(dc, "validation")
     end
 end

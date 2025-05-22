@@ -13,7 +13,7 @@
     # Check MaskedCode assertions hold
     @test_throws AssertionError MaskedCode(rand(1:32, 10), rand(Bool, 9))
     @test_throws AssertionError MaskedCode([1, 2, 3, 4], falses(4), 3)
-    @test_throws InexactError MaskedCode(rand(UInt32, 1:32, 10), rand(Bool, 10), -100)
+    @test_throws InexactError MaskedCode(rand(UInt32, 10), rand(Bool, 10), -100)
 end
 
 @testitem "indexing" begin
