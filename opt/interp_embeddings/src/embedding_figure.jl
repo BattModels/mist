@@ -1,15 +1,5 @@
-using Makie
-using DataFrames
-using CairoMakie: CairoMakie
-using CSV: CSV
-using CategoricalArrays: categorical, levelcode
-using MISTStyle: MISTStyle, savefig, inch, pt, label
-
-function figure_embedding()
-    df_benzene = DataFrame(CSV.File("interp_benzene.csv"))
-    df_condense = DataFrame(CSV.File("interp_condensed.csv"))
-
-    f = Figure(; size=(3inch, 2inch))
+function figure_embedding(df_benzene, df_condense)
+    f = Figure(; size=(2.5inch, 1.3inch))
     gl = GridLayout(f[1, 1])
     ax_aromatic = Axis(gl[1, 1])
     ax_rings = Axis(gl[2, 1]; limits=(nothing, (-2.3, nothing)))
@@ -36,8 +26,7 @@ function figure_embedding()
             label=label
         )
     end
-    Legend(gl[1, 1], elements, labels.(elements);
-        labelsize=5pt,
+    Legend(gl[1, 1], elements, label.(elements);
         tellheight=false,
         tellwidth=false,
         padding=(1, 1, 1, 1),
@@ -85,8 +74,7 @@ function figure_embedding()
             label=label
         )
     end
-    Legend(f[1, 2], elements, labels.(elements);
-        labelsize=5pt,
+    Legend(f[1, 2], elements, label.(elements);
         tellheight=false,
         tellwidth=false,
         padding=(1, 1, 1, 1),
