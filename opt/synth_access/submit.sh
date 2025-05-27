@@ -3,6 +3,7 @@
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=0:30:0
+#SBATCH --mem-per-cpu=3G
 #SBATCH --partition venkvis-h100,venkvis-a100
 
 GIT_ROOT=$(git rev-parse --show-toplevel)

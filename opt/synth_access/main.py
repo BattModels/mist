@@ -190,19 +190,23 @@ def eval_fm_model(
     runtime = dict()
     auroc_stats = dict()
     for encoding in ["smiles", "smiles-kekule", "smiles-canonical"]:
-        name = f"{metric}-{encoding}"
-        start = perf_counter()
-        ds = map_batchsize_finder(
-            ds,
-            lambda x: {name: model.score(x)},
-            batched=True,
-            batch_size=8,
-            input_columns=encoding,
-            desc=name,
-        )
-        runtime[name] = perf_counter() - start
-        if target is not None:
-            auroc_stats[name] = roc_auc_score(ds[target], ds[name])
+        for per_token in [False, True]:
+            name = f"{metric_name}-{encoding}"
+            if per_token:
+                name += "-per-token"
+
+            start = perf_counter()
+            ds = map_batchsize_finder(
+                ds,
+                lambda x: {name: model.score(x)},
+                batched=True,
+                batch_size=8,
+                input_columns=encoding,
+                desc=name,
+            )
+            runtime[name] = perf_counter() - start
+            if target is not None:
+                auroc_stats[name] = roc_auc_score(ds[target], ds[name])
 
     # Flush model from memory
     del model
