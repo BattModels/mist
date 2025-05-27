@@ -154,9 +154,8 @@ class SynthAccessFM(torch.nn.Module):
         return cls(encoder, tokenizer, **kwargs)
 
 
-@timeout(5)  # molecular_assembly (v0.2.0) timeout flag doesn't timeout
+@timeout(30)  # molecular_assembly (v0.2.0) timeout flag doesn't timeout
 def molecular_assembly_timeout(smi: str) -> Optional[int]:
-    print(smi)
     mol = Chem.MolFromSmiles(smi)
     will_error = [
         "CC(C)(C)OC(=O)CCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCO",  # Panics in isomorphism.rs
@@ -264,6 +263,7 @@ def evaluate_dataset(
                 input_columns=smi_column,
                 batched=False,
                 desc=name,
+                num_proc=NUM_PROCS,
             )
             stats["time"][name] = perf_counter() - start
             if target:
