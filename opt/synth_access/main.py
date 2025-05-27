@@ -1,3 +1,4 @@
+import argparse
 import functools
 import gzip
 import json
@@ -9,6 +10,7 @@ from time import perf_counter
 from typing import Callable, List, Optional
 
 import torch
+import accelerate
 from assembly_theory import molecular_assembly
 from BRSAScore import SAScorer as BRSAScorer
 from datasets import Dataset, load_dataset
@@ -27,6 +29,8 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 # Suppress DeprecationWarnings for MorganGenerator
 rdBase.DisableLog("rdApp.warning")
+
+logging.basicConfig(level=logging.INFO)
 
 NUM_PROCS = int(environ.get("SLURM_CPUS_PER_TASK", 4))
 
@@ -132,26 +136,79 @@ class SynthAccessFM(torch.nn.Module):
         return cls(encoder, tokenizer, **kwargs)
 
     @classmethod
-    def from_pretrained(cls, name_or_path: str, **kwargs):
+    def from_pretrained(cls, name_or_path: str, dtype=None, **kwargs):
         encoder = AutoModelForMaskedLM.from_pretrained(
-            name_or_path, trust_remote_code=True
+            name_or_path,
+            trust_remote_code=True,
+            device_map="auto",
+            torch_dtype="auto",
         )
         tokenizer = load_tokenizer(name_or_path)
         return cls(encoder, tokenizer, **kwargs)
 
-
-def get_accelerator():
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
+    @classmethod
+    def from_untrained(cls, name_or_path: str, dtype=None, **kwargs):
+        config = AutoConfig.from_pretrained(name_or_path, trust_remote_code=True)
+        encoder = AutoModelForMaskedLM.from_config(config)
+        tokenizer = load_tokenizer(name_or_path)
+        return cls(encoder, tokenizer, **kwargs)
 
 
 @timeout(5)  # molecular_assembly (v0.2.0) timeout flag doesn't timeout
-def molecular_assembly_timeout(smi: str) -> int:
+def molecular_assembly_timeout(smi: str) -> Optional[int]:
+    print(smi)
     mol = Chem.MolFromSmiles(smi)
-    return molecular_assembly(mol)
+    will_error = [
+        "CC(C)(C)OC(=O)CCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCO",  # Panics in isomorphism.rs
+    ]
+    if smi in will_error:
+        return None
+    try:
+        return molecular_assembly(mol)
+    except Exception as e:
+        # Catch panics
+        logging.error("molecular assembly threw an error for %s: %s", smi, e)
+        return None
+
+
+def map_batchsize_finder(ds, f, batch_size: int = 64, **kwargs):
+    while batch_size >= 1:
+        try:
+            with torch.inference_mode():
+                return ds.map(f, batch_size=batch_size, **kwargs)
+        except torch.cuda.OutOfMemoryError:
+            batch_size = batch_size // 2
+
+    raise RuntimeError("Failed to find a batch size that doesn't cause an OOM")
+
+
+def eval_fm_model(
+    metric_name: str, model: SynthAccessFM, ds: Dataset, target: str | None = None
+):
+    model = model.to("cuda")
+    model = model.eval()
+    runtime = dict()
+    auroc_stats = dict()
+    for encoding in ["smiles", "smiles-kekule", "smiles-canonical"]:
+        name = f"{metric}-{encoding}"
+        start = perf_counter()
+        ds = map_batchsize_finder(
+            ds,
+            lambda x: {name: model.score(x)},
+            batched=True,
+            batch_size=8,
+            input_columns=encoding,
+            desc=name,
+        )
+        runtime[name] = perf_counter() - start
+        if target is not None:
+            auroc_stats[name] = roc_auc_score(ds[target], ds[name])
+
+    # Flush model from memory
+    del model
+    torch.cuda.empty_cache()
+
+    return ds, runtime, auroc_stats
 
 
 def evaluate_dataset(
@@ -183,20 +240,18 @@ def evaluate_dataset(
     stats["time"] = {}
     for name, metric in metrics.items():
         if isinstance(metric, str):
-            model = SynthAccessFM.from_pretrained(metric).to(get_accelerator())
-            for encoding in ["smiles", "smiles-kekule", "smiles-canonical"]:
-                name = f"{metric}-{encoding}"
-                start = perf_counter()
-                ds = ds.map(
-                    lambda x: {name: model.score(x)},
-                    batched=True,
-                    batch_size=64,
-                    input_columns=encoding,
-                    desc=name,
+            for suffix, init_model in [
+                ("", SynthAccessFM.from_pretrained),
+                ("-untrained", SynthAccessFM.from_untrained),
+            ]:
+                ds, metric_runtime, metric_auroc = eval_fm_model(
+                    metric + suffix,
+                    init_model(metric),
+                    ds,
+                    target,
                 )
-                stats["time"][name] = perf_counter() - start
-                if target:
-                    stats["auroc"][name] = roc_auc_score(ds[target], ds[name])
+                stats["time"].update(metric_runtime)
+                stats["auroc"].update(metric_auroc)
 
         else:
             start = perf_counter()
@@ -205,7 +260,6 @@ def evaluate_dataset(
                 input_columns=smi_column,
                 batched=False,
                 desc=name,
-                num_proc=NUM_PROCS,
             )
             stats["time"][name] = perf_counter() - start
             if target:
@@ -222,6 +276,12 @@ def evaluate_dataset(
 
 
 if __name__ == "__main__":
+    p = argparse.ArgumentParser()
+    p.add_argument("--metric", type=str, action="append", default=None)
+    p.add_argument("--skip-metric", type=str, action="append", default=None)
+    p.add_argument("--output-format", type=str, default="{dataset}.json")
+    args = p.parse_args()
+
     syba = syba_scorer()
     scscore = SCScorer().restore()
     scscore.restore()
@@ -236,9 +296,18 @@ if __name__ == "__main__":
         "assembly-index": molecular_assembly_timeout,
     }
 
-    # for file in Path("models").iterdir():
-    #     if file.is_dir():
-    #         metrics[file.name] = str(file)
+    for file in Path("models").iterdir():
+        if file.is_dir():
+            metrics[file.name] = str(file)
+
+    # Uncomment to just run assembly-index
+    if args.metric is not None:
+        metrics = {metric: metrics[metric] for metric in args.metric}
+
+    if args.skip_metric is not None:
+        for metric in args.skip_metric:
+            metrics.pop(metric, None)
+    logging.info("Evaluating: %s", ",".join(metrics.keys()))
 
     # BA-SAScore's Dataset
     ds = load_dataset(
@@ -253,7 +322,7 @@ if __name__ == "__main__":
     ds = ds.select_columns(["smiles", "is_hard"])
 
     stats = evaluate_dataset(metrics, ds, target="is_hard", smi_column="smiles")
-    with open("ba-sascorer.json", "w") as fid:
+    with open(args.output_format.format(dataset="ba-sascorer"), "w") as fid:
         json.dump(stats, fid, indent=4)
 
     # Modeling a Crowdsourced Definition of Molecular Complexity
@@ -266,5 +335,5 @@ if __name__ == "__main__":
     ds = ds.select_columns(["SMILES", "meanComplexity", "stdevComplexity"])
     ds = ds.map(lambda x: {"is_complex": x["meanComplexity"] > 2.85}, batched=False)
     stats = evaluate_dataset(metrics, ds, target="is_complex", smi_column="SMILES")
-    with open("crowdsourced.json", "w") as fid:
+    with open(args.output_format.format(dataset="crowdsourced"), "w") as fid:
         json.dump(stats, fid, indent=4)

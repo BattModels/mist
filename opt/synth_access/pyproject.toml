@@ -3,6 +3,7 @@ name = "synth_access"
 version = "0.1.0"
 requires-python = ">=3.10,<3.13"
 dependencies = [
+    "accelerate>=1.6.0",
     "assembly-theory",
     "brsascore",
     "electrolyte-fm",
