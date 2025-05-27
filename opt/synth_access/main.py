@@ -19,7 +19,7 @@ from rdkit.Contrib.SA_Score import sascorer
 from sklearn.metrics import roc_auc_score
 from syba.syba import SybaClassifier
 from torch.nn import functional as F
-from transformers import AutoModelForMaskedLM, DataCollatorWithPadding
+from transformers import AutoModelForMaskedLM, AutoConfig, DataCollatorWithPadding
 from vendor.scscore.scscore import SCScorer
 
 from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
