@@ -1,6 +1,7 @@
 import math
+from scipy.special import kelvin_zeros
 import torch
-from torch import nn
+from torch import nn, unsqueeze
 import torch.nn.functional as F
 
 
@@ -64,11 +65,12 @@ class TokenPairwiseDistance(nn.Module):
         embed_dim: int,
         dropout: float = 0.2,
         num_attention_heads: int = 1,
+        num_layers: int = 1,
         activation: str = "relu",
         ff_ratio: int = 2,
     ) -> None:
         super().__init__()
-        self.interaction = nn.TransformerEncoderLayer(
+        enc_layer = nn.TransformerEncoderLayer(
             d_model=embed_dim,
             nhead=num_attention_heads,
             dim_feedforward=ff_ratio * embed_dim,
@@ -76,19 +78,21 @@ class TokenPairwiseDistance(nn.Module):
             batch_first=True,
             norm_first=True,
         )
-        self.pairwise_distance = nn.Sequential(
-            BiPairwiseBlock(embed_dim), nn.Dropout(dropout)
-        )
+        self.interaction = nn.TransformerEncoder(enc_layer, num_layers)
+        self.pairwise_distance = PairwiseMLP(embed_dim, dropout)
         self.distance1 = nn.Sequential(
             nn.Linear(embed_dim, embed_dim), nn.Dropout(dropout), nn.GELU()
         )
-        self.distance2 = nn.Sequential(nn.Linear(embed_dim, 1), nn.ReLU())
+        self.distance2 = nn.Linear(embed_dim, 1)
 
     def forward(self, hs: torch.Tensor) -> torch.Tensor:
         hs = self.interaction(hs)
-        pw_dist = self.pairwise_distance(hs)
-        dist = self.distance1(pw_dist) + pw_dist
-        return self.distance2(dist).squeeze(-1)
+
+        with torch.autocast("cuda", dtype=torch.float32):
+            pw_dist = self.pairwise_distance(hs)
+            d = self.distance1(pw_dist) + pw_dist
+            d = self.distance2(d).squeeze(-1)
+            return F.relu(F.elu(d) + 1)
 
 
 class BiPairwiseBlock(nn.Module):
@@ -125,3 +129,29 @@ class BiPairwiseBlock(nn.Module):
 
         x_linear = x.unsqueeze(-2) + x.unsqueeze(-3)
         return y_bi + F.linear(x_linear, self.lin_weight, self.bias)
+
+
+class PairwiseMLP(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        dropout: float = 0.2,
+        device=None,
+        dtype=None,
+    ) -> None:
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(2 * d_model, d_model),
+            nn.Dropout(dropout),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+            nn.GELU(),
+        )
+
+    def forward(self, x: torch.Tensor):
+        _, N, _ = x.shape
+        x_l = x.unsqueeze(-2).expand(-1, N, N, -1)
+        x_r = x.unsqueeze(-3).expand(-1, N, N, -1)
+        x_pw = torch.cat([x_l, x_r], dim=-1)
+        y = self.mlp(x_pw)
+        return 0.5 * (y + y.transpose(1, 2))

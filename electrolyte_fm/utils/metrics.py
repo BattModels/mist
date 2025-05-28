@@ -463,6 +463,7 @@ class OrthoProcrustes(Metric):
         return (preds - targets).pow(2).sum(-1).sqrt()
 
     @staticmethod
+    @torch.autocast("cuda", dtype=torch.float32)
     def procrustes_alignment(pc1: torch.Tensor, pc2: torch.Tensor) -> torch.Tensor:
         M = (pc1.mT @ pc2).mT.to(dtype=torch.float32)
 

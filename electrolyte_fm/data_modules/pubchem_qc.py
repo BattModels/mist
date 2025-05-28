@@ -2,6 +2,7 @@ import json
 import logging
 import traceback
 import re
+from asyncio import Semaphore
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -47,6 +48,7 @@ class PubChemQC(LightningDataModule):
         randomize: bool = True,
         include_3d: bool | str = False,
         include_topo_dist: bool = False,
+        include_topo_diameter: bool = False,
         seq_targets: list[str] = DEFAULT_SEQ_TARGETS,
         token_targets: list[str] = DEFAULT_TOKEN_TARGETS,
         persistent_workers: Optional[bool] = None,
@@ -60,6 +62,7 @@ class PubChemQC(LightningDataModule):
         self.randomize = randomize
         self.include_3d = include_3d
         self.include_topo_dist = include_topo_dist
+        self.include_topo_diameter = include_topo_diameter
         self.seq_targets = seq_targets
         self.token_targets = token_targets
 
@@ -98,8 +101,14 @@ class PubChemQC(LightningDataModule):
         if hasattr(self, "trainer"):
             ds = maybe_shard_dataset(self.trainer, ds)
 
+        sem = Semaphore(32)
+
+        async def async_partial_charges(x: dict, **kwargs):
+            async with sem:
+                return collate_partial_charges(x, **kwargs)
+
         ds = ds.map(
-            collate_partial_charges,
+            async_partial_charges,
             batched=False,
             fn_kwargs={
                 "tokenizer": self.tokenizer,
@@ -109,6 +118,7 @@ class PubChemQC(LightningDataModule):
                 "token_targets": self.token_targets,
                 "labeler": TokenLabeler(self.tokenizer),
                 "include_topo_dist": self.include_topo_dist,
+                "include_topo_diameter": self.include_topo_diameter,
             },
         )
         cols = [
@@ -123,6 +133,8 @@ class PubChemQC(LightningDataModule):
         ]
         if self.include_topo_dist:
             cols.append("topo_dist_map")
+        if self.include_topo_diameter:
+            cols.append("topo_diameter")
         ds = ds.select_columns(cols)
 
         self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
@@ -137,7 +149,11 @@ class PubChemQC(LightningDataModule):
                 for x in batch
             ]
         )
-        for k in ["target", "target_mask"]:
+        targets = ["target", "target_mask"]
+        if self.include_topo_diameter:
+            targets.append("topo_diameter")
+
+        for k in targets:
             output[k] = torch.stack([x[k] for x in batch]).detach()
 
         # Pad token targets
@@ -218,6 +234,7 @@ def collate_partial_charges(
     randomize: bool = True,
     include_3d: bool | str = False,
     include_topo_dist: bool = False,
+    include_topo_diameter: bool = False,
     labeler: "TokenLabeler | None" = None,
 ):
     mol = construct_mol(
@@ -260,6 +277,9 @@ def collate_partial_charges(
     atom_indices = out.pop("atom_indices")
     if include_topo_dist:
         out["topo_dist_map"] = sparse_topo_distance(mol, atom_indices)
+
+    if include_topo_diameter:
+        out["topo_diameter"] = topo_diameter(mol)
 
     out["target"] = torch.tensor([row[k] for k in seq_targets])
     out["target_mask"] = torch.ones(out["target"].shape, dtype=bool)
@@ -593,6 +613,12 @@ def sparse_topo_distance(mol: Chem.Mol, atom_indices: list[int]):
     return torch.stack(S, dim=-1)
 
 
+@torch.no_grad
+def topo_diameter(mol: Chem.Mol):
+    topo_dist = Chem.rdmolops.GetDistanceMatrix(mol)
+    return torch.tensor(topo_dist).max()
+
+
 def decode_mol(input_ids: torch.Tensor, tokenizer):
     smi = tokenizer.decode(input_ids, skip_special_tokens=True)
     mol = Chem.MolFromSmiles(smi, sanitize=False)
@@ -660,7 +686,7 @@ def mds_svd(D: torch.Tensor, dim=3):
         return torch.zeros(*D.shape[:-1], dim, **factory_kwargs)
     elif n == 2:
         p1 = torch.zeros(*D.shape[1:-1], dim, **factory_kwargs)
-        p2 = torch.zeros(*D.shape[1:-1], dim, **factory_kwargs)
+        p2 = torch.zeros(*D.shape[1:-2], dim, **factory_kwargs)
         p2[..., -1] += D[..., 0, 1]
         return torch.stack([p1, p2])
     elif n < dim:

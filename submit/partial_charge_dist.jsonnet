@@ -4,12 +4,13 @@
   gpus_per_node: 1,
   stage: null,
   train: {
-    tags: [],
+    tags: ['more-layers', 'mlp-pairwise'],
     model: {
       class_path: 'electrolyte_fm.models.token_level.TokenLevelDist',
       init_args: {
         freeze_encoder: false,
-        procrustes_loss: true,
+        procrustes_loss: false,
+        rescale_dist_matrix: false,
         encoder: {
           class_path: 'electrolyte_fm.models.lm_finetuning.load_encoder',
           init_args: {
@@ -52,6 +53,7 @@
             activation: 'gelu',
             ff_ratio: 2,
             num_attention_heads: 8,
+            num_layers: 1,
           },
         },
         optimizer: {
@@ -82,6 +84,7 @@
         num_workers: 8,
         prefetch_factor: 2,
         include_3d: 'as-target',
+        include_topo_diameter: $.train.model.init_args.rescale_dist_matrix,
       },
     },
     trainer: {

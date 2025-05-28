@@ -298,6 +298,7 @@ class TokenLevelPredictor(pl.LightningModule):
         return out
 
     def training_step(self, batch):
+        self.train()
         out = self.forward_with_loss(batch)
         if out is None:
             return None
@@ -309,6 +310,7 @@ class TokenLevelPredictor(pl.LightningModule):
         return out
 
     def validation_step(self, batch):
+        self.eval()
         out = self.forward_with_loss(batch)
         self.log_dict(
             {f"val/{k}": v for k, v in out.items() if "loss" in k and v is not None},
@@ -369,17 +371,30 @@ class TokenLevelPredictor(pl.LightningModule):
 
 
 class TokenLevelDist(TokenLevelPredictor):
-    def __init__(self, *args, dist_network: nn.Module, **kwargs):
+    def __init__(
+        self,
+        *args,
+        dist_network: nn.Module,
+        rescale_dist_matrix: bool = False,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs, distance_matrix_loss=False)
         self.dist_network = dist_network
+        self.rescale_dist_matrix = rescale_dist_matrix
 
     def forward(
-        self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        scale: Optional[torch.Tensor] = None,
     ):
         hs = self.encoder(input_ids, attention_mask).last_hidden_state
         y_mol = self.seq_transform.forward(self.seq_network(hs))
         y_token = self.token_transform.forward(self.token_network(hs))
         y_dist = self.dist_network(hs)
+        if scale is not None:
+            scale = scale.view(-1, 1, 1).to(y_dist)
+            y_dist = scale * y_dist
         return y_mol, y_token, y_dist
 
     def forward_with_loss(self, batch):
@@ -405,6 +420,9 @@ class TokenLevelDist(TokenLevelPredictor):
 
         # Pairwise distances
         y_dist_hat = self.dist_network(hs)
+        if self.rescale_dist_matrix:
+            scale = batch["topo_diameter"].view(-1, 1, 1).to(y_dist_hat)
+            y_dist_hat = scale * y_dist_hat
         loss_dist = pairwise_distance_loss(
             y_dist_hat, batch["token_coords"], batch["token_coords_mask"]
         )
@@ -639,5 +657,5 @@ if __name__ == "__main__":
 
     trainer: pl.Trainer = cli.trainer
     model: Union[TokenLevelPredictor, TokenLevelDist] = cli.model
-    trainer.fit(model, cli.datamodule)
+    trainer.fit(model.train(), cli.datamodule)
     trainer.validate(model, cli.datamodule, ckpt_path="best")
