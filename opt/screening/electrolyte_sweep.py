@@ -20,9 +20,8 @@ def dict_product(d: dict[str, list]):
 sweep = {
     "gpus": [1, 2, 4, 8],
     "batch_size": [128, 256, 512, 1024],
-    "n_fragments": [100, 500, 1000, 2000],
+    "n_fragments": [4000, 8000],
     "epoch_fraction": [0.9, 1, 1.1],
-    "limit_ref_fragments": [None, 1 / 2, 1 / 4, 0.1],
     "limit_db_fragments": [None, 1 / 2, 1 / 4, 0.1],
 }
 
@@ -43,9 +42,6 @@ for c in sorted(hs, key=lambda d: d["gpus"]):
             "epoch_size": int(c["n_fragments"] * c["epoch_fraction"]),
             "limit_db_fragments": int(c["limit_db_fragments"] * nunique_db_fragments)
             if c["limit_db_fragments"] is not None
-            else None,
-            "limit_ref_fragments": int(c["limit_ref_fragments"] * nunique_ref_fragments)
-            if c["limit_ref_fragments"] is not None
             else None,
         }
     )

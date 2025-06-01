@@ -15,6 +15,7 @@ export MELLANOC_VISIBLE_DEVICES=all
 export MASTER_PORT=$((53394 + $SLURM_JOB_ID % 1024))
 export PYTHONPATH="../../"
 EOF
+sbcast -fp ${ENV_FILE} ${ENV_FILE}
 source $ENV_FILE
 env
 set -ex

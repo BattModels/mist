@@ -1,13 +1,11 @@
-limit: 1_000_000
-limit_walltime: 300
 generation:
   db_path: zinc_fragment/fragments.sqlite
   n_fragments: 1000
   reference_fragments: electrolyte.smi.frag
-  epoch_size: 1000
+  epoch_size: 1200
   limit_db_fragments: null
   limit_ref_fragments: null
-  batch_size: 512
+  batch_size: 768
 critics:
   - model_path: models/mist-26.9M-b302p09x-bp
     limits:

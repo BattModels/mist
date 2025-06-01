@@ -9,3 +9,5 @@ fig/
 *.bin_cache
 models/
 models
+fig/
+*.csv
