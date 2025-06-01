@@ -15,7 +15,7 @@ from src.generate import OracleCritic, generate
 from src.utils import configure_logging, take_for_seconds
 from torch.autograd.profiler import emit_nvtx
 
-from electrolyte_fm.models.prod_finetune import MISTFinetuned
+from electrolyte_fm.models.prod_finetune import MISTFinetuned, MISTMultiTask
 
 HARTREE_TO_EV = 27.211_386_245_981
 CAL_TO_JOULES = 4.184
@@ -76,15 +76,7 @@ def main(
             json.dump(config, f, indent=2)
 
     # Screening critics
-    critics = [
-        OracleCritic.from_pretrained(
-            str(root_dir / critic["model_path"]),
-            limits=critic["limits"],
-            model_cls=eval(critic["model_cls"]),
-        )
-        for critic in config["critics"]
-    ]
-
+    critics = [OracleCritic.from_pretrained(**critic) for critic in config["critics"]]
     # Fragment dataset
     mol_generator = DatabaseFragmentDataset(
         fabric,
