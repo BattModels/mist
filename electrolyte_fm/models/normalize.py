@@ -1,6 +1,7 @@
+from typing import Any, Dict, List, Optional, Union
+
 import torch
 from datasets import IterableDataset
-from typing import Any, Dict, Optional, List, Union
 from sklearn.preprocessing import PowerTransformer as _PowerTransformer
 from torch.masked import MaskedTensor
 
@@ -220,6 +221,8 @@ class PowerTransform(AbstractNormalizer):
 
     def _fit(self, target: MaskedTensor) -> dict:
         # Fit Yeo-Johnson lambdas
+        from sklearn.preprocessing import PowerTransformer as _PowerTransformer
+
         transformer = _PowerTransformer(method="yeo-johnson", standardize=False)
         target = torch.tensor(transformer.fit_transform(target.get_data().numpy()))
         self.lmbdas = torch.tensor(transformer.lambdas_)
