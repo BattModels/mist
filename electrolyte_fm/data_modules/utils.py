@@ -105,17 +105,21 @@ def encode_molecules(
 
     tasks = Semaphore(max_workers)
 
-    async def async_encode(smi):
+    async def async_encode(batch: list[str]) -> dict:
         async with tasks:
-            return {output_column: encode(smi)}
+            return {output_column: [encode(smi) for smi in batch]}
+
+    async def async_filter(batch: list[str | None]) -> list[bool]:
+        async with tasks:
+            return [x is not None for x in batch]
 
     ds = ds.map(
         async_encode,
         input_columns=input_column,
-        batched=False,
+        batched=True,
         **kwargs,
     )
-    return ds.filter(lambda x: x[output_column] is not None, batched=False, **kwargs)
+    return ds.filter(async_filter, batched=True, input_columns=output_column, **kwargs)
 
 
 def train_val_test_split(ds, **kwargs):
