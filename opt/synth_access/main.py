@@ -16,8 +16,10 @@ from BRSAScore import SAScorer as BRSAScorer
 from datasets import Dataset, load_dataset
 from rdkit import Chem, rdBase
 from rdkit.Contrib.SA_Score import sascorer
+from rdkit.Chem.Descriptors import MolWt
 from sklearn.metrics import roc_auc_score
 from syba.syba import SybaClassifier
+from smirk import SmirkTokenizerFast
 from torch.nn import functional as F
 from transformers import AutoModelForMaskedLM, AutoConfig, DataCollatorWithPadding
 from vendor.scscore.scscore import SCScorer
@@ -170,6 +172,22 @@ def molecular_assembly_timeout(smi: str) -> Optional[int]:
         return None
 
 
+def molecular_weight(smiles: str) -> float:
+    """
+    Calculate the molecular weight of a molecule given its SMILES string.
+
+    Parameters:
+    smiles (str): The SMILES representation of the molecule.
+
+    Returns:
+    float: Molecular weight of the molecule, or None if invalid SMILES.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return MolWt(mol)
+
+
 def map_batchsize_finder(ds, f, batch_size: int = 64, **kwargs):
     while batch_size >= 1:
         try:
@@ -258,9 +276,18 @@ def evaluate_dataset(
 
         else:
             start = perf_counter()
+
+            # Allow for different input encodings
+            if "kekule" in name:
+                input_columns = "smiles-kekule"
+            elif "canonical" in name:
+                input_columns = "smiles-canonical"
+            else:
+                input_columns = "smiles"
+
             ds = ds.map(
                 lambda x: {name: metric(x)},
-                input_columns=smi_column,
+                input_columns=input_columns,
                 batched=False,
                 desc=name,
                 num_proc=NUM_PROCS,
@@ -290,6 +317,7 @@ if __name__ == "__main__":
     scscore = SCScorer().restore()
     scscore.restore()
     ba_sascorer = BRSAScorer()
+    smirk = SmirkTokenizerFast()
     metrics = {
         "SAScore": sascore,
         "SyBA": lambda smi: -syba.predict(smi),
@@ -297,6 +325,10 @@ if __name__ == "__main__":
         "BR-SAScore": lambda smi: ba_sascorer.calculateScore(smi)[0],
         "MolFormer": "ibm-research/MoLFormer-XL-both-10pct",
         "ChemBERTa": "seyonec/ChemBERTa-zinc-base-v1",
+        "smirk": lambda smi: len(smirk(smi)["input_ids"]),
+        "smirk-kekule": lambda smi: len(smirk(smi)["input_ids"]),
+        "smirk-canonical": lambda smi: len(smirk(smi)["input_ids"]),
+        "molecular-weight": molecular_weight,
         "assembly-index": molecular_assembly_timeout,
     }
 

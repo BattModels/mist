@@ -9,6 +9,7 @@ dependencies = [
     "electrolyte-fm",
     "numpy>=2.2.4",
     "rdkit~=2024.9",
+    "smirk",
     "syba",
 ]
 
@@ -17,4 +18,5 @@ electrolyte-fm = { path = "../../", editable = true }
 brsascore = { git = "https://github.com/awadell1/BR-SAScore.git", rev = "464a26335b44d93e216d56d239dc3e942d563d46" }
 assembly-theory = { git = "https://github.com/awadell1/assembly-theory", branch = "fix-install" }
 syba = { git = "https://github.com/lich-uct/syba.git", rev = "30929eb2d3b9a03bef326a1f5180f26f55b19a29" }
+smirk = { git = "ssh://git@github.com/BattModels/smirk.git", rev = "dfdd9dc27c066f956b69d1f55c2d4717beb7838d" }
 

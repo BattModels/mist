@@ -2,7 +2,6 @@ module MISTStyle
 
 using Makie
 using CategoricalArrays: levels
-using GLMakie: GLMakie
 using CairoMakie: CairoMakie
 
 const pt = 3 / 4
@@ -14,7 +13,7 @@ export pt, inch
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
     mkpath(dirname(joinpath(fig_dir, name)))
     save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1, backend=CairoMakie)
-    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=GLMakie)
+    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=CairoMakie)
     return nothing
 end
 

@@ -1,7 +1,7 @@
 using Makie
 using DataFrames
-using CairoMakie: CairoMakie
-using StatsBase: cor, corspearman, corkendall
+using GLM
+using StatsBase: mean, cor, corspearman, corkendall
 using Clustering: hclust
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode, levels
@@ -11,11 +11,17 @@ function plot_score_correlation!(f, df; correlation, kwargs...)
     columns = names(df)
     dist = Matrix{Float64}(undef, length(columns), length(columns))
     for I in eachindex(IndexCartesian(), dist)
-        dist[I] = correlation(df[!, columns[I[1]]], df[!, columns[I[2]]])
+        x = df[!, columns[I[1]]]
+        y = df[!, columns[I[2]]]
+        s = ismissing.(x) .| ismissing.(y)
+        x = skipmissing(x[.!s]) |> collect
+        y = skipmissing(y[.!s]) |> collect
+        @assert length(x) == length(y)
+        dist[I] = correlation(x, y)
     end
 
     # Order entries by clustering
-    c = hclust(dist; linkage=:single, branchorder=:barjoseph)
+    c = hclust(0.5 .- 0.5 .* dist; linkage=:single, branchorder=:barjoseph)
     dist = dist[c.order, c.order]
     columns = columns[c.order]
 
@@ -25,24 +31,31 @@ function plot_score_correlation!(f, df; correlation, kwargs...)
         xticklabelrotation=0.55,
         xticklabelsize=5pt,
         yticklabelsize=5pt,
+        xticklabelsvisible=false,
         aspect=DataAspect(),
     )
     return heatmap!(ax, dist; kwargs...)
 end
 
 function plot_auroc!(f, df)
+    # Order by average score
+    avg_score = combine(groupby(df, :name), :auroc => mean)
+    sort!(avg_score, :auroc_mean; rev=true)
+    df.name = categorical(string.(df.name); levels=avg_score.name)
+
     names = levels(df.name)
     ax = Axis(f[1, 1];
         ylabel="AUROC",
         ytickformat="{:.0%}",
         ylabelsize=6pt,
         yticks=LinearTicks(5),
-        limits=(nothing, (0, 1)),
+        limits=(nothing, (0.5, 1)),
         xticks=(eachindex(names), names),
         xticklabelrotation=0.5,
         xticklabelsize=5pt,
         yticklabelsize=5pt,
     )
+    gini = @. 2 * df.auroc - 1
     h = barplot!(ax, levelcode.(df.name), df.auroc;
         dodge=levelcode.(df.dataset),
         color=levelcode.(df.dataset),
@@ -60,30 +73,85 @@ function plot_auroc!(f, df)
     return f, elements
 end
 
-function figure_interp_surprise(; correlation=corspearman)
+function load_scores()
     # Crowdsourced
     df_crowd = DataFrame(JSON.parsefile("crowdsourced.json")["scores"])
+    df_crowd_ma = DataFrame(JSON.parsefile("crowdsourced-asm.json")["scores"])
+    leftjoin!(df_crowd, df_crowd_ma; on=["is_complex", "smiles", "smiles-canonical", "smiles-kekule", "stdevComplexity", "meanComplexity"])
+    replace!(df_crowd[!, "assembly-index"], NaN => missing)
+
+    auroc_crowd = JSON.parsefile("crowdsourced.json")["auroc"]
+    auroc_crowd_ma = JSON.parsefile("crowdsourced-asm.json")["auroc"]
+    auroc_crowd = merge(auroc_crowd, auroc_crowd_ma)
+
+    # BA-Scorer
+    df_ba = DataFrame(JSON.parsefile("ba-sascorer.json")["scores"])
+    df_ba_ma = DataFrame(JSON.parsefile("ba-sascorer-asm.json")["scores"])
+    leftjoin!(df_ba, df_ba_ma; on=["is_hard", "smiles", "smiles-canonical", "smiles-kekule"])
+    replace!(df_ba[!, "assembly-index"], NaN => missing)
+
+    auroc_ba = JSON.parsefile("ba-sascorer.json")["auroc"]
+    auroc_ba_ma = JSON.parsefile("ba-sascorer-asm.json")["auroc"]
+    auroc_ba = merge(auroc_ba, auroc_ba_ma)
+
+    return (;
+        crowd = (; score = df_crowd, auroc = auroc_crowd),
+        ba = (; score = df_ba, auroc = auroc_ba),
+    )
+end
+
+function model_auroc(auroc::Dict)
+    df = stack(DataFrame(auroc); variable_name=:model, value_name=:auroc)
+    subset!(df, :model => ByRow(x -> occursin("/", x)))
+    @. df.untrained = occursin("untrained", df.model)
+    @. df.per_token = occursin("per-token", df.model)
+    df.encoding = map(df.model) do m
+        if occursin("smiles-canonical", m)
+            return "canonical"
+        elseif occursin("smiles-kekule", m)
+            return "kekule"
+        else
+            return "smiles"
+        end
+    end
+    df.encoding .= categorical(df.encoding)
+    return df
+
+    # Fit linear model
+    lm(
+        @formula(auroc ~ untrained + per_token + encoding),
+        df;
+        contrasts = Dict(
+            :untrained => EffectsCoding(; base=false),
+            :per_token => EffectsCoding(; base=false),
+            :encoding => EffectsCoding(; base="smiles"),
+        )
+    )
+end
+
+function figure_interp_surprise(; correlation=corspearman)
+    # Crowdsourced
+    o = load_scores()
     models = [
         "SCScore" => "SCScore",
         "SAScore" => "SAScore",
         "BR-SAScore" => "BR-SAScore",
-        "ibm/MoLFormer-XL-both-10pct-smiles" => "MoLFormer",
-        "models/mist-4yzwys2z-smiles-keukle" => "MIST-228M",
+        "smirk" => "Smirk Fertility",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles" => "MoLFormer",
+        "ibm-research/MoLFormer-XL-both-10pct-untrained-smiles" => "MoLFormer, Untrained",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles" => "ChemBERTa",
+        "models/mist-ti624ev1-smiles-kekule" => "MIST-27M",
+        "models/mist-4yzwys2z-smiles-kekule" => "MIST-228M",
+        "models/mist-1.8B-dh61satt-smiles-kekule" => "MIST-1.8B",
+        "models/mist-1.8B-dh61satt-untrained-smiles-kekule" => "MIST-1.8B, Untrained",
         "models/mist-n2dkcidc-smiles-canonical" => "MIST-ZINC",
+        "assembly-index" => "Mol. Asm.",
     ]
-    df_crowd = select(df_crowd, ["meanComplexity" => "Chemist", models...])
+    df_crowd = select(o.crowd.score, ["meanComplexity" => "Chemist", models...])
+    df_ba = select(o.ba.score, models)
 
-    # BA-Scorer
-    df_ba = DataFrame(JSON.parsefile("ba-sascorer.json")["scores"])
-    df_ba = select(df_ba, models)
-
-    # Assembly Index
-    df_ma = DataFrame(JSON.parsefile("assembly_index.json")["scores"])
-    df_ma = select(df_ma, ["MA" => "Mol. Asm.", models...])
-
-    auroc_ba = JSON.parsefile("ba-sascorer.json")["auroc"]
-    auroc_crowd = JSON.parsefile("crowdsourced.json")["auroc"]
-    auroc_ma = JSON.parsefile("assembly_index.json")["auroc"]
+    auroc_crowd = o.crowd.auroc
+    auroc_ba = o.ba.auroc
 
     rows = []
     for (model, name) in models
@@ -91,7 +159,6 @@ function figure_interp_surprise(; correlation=corspearman)
             name,
             crowd=auroc_crowd[model],
             ba=auroc_ba[model],
-            ma=auroc_ma[model],
         ))
     end
     auroc = DataFrame(rows)
@@ -105,12 +172,19 @@ function figure_interp_surprise(; correlation=corspearman)
 
 
     f = Figure(;
-        size=(3inch, 3.2inch),
+        size=(3inch, 1.0inch),
         figure_padding=(2, 2, -10, 3),
     )
     # gl_crowd = GridLayout(f[1, 1])
-    gl = GridLayout(f[3, 1:2])
-    cb = Colorbar(gl[1, 1];
+    gl = GridLayout(f[1, 1])
+    if correlation == cor
+        cb_label = L"Pearson's $\rho$"
+    elseif correlation == corspearman
+        cb_label = L"Spearman's $\rho$"
+    else
+        cb_label = string(correlation)
+    end
+    cb = Colorbar(gl[2, 1:2];
         vertical=false,
         flipaxis=false,
         # lowclip=:darkred,
@@ -118,25 +192,25 @@ function figure_interp_surprise(; correlation=corspearman)
         colormap=:vik10,
         tellheight=true,
         tellwidth=false,
-        label=L"Spearman's $\rho$",
+        label=cb_label,
         labelsize=6pt,
         ticklabelsize=5pt,
         halign=:left,
         valign=:top,
     )
     kwargs = (; correlation, colorrange=cb.colorrange, colormap=cb.colormap)
-    h_crowd = plot_score_correlation!(f[1, 1], df_crowd; kwargs...)
-    h_ba = plot_score_correlation!(f[1, 2], df_ba; kwargs...)
-    h_ma = plot_score_correlation!(f[2, 1], df_ma; kwargs...)
-    h, elements = plot_auroc!(f[2, 2], auroc)
-    Legend(gl[1, 2], elements, map(x -> x.label[], elements);
-        labelsize=5pt,
-        tellheight=true,
-        tellwidth=true,
-        nbanks=2,
-        orientation=:horizontal,
-        halign=:center,
-        alignmode=Outside(),
+    h_crowd = plot_score_correlation!(gl[1, 1], df_crowd; kwargs...)
+    h_ba = plot_score_correlation!(gl[1, 2], df_ba; kwargs...)
+    h, elements = plot_auroc!(f[1, 2], auroc)
+    Legend(f[1, 2], elements, MISTStyle.label.(elements);
+        # tellheight=true,
+        # tellwidth=true,
+        nbanks=1,
+        padding=(1, 1, 1, 1),
+        margin=(1, 1, 1, 1),
+        valign=:top,
+        halign=:right,
+        # alignmode=Inside(),
     )
     colgap!(gl, 10)
 
@@ -146,10 +220,11 @@ function figure_interp_surprise(; correlation=corspearman)
         halign=:right,
         tellheight=false,
     )
-    Label(f[1, 1, TopLeft()], "a)"; padding=(0, 35, -2, 0), label_kwargs...)
-    Label(f[1, 2, TopLeft()], "b)"; padding=(0, 30, -2, 0), label_kwargs...)
-    Label(f[2, 1, TopLeft()], "c)"; padding=(0, 35, -2, 0), label_kwargs...)
-    Label(f[2, 2, TopLeft()], "d)"; padding=(0, 30, -2, 0), label_kwargs...)
+    Label(gl[1, 1, TopLeft()], "a)"; padding=(0, 30, -2, 0), label_kwargs...)
+    Label(gl[1, 2, TopLeft()], "b)"; padding=(0, 30, -2, 0), label_kwargs...)
+    Label(f[1, 2, TopLeft()], "c)"; padding=(0, 20, -2, 0), label_kwargs...)
+    # Label(f[2, 2, TopLeft()], "d)"; padding=(0, 30, -2, 0), label_kwargs...)
+    colsize!(f.layout, 1, Relative(2/3))
 
     rowgap!(f.layout, 3)
     resize_to_layout!(f)
