@@ -13,5 +13,6 @@
     PMIX_MCA_gds: 'hash',
     NCCL_TOPO_FILE: '/cm/shared/etc/ndv4-topo.xml',
     MELLANOC_VISIBLE_DEVICES: 'all',
+    MASTER_PORT: '$(( 53394 + $SLURM_JOB_ID % 1024 ))',
   },
 }
