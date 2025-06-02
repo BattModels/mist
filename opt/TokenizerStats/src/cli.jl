@@ -73,7 +73,7 @@ end
     end
     @add_arg_table! s["merge"] begin
         "--pattern"
-        default = r"usage.+?_rank_\d+\.jld2"
+        default = r"usage.+?_rank_\d+\.jld2$"
         arg_type = Regex
         "directory"
         help = "Directory to search for files to merge"
@@ -152,12 +152,11 @@ function merge_usage_stats(files::Vector{String}; output::String="merged.jld2", 
                     merged[split]["out_of_vocab"] += other["out_of_vocab"]
                     merged[split]["samples"] += other["samples"]
                     merged[split]["out_of_vocab"] += other["out_of_vocab"]
-                    merged[split]["fertility"] = Dict(mergewith(+, merged[split]["fertility"], other["fertility"]))
-                    merged[split]["nunique"] = Dict(mergewith(+, merged[split]["nunique"], other["nunique"]))
+                    mergewith!(+, merged[split]["fertility"], other["fertility"])
+                    mergewith!(+, merged[split]["nunique"], other["nunique"])
                     for n in 1:length(merged[split]["ngrams"])
-                        a_ngram = merged[split]["ngrams"]["$n"]
                         b_ngram = compact_ngrams(other["ngrams"]["$n"])
-                        merged[split]["ngrams"]["$n"] = Dict(mergewith(+, a_ngram, b_ngram))
+                        mergewith!(+, merged[split]["ngrams"]["$n"], b_ngram)
                     end
                 else
                     merged[split]["out_of_vocab"] = other[split]["out_of_vocab"]

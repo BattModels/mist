@@ -354,7 +354,7 @@ def usage_array(
     }
     wk._add_process(p)
     wk.add_process(
-        ["submit_tok_stats.sh", "merge", p.output, output],
+        ["submit_tok_stats.sh", "merge", p.output.with_suffix(""), output],
         inputs=[p.output],
         output=output,
         slurm=slurm,
