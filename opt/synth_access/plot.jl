@@ -32,6 +32,7 @@ function plot_score_correlation!(f, df; correlation, kwargs...)
         xticklabelsize=5pt,
         yticklabelsize=5pt,
         xticklabelsvisible=false,
+        xticksvisible=false,
         aspect=DataAspect(),
     )
     return heatmap!(ax, dist; kwargs...)
@@ -42,6 +43,8 @@ function plot_auroc!(f, df)
     avg_score = combine(groupby(df, :name), :auroc => mean)
     sort!(avg_score, :auroc_mean; rev=true)
     df.name = categorical(string.(df.name); levels=avg_score.name)
+    min_auroc = minimum(df.auroc)
+    min_auroc = min_auroc < 0.5 ? 0 : 0.5
 
     names = levels(df.name)
     ax = Axis(f[1, 1];
@@ -49,7 +52,7 @@ function plot_auroc!(f, df)
         ytickformat="{:.0%}",
         ylabelsize=6pt,
         yticks=LinearTicks(5),
-        limits=(nothing, (0.5, 1)),
+        limits=(nothing, (min_auroc, 1)),
         xticks=(eachindex(names), names),
         xticklabelrotation=0.5,
         xticklabelsize=5pt,
@@ -129,24 +132,9 @@ function model_auroc(auroc::Dict)
     )
 end
 
-function figure_interp_surprise(; correlation=corspearman)
+function figure_interp_surprise(models; correlation=corspearman, size=(3.42inch, 1.0inch))
     # Crowdsourced
     o = load_scores()
-    models = [
-        "SCScore" => "SCScore",
-        "SAScore" => "SAScore",
-        "BR-SAScore" => "BR-SAScore",
-        "smirk" => "Smirk Fertility",
-        "ibm-research/MoLFormer-XL-both-10pct-smiles" => "MoLFormer",
-        "ibm-research/MoLFormer-XL-both-10pct-untrained-smiles" => "MoLFormer, Untrained",
-        "seyonec/ChemBERTa-zinc-base-v1-smiles" => "ChemBERTa",
-        "models/mist-ti624ev1-smiles-kekule" => "MIST-27M",
-        "models/mist-4yzwys2z-smiles-kekule" => "MIST-228M",
-        "models/mist-1.8B-dh61satt-smiles-kekule" => "MIST-1.8B",
-        "models/mist-1.8B-dh61satt-untrained-smiles-kekule" => "MIST-1.8B, Untrained",
-        "models/mist-n2dkcidc-smiles-canonical" => "MIST-ZINC",
-        "assembly-index" => "Mol. Asm.",
-    ]
     df_crowd = select(o.crowd.score, ["meanComplexity" => "Chemist", models...])
     df_ba = select(o.ba.score, models)
 
@@ -171,11 +159,7 @@ function figure_interp_surprise(; correlation=corspearman)
     auroc.dataset = categorical(auroc.dataset)
 
 
-    f = Figure(;
-        size=(3inch, 1.0inch),
-        figure_padding=(2, 2, -10, 3),
-    )
-    # gl_crowd = GridLayout(f[1, 1])
+    f = Figure(; size, figure_padding=(2, 2, 2, 3))
     gl = GridLayout(f[1, 1])
     if correlation == cor
         cb_label = L"Pearson's $\rho$"
@@ -224,10 +208,45 @@ function figure_interp_surprise(; correlation=corspearman)
     Label(gl[1, 2, TopLeft()], "b)"; padding=(0, 30, -2, 0), label_kwargs...)
     Label(f[1, 2, TopLeft()], "c)"; padding=(0, 20, -2, 0), label_kwargs...)
     # Label(f[2, 2, TopLeft()], "d)"; padding=(0, 30, -2, 0), label_kwargs...)
-    colsize!(f.layout, 1, Relative(2/3))
+    colsize!(f.layout, 1, Auto(2))
 
     rowgap!(f.layout, 3)
     resize_to_layout!(f)
 
     return f
+end
+
+function create_figures()
+    main_models = [
+        "SCScore" => "SCScore",
+        "SAScore" => "SAScore",
+        "smirk" => "Smirk Fertility",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles" => "MoLFormer",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles" => "ChemBERTa",
+        "models/mist-ti624ev1-smiles-kekule" => "MIST-27M",
+        "models/mist-4yzwys2z-smiles-kekule" => "MIST-228M",
+        "models/mist-1.8B-dh61satt-smiles-kekule" => "MIST-1.8B",
+        "models/mist-1.8B-dh61satt-untrained-smiles-kekule" => "MIST-1.8B, Untrained",
+        "models/mist-n2dkcidc-smiles-canonical" => "MIST-ZINC",
+        "assembly-index" => "Mol. Asm.",
+    ]
+    all_models = [
+        "molecular-weight" => "Mol. Weight",
+        "BR-SAScore" => "BR-SAScore",
+        "ibm-research/MoLFormer-XL-both-10pct-untrained-smiles" => "MoLFormer, Untrained",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles-kekule" => "MoLFormer, Kekule",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles-canonical" => "MoLFormer, Canonical",
+        "seyonec/ChemBERTa-zinc-base-v1-untrained-smiles" => "ChemBERTa, Untrained",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles-kekule" => "ChemBERTa, Kekule",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles-canonical" => "ChemBERTa, Canonical",
+    ]
+    all_models = vcat(main_models, all_models)
+
+    size_large = (4.5inch, 1.5inch)
+    with_theme(MISTStyle.theme()) do
+        figure_interp_surprise(main_models) |> savefig("interp_surprise")
+        figure_interp_surprise(main_models; correlation=cor) |> savefig("interp_surprise_cor")
+        figure_interp_surprise(all_models; size=size_large) |> savefig("interp_surprise_all")
+        figure_interp_surprise(all_models; correlation=cor, size=size_large) |> savefig("interp_surprise_all_cor")
+    end
 end
