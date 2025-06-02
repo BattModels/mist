@@ -1,9 +1,9 @@
 function tracked_stats()
     return (;
-        fertility=CountMap(Int),
-        nunique=CountMap(Int),
+        fertility=CountMap(Dict{Int,Int}()),
+        nunique=CountMap(Dict{Int,Int}()),
         out_of_vocab=Counter(Int),
-        ngrams=ntuple(i -> CountMap(NTuple{i,UInt32}), 5),
+        ngrams=ntuple(i -> CountMap(Dict{NTuple{i,UInt32}, Int}()), 5),
     )
 end
 
