@@ -26,7 +26,7 @@ function maybe_parse_env(T::Type, x::String)
     return parse(T, x)
 end
 
-@annotate function main(args::Vector{String})
+@tracepoint function main(args::Vector{String})
     s = ArgParseSettings()
     @add_arg_table! s begin
         "usage"

@@ -1,5 +1,6 @@
 module TokenizerStats
 
+using Tracy
 using PythonCall: Py, pyimport, pyconvert, @pyconst
 using ArgParse: ArgParseSettings, parse_args, @add_arg_table!
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
@@ -13,7 +14,6 @@ using Dates: now
 using SparseArrays: sparse
 using LogExpFunctions: logsumexp, log1pexp, xexpy
 using Serialization: serialize, deserialize
-using NVTX: @annotate
 
 function find(dir, pattern)
     found = String[]

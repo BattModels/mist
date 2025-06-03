@@ -12,3 +12,4 @@ fig/
 *.tar.*
 archive/
 *.slurm
+*.jld2

@@ -27,7 +27,7 @@ function usage_stats!(stats, code::Vector{UInt32}, is_oov::Bool)
     return stats
 end
 
-function leader_reduce(f, x; comm=MPI.COMM_WORLD)
+@tracepoint function leader_reduce(f, x; comm=MPI.COMM_WORLD)
     g = MPI.gather(x, comm; root=0)
     if MPI.Comm_rank(comm) == 0
         @assert length(g) == MPI.Comm_size(comm)
@@ -231,7 +231,7 @@ function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
 
 end
 
-@annotate function avg_information_loss(dataset::DatasetConfig, ref_file::String, output::String; split="val")
+@tracepoint function avg_information_loss(dataset::DatasetConfig, ref_file::String, output::String; split="val")
     # Init MPI
     MPI.Init()
     comm = MPI.COMM_WORLD

@@ -415,7 +415,7 @@ end
 Computes the Information Loss (KL-Divergence) from masking out tokens in an input code for a
 given n-gram model
 """
-@annotate function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
+@tracepoint function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
     @assert 0 < N <= length(m)
     @assert length(code) == length(mask)
     loss = 0.0
@@ -508,7 +508,7 @@ end
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference
 """
-@annotate function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
+@tracepoint function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
     unk_token_id = pyconvert(Int, tok.unk_token_id)
     code = pyconvert(Vector{UInt32}, encoding["input_ids"])
     (unk_token_id ∉ code) && return zeros(length(N))
