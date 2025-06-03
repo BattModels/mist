@@ -1,7 +1,8 @@
 using Makie
 using DataFrames
 using GLM
-using StatsBase: mean, cor, corspearman, corkendall
+using RegressionTables: RegressionTables, regtable, LatexTable
+using StatsBase: mean, cor, corspearman, corkendall, mad, rmse
 using Clustering: hclust
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode, levels
@@ -118,16 +119,20 @@ function model_auroc(auroc::Dict)
         end
     end
     df.encoding .= categorical(df.encoding)
-    return df
+    df.model = map(df.model) do m
+        m = replace(m, "smiles-canonical" => "", "smiles-kekule" => "", "per-token" => "", "untrained" => "", "smiles" => "")
+        m = replace(m, r"-+$" => "")
+    end
 
     # Fit linear model
     lm(
-        @formula(auroc ~ untrained + per_token + encoding),
+        @formula(auroc ~ untrained + per_token + encoding + model),
         df;
         contrasts = Dict(
             :untrained => EffectsCoding(; base=false),
             :per_token => EffectsCoding(; base=false),
             :encoding => EffectsCoding(; base="smiles"),
+            :model => EffectsCoding(; base="models/mist-ti624ev1"),
         )
     )
 end
@@ -221,26 +226,42 @@ function create_figures()
         "SCScore" => "SCScore",
         "SAScore" => "SAScore",
         "smirk" => "Smirk Fertility",
-        "ibm-research/MoLFormer-XL-both-10pct-smiles" => "MoLFormer",
-        "seyonec/ChemBERTa-zinc-base-v1-smiles" => "ChemBERTa",
-        "models/mist-ti624ev1-smiles-kekule" => "MIST-27M",
-        "models/mist-4yzwys2z-smiles-kekule" => "MIST-228M",
-        "models/mist-1.8B-dh61satt-smiles-kekule" => "MIST-1.8B",
-        "models/mist-1.8B-dh61satt-untrained-smiles-kekule" => "MIST-1.8B, Untrained",
-        "models/mist-n2dkcidc-smiles-canonical" => "MIST-ZINC",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles-per-token" => "MoLFormer",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles-per-token" => "ChemBERTa",
+        "models/mist-ti624ev1-smiles-kekule-per-token" => "MIST-27M",
+        "models/mist-4yzwys2z-smiles-kekule-per-token" => "MIST-228M",
+        "models/mist-1.8B-dh61satt-smiles-kekule-per-token" => "MIST-1.8B",
+        "models/mist-1.8B-dh61satt-untrained-smiles-kekule-per-token" => "MIST-1.8B, Untrained",
+        "models/mist-n2dkcidc-smiles-canonical-per-token" => "MIST-ZINC",
         "assembly-index" => "Mol. Asm.",
     ]
     all_models = [
         "molecular-weight" => "Mol. Weight",
         "BR-SAScore" => "BR-SAScore",
-        "ibm-research/MoLFormer-XL-both-10pct-untrained-smiles" => "MoLFormer, Untrained",
-        "ibm-research/MoLFormer-XL-both-10pct-smiles-kekule" => "MoLFormer, Kekule",
-        "ibm-research/MoLFormer-XL-both-10pct-smiles-canonical" => "MoLFormer, Canonical",
-        "seyonec/ChemBERTa-zinc-base-v1-untrained-smiles" => "ChemBERTa, Untrained",
-        "seyonec/ChemBERTa-zinc-base-v1-smiles-kekule" => "ChemBERTa, Kekule",
-        "seyonec/ChemBERTa-zinc-base-v1-smiles-canonical" => "ChemBERTa, Canonical",
+        "ibm-research/MoLFormer-XL-both-10pct-untrained-smiles-per-token" => "MoLFormer, Untrained",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles-kekule-per-token" => "MoLFormer, Kekule",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles-canonical-per-token" => "MoLFormer, Canonical",
+        "seyonec/ChemBERTa-zinc-base-v1-untrained-smiles-per-token" => "ChemBERTa, Untrained",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles-kekule-per-token" => "ChemBERTa, Kekule",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles-canonical-per-token" => "ChemBERTa, Canonical",
     ]
     all_models = vcat(main_models, all_models)
+
+    # Effect Model
+    o = load_scores()
+    m_crowd = model_auroc(o.crowd.auroc)
+    m_ba = model_auroc(o.ba.auroc)
+    regtable(m_crowd, m_ba;
+        render = LatexTable(),
+        file=joinpath(@__DIR__, "fig", "interp_surprise.tex"),
+        regression_statistics=[
+             RegressionTables.Nobs,
+             RegressionTables.DOF,
+             RegressionTables.R2,
+             (m -> mad(residuals(m))) => "MAE",
+             (m -> rmsd(predict(m), response(m))) => "RMSE",
+        ]
+    )
 
     size_large = (4.5inch, 1.5inch)
     with_theme(MISTStyle.theme()) do

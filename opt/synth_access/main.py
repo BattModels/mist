@@ -9,6 +9,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Callable, List, Optional
 
+from sklearn.utils.multiclass import attach_unique
 import torch
 import accelerate
 from assembly_theory import molecular_assembly
@@ -122,7 +123,7 @@ class SynthAccessFM(torch.nn.Module):
             .sum(-1)
         )
         if self.per_token:
-            score = score / (~batch["special_tokens_mask"].bool()).sum(-1)
+            score = score / batch["attention_mask"].sum(-1)
         return score
 
     def score(self, smiles: List[str]) -> List[float]:

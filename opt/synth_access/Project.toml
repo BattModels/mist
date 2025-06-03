@@ -7,6 +7,7 @@ GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 MISTStyle = "0a43f4a4-3db7-4939-b247-26273f54b603"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+RegressionTables = "d519eb52-b820-54da-95a6-98e1306fdade"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [sources]
