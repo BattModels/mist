@@ -9,7 +9,6 @@ from pathlib import Path
 from time import perf_counter
 from typing import Callable, List, Optional
 
-from sklearn.utils.multiclass import attach_unique
 import torch
 import accelerate
 from assembly_theory import molecular_assembly
@@ -96,41 +95,44 @@ def syba_scorer():
 
 
 class SynthAccessFM(torch.nn.Module):
-    def __init__(self, encoder, tokenizer, per_token: bool = False):
+    def __init__(self, encoder, tokenizer):
         super().__init__()
         self.encoder = encoder
         self.tokenizer = tokenizer
-        self.per_token = per_token
-
         self.collate_fn = DataCollatorWithPadding(self.tokenizer)
 
-    def forward(self, batch):
-        logits = self.encoder(
-            batch["input_ids"], attention_mask=batch["attention_mask"]
-        ).logits
-        B = batch["input_ids"].shape[0]
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        special_tokens_mask: torch.Tensor,
+        per_token: bool = False,
+    ):
+        logits = self.encoder(input_ids, attention_mask).logits
+        B = input_ids.shape[0]
         V = logits.shape[-1]
 
-        labels = (
-            batch["input_ids"]
-            .detach()
-            .masked_fill(batch["special_tokens_mask"].bool(), -100)
-        )
+        labels = input_ids.detach().masked_fill(special_tokens_mask.bool(), -100)
 
         score = (
             F.cross_entropy(logits.view(-1, V), labels.view(-1), reduction="none")
             .reshape(B, -1)
             .sum(-1)
         )
-        if self.per_token:
-            score = score / batch["attention_mask"].sum(-1)
+        if per_token:
+            score = score / attention_mask.sum(-1)
         return score
 
-    def score(self, smiles: List[str]) -> List[float]:
+    def score(self, smiles: List[str], per_token: bool = False) -> List[float]:
         batch = self.tokenizer(smiles, return_special_tokens_mask=True)
         batch = self.collate_fn(batch).to(self.encoder.device)
         with torch.inference_mode():
-            return self.forward(batch).to("cpu")
+            return self.forward(
+                batch["input_ids"],
+                batch["attention_mask"],
+                batch["special_tokens_mask"],
+                per_token,
+            ).to("cpu")
 
     @classmethod
     def from_checkpoint(cls, ckpt: str, **kwargs):
@@ -216,7 +218,7 @@ def eval_fm_model(
             start = perf_counter()
             ds = map_batchsize_finder(
                 ds,
-                lambda x: {name: model.score(x)},
+                lambda x: {name: model.score(x, per_token=per_token)},
                 batched=True,
                 batch_size=8,
                 input_columns=encoding,
