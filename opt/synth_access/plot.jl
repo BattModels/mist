@@ -30,8 +30,6 @@ function plot_score_correlation!(f, df; correlation, kwargs...)
     ax = Axis(f[1, 1];
         xticks=ticks, yticks=ticks,
         xticklabelrotation=0.55,
-        xticklabelsize=5pt,
-        yticklabelsize=5pt,
         xticklabelsvisible=false,
         xticksvisible=false,
         aspect=DataAspect(),
@@ -51,30 +49,15 @@ function plot_auroc!(f, df)
     ax = Axis(f[1, 1];
         ylabel="AUROC",
         ytickformat="{:.0%}",
-        ylabelsize=6pt,
         yticks=LinearTicks(5),
         limits=(nothing, (min_auroc, 1)),
         xticks=(eachindex(names), names),
-        xticklabelrotation=0.5,
-        xticklabelsize=5pt,
-        yticklabelsize=5pt,
+        xticklabelrotation=0.6,
     )
     gini = @. 2 * df.auroc - 1
-    h = barplot!(ax, levelcode.(df.name), df.auroc;
-        dodge=levelcode.(df.dataset),
-        color=levelcode.(df.dataset),
-        colormap=MISTStyle.CAT_COLORS,
-        colorrange=(1, 10)
-    )
+    h = barplot!(ax, levelcode.(df.name), df.auroc)
 
-    elements = map(enumerate(levels(df.dataset))) do (i, dataset)
-        PolyElement(;
-            polycolor=h.colormap[][i],
-            label=dataset,
-        )
-    end
-
-    return f, elements
+    return f
 end
 
 function load_scores()
@@ -137,34 +120,21 @@ function model_auroc(auroc::Dict)
     )
 end
 
-function figure_interp_surprise(models; correlation=corspearman, size=(3.42inch, 1.0inch))
-    # Crowdsourced
-    o = load_scores()
-    df_crowd = select(o.crowd.score, ["meanComplexity" => "Chemist", models...])
-    df_ba = select(o.ba.score, models)
-
-    auroc_crowd = o.crowd.auroc
-    auroc_ba = o.ba.auroc
-
+function figure_interp_surprise(score, auroc, models; correlation=corspearman, size=(3.42inch, 1.76inch))
     rows = []
     for (model, name) in models
-        push!(rows, (;
-            name,
-            crowd=auroc_crowd[model],
-            ba=auroc_ba[model],
-        ))
+        if haskey(auroc, model)
+            push!(rows, (;
+                name,
+                auroc=auroc[model],
+            ))
+        end
     end
+    score = select(score, models)
     auroc = DataFrame(rows)
-    auroc = stack(auroc, Not(:name), variable_name=:dataset, value_name=:auroc)
-    auroc.dataset = replace.(auroc.dataset,
-        "crowd" => "a) Sheridan et. al.",
-        "ba" => "b) Chen et. al.",
-        "ma" => "c) Assembly Index")
     auroc.name = categorical(auroc.name)
-    auroc.dataset = categorical(auroc.dataset)
 
-
-    f = Figure(; size, figure_padding=(2, 2, 2, 3))
+    f = Figure(; size, figure_padding=(2, 2, 2, 6))
     gl = GridLayout(f[1, 1])
     if correlation == cor
         cb_label = L"Pearson's $\rho$"
@@ -173,47 +143,30 @@ function figure_interp_surprise(models; correlation=corspearman, size=(3.42inch,
     else
         cb_label = string(correlation)
     end
-    cb = Colorbar(gl[2, 1:2];
+    cb = Colorbar(gl[2, 1];
         vertical=false,
         flipaxis=false,
-        # lowclip=:darkred,
         colorrange=(-1, 1),
         colormap=:vik10,
         tellheight=true,
-        tellwidth=false,
+        tellwidth=true,
         label=cb_label,
-        labelsize=6pt,
-        ticklabelsize=5pt,
         halign=:left,
         valign=:top,
     )
     kwargs = (; correlation, colorrange=cb.colorrange, colormap=cb.colormap)
-    h_crowd = plot_score_correlation!(gl[1, 1], df_crowd; kwargs...)
-    h_ba = plot_score_correlation!(gl[1, 2], df_ba; kwargs...)
-    h, elements = plot_auroc!(f[1, 2], auroc)
-    Legend(f[1, 2], elements, MISTStyle.label.(elements);
-        # tellheight=true,
-        # tellwidth=true,
-        nbanks=1,
-        padding=(1, 1, 1, 1),
-        margin=(1, 1, 1, 1),
-        valign=:top,
-        halign=:right,
-        # alignmode=Inside(),
-    )
-    colgap!(gl, 10)
+    h_crowd = plot_score_correlation!(gl[1, 1], score; kwargs...)
+    h = plot_auroc!(f[1, 2], auroc)
+    colgap!(gl, 3)
 
     label_kwargs = (;
-        fontsize=6pt,
+        fontsize=8pt,
         font=:bold,
         halign=:right,
         tellheight=false,
     )
-    Label(gl[1, 1, TopLeft()], "a)"; padding=(0, 30, -2, 0), label_kwargs...)
-    Label(gl[1, 2, TopLeft()], "b)"; padding=(0, 30, -2, 0), label_kwargs...)
-    Label(f[1, 2, TopLeft()], "c)"; padding=(0, 20, -2, 0), label_kwargs...)
-    # Label(f[2, 2, TopLeft()], "d)"; padding=(0, 30, -2, 0), label_kwargs...)
-    colsize!(f.layout, 1, Auto(2))
+    Label(gl[1, 1, TopLeft()], "a)"; padding=(0, 30, 5, 0), label_kwargs...)
+    Label(f[1, 2, TopLeft()], "b)"; padding=(0, 20, 5, 0), label_kwargs...)
 
     rowgap!(f.layout, 3)
     resize_to_layout!(f)
@@ -245,7 +198,6 @@ function create_figures()
         "seyonec/ChemBERTa-zinc-base-v1-smiles-kekule-per-token" => "ChemBERTa, Kekule",
         "seyonec/ChemBERTa-zinc-base-v1-smiles-canonical-per-token" => "ChemBERTa, Canonical",
     ]
-    all_models = vcat(main_models, all_models)
 
     # Effect Model
     o = load_scores()
@@ -263,11 +215,18 @@ function create_figures()
         ]
     )
 
-    size_large = (4.5inch, 1.5inch)
+    size_large = (4.5inch, 2.3inch)
     with_theme(MISTStyle.theme()) do
-        figure_interp_surprise(main_models) |> savefig("interp_surprise")
-        figure_interp_surprise(main_models; correlation=cor) |> savefig("interp_surprise_cor")
-        figure_interp_surprise(all_models; size=size_large) |> savefig("interp_surprise_all")
-        figure_interp_surprise(all_models; correlation=cor, size=size_large) |> savefig("interp_surprise_all_cor")
+        for (name, ds) in ["crowd" => o.crowd, "ba" => o.ba]
+            if name == "crowd"
+                models = ["meanComplexity" => "Chemist", main_models...]
+            else
+                models = main_models
+            end
+            figure_interp_surprise(ds.score, ds.auroc, models) |> savefig("interp_surprise_$name")
+            figure_interp_surprise(ds.score, ds.auroc, models; correlation=cor) |> savefig("interp_surprise_cor_$name")
+            figure_interp_surprise(ds.score, ds.auroc, vcat(models, all_models); size=size_large) |> savefig("interp_surprise_all_$name")
+            figure_interp_surprise(ds.score, ds.auroc, vcat(models, all_models); correlation=cor, size=size_large) |> savefig("interp_surprise_all_cor_$name")
+        end
     end
 end
