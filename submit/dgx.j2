@@ -29,40 +29,25 @@ module load slurm
 cd $(git rev-parse --show-toplevel)
 
 # Set env variables
+ENV_FILE="${TMPDIR}/env-${SLURM_JOB_ID}.sh"
+cat > $ENV_FILE<<EOF
 {{- export_env( env ) }}
-
-# Create job-specific temp dir
-TMPDIR=${TMPDIR:-/tmp}/mist-${SLURM_JOB_ID}/
-mkdir -p $TMPDIR
-
-{%- if job_queue is defined %}
-submit/sweep.py scheduler --num-workers {{ job_queue.tasks }} {{ job_queue.queue }}
-
-{%- else -%}
-{% if deepspeed is defined %}
-# Write out deepspeed config
-cat > $TMPDIR/deepspeed.json<<EOF
-{{ deepspeed | tojson(indent=4) }}
 EOF
-export PL_DEEPSPEED_CONFIG_PATH="$TMPDIR/deepspeed.json"
-export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
-sbcast -fp $PL_DEEPSPEED_CONFIG_PATH $PL_DEEPSPEED_CONFIG_PATH
-{%- endif %}
+source $ENV_FILE
+sbcast -fp $ENV_FILE $ENV_FILE
 
-{% if job_array is defined %}
-export PL_CONFIG=$TMPDIR/lightning_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.json
-sed "${SLURM_ARRAY_TASK_ID}q;d" {{ job_array.file }} > $PL_CONFIG
-export JOB_CONFIG=$(cat $PL_CONFIG)
-{% else %}
-
-{{- export_job_config( __config__ ) }}
+{{ export_job_config( __config__ ) }}
 
 # Write out  lightning config
-export PL_CONFIG=$TMPDIR/lightning.json
+export PL_CONFIG=$TMPDIR/lightning-${SLURM_JOB_ID}.json
 cat > ${PL_CONFIG}<<EOF
-{{ {"fit": train } | tojson }}
+{%- if stage is not none %}
+{{ {stage: train } | tojson }}
+{%- else %}
+{{ train | tojson }}
+{%- endif %}
 EOF
-{% endif %}
+
 sbcast -fp ${PL_CONFIG} ${PL_CONFIG}
 cat ${PL_CONFIG}
 
@@ -77,9 +62,10 @@ fi
 {%- endif %}
 
 srun --mpi=pmix \
-$(which apptainer) run \
---bind /lustre/fs0,/tmp,$TMPDIR \
+$(which apptainer) run  \
+--bind /lustre/fs0,$TMPDIR \
 --nv \
+--env-file $ENV_FILE \
 {{ container }} \
 ${PWD}/submit/set_node_rank \
 {%- if nsys is defined %}
@@ -87,4 +73,3 @@ nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
     python {{ program or "${PWD}/train.py" }} --config ${PL_CONFIG}
-{%- endif %}
