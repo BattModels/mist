@@ -6,7 +6,7 @@ using StatsBase: mean, cor, corspearman, corkendall, mad, rmse
 using Clustering: hclust
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode, levels
-using MISTStyle: MISTStyle, savefig, inch, pt
+using MISTStyle: MISTStyle, savefig, sublabel!, inch, pt
 
 function plot_score_correlation!(f, df; correlation, kwargs...)
     columns = names(df)
@@ -86,6 +86,141 @@ function load_scores()
         ba = (; score = df_ba, auroc = auroc_ba),
     )
 end
+
+function model_score_grid(df::DataFrame, baseline::String; cmax=100)
+    f = Figure(; size=(7inch, 6inch), figure_padding=(5, 5, 1, 1))
+    baseline_score = df[!, baseline]
+    df = select(df, Not(baseline))
+    models = names(df)
+    models = filter(models) do m
+        m in ["stdevComplexity", "is_complex", "is_hard"] && return false
+        return eltype(df[!, m]) <: Union{Integer, AbstractFloat, Union{Missing, <:AbstractFloat}}
+    end
+    models = DataFrame(map(label_model, models))
+    sort!(models, [order(:model, rev=false), :per_token, :encoding, :untrained]; rev=true)
+    plt_names = model_plot_names()
+
+    cb = Colorbar(f[3, 1];
+        colorrange=(1, cmax),
+        scale=log10,
+        vertical=false,
+        flipaxis=false,
+        label="Number of Molecules"
+    )
+    ax_kwargs = (;
+        ylabelvisible=false,
+        yticksvisible=false,
+        yticklabelsvisible=false,
+        xlabelvisible=false,
+        xticksvisible=false,
+        xticklabelsvisible=false,
+        limits=(nothing, (1, 5)),
+    )
+    scatter_kwargs = (;
+        marker=:circle,
+        alpha=0.2,
+        color=MISTStyle.UM_COLORS.blue,
+    )
+    hexbin_kwargs = (;
+        bins=40,
+        colorscale=cb.scale,
+        colorrange=cb.colorrange,
+        colormap=cb.colormap,
+    )
+    plt_kwargs = hexbin_kwargs
+
+
+
+    # Heuristics
+    gl = GridLayout(f[1, 1])
+    heuritics = subset(models, :name => ByRow(n -> !occursin("/", n)))
+    for (i, heuristic) in enumerate(eachrow(heuritics))
+        ax = Axis(gl[1, i];
+            title=get(plt_names, heuristic.name, heuristic.name),
+            ax_kwargs...,
+        )
+        x = df[!, heuristic.name]
+        valid = (!ismissing).(x)
+        hexbin!(ax, x[valid], baseline_score[valid]; plt_kwargs...)
+    end
+
+    mfm = subset(models, :model => ByRow(m -> occursin("/", m)))
+    mfm_models = unique(mfm.model)
+    nrow = length(mfm_models)
+    ncol = ceil(Int, length(nrow) / nrow)
+    gl = GridLayout(f[2, 1], nrow, ncol)
+    for (m, mfm_name) in enumerate(mfm_models)
+        variants = subset(models, :model => ByRow(==(mfm_name)))
+        if !haskey(plt_names, mfm_name)
+            @warn "No plot name for $mfm_name"
+        end
+        for (j, variant) in enumerate(eachrow(variants))
+            ax = Axis(gl[m, j];
+                ylabel=get(plt_names, mfm_name, mfm_name),
+                ylabelfont=:bold,
+                ax_kwargs...,
+            )
+            if j == 1
+                ax.ylabelvisible[] = true
+            end
+            if m == 1
+                ax.title[] = label_varient(variant)
+            end
+            hexbin!(ax, df[!, variant.name], baseline_score; plt_kwargs...)
+        end
+    end
+
+    sublabel!(f[1, 1, TopLeft()], "a")
+    sublabel!(f[2, 1, TopLeft()], "b")
+    rowsize!(f.layout, 2, Auto(nrow))
+    resize_to_layout!(f)
+
+    return f
+end
+
+function label_varient(variant)
+    ut = variant.untrained ? "Untrained" : "Trained"
+    norm = variant.per_token ? "Per-Molecule" : "Per-Token"
+    encoding = Dict(
+        "smiles" => "Smiles",
+        "kekule" => "Kekule",
+        "canonical" => "Canonical",
+    )[variant.encoding]
+    return "$ut\n$norm\n$encoding"
+end
+
+function model_plot_names()
+    return Dict(
+        "seyonec/ChemBERTa-zinc-base-v1" => "ChemBERTa",
+        "models/mist-ti624ev1" => "MIST-27M",
+        "models/mist-4yzwys2z" => "MIST-228M",
+        "models/mist-1.8B-dh61satt" => "MIST-1.8B",
+        "models/mist-n2dkcidc" => "MIST-ZINC",
+        "models/mist-28znv46w" => "MIST-128M",
+        "ibm-research/MoLFormer-XL-both-10pct" => "MoLFormer",
+        "molecular-weight" => "Molecular Weight",
+        "assembly-index" => "Molecular Assembly",
+        "smirk" => "Smirk",
+        "smirk-kekule" => "Smirk, Kekule",
+        "smirk-canonical" => "Smirk, Canonical",
+    )
+end
+
+function label_model(name::String)
+    untrained = occursin("untrained", name)
+    per_token = occursin("per-token", name)
+    if occursin("smiles-canonical", name)
+        encoding = "canonical"
+    elseif occursin("smiles-kekule", name)
+        encoding = "kekule"
+    else
+        encoding = "smiles"
+    end
+    model = replace(name, "smiles-canonical" => "", "smiles-kekule" => "", "per-token" => "", "untrained" => "", "smiles" => "")
+    model = replace(model, r"-+$" => "")
+    return (; model, untrained, per_token, encoding, name)
+end
+
 
 function model_auroc(auroc::Dict)
     df = stack(DataFrame(auroc); variable_name=:model, value_name=:auroc)
@@ -179,24 +314,24 @@ function create_figures()
         "SCScore" => "SCScore",
         "SAScore" => "SAScore",
         "smirk" => "Smirk Fertility",
-        "ibm-research/MoLFormer-XL-both-10pct-smiles-per-token" => "MoLFormer",
-        "seyonec/ChemBERTa-zinc-base-v1-smiles-per-token" => "ChemBERTa",
-        "models/mist-ti624ev1-smiles-kekule-per-token" => "MIST-27M",
-        "models/mist-4yzwys2z-smiles-kekule-per-token" => "MIST-228M",
-        "models/mist-1.8B-dh61satt-smiles-kekule-per-token" => "MIST-1.8B",
-        "models/mist-1.8B-dh61satt-untrained-smiles-kekule-per-token" => "MIST-1.8B, Untrained",
-        "models/mist-n2dkcidc-smiles-canonical-per-token" => "MIST-ZINC",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles" => "MoLFormer",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles" => "ChemBERTa",
+        "models/mist-ti624ev1-smiles-kekule" => "MIST-27M",
+        "models/mist-4yzwys2z-smiles-kekule" => "MIST-228M",
+        "models/mist-1.8B-dh61satt-smiles-kekule" => "MIST-1.8B",
+        "models/mist-1.8B-dh61satt-untrained-smiles-kekule" => "MIST-1.8B, Untrained",
+        "models/mist-n2dkcidc-smiles-canonical" => "MIST-ZINC",
         "assembly-index" => "Mol. Asm.",
     ]
     all_models = [
         "molecular-weight" => "Mol. Weight",
         "BR-SAScore" => "BR-SAScore",
-        "ibm-research/MoLFormer-XL-both-10pct-untrained-smiles-per-token" => "MoLFormer, Untrained",
-        "ibm-research/MoLFormer-XL-both-10pct-smiles-kekule-per-token" => "MoLFormer, Kekule",
-        "ibm-research/MoLFormer-XL-both-10pct-smiles-canonical-per-token" => "MoLFormer, Canonical",
-        "seyonec/ChemBERTa-zinc-base-v1-untrained-smiles-per-token" => "ChemBERTa, Untrained",
-        "seyonec/ChemBERTa-zinc-base-v1-smiles-kekule-per-token" => "ChemBERTa, Kekule",
-        "seyonec/ChemBERTa-zinc-base-v1-smiles-canonical-per-token" => "ChemBERTa, Canonical",
+        "ibm-research/MoLFormer-XL-both-10pct-untrained-smiles" => "MoLFormer, Untrained",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles-kekule" => "MoLFormer, Kekule",
+        "ibm-research/MoLFormer-XL-both-10pct-smiles-canonical" => "MoLFormer, Canonical",
+        "seyonec/ChemBERTa-zinc-base-v1-untrained-smiles" => "ChemBERTa, Untrained",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles-kekule" => "ChemBERTa, Kekule",
+        "seyonec/ChemBERTa-zinc-base-v1-smiles-canonical" => "ChemBERTa, Canonical",
     ]
 
     # Effect Model
@@ -228,5 +363,8 @@ function create_figures()
             figure_interp_surprise(ds.score, ds.auroc, vcat(models, all_models); size=size_large) |> savefig("interp_surprise_all_$name")
             figure_interp_surprise(ds.score, ds.auroc, vcat(models, all_models); correlation=cor, size=size_large) |> savefig("interp_surprise_all_cor_$name")
         end
+
+        model_score_grid(o.crowd.score, "meanComplexity") |> savefig("model_score_grid_crowd")
+        model_score_grid(o.ba.score, "SAScore"; cmax=500) |> savefig("model_score_grid_ba")
     end
 end
