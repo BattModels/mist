@@ -7,6 +7,10 @@ using Clustering: hclust
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode, levels
 using MISTStyle: MISTStyle, savefig, sublabel!, inch, pt
+using LinearAlgebra: dot, norm
+
+cosine_similarity(x, y) = dot(x, y) / (norm(x) * norm(y))
+cosine_distance(x, y) = 1 - cosine_similarity(x, y)
 
 function plot_score_correlation!(f, df; correlation, kwargs...)
     columns = names(df)
@@ -89,6 +93,7 @@ end
 
 function model_score_grid(df::DataFrame, baseline::String; cmax=100)
     f = Figure(; size=(7inch, 6inch), figure_padding=(5, 5, 1, 1))
+    df = subset(df, baseline => ByRow(!ismissing))
     baseline_score = df[!, baseline]
     df = select(df, Not(baseline))
     models = names(df)
@@ -114,7 +119,6 @@ function model_score_grid(df::DataFrame, baseline::String; cmax=100)
         xlabelvisible=false,
         xticksvisible=false,
         xticklabelsvisible=false,
-        limits=(nothing, (1, 5)),
     )
     scatter_kwargs = (;
         marker=:circle,
@@ -313,7 +317,7 @@ function create_figures()
     main_models = [
         "SCScore" => "SCScore",
         "SAScore" => "SAScore",
-        "smirk" => "Smirk Fertility",
+        "smirk" => "Smirk",
         "ibm-research/MoLFormer-XL-both-10pct-smiles" => "MoLFormer",
         "seyonec/ChemBERTa-zinc-base-v1-smiles" => "ChemBERTa",
         "models/mist-ti624ev1-smiles-kekule" => "MIST-27M",
@@ -321,10 +325,10 @@ function create_figures()
         "models/mist-1.8B-dh61satt-smiles-kekule" => "MIST-1.8B",
         "models/mist-1.8B-dh61satt-untrained-smiles-kekule" => "MIST-1.8B, Untrained",
         "models/mist-n2dkcidc-smiles-canonical" => "MIST-ZINC",
-        "assembly-index" => "Mol. Asm.",
+        "assembly-index" => "Molecular Assembly",
     ]
     all_models = [
-        "molecular-weight" => "Mol. Weight",
+        "molecular-weight" => "Molecular Weight",
         "BR-SAScore" => "BR-SAScore",
         "ibm-research/MoLFormer-XL-both-10pct-untrained-smiles" => "MoLFormer, Untrained",
         "ibm-research/MoLFormer-XL-both-10pct-smiles-kekule" => "MoLFormer, Kekule",
@@ -351,20 +355,38 @@ function create_figures()
     )
 
     size_large = (4.5inch, 2.3inch)
+
     with_theme(MISTStyle.theme()) do
-        for (name, ds) in ["crowd" => o.crowd, "ba" => o.ba]
-            if name == "crowd"
-                models = ["meanComplexity" => "Chemist", main_models...]
-            else
-                models = main_models
+        datasets = [
+            ("crowd", o.crowd, ["meanComplexity" => "Chemist"]),
+            ("ba", o.ba, [])
+        ]
+
+        correlations = [
+            "spearman" => corspearman,
+            "pearson" => cor,
+            "cosine" => cosine_similarity,
+        ]
+        model_sets = [
+            "all" => vcat(main_models, all_models),
+            missing => main_models,
+        ]
+
+        for ((set_name, models), (ds_name, ds), (cor_name, correlation)) in Iterators.product(model_sets, datasets, correlations)
+            filename = "interp_surprise_" * join(skipmissing([set_name, ds_name, cor_name]), "_")
+            kwargs = (; correlation)
+            if !ismissing(set_name) && set_name == "all"
+                kwargs = (; kwargs..., size=size_large)
             end
-            figure_interp_surprise(ds.score, ds.auroc, models) |> savefig("interp_surprise_$name")
-            figure_interp_surprise(ds.score, ds.auroc, models; correlation=cor) |> savefig("interp_surprise_cor_$name")
-            figure_interp_surprise(ds.score, ds.auroc, vcat(models, all_models); size=size_large) |> savefig("interp_surprise_all_$name")
-            figure_interp_surprise(ds.score, ds.auroc, vcat(models, all_models); correlation=cor, size=size_large) |> savefig("interp_surprise_all_cor_$name")
+            if ds_name == "crowd"
+                models = vcat(["meanComplexity" => "Chemist"], models)
+            end
+            figure_interp_surprise(ds.score, ds.auroc, models; kwargs...) |> savefig(filename)
         end
 
         model_score_grid(o.crowd.score, "meanComplexity") |> savefig("model_score_grid_crowd")
+        model_score_grid(o.crowd.score, "assembly-index") |> savefig("model_score_grid_crowd_ma")
         model_score_grid(o.ba.score, "SAScore"; cmax=500) |> savefig("model_score_grid_ba")
+        model_score_grid(o.ba.score, "assembly-index"; cmax=500) |> savefig("model_score_grid_ba_ma")
     end
 end
