@@ -18,6 +18,7 @@ def test_legendre():
         == 0.125 * (63 * torch.pow(x, 5) - 70 * torch.pow(x, 3) + 15 * torch.pow(x, 1))
     ).all()
 
+
 def test_zeros():
     m = BezierFourthPredictionTaskHead(32)
     assert torch.isclose(m.parametric_var[0], torch.tensor(0.0), atol=1e-6)

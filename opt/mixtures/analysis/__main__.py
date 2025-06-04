@@ -3,7 +3,6 @@ import glob
 
 
 if __name__ == "__main__":
-  
     run_id = "8aqjzwmr"
     pretrained_ckpt = (
         f"/home/abhutani/electrolyte-fm/mist/{run_id}/checkpoints/last.ckpt"
@@ -21,7 +20,6 @@ if __name__ == "__main__":
                     val_batch_size=165,
                     target=target,
                 )
-                
+
     for target in ["transferance", "conductivity", "product", "diffusioncoeff"]:
-      
         plot_vector_fields(data_files=glob.glob(f"{target}_*.csv"), target=target)
