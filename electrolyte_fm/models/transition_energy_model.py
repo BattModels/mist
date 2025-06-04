@@ -5,12 +5,11 @@ from typing import List, Optional
 import torch
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
-from lightning.pytorch.loggers import WandbLogger
 
 from ..utils.metrics import get_metrics, masked_loss, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
-from .normalize import Standardize
+from .normalize import AbstractNormalizer
 from .prediction_task_head import PredictionTaskHead
 
 
@@ -23,7 +22,6 @@ class TransitionEnergyModel(LightningModule, DeepSpeedMixin):
         self,
         encoder_ckpt: str,
         target_columns: List[str],
-        transform: Optional[str] = "standardize",
         freeze_encoder: bool = False,
         tokenizer: Optional[str] = None,
         vocab_size: Optional[int] = None,
@@ -31,6 +29,7 @@ class TransitionEnergyModel(LightningModule, DeepSpeedMixin):
         n_components: int = 2,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         metrics: List[str] = ["mae-channel", "rmse", "mape"],
+        transform: Optional[str | list[str]] = None,
         lr_schedule: LRSchedulerCallable | None = None,
     ) -> None:
         super().__init__()
@@ -40,6 +39,8 @@ class TransitionEnergyModel(LightningModule, DeepSpeedMixin):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.n_components = n_components
+        transform = transform or "standardize"
+        self.transform = AbstractNormalizer.get(transform, self.output_size).eval()
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
@@ -74,8 +75,6 @@ class TransitionEnergyModel(LightningModule, DeepSpeedMixin):
             num_outputs=num_outputs,
             target_channels=target_columns,
         )
-
-        self.transform = get_normalizer(transform, num_outputs).eval()
 
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")

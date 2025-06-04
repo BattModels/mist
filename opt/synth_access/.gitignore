@@ -1,5 +1,6 @@
 fig/
-poetry.lock
+uv.lock
 models/
+models
 data/
 *.json

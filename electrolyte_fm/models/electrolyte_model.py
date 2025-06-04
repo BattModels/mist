@@ -105,7 +105,7 @@ class ElectrolyteModel(LightningModule, DeepSpeedMixin):
         self.transform.load_state_dict(state)
 
     def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
-        mix_embedding = None
+        mix_embedding = []
         for i in range(self.n_components):
             embedding = self.encoder(
                 batch[f"input_ids_{i}"],
@@ -113,16 +113,12 @@ class ElectrolyteModel(LightningModule, DeepSpeedMixin):
                 return_dict=True,
                 output_hidden_states=True,
             ).last_hidden_state.mean(axis=1)
-            embedding = torch.stack(
-                [
-                    torch.mul(embedding[j, :], batch[f"composition_{i}"][j])
-                    for j in range(embedding.shape[0])
-                ]
-            )
-            if mix_embedding is None:
-                mix_embedding = embedding
-            else:
-                mix_embedding += embedding
+            composition = batch[f"composition_{i}"].view(-1, 1)
+            embedding_scaled = embedding * composition  # Shape: [batch, embedding]
+            mix_embedding.append(embedding_scaled)
+        # Shape: [batch, n_components, embedding]
+        mix_embedding = torch.stack(mix_embedding, dim=1).sum(axis=1)
+
         mix_embedding = torch.hstack(
             (batch["temperature"].view(-1, 1) / 400, mix_embedding)
         )

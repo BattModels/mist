@@ -3,11 +3,7 @@ using DataFrames
 using CairoMakie: CairoMakie
 using CSV: CSV
 using CategoricalArrays: categorical, levelcode
-
-include("../style.jl")
-using .MISTStyle: MISTStyle, savefig, inch, pt
-
-labels(x) = x.label[]
+using MISTStyle: MISTStyle, savefig, inch, pt, label
 
 function figure_embedding()
     df_benzene = DataFrame(CSV.File("interp_benzene.csv"))

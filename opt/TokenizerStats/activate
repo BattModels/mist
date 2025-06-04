@@ -1,6 +1,6 @@
 #!/bin/bash
 # Source this to activate the environment
-DIR="$(git rev-parse --show-toplevel)"
+DIR="$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 
 # Load modules
 if command -v module > /dev/null; then

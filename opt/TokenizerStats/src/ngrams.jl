@@ -172,19 +172,7 @@ function cross_entropy(ℓ::AbstractMatrix, code::Vector{<:Integer}; ignore_id=-
     end
     return -H
 end
-"""
-Computes the Shannon-entropy of a dataset using an N-gram model.
-"""
-function dataset_shannon_entropy(model::NGramModel; N=length(model))
-    # counts = values(model.ngrams[N])
-    # total_tokens = sum(counts)
-    # probabilities = counts./total_tokens
-    # entropy = [ -1*probabilities[i]*log(probabilities[i]) for i in 1:length(probabilities)]
-    return sum(model.ngrams[N]) do gram
-        lnp = log_probability(model, gram)
-        return xexpy(lnp, lnp)
-    end
-end
+
 """
 Computes the KL-Divergence `∑ p * log(p/q)` between `p = exp(P)` and `q = exp(Q)`
 (P & Q are log-probabilities) using Kahan-Babuska-Neumaier summation
