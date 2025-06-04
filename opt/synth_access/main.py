@@ -10,7 +10,7 @@ from time import perf_counter
 from typing import Callable, List, Optional
 
 import torch
-import accelerate
+import accelerate  # noqa: F401
 from assembly_theory import molecular_assembly
 from BRSAScore import SAScorer as BRSAScorer
 from datasets import Dataset, load_dataset
@@ -216,9 +216,13 @@ def eval_fm_model(
                 name += "-per-token"
 
             start = perf_counter()
+
+            def scorer(x: str):
+                return model.score(x, per_token=per_token)  # noqa: F821
+
             ds = map_batchsize_finder(
                 ds,
-                lambda x: {name: model.score(x, per_token=per_token)},
+                scorer,
                 batched=True,
                 batch_size=8,
                 input_columns=encoding,
