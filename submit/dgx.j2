@@ -49,6 +49,7 @@ cat > ${PL_CONFIG}<<EOF
 EOF
 
 sbcast -fp ${PL_CONFIG} ${PL_CONFIG}
+cat ${PL_CONFIG}
 
 {%- if requeue %}
 # Look for a requeue checkpoint
