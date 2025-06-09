@@ -2,12 +2,13 @@ name: bayesian-ci
 on:
   push:
     paths:
-      - "opt/BayesianScaling/**"
+      - opt/BayesianScaling/**
   pull_request:
     paths:
-      - "opt/BayesianScaling/**"
+      - opt/BayesianScaling/**
   workflow_dispatch:
-
+env:
+  JULIA_PROJECT: opt/BayesianScaling
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,7 +16,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: julia-actions/install-juliaup@v2
         with:
-          channel: "release"
+          channel: release
       - uses: julia-actions/cache@v1
       - uses: julia-actions/julia-buildpkg@v1
+        with:
+          project: ${{ env.JULIA_PROJECT }}
       - uses: julia-actions/julia-runtest@v1
+        with:
+          project: ${{ env.JULIA_PROJECT }}
