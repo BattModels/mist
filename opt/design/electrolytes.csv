@@ -91,33 +91,3 @@ TMP,Ether,Phosphate,COP(=O)(OC)OC
 BS,Alkane,Sulfone,CCCCS(=O)(=O)CCCC
 BiBS,Alkane,Sulfone,CCCCS(=O)(=O)CC(C)C
 MiPS,Alkane,Sulfone,CC(C)S(=O)(=O)C
-Heptane,Alkane,,CCCCCCC
-Cyclohexane,Alkane,,C1CCCCC1
-Tetrachloromethane,Alkane,Chloro,ClC(Cl)(Cl)Cl
-Benzene,Arene,,c1ccccc1
-Toluene,Arene,,Cc1ccccc1
-"1,1,2,2-tetrafluoroethyl 2,2,3,3-tetrafluoropropyl",Ether,Fluoro,C(F)(F)C(F)(F)COC(F)(F)C(F)F
-"1,2-Dichlorobenzene",Arene,Chloro,c1ccc(c(c1)Cl)Cl
-Iodobenzene,Arene,Iodo,c1ccc(cc1)I
-Chloroform,Alkane,Chloro,ClC(Cl)(Cl)Cl
-"(Propan-2-yl)benzene",Arene,,CC(C)c1ccccc1
-Phenetole,Arene,,CCOC1=CC=CC=C1
-Nitrobenzene,Arene,Nitro,C1=CC=C(C=C1)[N+](=O)[O-]
-Anisole,Arene,,COC1=CC=CC=C1
-"1,3,5-trimethylbenzene",Arene,,CC1=CC(=CC(=C1)C)C
-Phenol,Arene,Alcohol,C1=CC=C(C=C1)O
-Benzonitrile,Arene,Nitrile,C1=CC=C(C=C1)C#N
-Triglyme,Ether,,COCCOCCOCCOC
-Acetonitrile,Alkane,Nitrile,CC#N
-"1,4-dioxane",Cycloalkane,,C1COCCO1
-Tetramethylene sulfone,Cycloalkane,Sulfone,C1CCS(=O)(=O)C1
-Propylene carbonate,Ethylene carbonate,,CC1COC(=O)O1
-Methyl propanoate,Ester,,CCC(=O)OC
-Tetraglyme,Ether,,COCCOCCOCCOCCOC
-"γ-Butyrolactone",,,C1CC(=O)OC1
-Ethanol,Alkane,Alcohol,CCO
-Tetrahydrofuran,Cycloalkane,,C1CCOC1
-"1,2-diocolane",Cycloalkane,,C1COCO1
-Triethyl phosphate,Ether,Phosphate,CCOP(=O)(OCC)OCC
-"1-Pentanol",Alkane,Alcohol,CCCCCO
-Dimethyl sulfoxide,,,CS(=O)C

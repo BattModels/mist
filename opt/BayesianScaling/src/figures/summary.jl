@@ -112,4 +112,3 @@ function figure_ai4x(
     resize_to_layout!(f)
     return f
 end
-

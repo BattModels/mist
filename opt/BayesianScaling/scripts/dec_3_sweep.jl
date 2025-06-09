@@ -120,7 +120,7 @@ function fit_summary()
         model = data["model"]
         chains = data["chains"]
         chains_scaling = haskey(chains[1, 1, :], :scaling) ? selectdim(chains, 3, :scaling) : chains
-        G, a, E, ζ, r = BayesianScaling.scaling_summary(chains_scaling)
+        (; G, a, E, ζ, r) = BayesianScaling.scaling_summary(chains_scaling)
         m = match(r"-([+\-e0-9\.]+)--(.*)", name)
         eff_batch_size = parse(Float64, m.captures[1])
         model_type = m.captures[2]

@@ -15,4 +15,3 @@ display(model)
 
 y = BayesianScaling.sample_chains(model; nchains=4, draws=1000)
 display(y)
-

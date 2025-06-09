@@ -56,5 +56,3 @@ lr_a = 1.64e-4 * sqrt(768) / sqrt(1024)
 
 o = process_model(m, d4)
 @info "Saved log(lr) ∝ d_model^c" o
-
-

@@ -14,6 +14,7 @@ end
 function scaling_summary(chains::AbstractChains; p=0.95)
     G_ci = credible_interval(p)
     a_ci = credible_interval(p)
+    b_ci = credible_interval(p)
     r_ci = credible_interval(p)
     E_ci = credible_interval(p)
     ζ_ci = credible_interval(p)
@@ -22,11 +23,19 @@ function scaling_summary(chains::AbstractChains; p=0.95)
         (; A, α, B, β, E) = θ
         fit!(G_ci, ((α * A) / (β * B))^(1 / (α + β)))
         fit!(a_ci, β / (α + β))
+        fit!(b_ci, α / (α + β))
         fit!(r_ci, α / β)
         fit!(ζ_ci, (α * β) / (α + β))
         fit!(E_ci, E)
     end
-    return OnlineStats.value(G_ci), OnlineStats.value(a_ci), OnlineStats.value(E_ci), OnlineStats.value(ζ_ci), OnlineStats.value(r_ci)
+    return (;
+        G = OnlineStats.value(G_ci),
+        a = OnlineStats.value(a_ci),
+        b = OnlineStats.value(b_ci),
+        E = OnlineStats.value(E_ci),
+        ζ = OnlineStats.value(ζ_ci),
+        r = OnlineStats.value(r_ci),
+    )
 end
 
 function design(m, chains; d_model=768, ff_ratio=4, n_layers=8, kv_size=64, gpus=32, gas=16, batch_size=128)

@@ -363,10 +363,14 @@ Return the expectation of `chains` and the `p`-percentile credible interval
 """
 function credible_interval(chains::AbstractArray{T,3}; p=0.95) where {T}
     map(eachslice(chains; dims=3)) do chains
-        v = credible_interval(p)
-        fit!(v, vec(chains))
-        return OnlineStats.value(v)
+        credible_interval(chains, p)
     end
+end
+
+function credible_interval(chains::AbstractArray, p::Real)
+    v = credible_interval(p)
+    fit!(v, vec(chains))
+    return OnlineStats.value(v)
 end
 
 function credible_interval(p=0.90)
@@ -426,4 +430,3 @@ function maximum_posterior_estimate(model::BayesianRegression; p=0.95, n=7, adty
     x = TransformVariables.transform(L.ℓ.transformation, sol.u)
     return x, sol
 end
-

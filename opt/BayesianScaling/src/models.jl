@@ -138,4 +138,3 @@ function ideal_lr(model::ShapedScaling, chains::AbstractChains, N, B; p=0.95)
     end
     return mu, lower, upper
 end
-

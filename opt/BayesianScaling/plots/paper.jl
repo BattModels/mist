@@ -229,4 +229,3 @@ function plot_all(dir; kwargs...)
         MISTStyle.savefig("bayesian", f; fig_dir=model)
     end
 end
-

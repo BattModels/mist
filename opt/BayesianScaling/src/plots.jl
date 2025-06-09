@@ -439,4 +439,3 @@ function plot_chains(chains::AbstractChains)
     resize_to_layout!(f)
     return f
 end
-
