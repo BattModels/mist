@@ -8,4 +8,3 @@ sbatch -N 2 launch.sh
 sbatch -N 3 launch.sh
 sbatch -N 4 launch.sh
 sbatch -N 5 launch.sh
-

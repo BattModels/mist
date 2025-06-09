@@ -42,4 +42,3 @@ function collate_performance_stats(sweep::String)
     end
     return DataFrame(rows)
 end
-

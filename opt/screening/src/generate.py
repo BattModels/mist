@@ -5,10 +5,8 @@ import torch
 from lightning.fabric import Fabric
 from torch import nn
 
-from electrolyte_fm.models.prod_finetune import MISTFinetuned
+from electrolyte_fm.models.prod_finetune import MISTFinetuned, MISTMultiTask
 from src.hyperloglog import HyperLogLogSet
-
-from .utils import RateLimitedAdapter, configure_logging
 
 
 class OracleCritic(nn.Module):
@@ -29,8 +27,9 @@ class OracleCritic(nn.Module):
         cls,
         save_directory: str,
         limits: dict,
-        model_cls=MISTFinetuned,
+        model_cls: str = "MISTFinetuned",
     ):
+        model_cls = MISTFinetuned if model_cls == "MISTFinetuned" else MISTMultiTask
         oracle = model_cls.from_pretrained(save_directory)
         critic = QuadrantCritic(
             limits, channels=[chn["name"] for chn in oracle.channels]

@@ -66,4 +66,3 @@ df_ref.inchi_key = ScreeningPlots.inchi_key.(df_ref.smi)
 df_novel = subset(df_mol, :inchi_key => ByRow(∉(df_ref.inchi_key)))
 df_unfound = subset(df_ref, :inchi_key => ByRow(∉(df_mol.inchi_key)))
 @info "Novel Molecules" nrow(df_novel) nrow(df_ref) nrow(df_novel) / nrow(df_mol) nrow(df_unfound) / nrow(df_ref)
-
