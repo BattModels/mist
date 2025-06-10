@@ -64,7 +64,7 @@ def _sqlite_writer(db_path, q: queue.Queue):
     try:
         while True:
             item = q.get()
-            logger.info(
+            logger.debug(
                 "queue_size: %d, errors: %d, wab_count: %d, invalid: %d",
                 q.qsize(),
                 error_count,

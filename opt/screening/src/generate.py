@@ -5,12 +5,8 @@ import torch
 from lightning.fabric import Fabric
 from torch import nn
 
-from electrolyte_fm.models.prod_finetune import MISTFinetuned
+from electrolyte_fm.models.prod_finetune import MISTFinetuned, MISTMultiTask
 from src.hyperloglog import HyperLogLogSet
-
-from .utils import RateLimitedAdapter
-
-logger = RateLimitedAdapter(logging.getLogger(__name__), min_interval=30)
 
 
 class OracleCritic(nn.Module):
@@ -31,8 +27,9 @@ class OracleCritic(nn.Module):
         cls,
         save_directory: str,
         limits: dict,
-        model_cls=MISTFinetuned,
+        model_cls: str = "MISTFinetuned",
     ):
+        model_cls = MISTFinetuned if model_cls == "MISTFinetuned" else MISTMultiTask
         oracle = model_cls.from_pretrained(save_directory)
         critic = QuadrantCritic(
             limits, channels=[chn["name"] for chn in oracle.channels]
@@ -106,11 +103,10 @@ def generate(fabric: Fabric, critics, mol_dataloader):
     generated_molecules = HyperLogLogSet()
     passing_molecules = HyperLogLogSet()
     start_time = time.perf_counter()
-    world_size = fabric.world_size
     last_sync = 0
 
     # Generate molecules
-    for batch in mol_dataloader:
+    for idx, batch in enumerate(mol_dataloader):
         start_batch = time.perf_counter()
         n_evaluated += batch["input_ids"].shape[0]
 
@@ -128,26 +124,18 @@ def generate(fabric: Fabric, critics, mol_dataloader):
         )
         batch_passing = net_score.count_nonzero().item()
         n_passing += batch_passing
-        n_passing_world = len(passing_molecules)
-        if n_passing_world > 0:
-            time_per_passing = (net_time * world_size) / n_passing_world
-        else:
-            time_per_passing = None
-        logger.info(
-            {
-                "passing_rank": n_passing,
-                "passing_world": n_passing_world,
-                "unique_molecules_world": len(generated_molecules),
-                "evaluated_rank": n_evaluated,
-                "net_throughput_rank": n_passing / net_time,
-                "yield_rank": n_passing / n_evaluated,
-                "eval_throughput_rank": n_evaluated / net_time,
-                "eval_throughput_world": len(generated_molecules)
-                / (net_time * world_size),
-                "current_throughput_rank": batch_passing / batch_time,
-                "time_per_passing_world": time_per_passing,
-            }
-        )
+
+        if idx % 64 == 0:
+            logging.info(
+                {
+                    "passing_rank": n_passing,
+                    "evaluated_rank": n_evaluated,
+                    "net_throughput_rank": n_passing / net_time,
+                    "yield_rank": n_passing / n_evaluated,
+                    "eval_throughput_rank": n_evaluated / net_time,
+                    "current_throughput_rank": batch_passing / batch_time,
+                }
+            )
 
         # Yield Passing Molecules
         if net_score.any():
@@ -163,10 +151,25 @@ def generate(fabric: Fabric, critics, mol_dataloader):
         # Synchronize generated cardinality
         last_sync += 1
         if last_sync >= 64:
-            logger.info("Synchronizing generated cardinality")
-            generated_molecules.reduce(fabric)
-            passing_molecules.reduce(fabric)
-            last_sync = 0
+            generated_molecules, passing_molecules = sync_cardinality(
+                fabric, generated_molecules, passing_molecules
+            )
 
+            last_sync = 0
     logging.info("Rank %d: Finished", fabric.global_rank)
+    sync_cardinality(fabric, generated_molecules, passing_molecules)
+
     return None
+
+
+def sync_cardinality(fabric, generated_molecules, passing_molecules):
+    logging.debug("Synchronizing generated cardinality")
+    generated_molecules = generated_molecules.reduce(fabric)
+    passing_molecules = passing_molecules.reduce(fabric)
+    logging.info(
+        {
+            "n_passing_world": len(passing_molecules),
+            "unique_molecules_world": len(generated_molecules),
+        }
+    )
+    return generated_molecules, passing_molecules
