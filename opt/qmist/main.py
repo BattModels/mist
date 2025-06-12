@@ -195,7 +195,7 @@ def archive_intermediates(workdir: Path, archive_path: Path) -> None:
         mode = "w"
     logging.info(f"Archiving {workdir} -> {archive_path} with mode {mode}")
     with tarfile.open(str(archive_path), mode) as tar:
-        tar.add(str(workdir), arcname=workdir.name)
+        tar.add(str(workdir), arcname=archive_path.with_suffix("").name)
 
 
 def process_smiles(smiles: str, archive: bool, archive_filename: Path):
@@ -203,6 +203,12 @@ def process_smiles(smiles: str, archive: bool, archive_filename: Path):
     logging.info(f"Workdir: {workdir}")
     mem_str, nproc = get_slurm_resources()
     start_time = time.perf_counter()
+    inchi, inchikey = compute_inchi(smiles)
+    result = {
+        "smiles": smiles,
+        "InChI": inchi,
+        "InChIKey": inchikey,
+    }
     try:
         initial_xyz = workdir / "initial.xyz"
         generate_rdkit_xyz(smiles, initial_xyz)
@@ -214,20 +220,19 @@ def process_smiles(smiles: str, archive: bool, archive_filename: Path):
         g09_log = run_gaussian(g09_inp, workdir)
         props = parse_gaussian_output(g09_log)
         walltime = time.perf_counter() - start_time
-        inchi, inchikey = compute_inchi(smiles)
-        result = {
-            "smiles": smiles,
-            "InChI": inchi,
-            "InChIKey": inchikey,
-            "walltime": walltime,
-            **props,
-        }
-        if archive:
-            archive_intermediates(workdir, archive_filename)
-        return result
+        result.update(props)
+        result["walltime"] = walltime
+
     finally:
+        if archive:
+            archive_filename = Path(
+                archive_filename.parent, archive_filename.name.format(**result)
+            )
+            archive_intermediates(workdir, archive_filename)
+
         logging.info(f"Cleaning up {workdir}")
         shutil.rmtree(str(workdir))
+    return result
 
 
 @app.command()
