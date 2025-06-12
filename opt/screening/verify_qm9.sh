@@ -17,4 +17,3 @@ if [ -n "$N" ]; then
 else
   litecli -e "$QUERY" "$DB_PATH/merged.sqlite"
 fi | xargs -I{} sbatch ../qmist/submit.sh --output "$(realpath "$DB_PATH")/qm9/{InChIKey}.json" {}
-
