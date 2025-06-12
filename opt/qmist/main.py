@@ -18,6 +18,7 @@ import subprocess
 import logging
 import re
 import sys
+import time
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -190,6 +191,7 @@ def process_smiles(smiles: str, archive: bool, archive_filename: Path) -> dict:
     workdir = Path(tempfile.mkdtemp(prefix="gdb9_"))
     logging.info(f"Workdir: {workdir}")
     mem_str, nproc = get_slurm_resources()
+    start_time = time.perf_counter()
     try:
         initial_xyz = workdir / "initial.xyz"
         generate_rdkit_xyz(smiles, initial_xyz)
@@ -200,8 +202,15 @@ def process_smiles(smiles: str, archive: bool, archive_filename: Path) -> dict:
         render_gaussian_input(geometry, g09_inp, mem=mem_str, nproc=nproc)
         g09_log = run_gaussian(g09_inp, workdir)
         props = parse_gaussian_output(g09_log)
+        walltime = time.perf_counter() - start_time
         inchi, inchikey = compute_inchi(smiles)
-        result = {**{'smiles': smiles}, **props, 'InChI': inchi, 'InChIKey': inchikey}
+        result = {
+            'smiles': smiles,
+            'InChI': inchi,
+            'InChIKey': inchikey,
+            "walltime": walltime,
+            **props,
+        }
         if archive:
             archive_intermediates(workdir, archive_filename)
         return result
