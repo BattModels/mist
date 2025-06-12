@@ -22,6 +22,7 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path
+import numpy as np
 
 import cclib
 import typer
@@ -156,25 +157,51 @@ def extract_r2_from_log(logfile: Path) -> float | None:
                 return float(match.group(1))
     return None
 
+def extract_cv_from_log(logfile: Path) -> float | None:
+    """Extract heat capacity at constant volume (Cv) from Gaussian log file."""
+    # cclib does not automatically parse CV, so we need to write our own code for doing that
+    # typical CV result looks like the following
+    #                     E (Thermal)             CV                S
+    #                     KCal/Mol        Cal/Mol-Kelvin    Cal/Mol-Kelvin
+    # Total                   18.663              8.570             48.081
+    # Electronic               0.000              0.000              0.000
+    # Translational            0.889              2.981             35.704
+    # Rotational               0.592              1.987             10.867
+    # Vibrational             17.182              3.602              1.509
+    # Vibration     1          0.906              1.139              0.543
+    # Vibration     2          0.906              1.139              0.543
+    lines = logfile.read_text().splitlines()
+    for i, line in enumerate(lines):
+        if "Total" in line and "Cal/Mol-Kelvin" in lines[i-1]:
+            parts = line.split()
+            cv = float(parts[2])
+            return cv
+    return None
 
-def parse_gaussian_output(logfile: Path) -> dict[str, float]:
+def parse_gaussian_output(logfile: Path) -> dict:
     """Parse Gaussian output with cclib and compute metrics."""
     data = cclib.io.ccread(str(logfile))
+    # data = cclib.io.ccopen(str(logfile)).parse() # another way to read the file and parse it
     props: dict = {}
-    # props['A'] = float(data.rotcons[0]) missing
-    # props['B'] = float(data.rotcons[1]) missing
-    # props['C'] = float(data.rotcons[2]) missing
-    # props['mu'] = float(data.dipmom[3]) missing
-    props["homo"] = float(data.moenergies[0][data.homos[0]])
-    props["lumo"] = float(data.moenergies[0][data.homos[0] + 1])
-    props["gap"] = props["lumo"] - props["homo"]
-    props["r2"] = extract_r2_from_log(logfile)
-    props["zpve"] = float(data.zpve) * HARTREE_TO_EV
-    props["u0"] = float(data.scfenergies[-1])
-    props["u298"] = float(data.enthalpy) * HARTREE_TO_EV
-    props["h298"] = float(data.enthalpy) * HARTREE_TO_EV
-    props["g298"] = float(data.freeenergy) * HARTREE_TO_EV
-    # props['cv'] = float(data.cp[0])  # missing
+    props['A'] = float(data.rotconsts[-1,0]) 
+    props['B'] = float(data.rotconsts[-1,1]) 
+    props['C'] = float(data.rotconsts[-1,2]) 
+    props['mu'] = float(np.linalg.norm(data.moments[1]))
+    props['homo'] = float(data.moenergies[0][data.homos[0]])
+    props['lumo'] = float(data.moenergies[0][data.homos[0]+1])
+    props['gap'] = props['lumo'] - props['homo']
+    props['r2'] = extract_r2_from_log(logfile)
+    props['zpve'] = float(data.zpve)
+    props['u0'] = float(data.scfenergies[-1])
+    props['u298'] = float(data.enthalpy)
+    props['h298'] = float(data.enthalpy)
+    props['g298'] = float(data.freeenergy)
+    props['cv'] = extract_cv_from_log(logfile)
+    natoms = int(data.natom)
+    props['u0_atom'] = props['u0'] / natoms
+    props['u298_atom'] = props['u298'] / natoms
+    props['h298_atom'] = props['h298'] / natoms
+    props['g298_atom'] = props['g298'] / natoms
     return props
 
 
