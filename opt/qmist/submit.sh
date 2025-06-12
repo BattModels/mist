@@ -9,15 +9,19 @@
 my_job_header
 set -ex
 
+# Locate the project directory
+GIT_ROOT=$(git rev-parse --show-toplevel)
+DIR="$(realpath $GIT_ROOT/opt/qmist)"
+
 module purge
 module --ignore_cache load python/3.11.5
 module --ignore_cache load Chemistry
 module --ignore_cache load gaussian/09-revD01
 
 # Add MOPAC to path
-export PATH="$(realpath vendor/mopac*/bin):$PATH"
+export PATH="$(realpath $DIR/vendor/mopac*/bin):$PATH"
 
 # Run the pipeline
-./main.py $@
+uv run --project ${DIR} python ${DIR}/main.py $@
 
 echo "done: $(date)"

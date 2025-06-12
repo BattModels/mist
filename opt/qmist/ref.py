@@ -101,7 +101,7 @@ def compare(
         rel_diff = diff / (abs(val_ref) + 1e-6)
 
         print(
-            f"{key:<12} Δ = {diff:.6g} ({rel_diff:.3%}) (input={val_query:.6g}, ref={val_ref:.6g})"
+            f"{smiles:20s} {key:<12} Δ = {diff:+10.3f} ({rel_diff:+10.2%}) (input={val_query:8.6g}, ref={val_ref:8.6g})"
         )
 
 
