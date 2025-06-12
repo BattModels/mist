@@ -157,6 +157,7 @@ def extract_r2_from_log(logfile: Path) -> float | None:
                 return float(match.group(1))
     return None
 
+
 def extract_cv_from_log(logfile: Path) -> float | None:
     """Extract heat capacity at constant volume (Cv) from Gaussian log file."""
     # cclib does not automatically parse CV, so we need to write our own code for doing that
@@ -172,36 +173,37 @@ def extract_cv_from_log(logfile: Path) -> float | None:
     # Vibration     2          0.906              1.139              0.543
     lines = logfile.read_text().splitlines()
     for i, line in enumerate(lines):
-        if "Total" in line and "Cal/Mol-Kelvin" in lines[i-1]:
+        if "Total" in line and "Cal/Mol-Kelvin" in lines[i - 1]:
             parts = line.split()
             cv = float(parts[2])
             return cv
     return None
 
+
 def parse_gaussian_output(logfile: Path) -> dict:
     """Parse Gaussian output with cclib and compute metrics."""
     data = cclib.io.ccread(str(logfile))
-    # data = cclib.io.ccopen(str(logfile)).parse() # another way to read the file and parse it
     props: dict = {}
-    props['A'] = float(data.rotconsts[-1,0]) 
-    props['B'] = float(data.rotconsts[-1,1]) 
-    props['C'] = float(data.rotconsts[-1,2]) 
-    props['mu'] = float(np.linalg.norm(data.moments[1]))
-    props['homo'] = float(data.moenergies[0][data.homos[0]])
-    props['lumo'] = float(data.moenergies[0][data.homos[0]+1])
-    props['gap'] = props['lumo'] - props['homo']
-    props['r2'] = extract_r2_from_log(logfile)
-    props['zpve'] = float(data.zpve)
-    props['u0'] = float(data.scfenergies[-1])
-    props['u298'] = float(data.enthalpy)
-    props['h298'] = float(data.enthalpy)
-    props['g298'] = float(data.freeenergy)
-    props['cv'] = extract_cv_from_log(logfile)
+    props["A"] = float(data.rotconsts[-1, 0])
+    props["B"] = float(data.rotconsts[-1, 1])
+    props["C"] = float(data.rotconsts[-1, 2])
+    props["alpha"] = float(np.trace(data.polarizabilities[0]) / 3)
+    props["mu"] = float(np.linalg.norm(data.moments[1]))
+    props["homo"] = float(data.moenergies[0][data.homos[0]]) / HARTREE_TO_EV
+    props["lumo"] = float(data.moenergies[0][data.homos[0] + 1]) / HARTREE_TO_EV
+    props["gap"] = props["lumo"] - props["homo"]
+    props["r2"] = extract_r2_from_log(logfile)
+    props["zpve"] = float(data.zpve)
+    props["u0"] = float(data.scfenergies[-1]) / HARTREE_TO_EV
+    props["u298"] = float(data.enthalpy)
+    props["h298"] = float(data.enthalpy)
+    props["g298"] = float(data.freeenergy)
+    props["cv"] = extract_cv_from_log(logfile)
     natoms = int(data.natom)
-    props['u0_atom'] = props['u0'] / natoms
-    props['u298_atom'] = props['u298'] / natoms
-    props['h298_atom'] = props['h298'] / natoms
-    props['g298_atom'] = props['g298'] / natoms
+    props["u0_atom"] = props["u0"] / natoms
+    props["u298_atom"] = props["u298"] / natoms
+    props["h298_atom"] = props["h298"] / natoms
+    props["g298_atom"] = props["g298"] / natoms
     return props
 
 
@@ -222,7 +224,7 @@ def archive_intermediates(workdir: Path, archive_path: Path) -> None:
         mode = "w"
     logging.info(f"Archiving {workdir} -> {archive_path} with mode {mode}")
     with tarfile.open(str(archive_path), mode) as tar:
-        tar.add(str(workdir), arcname=archive_path.with_suffix("").name)
+        tar.add(str(workdir), arcname=archive_path.with_suffix("").with_suffix("").name)
 
 
 def process_smiles(smiles: str, archive: bool, archive_filename: Path):

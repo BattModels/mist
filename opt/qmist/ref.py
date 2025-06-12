@@ -30,18 +30,6 @@ COLUMNS = [
     "cv",
 ]
 
-HARTREE_TO_EV = 27.211_386_245_981
-HARTREE_COLUMNS = {
-    "homo",
-    "lumo",
-    "gap",
-    "zpve",
-    "u0",
-    "u298",
-    "h298",
-    "g298",
-}
-
 cli = typer.Typer()
 
 
@@ -60,10 +48,7 @@ def parse_csv(file_obj: IO[bytes], columns: list[str]) -> list[dict[str, float]]
             if col == "smiles":
                 parsed_row[col] = value
             else:
-                parsed_val = float(value)
-                if col in HARTREE_COLUMNS:
-                    parsed_val *= HARTREE_TO_EV
-                parsed_row[col] = parsed_val
+                parsed_row[col] = float(value)
         result.append(parsed_row)
     return result
 
@@ -88,9 +73,6 @@ def compare(
         sys.stdin, help="Input JSON object file or stdin."
     ),
     ref: Path = typer.Option("qm9.jsonl", help="Reference JSONL file."),
-    relative: bool = typer.Option(
-        False, help="Report relative (%) differences instead of absolute."
-    ),
 ):
     query = json.load(input)
     smiles = str(query.get("smiles"))
@@ -116,7 +98,7 @@ def compare(
             continue
 
         diff = val_query - val_ref
-        rel_diff = diff / val_ref
+        rel_diff = diff / (abs(val_ref) + 1e-6)
 
         print(
             f"{key:<12} Δ = {diff:.6g} ({rel_diff:.3%}) (input={val_query:.6g}, ref={val_ref:.6g})"
