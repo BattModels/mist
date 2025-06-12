@@ -1,3 +1,6 @@
 vendor/*
 *.tar.gz
+*.tar.*
 uv.lock
+*.json
+*.jsonl

@@ -3,6 +3,7 @@
 #SBATCH --cpus-per-task 8
 #SBATCH --mem-per-cpu 1800M
 #SBATCH --time 8:0:0
+#SBATCH --partition venkvis-cpu
 
 # Training script for h001
 my_job_header
@@ -17,6 +18,6 @@ module --ignore_cache load gaussian/09-revD01
 export PATH="$(realpath vendor/mopac*/bin):$PATH"
 
 # Run the pipeline
-uv run python ./main.py $@
+./main.py $@
 
 echo "done: $(date)"
