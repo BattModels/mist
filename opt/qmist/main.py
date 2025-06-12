@@ -223,6 +223,7 @@ def archive_intermediates(workdir: Path, archive_path: Path) -> None:
     else:
         mode = "w"
     logging.info(f"Archiving {workdir} -> {archive_path} with mode {mode}")
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(str(archive_path), mode) as tar:
         tar.add(str(workdir), arcname=archive_path.with_suffix("").with_suffix("").name)
 
@@ -286,6 +287,7 @@ def main(
         closefd = False
     else:
         output = output.format(**result)
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
         fid = open(output, "w")
 
     try:
