@@ -5,7 +5,7 @@ DIR="$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 # Load modules
 if command -v module > /dev/null; then
     module purge
-    module --ignore_cache load gcc python/3.11.5 openmpi/4.1.6
+    module --ignore_cache load gcc/10.3.0  openmpi/4.1.6 python/3.11.5
     export SSL_CERT_DIR=/etc/pki/tls/certs
     export SSL_CERT_FILE=/etc/pki/tls/cert.pem
     export JULIA_CPU_TARGET="generic;znver4,clone_all;znver3,clone_all;haswell"

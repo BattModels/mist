@@ -2,7 +2,7 @@
 using TokenizerStats: main
 using Tracy: wait_for_tracy
 
-if haskey(ENV, "TRACYJL_WAIT_FOR_TRACY")
+if haskey(ENV, "TRACY_ENABLE") && get(ENV, "PMIX_RANK", -1) == 0
     @info "Waiting for tracy to connect..."
     wait_for_tracy()
     @info "Connected!"

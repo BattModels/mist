@@ -135,42 +135,57 @@ function parse_splits(x::Vector{<:AbstractString})
 end
 
 function merge_usage_stats(files::Vector{String}; output::String="merged.jld2", splits::Vector{String}=["train", "val", "test"])
-    merged = jldopen(output, "w")
+    merged_stats = Dict{String, Int}()
+    rm(output * ".tmp", force=true)
     for file in files
-        jldopen(file, "r") do other
-            @info "Merging $file" other
-            if haskey(other, "tokenizer")
-                if haskey(merged, "tokenizer")
-                    @assert other["tokenizer"] == merged["tokenizer"] "N-gram models must use the same tokenizer"
-                else
-                    merged["tokenizer"] = other["tokenizer"]
-                end
-            end
-
-            for split in splits
-                if haskey(merged, split)
-                    merged[split]["out_of_vocab"] += other["out_of_vocab"]
-                    merged[split]["samples"] += other["samples"]
-                    merged[split]["out_of_vocab"] += other["out_of_vocab"]
-                    mergewith!(+, merged[split]["fertility"], other["fertility"])
-                    mergewith!(+, merged[split]["nunique"], other["nunique"])
-                    for n in 1:length(merged[split]["ngrams"])
-                        b_ngram = compact_ngrams(other["ngrams"]["$n"])
-                        mergewith!(+, merged[split]["ngrams"]["$n"], b_ngram)
+        jldopen(output * ".tmp", "a+") do merged
+            jldopen(file, "r") do other
+                @info "Merging $file" other
+                if haskey(other, "tokenizer")
+                    if haskey(merged, "tokenizer")
+                        @assert other["tokenizer"] == merged["tokenizer"] "N-gram models must use the same tokenizer"
+                    else
+                        merged["tokenizer"] = other["tokenizer"]
                     end
-                else
-                    merged[split]["out_of_vocab"] = other[split]["out_of_vocab"]
-                    merged[split]["samples"] = other[split]["samples"]
-                    merged[split]["out_of_vocab"] = other[split]["out_of_vocab"]
-                    merged[split]["fertility"] = other[split]["fertility"]
-                    merged[split]["nunique"] = other[split]["nunique"]
-                    for n in 1:length(other[split]["ngrams"])
-                        merged[split]["ngrams"]["$n"] = compact_ngrams(other[split]["ngrams"]["$n"])
+                end
+
+                for split in splits
+                    if haskey(merged, split)
+                        merged_stats[joinpath(split, "out_of_vocab")] += other[split]["out_of_vocab"]
+                        merged_stats[joinpath(split, "samples")] += other[split]["samples"]
+                        mergewith!(+, merged[split]["fertility"], other[split]["fertility"])
+                        mergewith!(+, merged[split]["nunique"], other[split]["nunique"])
+                        for n in 1:length(merged[split]["ngrams"])
+                            b_ngram = compact_ngrams(other[split]["ngrams"]["$n"])
+                            mergewith!(+, merged[split]["ngrams"]["$n"], b_ngram)
+                        end
+                    else
+                        merged_stats[joinpath(split, "out_of_vocab")] = other[split]["out_of_vocab"]
+                        merged_stats[joinpath(split, "samples")] = other[split]["samples"]
+                        merged[joinpath(split, "fertility")] = other[split]["fertility"]
+                        merged[joinpath(split, "nunique")] = other[split]["nunique"]
+                        for n in 1:length(other[split]["ngrams"])
+                            merged[joinpath(split, "ngrams", string(n))] = compact_ngrams(other[split]["ngrams"]["$n"])
+                        end
                     end
                 end
             end
         end
     end
+    # Write merged single-value stats
+    jldopen(output * ".tmp", "a+") do merged
+        for split in splits
+            for k in ["out_of_vocab", "samples"]
+                merged[joinpath(split, k)] = merged_stats[joinpath(split, k)]
+            end
+        end
+    end
+
+    # Finalize merged file
+    mv(output * ".tmp", output; force=true)
+    @info "saved results to $output" now()
+    chmod(output, 0o444)
+
     return output
 end
 

@@ -15,7 +15,7 @@ export JULIA_PKG_USE_CLI_GIT=true
 export JULIA_NUM_PRECOMPILE_TASKS=$SLURM_CPUS_ON_NODE
 env
 
-julia --color=no --startup-file=no --project -e 'using MPIPreferences; MPIPreferences.use_system_binary()'
+julia --color=no --startup-file=no --project -e 'using Pkg; Pkg.instantiate(); using MPIPreferences; MPIPreferences.use_system_binary()'
 julia --color=no --startup-file=no --project -e 'using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile(timing=true)'
 julia --color=no --startup-file=no --project=plots -e 'using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile(timing=true)'
 exit 0
