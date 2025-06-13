@@ -102,8 +102,8 @@ const CONTINUOUS_COLORS = :lipari
 
 function theme()
     Theme(
-        rowgap=2,
-        colgap=2,
+        rowgap=3pt,
+        colgap=3pt,
         fonts=(;
             regular="Times New Roman Regular",
             bold="Times New Roman Bold",
@@ -121,6 +121,13 @@ function theme()
         palette=(;
             color=CAT_COLORS,
             linestyle=[:solid, :dot, :dashdot],
+        ),
+        Lines=(;
+            cycle=Cycle([:color, :linestyle], covary=true),
+        ),
+        GridLayout=(;
+            default_rowgap=3pt,
+            default_colgap=3pt,
         ),
         Axis=(;
             spinewidth=0.5,
