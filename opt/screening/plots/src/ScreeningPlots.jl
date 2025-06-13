@@ -6,6 +6,7 @@ using Metaheuristics: Metaheuristics
 using JSON: JSON
 using SQLite: SQLite
 using PythonCall: Py, pyimport, pyconvert
+using GLM: @formula, lm, glm, Normal, LogLink, coef
 
 using MISTStyle
 

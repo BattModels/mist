@@ -7,7 +7,7 @@ using CairoMakie: CairoMakie
 const pt = 3 / 4
 const inch = 96
 
-export pt, inch
+export pt, inch, sublabel!
 
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
@@ -92,8 +92,8 @@ const CONTINUOUS_COLORS = :lipari
 
 function theme()
     Theme(
-        rowgap=2,
-        colgap=2,
+        rowgap=3pt,
+        colgap=3pt,
         fonts=(;
             regular="Times New Roman Regular",
             bold="Times New Roman Bold",
@@ -114,6 +114,10 @@ function theme()
         ),
         Lines=(;
             cycle=Cycle([:color, :linestyle], covary=true),
+        ),
+        GridLayout=(;
+            default_rowgap=3pt,
+            default_colgap=3pt,
         ),
         Axis=(;
             spinewidth=0.5,

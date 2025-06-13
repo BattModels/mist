@@ -54,15 +54,29 @@ regtable(
 )
 
 # Plot generated molecules
-production_run = first(sort!(df, :n_passing; rev=true)).path
-df_mol = ScreeningPlots.load_generated_molecules(production_run)
-prod_config = JSON.parsefile(joinpath(production_run, "config.json"))
+production_run = (; pairs(first(sort!(df, :n_passing; rev=true)))...)
+df_mol = ScreeningPlots.load_generated_molecules(production_run.path)
+prod_config = JSON.parsefile(joinpath(production_run.path, "config.json"))
 
 # Reference Molecules
-df_ref = DataFrame(CSV.File(joinpath(ROOTDIR, "electrolytes.csv")))
+df_ref = DataFrame(CSV.File(joinpath(ROOTDIR, "electrolytes_predictions.csv")))
 df_mol.inchi_key = ScreeningPlots.inchi_key.(df_mol.smiles)
 df_ref.inchi_key = ScreeningPlots.inchi_key.(df_ref.smi)
 
 df_novel = subset(df_mol, :inchi_key => ByRow(∉(df_ref.inchi_key)))
 df_unfound = subset(df_ref, :inchi_key => ByRow(∉(df_mol.inchi_key)))
 @info "Novel Molecules" nrow(df_novel) nrow(df_ref) nrow(df_novel) / nrow(df_mol) nrow(df_unfound) / nrow(df_ref)
+
+# Generate Plots
+prod_id = basename(production_run.path)
+trace = DataFrame(production_run[:trace])
+with_theme(MISTStyle.theme()) do
+    f = ScreeningPlots.plot_pareto_front(df_mol, df_ref)
+    MISTStyle.savefig(joinpath("pareto", "production" * "-" * prod_id), f)
+
+    f = ScreeningPlots.plot_gen_trace(trace)
+    MISTStyle.savefig(joinpath("gen-trace" * "-" * prod_id), f)
+
+    f = ScreeningPlots.figure_screening(trace, df_mol, df_ref, df)
+    MISTStyle.savefig(joinpath("panel" * "-" * prod_id), f)
+end
