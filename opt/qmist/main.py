@@ -29,6 +29,7 @@ import typer
 from jinja2 import Template
 from openbabel import pybel
 from rdkit import Chem
+from rdkit.Chem import AllChem  # noqa: F401 Needed to trigger C++ bindings
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 
 HARTREE_TO_EV = 27.211_386_245_981
