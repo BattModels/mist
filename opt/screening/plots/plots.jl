@@ -79,4 +79,13 @@ with_theme(MISTStyle.theme()) do
 
     f = ScreeningPlots.figure_screening(trace, df_mol, df_ref, df)
     MISTStyle.savefig(joinpath("panel" * "-" * prod_id), f)
+
+    # Verify qmist can reproduce QM9 calculations
+    qmist = realpath(joinpath(pkgdir(ScreeningPlots), "..", "..", "qmist"))
+    df_qm9 = ScreeningPlots.load_jsonl(joinpath(qmist, "qm9.jsonl"))
+    for version in [joinpath(qmist, "veri_v1")]
+        df_qmist = ScreeningPlots.load_qmist_results(version)
+        df, cols = ScreeningPlots.merge_qmist_results(df_qmist, df_qm9)
+        ScreeningPlots.figure_parity(df, cols) |> MISTStyle.savefig(basename(version) * "_parity")
+    end
 end

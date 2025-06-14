@@ -7,6 +7,8 @@ using JSON: JSON
 using SQLite: SQLite
 using PythonCall: Py, pyimport, pyconvert
 using GLM: @formula, lm, glm, Normal, LogLink, coef
+using Format: format
+using StatsBase: cor, mad
 
 using MISTStyle
 
@@ -18,6 +20,7 @@ function __init__()
     __rdkit_chem[] = pyimport("rdkit.Chem")
 end
 
+include("qmist.jl")
 include("collate.jl")
 include("sqlite.jl")
 include("pareto.jl")
