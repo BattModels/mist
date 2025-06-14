@@ -22,11 +22,12 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path
-import numpy as np
 
 import cclib
+import numpy as np
 import typer
 from jinja2 import Template
+from openbabel import pybel
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 
@@ -81,14 +82,16 @@ def generate_rdkit_xyz(smiles: str, out_xyz: Path) -> None:
             pos = conf.GetAtomPosition(atom.GetIdx())
             f.write(f"{atom.GetSymbol()} {pos.x:.6f} {pos.y:.6f} {pos.z:.6f}\n")
 
+
 def generate_openbabel_xyz(smiles: str, out_xyz: Path) -> None:
     """Generate initial XYZ from SMILES using Open Babel."""
-    from openbabel import pybel
+
     mol = pybel.readstring("smi", smiles)
     mol.addh()
     mol.make3D()
-    mol.localopt(forcefield="uff",steps=200)
+    mol.localopt(forcefield="uff", steps=200)
     mol.write("xyz", str(out_xyz), overwrite=True)
+
 
 def optimize_pm7(initial_xyz: Path, workdir: Path) -> Path:
     """Run MOPAC PM7 geometry optimization; manually create .mop input and return path to .arc file."""
@@ -236,8 +239,14 @@ def archive_intermediates(workdir: Path, archive_path: Path) -> None:
         tar.add(str(workdir), arcname=archive_path.with_suffix("").with_suffix("").name)
 
 
-def process_smiles(smiles: str, archive: bool, archive_filename: Path):
+def process_smiles(
+    smiles: str,
+    archive: bool,
+    archive_filename: Path,
+    initial_relax: str = "rdkit",
+):
     workdir = Path(tempfile.mkdtemp(prefix="gdb9_"))
+    logging.info(f"SMILES: {smiles}")
     logging.info(f"Workdir: {workdir}")
     mem_str, nproc = get_slurm_resources()
     start_time = time.perf_counter()
@@ -248,13 +257,21 @@ def process_smiles(smiles: str, archive: bool, archive_filename: Path):
         "InChIKey": inchikey,
     }
     try:
+        # Initial Relaxation
         initial_xyz = workdir / "initial.xyz"
-        generate_rdkit_xyz(smiles, initial_xyz)
+        logging.info(f"Initial Relaxation: {initial_relax}")
+        if initial_relax == "rdkit":
+            generate_rdkit_xyz(smiles, initial_xyz)
+        elif initial_relax == "openbabel":
+            generate_openbabel_xyz(smiles, initial_xyz)
+        else:
+            raise ValueError(f"Unknown initial relaxation method: {initial_relax}")
+
         mopac_out = optimize_pm7(initial_xyz, workdir)
         pm7_xyz = workdir / "pm7_relaxed.xyz"
         geometry = extract_pm7_geometry(mopac_out, pm7_xyz)
         g09_inp = workdir / "dft.com"
-        render_gaussian_input(geometry, g09_inp, mem=mem_str, nproc=nproc, title=f"GDB-9 DFT opt+freq {smiles}")
+        render_gaussian_input(geometry, g09_inp, mem=mem_str, nproc=nproc)
         g09_log = run_gaussian(g09_inp, workdir)
         props = parse_gaussian_output(g09_log)
         walltime = time.perf_counter() - start_time
@@ -278,6 +295,7 @@ def main(
     smiles: str = typer.Argument(help="SMILES input"),
     output: str = "-",
     archive: bool = False,
+    initial_relax: str = "rdkit",
     archive_filename: Path = typer.Option(
         Path.cwd() / "archive.tar.xz",
         "--archive-filename",
@@ -288,7 +306,7 @@ def main(
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
     )
-    result = process_smiles(smiles, archive, archive_filename)
+    result = process_smiles(smiles, archive, archive_filename, initial_relax)
     closefd = True
     if output == "-":
         fid = sys.stdout
