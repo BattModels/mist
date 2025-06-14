@@ -74,13 +74,63 @@ def generate_rdkit_xyz(smiles: str, out_xyz: Path) -> None:
     params = rdDistGeom.ETKDGv3()  # can use ETKDGv2() or ETKDG() if needed
     rdDistGeom.EmbedMolecule(mol, params)
     rdForceFieldHelpers.UFFOptimizeMolecule(mol)
-    conf = mol.GetConformer()
+    write_rdkit_xyz(mol, mol.GetConformer(), out_xyz)
+
+
+def write_rdkit_xyz(mol, conf, out_xyz: Path) -> None:
     with out_xyz.open("w") as f:
         f.write(f"{mol.GetNumAtoms()}\n")
-        f.write(f"Generated from SMILES: {smiles}\n")
+        f.write(f"Generated from SMILES: {Chem.MolToSmarts(mol)}\n")
         for atom in mol.GetAtoms():
             pos = conf.GetAtomPosition(atom.GetIdx())
             f.write(f"{atom.GetSymbol()} {pos.x:.6f} {pos.y:.6f} {pos.z:.6f}\n")
+
+
+def generate_rdkit_conformers_xyz(smiles: str, out_xyz: Path) -> None:
+    """Generate XYZ for the lowest-energy RDKit conformer using MMFF94 if available, otherwise UFF."""
+    logging.info("Generating conformers for SMILES: %s", smiles)
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    _, nproc = get_slurm_resources()
+    conf_ids = rdDistGeom.EmbedMultipleConfs(mol, numConfs=200, numThreads=nproc)
+
+    if not conf_ids:
+        logging.error("No conformers were generated for SMILES: %s", smiles)
+        raise RuntimeError("Conformer generation failed.")
+
+    # Choose force field and run batch optimization
+    results: list[tuple[bool, float]] = []
+    if rdForceFieldHelpers.MMFFHasAllMoleculeParams(mol):
+        ff_type = "MMFF94"
+        props = rdForceFieldHelpers.MMFFGetMoleculeProperties(mol)
+        ff = rdForceFieldHelpers.MMFFGetMoleculeForceField(mol, props)
+    else:
+        ff_type = "UFF"
+        ff = rdForceFieldHelpers.UFFGetMoleculeForceField(mol)
+
+    results: list[tuple[int, float]] = rdForceFieldHelpers.OptimizeMoleculeConfs(
+        mol, ff, numThreads=nproc
+    )
+
+    # Select the lowest energy converged conformer
+    assert len(results) > 0
+    min_energy = float("inf")
+    min_conf_id: int = -1
+    for idx, (converged_flag, energy) in enumerate(results):
+        if converged_flag == 0 and energy < min_energy:
+            min_energy = energy
+            min_conf_id = idx
+    assert min_conf_id >= 0 and isinstance(min_conf_id, int)
+
+    # Each result is a tuple (converged_flag, energy)
+    logging.info("Using force field: %s", ff_type)
+    print([energy for _, energy in results])
+    logging.info(
+        "Selected converged conformer %d with energy %.4f kcal/mol",
+        min_conf_id,
+        min_energy,
+    )
+
+    write_rdkit_xyz(mol, mol.GetConformer(min_conf_id), out_xyz)
 
 
 def generate_openbabel_xyz(smiles: str, out_xyz: Path) -> None:
@@ -262,6 +312,8 @@ def process_smiles(
         logging.info(f"Initial Relaxation: {initial_relax}")
         if initial_relax == "rdkit":
             generate_rdkit_xyz(smiles, initial_xyz)
+        elif initial_relax == "rdkit-conformers":
+            generate_rdkit_conformers_xyz(smiles, initial_xyz)
         elif initial_relax == "openbabel":
             generate_openbabel_xyz(smiles, initial_xyz)
         else:
