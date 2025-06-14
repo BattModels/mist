@@ -51,6 +51,12 @@ function cb_attrs(cb::Colorbar, plt)
     return Base.structdiff(attrs, NamedTuple{(invalid...,)})
 end
 
+function parity_limits(x::AbstractVector, y::AbstractVector; inflate=0.05)
+    l, u = extrema(Iterators.flatten((x, y)))
+    limits = (l - inflate * (u - l), u + inflate * (u - l))
+    return (limits, limits)
+end
+
 
 function sublabel!(f, letter; left=0, kwargs...)
     label_kwargs = (;
