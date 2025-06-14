@@ -81,6 +81,14 @@ def generate_rdkit_xyz(smiles: str, out_xyz: Path) -> None:
             pos = conf.GetAtomPosition(atom.GetIdx())
             f.write(f"{atom.GetSymbol()} {pos.x:.6f} {pos.y:.6f} {pos.z:.6f}\n")
 
+def generate_openbabel_xyz(smiles: str, out_xyz: Path) -> None:
+    """Generate initial XYZ from SMILES using Open Babel."""
+    from openbabel import pybel
+    mol = pybel.readstring("smi", smiles)
+    mol.addh()
+    mol.make3D()
+    mol.localopt(forcefield="uff",steps=200)
+    mol.write("xyz", str(out_xyz), overwrite=True)
 
 def optimize_pm7(initial_xyz: Path, workdir: Path) -> Path:
     """Run MOPAC PM7 geometry optimization; manually create .mop input and return path to .arc file."""
@@ -246,7 +254,7 @@ def process_smiles(smiles: str, archive: bool, archive_filename: Path):
         pm7_xyz = workdir / "pm7_relaxed.xyz"
         geometry = extract_pm7_geometry(mopac_out, pm7_xyz)
         g09_inp = workdir / "dft.com"
-        render_gaussian_input(geometry, g09_inp, mem=mem_str, nproc=nproc)
+        render_gaussian_input(geometry, g09_inp, mem=mem_str, nproc=nproc, title=f"GDB-9 DFT opt+freq {smiles}")
         g09_log = run_gaussian(g09_inp, workdir)
         props = parse_gaussian_output(g09_log)
         walltime = time.perf_counter() - start_time
