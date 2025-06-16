@@ -36,7 +36,7 @@ function figure_embedding()
             label=label
         )
     end
-    Legend(gl[1, 1], elements, labels.(elements);
+    Legend(gl[1, 1], elements, label.(elements);
         labelsize=5pt,
         tellheight=false,
         tellwidth=false,
@@ -110,6 +110,62 @@ function figure_embedding()
     Label(gl[1, 1, TopLeft()], "a)"; padding=(0, 3, 0, 5), label_kwargs...)
     Label(gl[2, 1, TopLeft()], "b)"; padding=(0, 3, 0, 5), label_kwargs...)
     Label(f[1, 2, TopLeft()], "c)"; padding=(0, 3, 0, 5), label_kwargs...)
+
+    return f
+end
+
+function figure_olfactory()
+    # Load condensed-phase coordinates
+    df_condense = DataFrame(CSV.File("interp_olfactory.csv"))
+
+    # --- Figure & single axis ------------------------------------------------
+    f  = Figure(; size = (1.5inch, 1.5inch))
+    ax = Axis(f[1, 1]; limits = (nothing,  (-25, 26)))
+    hidedecorations!(ax)                # hides ticks, spines, labels
+
+    # --- Scatter plot --------------------------------------------------------
+    condense = categorical(df_condense[!, "label"])
+    n = length(levels(condense))
+    palette = MISTStyle.CAT_COLORS[1:n]     # exactly n colours
+
+    h = scatter!(
+        ax,
+        df_condense[!, "0"], df_condense[!, "1"];
+        color      = levelcode.(condense),
+        colormap   = palette,
+        colorrange = (1, n),
+        marker     = :circle,
+        markersize = 5pt,
+    )
+
+    # --- Legend --------------------------------------------------------------
+    elements = map(enumerate(levels(condense))) do (i, label)
+        MarkerElement(
+            markersize = 4pt,
+            marker     = h.marker,
+            color      = MISTStyle.CAT_COLORS[i],
+            label      = label,
+        )
+    end
+
+    Legend(
+        f[1, 1],
+        elements,
+        label.(elements);   # show category names
+        labelsize      = 9pt,
+        tellheight     = false,
+        tellwidth      = false,
+        padding        = (1, 1, 1, 1),
+        margin         = (1, 1, 1, 1),
+        patchlabelgap  = 0,
+        patchsize = (9, 5),
+        rowgap         = 0,
+        colgap         = 0,
+        orientation    = :horizontal,
+        halign         = :right,
+        valign         = :bottom,
+        alignmode      = Outside(),
+    )
 
     return f
 end
