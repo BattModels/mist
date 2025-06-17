@@ -19,9 +19,7 @@ function get_pareto_front(x::Vector, y::Vector; quad=:lt, ax=nothing)
             fe = Point2(frontier[end][1], limits.ly)
             vcat([fs], frontier, [fe])
         end
-        @info frontier
     end
-    @info "frontier" frontier
     return frontier
 end
 
@@ -54,6 +52,27 @@ function fit_exp_decay(x, y)
     return (; m, y_hat, A, τ)
 end
 
+weak_scaling(df_speed) = weak_scaling!(Figure(), df_speed)
+function weak_scaling!(f, df_speed)
+    ax = Axis(f[1, 1];
+        limits=((nothing, 9), (0, nothing)),
+        xlabel="GPUs",
+        ylabel="Evaluated/GPU-sec",
+        xscale=log2,
+    )
+    # x = df_speed.gpus .+ 0.1 * randn(nrow(df_speed))
+    x = df_speed.gpus .* (1 .+ 0.02 .* randn(nrow(df_speed)))
+    h = scatter!(ax,
+        x, df_speed.global_throughput ./ df_speed.gpus;
+        color=df_speed.batch_size,
+        marker=:circle,
+        colormap=:roma,
+        alpha=0.8,
+    )
+    Colorbar(f[1, 2], h; label="Batch Size")
+    return f
+end
+
 function figure_screening(trace, case, ref, df_speed)
     f = Figure(;
         size=(3.42inch, 2inch),
@@ -64,24 +83,7 @@ function figure_screening(trace, case, ref, df_speed)
     plot_gen_trace!(GridLayout(gl_perf[1, 1]), trace)
 
     gl = GridLayout(gl_perf[1, 2])
-    ax = Axis(gl[1, 1];
-        limits=((nothing, 9), (0, nothing)),
-        xlabel="GPUs",
-        ylabel="Evaluated/GPU-sec",
-        xscale=log2,
-    )
-    # x = df_speed.gpus .+ 0.1 * randn(nrow(df_speed))
-    x = df_speed.gpus .* (1 .+ 0.02 .* randn(nrow(df_speed)))
-    h = scatter!(ax,
-        x, df_speed.global_unique_throughput ./ df_speed.gpus;
-        color=df_speed.batch_size,
-        marker=:circle,
-        colormap=:roma,
-        alpha=0.8,
-    )
-    Colorbar(gl[1, 2], h;
-        label="Batch Size"
-    )
+    weak_scaling!(gl, df_speed)
     colgap!(gl_perf, 4pt)
 
     sublabel!(gl_perf[1, 1, TopLeft()], "a"; left=27pt)
@@ -154,7 +156,7 @@ function plot_pareto_front!(f, case, ref)
     case.dominated .= true
     case.dominated[nidx] .= false
     sort!(case, :dominated; rev=true)
-    @info "non-dominated" sort(case[nidx, :], :inchi)
+    @info "non-dominated" sort(case[nidx, :], :inchi_key)
     front = map(front) do p
         p[1] *= -1
         p[2] *= -1

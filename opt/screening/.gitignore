@@ -1,8 +1,6 @@
 vendor/
 *.smi
 *.frag
-out/
-out
 fig/
 *.csv
 *.sqlite
@@ -11,3 +9,11 @@ models/
 models
 fig/
 *.csv
+
+# Output folders
+out/
+out
+runs/
+runs
+initial-sweep/
+initial-sweep

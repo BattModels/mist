@@ -103,7 +103,7 @@ class MISTFinetuned(torch.nn.Module):
 
         return hs.to("cpu")
 
-    def predict(self, smi: list[str]):
+    def predict(self, smi: list[str], return_dict=True):
         batch = self.tokenizer(smi)
         collate_fn = DataCollatorWithPadding(self.tokenizer)
         batch = collate_fn(batch)
@@ -114,7 +114,7 @@ class MISTFinetuned(torch.nn.Module):
         with torch.inference_mode():
             out = self(**batch).cpu()
 
-        if self.channels is None:
+        if self.channels is None or not return_dict:
             return out
 
         return annotate_prediction(out, self.channels)
