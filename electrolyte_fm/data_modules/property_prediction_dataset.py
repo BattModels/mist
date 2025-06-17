@@ -32,7 +32,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         include_encoding: bool = False,
         randomize: bool = False,
         truncation: bool = False,
-        max_seq_length: int = 512,
+        max_seq_length: int = 510,
     ):
         super().__init__()
 
@@ -103,9 +103,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
-        self.token_collator = DataCollatorWithPadding(
-            self.tokenizer, padding="longest"
-        )
+        self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def collate_fn(self, batch):
         tokenizer = self.tokenizer
