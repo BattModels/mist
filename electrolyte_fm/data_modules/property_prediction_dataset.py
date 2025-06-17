@@ -108,7 +108,9 @@ class PropertyPredictionDataModule(LightningDataModule):
                 self.tokenizer, max_length=self.max_length, padding="max_length"
             )
         else:
-            self.token_collator = DataCollatorWithPadding(self.tokenizer)
+            self.token_collator = DataCollatorWithPadding(
+                self.tokenizer, padding="longest"
+            )
 
     def collate_fn(self, batch):
         tokenizer = self.tokenizer
