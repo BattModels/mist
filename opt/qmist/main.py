@@ -1,0 +1,380 @@
+#!/usr/bin/env -S uv run python
+"""
+QM9: Generate quantum-chemical properties for a SMILES string using RDKit → MOPAC → Gaussian 09
+
+Workflow (Ramakrishnan et al., Sci. Data 1:140022, 2014) with RDKit for initial geometry:
+  1) RDKit ETKDG → initial XYZ
+  2) MOPAC (PM7) → geometry relaxation
+  3) Gaussian 09 B3LYP/6-31G(2df,p) opt + freq, resources auto-detected from SLURM
+  4) Parse via cclib + compute additional metrics
+  5) Emit JSON; optionally archive intermediates with compression auto-detected (default: xz)
+
+"""
+
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+from pathlib import Path
+
+import cclib
+import numpy as np
+import typer
+from jinja2 import Template
+from openbabel import pybel
+from rdkit import Chem
+from rdkit.Chem import AllChem  # noqa: F401 Needed to trigger C++ bindings
+from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
+
+HARTREE_TO_EV = 27.211_386_245_981
+
+GAUSSIAN_TEMPLATE = """%mem={{ mem }}
+%nprocshared={{ nproc }}
+
+# {{ method }}/{{ basis }} opt freq
+
+{{ title }}
+
+0 1
+{%- for atom, x, y, z in geometry %}
+{{ atom }}    {{ '%.6f' % x }}    {{ '%.6f' % y }}    {{ '%.6f' % z }}
+{%- endfor %}
+
+
+"""
+
+app = typer.Typer(help="Compute GDB-9 quantum-chem properties for a SMILES string.")
+
+
+def run_command(cmd: list[str], cwd: Path | None = None) -> None:
+    logging.info(f"Running command: {' '.join(cmd)}")
+    subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
+
+
+def get_slurm_resources() -> tuple[str, int]:
+    """Detect SLURM memory and CPU allocations, fallback to defaults."""
+    cpus = int(os.getenv("SLURM_CPUS_PER_TASK") or 8)
+    if os.getenv("SLURM_MEM_PER_CPU"):
+        mem_per_cpu = int(os.getenv("SLURM_MEM_PER_CPU"))
+        total_mem_mb = mem_per_cpu * cpus
+    else:
+        total_mem_mb = int(os.getenv("SLURM_MEM_PER_NODE") or 4096)
+    mem_gb = max(1, total_mem_mb // 1024)
+    return f"{mem_gb}GB", cpus
+
+
+def generate_rdkit_xyz(smiles: str, out_xyz: Path) -> None:
+    """Generate initial XYZ from SMILES using RDKit's distance geometry and force field tools (ETKDG + UFF)."""
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    params = rdDistGeom.ETKDGv3()  # can use ETKDGv2() or ETKDG() if needed
+    rdDistGeom.EmbedMolecule(mol, params)
+    rdForceFieldHelpers.UFFOptimizeMolecule(mol)
+    write_rdkit_xyz(mol, mol.GetConformer(), out_xyz)
+
+
+def write_rdkit_xyz(mol, conf, out_xyz: Path) -> None:
+    with out_xyz.open("w") as f:
+        f.write(f"{mol.GetNumAtoms()}\n")
+        f.write(f"Generated from SMILES: {Chem.MolToSmarts(mol)}\n")
+        for atom in mol.GetAtoms():
+            pos = conf.GetAtomPosition(atom.GetIdx())
+            f.write(f"{atom.GetSymbol()} {pos.x:.6f} {pos.y:.6f} {pos.z:.6f}\n")
+
+
+def generate_rdkit_conformers_xyz(smiles: str, out_xyz: Path) -> None:
+    """Generate XYZ for the lowest-energy RDKit conformer using MMFF94 if available, otherwise UFF."""
+    logging.info("Generating conformers for SMILES: %s", smiles)
+    mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    _, nproc = get_slurm_resources()
+    conf_ids = rdDistGeom.EmbedMultipleConfs(mol, numConfs=200, numThreads=nproc)
+
+    if not conf_ids:
+        logging.error("No conformers were generated for SMILES: %s", smiles)
+        raise RuntimeError("Conformer generation failed.")
+
+    # Choose force field and run batch optimization
+    results: list[tuple[bool, float]] = []
+    if rdForceFieldHelpers.MMFFHasAllMoleculeParams(mol):
+        ff_type = "MMFF94"
+        props = rdForceFieldHelpers.MMFFGetMoleculeProperties(mol)
+        ff = rdForceFieldHelpers.MMFFGetMoleculeForceField(mol, props)
+    else:
+        ff_type = "UFF"
+        ff = rdForceFieldHelpers.UFFGetMoleculeForceField(mol)
+
+    results: list[tuple[int, float]] = rdForceFieldHelpers.OptimizeMoleculeConfs(
+        mol, ff, numThreads=nproc
+    )
+
+    # Select the lowest energy converged conformer
+    assert len(results) > 0
+    min_energy = float("inf")
+    min_conf_id: int = -1
+    for idx, (converged_flag, energy) in enumerate(results):
+        if converged_flag == 0 and energy < min_energy:
+            min_energy = energy
+            min_conf_id = idx
+    assert min_conf_id >= 0 and isinstance(min_conf_id, int)
+
+    # Each result is a tuple (converged_flag, energy)
+    logging.info("Using force field: %s", ff_type)
+    print([energy for _, energy in results])
+    logging.info(
+        "Selected converged conformer %d with energy %.4f kcal/mol",
+        min_conf_id,
+        min_energy,
+    )
+
+    write_rdkit_xyz(mol, mol.GetConformer(min_conf_id), out_xyz)
+
+
+def generate_openbabel_xyz(smiles: str, out_xyz: Path) -> None:
+    """Generate initial XYZ from SMILES using Open Babel."""
+
+    mol = pybel.readstring("smi", smiles)
+    mol.addh()
+    mol.make3D()
+    mol.localopt(forcefield="uff", steps=200)
+    mol.write("xyz", str(out_xyz), overwrite=True)
+
+
+def optimize_pm7(initial_xyz: Path, workdir: Path) -> Path:
+    """Run MOPAC PM7 geometry optimization; manually create .mop input and return path to .arc file."""
+    # Read initial geometry from XYZ file
+    lines = initial_xyz.read_text().splitlines()[2:]
+    mop_file = workdir / initial_xyz.with_suffix(".mop").name
+    with mop_file.open("w") as f:
+        f.write("PM7 XYZ PRECISE\n")
+        f.write("PM7 geometry optimization\n")
+        f.write("0 1\n")  # neutral, singlet
+        for line in lines:
+            f.write(line + "\n")
+    # Run MOPAC
+    run_command(["mopac", str(mop_file)])
+    # MOPAC generates an .arc file by default
+    return mop_file.with_suffix(".out")
+
+
+def extract_pm7_geometry(
+    mopac_out: Path, pm7_xyz: Path
+) -> list[tuple[str, float, float, float]]:
+    """Extract optimized geometry from PM7 output using cclib."""
+    data = cclib.io.ccread(str(mopac_out))
+    coords = data.atomcoords[-1]
+    atomnos = data.atomnos
+    pt = Chem.GetPeriodicTable()
+    geometry = []
+    with pm7_xyz.open("w") as f:
+        f.write(f"{data.natom}\n")
+        f.write(f"Generated by PM7 relaxation from {mopac_out.name}\n")
+        for no, (x, y, z) in zip(atomnos, coords):
+            sym = pt.GetElementSymbol(int(no))
+            geometry.append((sym, float(x), float(y), float(z)))
+            f.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
+    return geometry
+
+
+def render_gaussian_input(
+    geometry: list[tuple[str, float, float, float]],
+    out_file: Path,
+    mem: str,
+    nproc: int,
+    method: str = "B3LYP",
+    basis: str = "6-31G(2df,p)",
+    title: str = "GDB-9 DFT opt+freq",
+) -> None:
+    """Render Gaussian input file via Jinja2."""
+    template = Template(GAUSSIAN_TEMPLATE)
+    out_file.write_text(
+        template.render(
+            mem=mem,
+            nproc=nproc,
+            method=method,
+            basis=basis,
+            title=title,
+            geometry=geometry,
+        )
+    )
+
+
+def run_gaussian(inp: Path, workdir: Path) -> Path:
+    """Run Gaussian job; returns path to log file."""
+    run_command(["g09", str(inp)])
+    return workdir / inp.with_suffix(".log").name
+
+
+def extract_r2_from_log(logfile: Path) -> float | None:
+    """Extract electronic spatial extent (<R**2>) from Gaussian log file."""
+    for line in logfile.read_text().splitlines():
+        regex = re.compile(r"<R\*\*2>\s*=\s*([0-9\.\-Ee\+]+)")
+        if "Electronic spatial extent" in line:
+            match = regex.search(line)
+            if match:
+                return float(match.group(1))
+    return None
+
+
+def extract_cv_from_log(logfile: Path) -> float | None:
+    """Extract heat capacity at constant volume (Cv) from Gaussian log file."""
+    # cclib does not automatically parse CV, so we need to write our own code for doing that
+    # typical CV result looks like the following
+    #                     E (Thermal)             CV                S
+    #                     KCal/Mol        Cal/Mol-Kelvin    Cal/Mol-Kelvin
+    # Total                   18.663              8.570             48.081
+    # Electronic               0.000              0.000              0.000
+    # Translational            0.889              2.981             35.704
+    # Rotational               0.592              1.987             10.867
+    # Vibrational             17.182              3.602              1.509
+    # Vibration     1          0.906              1.139              0.543
+    # Vibration     2          0.906              1.139              0.543
+    lines = logfile.read_text().splitlines()
+    for i, line in enumerate(lines):
+        if "Total" in line and "Cal/Mol-Kelvin" in lines[i - 1]:
+            parts = line.split()
+            cv = float(parts[2])
+            return cv
+    return None
+
+
+def parse_gaussian_output(logfile: Path) -> dict:
+    """Parse Gaussian output with cclib and compute metrics."""
+    data = cclib.io.ccread(str(logfile))
+    props: dict = {}
+    props["A"] = float(data.rotconsts[-1, 0])
+    props["B"] = float(data.rotconsts[-1, 1])
+    props["C"] = float(data.rotconsts[-1, 2])
+    props["alpha"] = float(np.trace(data.polarizabilities[0]) / 3)
+    props["mu"] = float(np.linalg.norm(data.moments[1]))
+    props["homo"] = float(data.moenergies[0][data.homos[0]]) / HARTREE_TO_EV
+    props["lumo"] = float(data.moenergies[0][data.homos[0] + 1]) / HARTREE_TO_EV
+    props["gap"] = props["lumo"] - props["homo"]
+    props["r2"] = extract_r2_from_log(logfile)
+    props["zpve"] = float(data.zpve)
+    props["u0"] = float(data.scfenergies[-1]) / HARTREE_TO_EV
+    props["u298"] = float(data.enthalpy)
+    props["h298"] = float(data.enthalpy)
+    props["g298"] = float(data.freeenergy)
+    props["cv"] = extract_cv_from_log(logfile)
+    natoms = int(data.natom)
+    props["u0_atom"] = props["u0"] / natoms
+    props["u298_atom"] = props["u298"] / natoms
+    props["h298_atom"] = props["h298"] / natoms
+    props["g298_atom"] = props["g298"] / natoms
+    return props
+
+
+def compute_inchi(smiles: str) -> tuple[str, str]:
+    """Compute InChI and InChIKey via RDKit."""
+    mol = Chem.MolFromSmiles(smiles)
+    return Chem.MolToInchi(mol), Chem.MolToInchiKey(mol)
+
+
+def archive_intermediates(workdir: Path, archive_path: Path) -> None:
+    """Archive the working directory to a compressed tar file, auto-detecting compression."""
+    name = archive_path.name.lower()
+    if name.endswith(".tar.xz") or name.endswith(".txz"):
+        mode = "w:xz"
+    elif name.endswith(".tar.gz") or name.endswith(".tgz"):
+        mode = "w:gz"
+    else:
+        mode = "w"
+    logging.info(f"Archiving {workdir} -> {archive_path} with mode {mode}")
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(str(archive_path), mode) as tar:
+        tar.add(str(workdir), arcname=archive_path.with_suffix("").with_suffix("").name)
+
+
+def process_smiles(
+    smiles: str,
+    archive: bool,
+    archive_filename: Path,
+    initial_relax: str = "rdkit",
+):
+    workdir = Path(tempfile.mkdtemp(prefix="gdb9_"))
+    logging.info(f"SMILES: {smiles}")
+    logging.info(f"Workdir: {workdir}")
+    mem_str, nproc = get_slurm_resources()
+    start_time = time.perf_counter()
+    inchi, inchikey = compute_inchi(smiles)
+    result = {
+        "smiles": smiles,
+        "InChI": inchi,
+        "InChIKey": inchikey,
+    }
+    try:
+        # Initial Relaxation
+        initial_xyz = workdir / "initial.xyz"
+        logging.info(f"Initial Relaxation: {initial_relax}")
+        if initial_relax == "rdkit":
+            generate_rdkit_xyz(smiles, initial_xyz)
+        elif initial_relax == "rdkit-conformers":
+            generate_rdkit_conformers_xyz(smiles, initial_xyz)
+        elif initial_relax == "openbabel":
+            generate_openbabel_xyz(smiles, initial_xyz)
+        else:
+            raise ValueError(f"Unknown initial relaxation method: {initial_relax}")
+
+        mopac_out = optimize_pm7(initial_xyz, workdir)
+        pm7_xyz = workdir / "pm7_relaxed.xyz"
+        geometry = extract_pm7_geometry(mopac_out, pm7_xyz)
+        g09_inp = workdir / "dft.com"
+        render_gaussian_input(geometry, g09_inp, mem=mem_str, nproc=nproc)
+        g09_log = run_gaussian(g09_inp, workdir)
+        props = parse_gaussian_output(g09_log)
+        walltime = time.perf_counter() - start_time
+        result.update(props)
+        result["walltime"] = walltime
+
+    finally:
+        if archive:
+            archive_filename = Path(
+                archive_filename.parent, archive_filename.name.format(**result)
+            )
+            archive_intermediates(workdir, archive_filename)
+
+        logging.info(f"Cleaning up {workdir}")
+        shutil.rmtree(str(workdir))
+    return result
+
+
+@app.command()
+def main(
+    smiles: str = typer.Argument(help="SMILES input"),
+    output: str = "-",
+    archive: bool = False,
+    initial_relax: str = "rdkit",
+    archive_filename: Path = typer.Option(
+        Path.cwd() / "archive.tar.xz",
+        "--archive-filename",
+        "-f",
+        help="Archive filename",
+    ),
+):
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
+    )
+    result = process_smiles(smiles, archive, archive_filename, initial_relax)
+    closefd = True
+    if output == "-":
+        fid = sys.stdout
+        closefd = False
+    else:
+        output = output.format(**result)
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        fid = open(output, "w")
+
+    try:
+        json.dump(result, fid)
+    finally:
+        if closefd:
+            fid.close()
+
+
+if __name__ == "__main__":
+    app()

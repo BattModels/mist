@@ -1,0 +1,27 @@
+#!/bin/bash
+#SBATCH --ntasks 1
+#SBATCH --cpus-per-task 8
+#SBATCH --mem-per-cpu 1800M
+#SBATCH --time 8:0:0
+#SBATCH --partition venkvis-cpu
+
+# Training script for h001
+my_job_header
+set -ex
+
+# Locate the project directory
+GIT_ROOT=$(git rev-parse --show-toplevel)
+DIR="$(realpath $GIT_ROOT/opt/qmist)"
+
+module purge
+module --ignore_cache load python/3.11.5
+module --ignore_cache load Chemistry
+module --ignore_cache load gaussian/09-revD01
+
+# Add MOPAC to path
+export PATH="$(realpath $DIR/vendor/mopac*/bin):$PATH"
+
+# Run the pipeline
+uv run --project ${DIR} python ${DIR}/main.py $@
+
+echo "done: $(date)"
