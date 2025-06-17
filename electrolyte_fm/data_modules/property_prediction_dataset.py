@@ -103,14 +103,9 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
-        if self.truncation:
-            self.token_collator = DataCollatorWithPadding(
-                self.tokenizer, max_length=self.max_length, padding="max_length"
-            )
-        else:
-            self.token_collator = DataCollatorWithPadding(
-                self.tokenizer, padding="longest"
-            )
+        self.token_collator = DataCollatorWithPadding(
+            self.tokenizer, padding="longest"
+        )
 
     def collate_fn(self, batch):
         tokenizer = self.tokenizer
