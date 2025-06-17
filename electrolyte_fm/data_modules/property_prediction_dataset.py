@@ -31,7 +31,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         encoding: str = MolEncoding.SMILES.value,
         include_encoding: bool = False,
         randomize: bool = False,
-        truncation: bool = True,
+        truncation: bool = False,
         max_seq_length: int = 512,
     ):
         super().__init__()
@@ -88,7 +88,9 @@ class PropertyPredictionDataModule(LightningDataModule):
         else:
             ds = ds.select_columns([self.smi_column])
 
-        tokenize = partial(self.tokenizer, truncation=self.truncation, max_length=self.max_length)
+        tokenize = partial(
+            self.tokenizer, truncation=self.truncation, max_length=self.max_length
+        )
         # Tokenize
         ds = ds.map(
             tokenize,
@@ -101,7 +103,12 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
-        self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
+        if self.truncation:
+            self.token_collator = DataCollatorWithPadding(
+                self.tokenizer, max_length=self.max_length, padding="max_length"
+            )
+        else:
+            self.token_collator = DataCollatorWithPadding(self.tokenizer)
 
     def collate_fn(self, batch):
         tokenizer = self.tokenizer
