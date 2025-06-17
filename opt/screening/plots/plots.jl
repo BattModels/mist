@@ -4,15 +4,32 @@ using MISTStyle
 using StatsBase
 using DataFrames
 using GLM
-using RegressionTables: LatexTable, regtable
+using RegressionTables: RegressionTables, LatexTable, regtable
 using JSON: JSON
 using CSV: CSV
+using Format: format
 
-ROOTDIR = joinpath(pkgdir(ScreeningPlots), "..")
+using ScreeningPlots: searchfirst
+
+ROOTDIR = realpath(joinpath(pkgdir(ScreeningPlots), ".."))
+GIT_ROOT = realpath(joinpath(ROOTDIR, "..", ".."))
 fig_dir = joinpath(ROOTDIR, "fig")
 isdir(fig_dir) || mkdir(fig_dir)
 
-df = ScreeningPlots.collate_performance_stats("initial-sweep")
+# Filter to screening runs
+df = ScreeningPlots.collate_performance_stats(joinpath(ROOTDIR, "runs"))
+df = filter(df) do row
+    config = row.config
+    get(config, "limit_walltime", nothing) == 300 || return false
+    models = Set([c["model_path"] for c in config["critics"]])
+    expected_models = [
+        "models/mist-26.9M-b302p09x-bp",
+        "models/mist-26.9M-y3ge5pf9-mp",
+        "models/mist-x4i8qzuq-qm9",
+    ]
+    models == Set(expected_models) || return false
+    return true
+end
 df.limit_ref_fragments .= something.(df.limit_ref_fragments, 122)
 df.limit_db_fragments .= something.(df.limit_db_fragments, 88_800_000)
 df.limit_ref_fragments ./= 122
@@ -30,7 +47,7 @@ df.generation_efficiency = df.global_unique_throughput ./ df.global_throughput
 # Linear Models to guide scaling
 m_eff = lm(
     @formula(generation_efficiency ~ log(gpus) + epoch_size + epoch_size^2 + limit_ref_fragments + limit_db_fragments),
-    df
+    subset(df, :duration => ByRow(<(400))),
 )
 display(m_eff)
 coef_m = Dict(zip(coefnames(m_eff), coef(m_eff)))
@@ -40,7 +57,7 @@ ideal_rel_epoch = -coef_m["epoch_size"] / (2 * coef_m["epoch_size ^ 2"])
 
 m_speed = lm(
     @formula(log(global_throughput) ~ log(gpus) + batch_size + +batch_size^2 + n_fragments + epoch_size),
-    df
+    subset(df, :duration => ByRow(<(400))),
 )
 display(m_speed)
 coef_speed = Dict(zip(coefnames(m_speed), coef(m_speed)))
@@ -51,31 +68,43 @@ regtable(
     m_speed, m_eff;
     file=joinpath(fig_dir, "screening_lm.tex"),
     render=LatexTable(),
+    regression_statistics=[
+            RegressionTables.Nobs,
+            RegressionTables.DOF,
+            RegressionTables.R2,
+            (m -> mad(residuals(m))) => "MAE",
+            (m -> rmsd(predict(m), response(m))) => "RMSE",
+    ]
 )
 
 # Plot generated molecules
-production_run = (; pairs(first(sort!(df, :n_passing; rev=true)))...)
-df_mol = ScreeningPlots.load_generated_molecules(production_run.path)
-prod_config = JSON.parsefile(joinpath(production_run.path, "config.json"))
+prod_id = "b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df"
+production_run_path = joinpath(ROOTDIR, "runs", prod_id)
+df_mol = ScreeningPlots.load_generated_molecules(production_run_path)
+prod_config = JSON.parsefile(joinpath(production_run_path, "config.json"))
 
 # Reference Molecules
-df_ref = DataFrame(CSV.File(joinpath(ROOTDIR, "electrolytes_predictions.csv")))
+df_ref = DataFrame(CSV.File(joinpath(ROOTDIR, "electrolytes_predictons.csv")))
 df_mol.inchi_key = ScreeningPlots.inchi_key.(df_mol.smiles)
 df_ref.inchi_key = ScreeningPlots.inchi_key.(df_ref.smi)
 
 df_novel = subset(df_mol, :inchi_key => ByRow(∉(df_ref.inchi_key)))
 df_unfound = subset(df_ref, :inchi_key => ByRow(∉(df_mol.inchi_key)))
 @info "Novel Molecules" nrow(df_novel) nrow(df_ref) nrow(df_novel) / nrow(df_mol) nrow(df_unfound) / nrow(df_ref)
+@info "Prod. Perf" throughput=production_run.global_throughput / production_run.gpus uniq_throughput = production_run.global_unique_throughput / production_run.gpus
 
 # Generate Plots
-prod_id = basename(production_run.path)
-trace = DataFrame(production_run[:trace])
+trace, _ = ScreeningPlots.performance_trace(joinpath(production_run_path, "screen.jsonl"))
+trace = DataFrame(trace)
 with_theme(MISTStyle.theme()) do
     f = ScreeningPlots.plot_pareto_front(df_mol, df_ref)
-    MISTStyle.savefig(joinpath("pareto", "production" * "-" * prod_id), f)
+    MISTStyle.savefig(joinpath("production" * "-" * prod_id), f)
 
     f = ScreeningPlots.plot_gen_trace(trace)
     MISTStyle.savefig(joinpath("gen-trace" * "-" * prod_id), f)
+
+    f = ScreeningPlots.weak_scaling(subset(df, :duration => ByRow(<(400))))
+    MISTStyle.savefig(joinpath("scaling" * "-" * prod_id), f)
 
     f = ScreeningPlots.figure_screening(trace, df_mol, df_ref, df)
     MISTStyle.savefig(joinpath("panel" * "-" * prod_id), f)
@@ -83,9 +112,42 @@ with_theme(MISTStyle.theme()) do
     # Verify qmist can reproduce QM9 calculations
     qmist = realpath(joinpath(pkgdir(ScreeningPlots), "..", "..", "qmist"))
     df_qm9 = ScreeningPlots.load_jsonl(joinpath(qmist, "qm9.jsonl"))
-    for version in [joinpath(qmist, "veri_v1")]
+    label = "QM9 (Ramakrishnan et al.)" => "Ours"
+    for version in [joinpath(qmist, "veri_v1"), joinpath(qmist, "veri_v2"), joinpath(qmist, "veri_v3")]
         df_qmist = ScreeningPlots.load_qmist_results(version)
         df, cols = ScreeningPlots.merge_qmist_results(df_qmist, df_qm9)
-        ScreeningPlots.figure_parity(df, cols) |> MISTStyle.savefig(basename(version) * "_parity")
+        μ, σ = mean_and_std(df_qmist.walltime)
+        walltime_p95 = quantile(df_qmist.walltime, 0.95)
+        @info basename(version) nrow(df) walltime=format("\\({:.0f} \\pm {:.0f}\\)", μ, σ) walltime_p95
+        ScreeningPlots.figure_parity(df, cols; label) |> MISTStyle.savefig(basename(version) * "_parity")
     end
+
+    # Parity Plots vs. QM9 Calculations
+    for (dir_name, label) in ["qm9" => "rdkit", "qm9_obabel" => "openbabel", "qm9_conf" => "conformer"]
+        f = ScreeningPlots.compare_qmist(
+            production_run_path,
+            joinpath(production_run_path, dir_name);
+            label="B3LYP/6-31G(2df,p)" => "MIST",
+        )
+        MISTStyle.savefig(joinpath("parity-$(label)-$(prod_id)"), f)
+    end
+
+    # Load the QM9 Model used for screening
+    qm9_model_name = searchfirst(
+        c -> occursin("qm9", c),
+        [ basename(c["model_path"]) for c in prod_config["critics"] ]
+    )
+    mist_qm9 = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", qm9_model_name))
+    mist_qm9 = mist_qm9.to("mps")
+    #
+    # Parity Plots with Chembl data
+    f = ScreeningPlots.compare_qmist(
+        production_run_path,
+        joinpath(production_run_path, "qm9_conf"),
+        joinpath(ROOTDIR, "veri_chembl"),
+        mist_qm9;
+        label="B3LYP/6-31G(2df,p)" => "MIST",
+    )
+    MISTStyle.savefig(joinpath("parity-chembl-$(prod_id)"), f)
+
 end
