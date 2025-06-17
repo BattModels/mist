@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from lightning import LightningDataModule
 from datasets import Dataset
 from transformers import DataCollatorWithPadding
+from functools import partial
 
 from ..utils.tokenizer import load_tokenizer
 from .utils import (
@@ -30,12 +31,16 @@ class PropertyPredictionDataModule(LightningDataModule):
         encoding: str = MolEncoding.SMILES.value,
         include_encoding: bool = False,
         randomize: bool = False,
+        truncation: bool = True,
+        max_seq_length: int = 512,
     ):
         super().__init__()
 
         self.tokenizer = load_tokenizer(tokenizer)
         self.token_collator = DataCollatorWithPadding(self.tokenizer)
         self.vocab_size = len(self.tokenizer)
+        self.truncation = truncation
+        self.max_length = max_seq_length
 
         self.smi_column = smi_column
         self.target_columns = target_columns
@@ -83,9 +88,10 @@ class PropertyPredictionDataModule(LightningDataModule):
         else:
             ds = ds.select_columns([self.smi_column])
 
+        tokenize = partial(self.tokenizer, truncation=self.truncation, max_length=self.max_length)
         # Tokenize
         ds = ds.map(
-            self.tokenizer,
+            tokenize,
             batched=is_fast(self.tokenizer),
             input_columns=self.smi_column,
         )
