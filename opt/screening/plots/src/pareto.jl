@@ -1,10 +1,7 @@
 function get_pareto_front(x::Vector, y::Vector; quad=:lt, ax=nothing)
     @assert quad == :lt "not implemented"
-    front = Metaheuristics.get_non_dominated_solutions(map(vcat, x, -1 .* y))
-    front = map(front) do p
-        p[2] *= -1
-        p
-    end
+    idx = Metaheuristics.get_non_dominated_solutions_perm(map(vcat, x, -1 .* y))
+    front = Point2.(x[idx], y[idx])
     frontier = Point2.(sort(front; by=first, rev=true))
     if ax !== nothing
         limits = lift(ax.finallimits) do hr

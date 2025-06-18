@@ -349,7 +349,7 @@ function create_figures()
              RegressionTables.Nobs,
              RegressionTables.DOF,
              RegressionTables.R2,
-             (m -> mad(residuals(m))) => "MAE",
+             (m -> mae(residuals(m))) => "MAE",
              (m -> rmsd(predict(m), response(m))) => "RMSE",
         ]
     )

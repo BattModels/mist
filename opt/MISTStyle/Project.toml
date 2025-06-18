@@ -5,7 +5,10 @@ uuid = "0a43f4a4-3db7-4939-b247-26273f54b603"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
-CairoMakie = "0.13.2"
-CategoricalArrays = "0.10.8"
+Makie = "0.22,0.23"
+CairoMakie = "0.13,0.14"
+CategoricalArrays = "0.10"
+StatsBase = "0.33, 0.34"

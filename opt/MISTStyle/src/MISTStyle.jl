@@ -3,6 +3,7 @@ module MISTStyle
 using Makie
 using CategoricalArrays: levels
 using CairoMakie: CairoMakie
+using StatsBase: StatsBase, AbstractWeights
 
 const pt = 3 / 4
 const inch = 96
@@ -71,6 +72,7 @@ include("errorcross.jl")
 include("powerlaw.jl")
 include("tantext.jl")
 include("quadrant.jl")
+include("nbins.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [

@@ -2,13 +2,17 @@ module ScreeningPlots
 
 using Makie
 using DataFrames
+using Graphs: complete_graph, boruvka_mst
 using Metaheuristics: Metaheuristics
 using JSON: JSON
 using SQLite: SQLite
 using PythonCall: Py, PyList, pyimport, pyconvert
 using GLM: @formula, lm, glm, Normal, LogLink, coef
 using Format: format
-using StatsBase: cor, mad
+using Statistics: cor, mean
+using CategoricalArrays: categorical, levelcode
+using LinearAlgebra: norm, dot
+using ManifoldLearning: ManifoldLearning, DiffMap, fit, predict, transform
 
 using MISTStyle
 
@@ -24,6 +28,18 @@ function __init__()
     __mol_surprise[] = pyimport("electrolyte_fm.models.mol_surprise")
     __prod_finetune[] = pyimport("electrolyte_fm.models.prod_finetune")
     __data_utils[] = pyimport("electrolyte_fm.data_modules.utils")
+end
+
+mae(x, y) = mean(x -> abs(-(x...)), zip(x, y))
+mae(x) = mean(abs, x)
+rmsd(x, y) = sqrt(mean(x -> -(x...)^2, zip(x, y)))
+
+default_device() = Sys.isbsd() ? "mps" : "cuda"
+function load_mist_pretrained(folder::String; device=default_device())
+    return __prod_finetune[].MISTFinetuned.from_pretrained(folder).to(device).eval()
+end
+function load_mol_surprise(path::String; device=default_device())
+    return __mol_surprise[].MolSurpriseFM.from_pretrained(path).to(device).eval()
 end
 
 include("qmist.jl")
