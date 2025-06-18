@@ -9,7 +9,6 @@ function load_qmist_results(folder::String)
     return df
 end
 
-load_mist_pretrained(folder::String) = __prod_finetune[].MISTFinetuned.from_pretrained(folder)
 
 function predict_mist(model::Py, smi::Vector{String}; batch_size=32)
     model = model.eval()
@@ -58,7 +57,7 @@ function figure_parity!(f, df::DataFrame, cols::Vector{String}; ref="_qm9", othe
         xlim = extrema(x)
         ylim = extrema(y)
         ax = Axis(gl[i, j];
-            title=format("{}\nρ: {:.2f}, MAE: {:.3f}", col, cor(x,y), mad(x .- y)),
+            title=format("{}\nρ: {:.2f}, MAE: {:.3f}", col, cor(x,y), mae(x .- y)),
             limits=MISTStyle.parity_limits(x, y),
             xticks=WilkinsonTicks(2),
             yticks=WilkinsonTicks(2),

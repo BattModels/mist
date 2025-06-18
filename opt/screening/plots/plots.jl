@@ -1,7 +1,7 @@
 using ScreeningPlots
 using Makie
 using MISTStyle
-using StatsBase
+using Statistics
 using DataFrames
 using GLM
 using RegressionTables: RegressionTables, LatexTable, regtable
@@ -72,8 +72,8 @@ regtable(
             RegressionTables.Nobs,
             RegressionTables.DOF,
             RegressionTables.R2,
-            (m -> mad(residuals(m))) => "MAE",
-            (m -> rmsd(predict(m), response(m))) => "RMSE",
+            (m -> ScreeningPlots.mae(residuals(m))) => "MAE",
+            (m -> ScreeningPlots.rmsd(predict(m), response(m))) => "RMSE",
     ]
 )
 
@@ -91,7 +91,7 @@ df_ref.inchi_key = ScreeningPlots.inchi_key.(df_ref.smi)
 df_novel = subset(df_mol, :inchi_key => ByRow(∉(df_ref.inchi_key)))
 df_unfound = subset(df_ref, :inchi_key => ByRow(∉(df_mol.inchi_key)))
 @info "Novel Molecules" nrow(df_novel) nrow(df_ref) nrow(df_novel) / nrow(df_mol) nrow(df_unfound) / nrow(df_ref)
-@info "Prod. Perf" throughput=production_run.global_throughput / production_run.gpus uniq_throughput = production_run.global_unique_throughput / production_run.gpus
+# @info "Prod. Perf" throughput=production_run.global_throughput / production_run.gpus uniq_throughput = production_run.global_unique_throughput / production_run.gpus
 
 # Generate Plots
 trace, _ = ScreeningPlots.performance_trace(joinpath(production_run_path, "screen.jsonl"))
@@ -116,7 +116,8 @@ with_theme(MISTStyle.theme()) do
     for version in [joinpath(qmist, "veri_v1"), joinpath(qmist, "veri_v2"), joinpath(qmist, "veri_v3")]
         df_qmist = ScreeningPlots.load_qmist_results(version)
         df, cols = ScreeningPlots.merge_qmist_results(df_qmist, df_qm9)
-        μ, σ = mean_and_std(df_qmist.walltime)
+        μ = mean(df_qmist.walltime)
+        σ = std(df_qmist.walltime)
         walltime_p95 = quantile(df_qmist.walltime, 0.95)
         @info basename(version) nrow(df) walltime=format("\\({:.0f} \\pm {:.0f}\\)", μ, σ) walltime_p95
         ScreeningPlots.figure_parity(df, cols; label) |> MISTStyle.savefig(basename(version) * "_parity")
@@ -150,4 +151,37 @@ with_theme(MISTStyle.theme()) do
     )
     MISTStyle.savefig(joinpath("parity-chembl-$(prod_id)"), f)
 
+end
+
+mol_surprise = ScreeningPlots.load_mol_surprise(joinpath(GIT_ROOT, "models", "mist-ti624ev1"))
+mist_mp = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", "mist-26.9M-y3ge5pf9-mp"))
+mist_bp = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", "mist-26.9M-b302p09x-bp"))
+
+f, df_surprise = ScreeningPlots.compare_creativity(
+    production_run_path,
+    joinpath(ROOTDIR, "veri_chembl"),
+    df_ref;
+    mol_surprise,
+    mist_mp,
+    mist_bp
+)
+MISTStyle.savefig("surprise_vs_utility", f)
+
+# Compute Renyi Entropy Metrics
+df_surprise.embed_mean = eachrow(ScreeningPlots.mist_embedding(mol_surprise, df_surprise.smiles; pooling=ScreeningPlots.mean_pooling))
+dist_metrics = [
+    "eculidean" => ScreeningPlots.eculidean_distance,
+    "cosine" => ScreeningPlots.cosine_distance,
+    "angular" => ScreeningPlots.angular_distance,
+]
+df_s = combine(groupby(df_surprise, :group)) do gdf
+    out = []
+    n = nrow(gdf)
+    for (pool, emb) in ["first" => gdf.embed, "mean" => gdf.embed_mean]
+        for (metric, distance) in dist_metrics
+            o = ScreeningPlots.renyi_entropy_estimate(emb; distance)
+            push!(out, (; n, pool, metric, o...))
+        end
+    end
+    return DataFrame(out)
 end

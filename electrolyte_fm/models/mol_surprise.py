@@ -1,4 +1,5 @@
 import torch
+from torch.fx import has_side_effect
 from torch.nn import functional as F
 from transformers import AutoModelForMaskedLM, AutoConfig, DataCollatorWithPadding
 from ..utils.tokenizer import load_tokenizer
@@ -43,6 +44,18 @@ class MolSurpriseFM(torch.nn.Module):
                 batch["special_tokens_mask"],
                 per_token,
             ).to("cpu")
+
+    def embed(self, smiles: list[str]) -> torch.Tensor:
+        batch = self.tokenizer(smiles, return_special_tokens_mask=True)
+        batch = self.collate_fn(batch).to(self.encoder.device)
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        if hasattr(self.encoder, "roberta_prelayernorm"):
+            encoder = self.encoder.roberta_prelayernorm
+        else:
+            encoder = self.encoder.encoder
+        with torch.inference_mode():
+            return encoder(input_ids, attention_mask=attention_mask).last_hidden_state
 
     @classmethod
     def from_checkpoint(cls, ckpt: str, **kwargs):

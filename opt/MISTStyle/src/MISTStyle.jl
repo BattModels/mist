@@ -3,6 +3,7 @@ module MISTStyle
 using Makie
 using CategoricalArrays: levels
 using CairoMakie: CairoMakie
+using StatsBase: StatsBase, AbstractWeights
 
 # Conversion from units into pixels
 const pt = 1
@@ -76,6 +77,7 @@ include("tantext.jl")
 include("quadrant.jl")
 include("asinh.jl")
 include("sci_notation.jl")
+include("nbins.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
