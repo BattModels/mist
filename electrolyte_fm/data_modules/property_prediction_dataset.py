@@ -41,6 +41,9 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.vocab_size = len(self.tokenizer)
         self.truncation = truncation
         self.max_length = max_seq_length
+        self.tokenize = partial(
+            self.tokenizer, truncation=self.truncation, max_length=self.max_length
+        )
 
         self.smi_column = smi_column
         self.target_columns = target_columns
@@ -88,12 +91,9 @@ class PropertyPredictionDataModule(LightningDataModule):
         else:
             ds = ds.select_columns([self.smi_column])
 
-        tokenize = partial(
-            self.tokenizer, truncation=self.truncation, max_length=self.max_length
-        )
         # Tokenize
         ds = ds.map(
-            tokenize,
+            self.tokenize,
             batched=is_fast(self.tokenizer),
             input_columns=self.smi_column,
         )
