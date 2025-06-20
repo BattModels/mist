@@ -106,7 +106,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def collate_fn(self, batch):
-        tokenizer = self.tokenizer
+        tokenizer = self.tokenize
         encoding = self.encoding
         if self.randomize:
             for idx in range(len(batch)):
