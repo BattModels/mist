@@ -355,6 +355,13 @@ function subsample(chains::AbstractArray{T,3}, p::AbstractFloat=0.2) where {T}
     return subsample(chains, n)
 end
 
+"""
+Convenience method for selecting parameters from a nested chains component array
+
+! This is not type stable
+"""
+selectparam(chains::AbstractChains, n::Symbol) = selectdim(chains, 3, n)
+selectparam(chains::AbstractChains, names::Symbol...) = selectparam(selectdim(chains, 3, first(names)), Base.tail(names)...)
 
 """
     μ, l, u = credible_interval(chains; p=0.95)
@@ -363,17 +370,17 @@ Return the expectation of `chains` and the `p`-percentile credible interval
 """
 function credible_interval(chains::AbstractArray{T,3}; p=0.95) where {T}
     map(eachslice(chains; dims=3)) do chains
-        credible_interval(chains, p)
+        credible_interval(chains; p)
     end
 end
 
-function credible_interval(chains::AbstractArray, p::Real)
+function credible_interval(chains::AbstractArray; p::Real=0.95)
     v = credible_interval(p)
     fit!(v, vec(chains))
     return OnlineStats.value(v)
 end
 
-function credible_interval(p=0.90)
+function credible_interval(p::Real=0.90)
     p = (1 - p) / 2
     return OnlineStats.Series(
         OnlineStats.Mean(),
@@ -429,4 +436,18 @@ function maximum_posterior_estimate(model::BayesianRegression; p=0.95, n=7, adty
     sol = solve(OptimizationProblem(f, x0), alg; kwargs...)
     x = TransformVariables.transform(L.ℓ.transformation, sol.u)
     return x, sol
+end
+
+function predict_ci(model::BayesianRegression, chains::AbstractChains; p=0.95)
+    μ = Vector{eltype(model)}(undef, length(model.observations))
+    lower = similar(μ)
+    upper = similar(μ)
+    for (i, obs) in enumerate(model.observations)
+        v = credible_interval(p)
+        map(eachslice(chains; dims=(1,2))) do θ
+            fit!(v, predict(model, θ, obs))
+        end
+        μ[i], lower[i], upper[i] = OnlineStats.value(v)
+    end
+    return μ, lower, upper
 end

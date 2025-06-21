@@ -16,7 +16,6 @@ function scaling_summary(chains::AbstractChains; p=0.95)
     a_ci = credible_interval(p)
     b_ci = credible_interval(p)
     r_ci = credible_interval(p)
-    E_ci = credible_interval(p)
     ζ_ci = credible_interval(p)
     for I in CartesianIndices(axes(chains)[1:2])
         θ = chains[I.I..., :]
@@ -26,13 +25,11 @@ function scaling_summary(chains::AbstractChains; p=0.95)
         fit!(b_ci, α / (α + β))
         fit!(r_ci, α / β)
         fit!(ζ_ci, (α * β) / (α + β))
-        fit!(E_ci, E)
     end
     return (;
         G = OnlineStats.value(G_ci),
         a = OnlineStats.value(a_ci),
         b = OnlineStats.value(b_ci),
-        E = OnlineStats.value(E_ci),
         ζ = OnlineStats.value(ζ_ci),
         r = OnlineStats.value(r_ci),
     )

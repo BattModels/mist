@@ -85,6 +85,9 @@ const CAT_COLORS = cgrad(
 UM_COLORS = (;
     blue=colorant"#00274C",
     maize=colorant"#FFCB05",
+    red=colorant"#9A3324",
+    orange=colorant"#D86018",
+    arboretum=colorant"#2F65A7",
 )
 
 

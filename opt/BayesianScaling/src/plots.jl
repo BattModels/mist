@@ -7,30 +7,29 @@ Plots a prediction band with median line overlayed
 @recipe(PredictionBand, x, center, lower, upper) do scene
     Theme(
         color=Makie.inherit(scene, (:Lines, :linecolor), :black),
+        linewidth=Makie.inherit(scene, (:Lines, :linewidth), 2),
         band_color=(:blue, 0.1),
     )
 end
 function Makie.plot!(plt::PredictionBand)
     band!(plt, plt.x, plt.lower, plt.upper; color=plt.band_color)
-    lines!(plt, plt.x, plt.center; color=plt.color)
+    lines!(plt, plt.x, plt.center; color=plt.color, linewidth=plt.linewidth)
     return plt
 end
 
-@recipe(SampleRange, x, samples) do scene
+@recipe(SampleRange, x, y, ylow, yhigh) do scene
     Theme(
         color=:black,
-        markercolor=:blue,
         marker=:x,
         markersize=5,
         p=[0.025, 0.5, 0.975],
     )
 end
 function Makie.plot!(plt::SampleRange)
-    l = stack(θ -> quantile(θ, plt.p[]), eachrow(plt.samples[]))
     satt = Makie.shared_attributes(plt, Scatter)
-    satt.color = plt.markercolor
-    rangebars!(plt, Makie.shared_attributes(plt, Makie.Rangebars), plt.x, l[1, :], l[3, :])
-    scatter!(plt, satt, plt.x, l[2, :])
+    # satt.color = plt.markercolor
+    rangebars!(plt, Makie.shared_attributes(plt, Makie.Rangebars), plt.x, plt.ylow, plt.yhigh)
+    scatter!(plt, satt, plt.x, plt.y)
     return plt
 end
 
@@ -57,12 +56,10 @@ end
 _scale_bins(scale, bins, x) = bins
 _scale_bins(scale::typeof(log10), bins::Int, x) = logrange(extrema(x)...; length=bins + 1)
 
-function plot_best_lr(chains::AbstractArray{<:Real,3}, df=missing;
+function plot_best_lr!(f, chains::AbstractArray{<:Real,3}, df=missing;
     N=logrange(1e2, 1e10; length=200),
     lr=logrange(1e-5, 3e-3; length=100)
 )
-    f = Figure()
-
     # Prediction Plot
     # gl = GridLayout(f[1:2, 1])
     ax = Axis(f[1, 1];

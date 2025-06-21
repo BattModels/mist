@@ -94,24 +94,50 @@ function init_model(f::ShapedScaling, df; priors=priors(HoffmanScaling))
 end
 
 function (m::ShapedScaling)(run, θ)
-    (; scaling, ff_ratio, aspect_ratio, kv_size) = θ
-    loss = hoffman_scaling(run.model_size, run.data_size; scaling...)
-    lr_opt = ideal_lr(m, θ, run)
-
-    # Compute Penalties
-    P = geometric_penalty(run.lr, lr_opt, θ.lr.penalty...)
-    if m.harmonic_shape_penalty
-        P += harmonic_penalty(run.ff_ratio, ff_ratio...)
-        P += harmonic_penalty(run.kv_size, kv_size...)
-        P += harmonic_penalty(run.aspect_ratio, aspect_ratio...)
-    else
-        P += geometric_penalty(run.ff_ratio, ff_ratio...)
-        P += geometric_penalty(run.kv_size, kv_size...)
-        P += geometric_penalty(run.aspect_ratio, aspect_ratio...)
-    end
-
-    # Estimate model loss
+    loss = hoffman_scaling(run.model_size, run.data_size; θ.scaling...)
+    P = expected_penalties(m, θ, run).P
     return m.geometric_penalty ? xexpy(loss, P) : loss + P
+end
+
+function expected_penalties(m::ShapedScaling, θ, run)
+    (; ff_ratio, kv_size, aspect_ratio) = θ
+    lr_opt = ideal_lr(m, θ, run)
+    P_lr = geometric_penalty(run.lr, lr_opt, θ.lr.penalty...)
+    if m.harmonic_shape_penalty
+        P_ff = harmonic_penalty(run.ff_ratio, ff_ratio...)
+        P_kv = harmonic_penalty(run.kv_size, kv_size...)
+        P_a = harmonic_penalty(run.aspect_ratio, aspect_ratio...)
+    else
+        P_ff = geometric_penalty(run.ff_ratio, ff_ratio...)
+        P_kv = geometric_penalty(run.kv_size, kv_size...)
+        P_a = geometric_penalty(run.aspect_ratio, aspect_ratio...)
+    end
+    P = P_lr + P_ff + P_kv + P_a
+    return (; P, ff=P_ff, kv=P_kv, aspect=P_a, lr=P_lr)
+end
+
+function lr_partial_dependence(model::ShapedScaling, chains::AbstractChains{T}, runs::Vector, y::Vector; p=0.95, factor=:P) where {T}
+    residual = Vector{NTuple{3, T}}(undef, length(runs))
+    lr_deviance = similar(residual)
+    for (i, run) in enumerate(runs)
+        resid_ci = credible_interval(p)
+        lr_ci = credible_interval(p)
+        map(eachslice(chains; dims=(1,2))) do θ
+            P = expected_penalties(model, θ, run)
+            loss = hoffman_scaling(run.model_size, run.data_size; θ.scaling...)
+            P_marginal = P.ff + P.kv + P.aspect
+            ŷ = model.geometric_penalty ? xexpy(loss, P_marginal) : loss + P_marginal
+            resid = y[i] / ŷ
+            fit!(resid_ci, resid)
+
+            lr_opt = ideal_lr(model, θ, run)
+            lr_dev = model.harmonic_shape_penalty ? run.lr - lr_opt : run.lr / lr_opt
+            fit!(lr_ci, lr_dev)
+        end
+        residual[i] = OnlineStats.value(resid_ci)
+        lr_deviance[i] = OnlineStats.value(lr_ci)
+    end
+    return lr_deviance, residual
 end
 
 function ideal_lr(m::ShapedScaling, θ, run)
