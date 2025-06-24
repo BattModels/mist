@@ -1,0 +1,14 @@
+#!/bin/bash
+# Source this to activate the environment
+DIR="$(git rev-parse --show-toplevel)/opt/screening"
+
+# Activate virtual environment
+source $DIR/.venv/bin/activate
+
+# Configure HF and Tokenizers
+export HF_HOME="$(git rev-parse --show-toplevel)/.cache/huggingface"
+export TOKENIZERS_PARALLELISM=false
+
+# Configure julia
+export JULIA_CONDAPKG_BACKEND=Null
+export JULIA_PYTHONCALL_EXE="$DIR/.venv/bin/python"

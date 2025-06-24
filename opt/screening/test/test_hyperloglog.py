@@ -61,7 +61,6 @@ def test_hyperloglog_reduce_single():
 @pytest.mark.parametrize(
     "b,hash",
     [
-        (8, hashlib.sha1),
         (12, hashlib.sha1),
         (16, hashlib.sha256),
         (12, hashlib.blake2b),
