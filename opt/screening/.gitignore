@@ -1,16 +1,15 @@
 vendor/
 *.smi
 *.frag
-fig/
 *.csv
 *.sqlite
 *.bin_cache
 models/
 models
-fig/
-*.csv
 
 # Output folders
+fig/
+fig
 out/
 out
 runs/
