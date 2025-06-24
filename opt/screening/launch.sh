@@ -27,9 +27,9 @@ $(which apptainer) run \
 --env-file $ENV_FILE \
 /lustre/fs0/shared/sqsh-files/mist+pytorch+25.01+v4.sif \
 ../../submit/set_node_rank \
-python screen.py --gpus-per-node ${SLURM_GPUS_PER_NODE:-1} --num-nodes ${SLURM_NNODES:-1} $@
 # nsys profile \
-#     --output="nsys_multinode_%q{JOBID}_%q{NODE_RANK}" \
+#     --output="nsys_multinode_%q{SLURM_JOB_ID}_%q{NODE_RANK}" \
 #     --trace=cuda,cudnn,cublas,nvtx \
 #     --cuda-memory-usage=true \
 #     --duration 120 \
+python screen.py --gpus-per-node ${SLURM_GPUS_PER_NODE:-1} --num-nodes ${SLURM_NNODES:-1} $@

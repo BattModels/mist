@@ -1,0 +1,70 @@
+generation:
+  db_path: zinc_fragment/fragments.sqlite
+  n_fragments: 1000
+  reference_fragments: electrolyte.smi.frag
+  epoch_size: 1000
+  limit_db_fragments: null
+  limit_ref_fragments: null
+  batch_size: 512
+critics:
+  - model_path: models/mist-26.9M-b302p09x-bp
+    limits:
+      bp:
+        - 75
+        - null
+    model_cls: MISTFinetuned
+  - model_path: models/mist-26.9M-y3ge5pf9-mp
+    model_cls: MISTFinetuned
+    limits:
+      mp:
+        - null
+        - 0
+  - model_path: models/mist-26.9M-48kpooqf-odour
+    model_cls: MISTFinetuned
+    limits:
+      woody:
+        - 0
+        - null
+      amber:
+        - 0
+        - null
+  - model_path: models/mist-ti624ev1-moleculenet/tox21
+    model_cls: MISTFinetuned
+    limits:
+      NR-AR:
+        - null
+        - 0
+      NR-AR-LBD:
+        - null
+        - 0
+      NR-AhR:
+        - null
+        - 0
+      NR-Aromatase:
+        - null
+        - 0
+      NR-ER:
+        - null
+        - 0
+      NR-ER-LBD:
+        - null
+        - 0
+      NR-PPAR-gamma:
+        - null
+        - 0
+      SR-ARE:
+        - null
+        - 0
+      SR-ATAD5:
+        - null
+        - 0
+      SR-HSE:
+        - null
+        - 0
+      SR-MMP:
+        - null
+        - 0
+      SR-p53:
+        - null
+        - 0
+    model_cls: MISTFinetuned
