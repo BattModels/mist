@@ -395,14 +395,13 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         self.shift = chebyshev_nodes.min()
         self.parametric_var = (chebyshev_nodes - self.shift) / self.scale
 
-        # --- pre-compute basis & its inverse ------------------------
+        # pre-compute basis & its inverse
         basis = self.compute_basis(self.parametric_var)  # (n, n)
         basis_inv = torch.linalg.inv(basis)  # (n, n)
 
         # keep on buffer so it moves with .to(device) / .cuda()
-        self.register_buffer("basis_inv", basis_inv)  # ❶
+        self.register_buffer("basis_inv", basis_inv)
 
-        # ------------- MLP definition (unchanged except T concat note)
         embed_dim += 1  # +1 for temperature scalar
         self.mlp = nn.Sequential(
             nn.Linear(embed_dim, 2 * embed_dim),
@@ -422,12 +421,11 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         return torch.hstack([self.chebyshev_poly(t, i) for i in range(n)])
 
     def chebyshev_poly(self, t, i):
-        # Chebyshev polynomials of the first kind
+        """Chebyshev polynomials of the first kind."""
         return torch.cos(i * torch.arccos(t * self.scale + self.shift))
 
     def forward(self, batch):
         P_m = 0
-        # (optional) linear mixing ...................................
         if self.include_linear_mixing:
             for i in range(self.n_components):
                 P_i = self.single_substance_property(batch[f"embedding_{i}"])
@@ -437,27 +435,26 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         A_mask = batch.get("padmask_0")  # may be None
         B_mask = batch.get("padmask_1")
 
-        pair_emb = self.fusion(A_tok, B_tok, A_mask, B_mask)  # (B,d)
+        pair_emb = self.fusion(A_tok, B_tok, A_mask, B_mask)
         pair_emb = torch.hstack((batch["temperature"].view(-1, 1), pair_emb)).float()
         controls_pts = self.mlp(pair_emb)
 
         batch_size = pair_emb.size(0)
         n = self.polynomial_order
 
-        # Build P  (shape: batch × n × 1)
         P = torch.zeros(batch_size, n, 1, device=pair_emb.device)
         P[:, 1, 0] = controls_pts[:, 0]  # C₁
         P[:, 2, 0] = controls_pts[:, 1]  # C₂
         P[:, 3, 0] = controls_pts[:, 2]  # C₃
-        P[:, 4, 0] = controls_pts[:, 3]  # C₄   (if n == 5)
+        P[:, 4, 0] = controls_pts[:, 3]  # C₄
 
         B_inv = self.basis_inv.to(P.device)  # (n, n)
         B_inv = B_inv.expand(batch_size, -1, -1)  # batched view
-        c = torch.bmm(B_inv, P)  # (batch, n, 1)
+        c = torch.bmm(B_inv, P)  # Shape: (batch_size, n, 1)
 
         x = batch["composition_0"]
-        B_k = self.compute_basis(x.view(-1, 1)).unsqueeze(1)  # (batch, 1, n)
-        P_m += torch.bmm(B_k, c).squeeze(1)  # (batch, 1)
+        B_k = self.compute_basis(x.view(-1, 1)).unsqueeze(1)  # (batch_size, 1, n)
+        P_m += torch.bmm(B_k, c).squeeze(1)  # (batch_size, 1)
 
         return P_m
 
