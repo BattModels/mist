@@ -10,7 +10,7 @@ from lightning.pytorch.loggers import WandbLogger
 from ..utils.metrics import get_metrics, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
-from .normalize import MaxScaleTransform
+from .normalize import AbstractNormalizer
 from .polynomial_task_head import PolynomialHead
 
 
@@ -34,6 +34,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         optimizer: OptimizerCallable = torch.optim.AdamW,
         metrics: List[str] = ["mae", "rmse", "mape"],
         lr_schedule: LRSchedulerCallable | None = None,
+        transform: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__()
         self.freeze_encoder = freeze_encoder
@@ -46,7 +47,8 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.n_components = n_components
         self.temperature_normalization = (273, 400)
         self.basis = PolynomialHead(basis)
-        self.transform = MaxScaleTransform(mx=max_scale)
+        transform = "identity"
+        self.transform = AbstractNormalizer.get(transform, 1).eval()
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
@@ -99,22 +101,40 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         state = self.trainer.strategy.broadcast(state)
         self.transform.load_state_dict(state)
 
-    def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
+    def forward(self, batch, transform: bool = True, **kwargs):  # type: ignore[override]
         mn, mx = self.temperature_normalization
-        temperature = (batch["temperature"] - mn) / (mx - mn)
+        # normalise temperature once per mixture
+        temperature = (batch["temperature"] - mn) / (mx - mn)  # (B,)
+        batch["temperature"] = temperature
         for i in range(self.n_components):
-            embedding = self.encoder(
-                batch[f"input_ids_{i}"],
+            enc_out = self.encoder(
+                input_ids=batch[f"input_ids_{i}"],
                 attention_mask=batch[f"attention_mask_{i}"],
                 return_dict=True,
-                output_hidden_states=True,
-            ).last_hidden_state.mean(axis=1)
-            embedding = torch.hstack((temperature.view(-1, 1), embedding))
-            batch[f"embedding_{i}"] = embedding.float()
-        pred = self.task_network(batch)
+                output_hidden_states=False,
+            )
+
+            token_seq = enc_out.last_hidden_state  # (B, L_i, d)
+            padmask = batch[f"attention_mask_{i}"] == 0  # (B, L_i)  bool
+
+            # save for cross-attention fusion
+            batch[f"tokens_{i}"] = token_seq.float()
+            batch[f"padmask_{i}"] = padmask
+
+            # mean-pool tokens_i: single-molecule embedding
+            pooled = token_seq.masked_fill(padmask.unsqueeze(-1), 0).mean(dim=1)
+
+            # prepend temperature scalar (B,1) then cast to float32
+            batch[f"embedding_{i}"] = torch.hstack(
+                (temperature.view(-1, 1), pooled)
+            ).float()
+
+        #  property prediction
+        pred = self.task_network(batch)  # (B, 1)
+
         if transform:
-            pred = self.transform.forward(pred)
-        return pred  # [batch_size, 1]
+            pred = self.transform.forward(pred)  # rescale to original units
+        return pred
 
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
