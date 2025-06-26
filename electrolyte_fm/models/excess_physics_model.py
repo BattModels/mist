@@ -11,7 +11,7 @@ from ..utils.metrics import get_metrics, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
 from .normalize import AbstractNormalizer
-from .polynomial_task_head import PolynomialHead
+from .polynomial_task_head import PolynomialHead, FusionStrategy
 
 
 class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
@@ -27,10 +27,11 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         tokenizer: Optional[str] = None,
         vocab_size: Optional[int] = None,
         dropout: float = 0.1,
-        num_heads: Optional[int] = None,
+        num_heads: Optional[int] = 4,
         n_components: int = 2,
         polynomial_order: int = 4,
         max_scale: int = 1,
+        fusion: str | FusionStrategy = FusionStrategy.ATTENTION,
         basis: str | PolynomialHead = PolynomialHead.RK,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         metrics: List[str] = ["mae", "rmse", "mape"],
@@ -74,7 +75,8 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
 
         task_head_args = {
-            "embed_dim": self.hidden_size + 1,
+            "fusion": fusion,
+            "embed_dim": self.hidden_size,
             "polynomial_order": polynomial_order,
             "n_components": n_components,
             "num_heads": num_heads,

@@ -75,6 +75,22 @@ class DifferenceFusion(nn.Module):
         return AB, BA
 
 
+class FusionStrategy(Enum):
+    """Enumeration of supported embedding fusion strategies."""
+
+    ATTENTION = "attention"
+    CROSSPRODUCT = "cross_product"
+    DIFFERENCE = "difference"
+
+    def get_class(self):
+        if self == FusionStrategy.ATTENTION:
+            return CrossAttentionFusion
+        elif self == FusionStrategy.CROSSPRODUCT:
+            return CrossProductFusion
+        elif self == FusionStrategy.DIFFERENCE:
+            return DifferenceFusion
+
+
 class PolynomialPredictionTaskHead(nn.Module):
     def __init__(
         self,
@@ -119,7 +135,7 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         n_components: int = 2,
         include_linear_mixing: bool = False,
         dropout: float = 0.2,
-        fusion: str = "attention",
+        fusion: str | FusionStrategy = FusionStrategy.ATTENTION,
     ) -> None:
         assert (
             polynomial_order == 4
@@ -132,9 +148,16 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
             include_linear_mixing=include_linear_mixing,
         )
 
-        self.fusion = CrossAttentionFusion(
-            embed_dim - 1, num_heads=num_heads, dropout=dropout, pool="mean"
-        )
+        self.fusion_strategy = FusionStrategy(fusion)
+        fusion_args = {
+            "embed_dim": embed_dim,
+            "num_heads": num_heads,
+            "dropout": 0.1,
+            "pool": "mean",
+        }
+
+        self.fusion = self.fusion_strategy.get_class()(**fusion_args)
+
         n_control_points = polynomial_order + 2
         pi = torch.acos(torch.zeros(1)) * 2
         chebyshev_nodes = torch.tensor(
@@ -155,7 +178,7 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         self.register_buffer("basis_inv", basis_inv)
 
         self.mlp = nn.Sequential(
-            nn.Linear(embed_dim, 2 * embed_dim),
+            nn.Linear(embed_dim + 1, 2 * embed_dim),
             nn.Dropout(dropout),
             nn.GELU(),
             nn.Linear(2 * embed_dim, embed_dim),
@@ -203,29 +226,13 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
 
         B_inv = self.basis_inv.to(P.device)  # (n, n)
         B_inv = B_inv.expand(batch_size, -1, -1)  # batched view
-        c = torch.bmm(B_inv, P)  # Shape: (batch_size, n, 1)
+        c = torch.bmm(B_inv, P).to(embedding_BA.device)  # Shape: (batch_size, n, 1)
 
         x = batch["composition_0"]
         B_k = self.compute_basis(x.view(-1, 1)).unsqueeze(1)  # (batch_size, 1, n)
         P_m += torch.bmm(B_k, c).squeeze(1)  # (batch_size, 1)
 
         return P_m
-
-
-class FusionStrategy(Enum):
-    """Enumeration of supported polynomial heads."""
-
-    ATTENTION = "attention"
-    CROSSPRODUCT = "cross_product"
-    DIFFERENCE = "difference"
-
-    def get_class(self):
-        if self == FusionStrategy.ATTENTION:
-            return CrossAttentionFusion
-        elif self == FusionStrategy.CROSSPRODUCT:
-            return CrossProductFusion
-        elif self == FusionStrategy.DIFFERENCE:
-            return DifferenceFusion
 
 
 class PolynomialHead(Enum):
