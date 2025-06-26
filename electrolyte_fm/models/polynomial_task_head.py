@@ -18,12 +18,10 @@ class CrossAttentionFusion(nn.Module):
         pool: str = "mean",
     ) -> None:
         super().__init__()
-        self.cross_ab = nn.MultiheadAttention(
+        self.cross = nn.MultiheadAttention(
             embed_dim, num_heads, dropout=dropout, batch_first=True
         )
-        self.cross_ba = nn.MultiheadAttention(
-            embed_dim, num_heads, dropout=dropout, batch_first=True
-        )
+
         self.pool = pool.lower()
         if self.pool not in {"mean", "max", "cls"}:
             raise ValueError("pool must be 'mean', 'max', or 'cls'")
@@ -54,11 +52,11 @@ class CrossAttentionFusion(nn.Module):
         A_padmask: torch.Tensor = None,  # Shape: (batch_size, seq_len_A)
         B_padmask: torch.Tensor = None,
     ):
-        AB_ctx, _ = self.cross_ab(
+        AB_ctx, _ = self.cross(
             query=A_tokens, key=B_tokens, value=B_tokens, key_padding_mask=B_padmask
         )
 
-        BA_ctx, _ = self.cross_ba(
+        BA_ctx, _ = self.cross(
             query=B_tokens, key=A_tokens, value=A_tokens, key_padding_mask=A_padmask
         )
 
@@ -304,9 +302,6 @@ class BezierPredictionTaskHead(PolynomialPredictionTaskHead):
             nn.Linear(2 * embed_dim, embed_dim),
             nn.Dropout(dropout),
             nn.GELU(),
-            nn.Linear(embed_dim, embed_dim),
-            nn.Dropout(dropout),
-            nn.GELU(),
             nn.Linear(embed_dim, 1),
         )
 
@@ -381,7 +376,7 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         )
 
         self.fusion = CrossAttentionFusion(
-            embed_dim, num_heads=num_heads, dropout=dropout, pool="mean"
+            embed_dim - 1, num_heads=num_heads, dropout=dropout, pool="mean"
         )
 
         pi = torch.acos(torch.zeros(1)) * 2
@@ -402,15 +397,11 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         # keep on buffer so it moves with .to(device) / .cuda()
         self.register_buffer("basis_inv", basis_inv)
 
-        embed_dim += 1  # +1 for temperature scalar
         self.mlp = nn.Sequential(
             nn.Linear(embed_dim, 2 * embed_dim),
             nn.Dropout(dropout),
             nn.GELU(),
             nn.Linear(2 * embed_dim, embed_dim),
-            nn.Dropout(dropout),
-            nn.GELU(),
-            nn.Linear(embed_dim, embed_dim),
             nn.Dropout(dropout),
             nn.GELU(),
             nn.Linear(embed_dim, polynomial_order - 2),

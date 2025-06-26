@@ -27,6 +27,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         tokenizer: Optional[str] = None,
         vocab_size: Optional[int] = None,
         dropout: float = 0.1,
+        num_heads: Optional[int] = None,
         n_components: int = 2,
         polynomial_order: int = 4,
         max_scale: int = 1,
@@ -45,6 +46,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.lr_schedule = lr_schedule
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
         self.n_components = n_components
+        self.num_heads = num_heads
         self.temperature_normalization = (273, 400)
         self.basis = PolynomialHead(basis)
         transform = "identity"
@@ -72,9 +74,10 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
 
         task_head_args = {
-            "embed_dim": self.hidden_size,
+            "embed_dim": self.hidden_size + 1,
             "polynomial_order": polynomial_order,
             "n_components": n_components,
+            "num_heads": num_heads,
             "include_linear_mixing": self.include_linear_mixing,
         }
 
