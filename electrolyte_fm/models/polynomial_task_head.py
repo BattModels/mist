@@ -257,6 +257,10 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         # Property values at 2 control points closer to x_B = 0
         P2 = self.mlp(embedding_BA)
 
+        if self.fusion_strategy is FusionStrategy.DIFFERENCE:
+            P1 = self.mlp(embedding_AB) - self.mlp(torch.zeros_like(embedding_AB))
+            P1 = self.mlp(embedding_BA) - self.mlp(torch.zeros_like(embedding_BA))
+
         batch_size = embedding_BA.size()[0]
         P = torch.tile(torch.zeros_like(self.parametric_var), (batch_size, 1, 1))
         P[:, 1, :] = P1[:, 0].unsqueeze(1)
