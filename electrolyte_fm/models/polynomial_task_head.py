@@ -58,15 +58,45 @@ class CrossAttentionFusion(nn.Module):
 
 
 class CrossProductFusion(nn.Module):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int = 8,
+        dropout: float = 0.1,
+        pool: str = "mean",
+    ) -> None:
+        super().__init__()
+        self.down_projection = nn.Linear(embed_dim // num_heads, 3, bias=False)
+        self.up_projection = nn.Linear(3, embed_dim // num_heads, bias=False)
+        self.num_heads = num_heads
+
     def forward(self, batch):
-        emb_A = batch["embedding_0"]
-        emb_B = batch["embedding_1"]
+        H = self.num_heads
+        emb_A = batch["embedding_0"]  # Shape: [batch_size, emb_size]
+        emb_B = batch["embedding_1"]  # Shape: [batch_size, emb_size]
+        B, D = emb_A.shape
+        assert D % H == 0, "embedding dimension must be divisible by num heads"
+        emb_A = emb_A.view(B, H, D // H)
+        emb_A = self.down_projection(emb_A)
+        emb_B = emb_B.view(B, H, D // H)
+        emb_B = self.down_projection(emb_B)
         AB = torch.linalg.cross(emb_A, emb_B)
         BA = torch.linalg.cross(emb_B, emb_A)
+        AB = self.up_projection(AB).reshape(B, D)
+        BA = self.up_projection(BA).reshape(B, D)
         return AB, BA
 
 
 class DifferenceFusion(nn.Module):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int = 8,
+        dropout: float = 0.1,
+        pool: str = "mean",
+    ) -> None:
+        super().__init__()
+
     def forward(self, batch):
         emb_A = batch["embedding_0"]
         emb_B = batch["embedding_1"]

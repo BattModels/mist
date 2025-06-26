@@ -30,7 +30,6 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         num_heads: Optional[int] = 4,
         n_components: int = 2,
         polynomial_order: int = 4,
-        max_scale: int = 1,
         fusion: str | FusionStrategy = FusionStrategy.ATTENTION,
         basis: str | PolynomialHead = PolynomialHead.RK,
         optimizer: OptimizerCallable = torch.optim.AdamW,
@@ -128,11 +127,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
 
             # mean-pool tokens_i: single-molecule embedding
             pooled = token_seq.masked_fill(padmask.unsqueeze(-1), 0).mean(dim=1)
-
-            # prepend temperature scalar (B,1) then cast to float32
-            batch[f"embedding_{i}"] = torch.hstack(
-                (temperature.view(-1, 1), pooled)
-            ).float()
+            batch[f"embedding_{i}"] = pooled
 
         #  property prediction
         pred = self.task_network(batch)  # (B, 1)
