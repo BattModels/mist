@@ -66,24 +66,34 @@ class CrossProductFusion(nn.Module):
         pool: str = "mean",
     ) -> None:
         super().__init__()
-        self.down_projection = nn.Linear(embed_dim // num_heads, 3, bias=False)
-        self.up_projection = nn.Linear(3, embed_dim // num_heads, bias=False)
+        if embed_dim % num_heads:
+            raise ValueError("embed_dim must be divisible by num_heads")
         self.num_heads = num_heads
+        self.head_dim = embed_dim // self.num_heads
+        self.down_projection = nn.ModuleList(
+            nn.Linear(self.head_dim, 3, bias=False) for _ in range(self.num_heads)
+        )
+        self.up_projection = nn.ModuleList(
+            nn.Linear(3, self.head_dim, bias=False) for _ in range(self.num_heads)
+        )
+
+    def _pair_cross(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        pieces = []
+        for h in range(self.num_heads):
+            a3 = self.down_projection[h](a[:, h])  # (B, 3)
+            b3 = self.down_projection[h](b[:, h])  # (B, 3)
+            c3 = torch.cross(a3, b3, dim=-1)  # (B, 3)
+            pieces.append(self.up_projection[h](c3).unsqueeze(1))  # (B,1, D)
+        return torch.cat(pieces, dim=1)  # (B, H,  D)
 
     def forward(self, batch):
-        H = self.num_heads
-        emb_A = batch["embedding_0"]  # Shape: [batch_size, emb_size]
-        emb_B = batch["embedding_1"]  # Shape: [batch_size, emb_size]
+        emb_A, emb_B = batch["embedding_0"], batch["embedding_1"]  # (B, D)
         B, D = emb_A.shape
-        assert D % H == 0, "embedding dimension must be divisible by num heads"
-        emb_A = emb_A.view(B, H, D // H)
-        emb_A = self.down_projection(emb_A)
-        emb_B = emb_B.view(B, H, D // H)
-        emb_B = self.down_projection(emb_B)
-        AB = torch.linalg.cross(emb_A, emb_B)
-        BA = torch.linalg.cross(emb_B, emb_A)
-        AB = self.up_projection(AB).reshape(B, D)
-        BA = self.up_projection(BA).reshape(B, D)
+        H, d = self.num_heads, self.head_dim
+        emb_A = emb_A.reshape(B, H, d)
+        emb_B = emb_B.reshape(B, H, d)
+        AB = self._pair_cross(emb_A, emb_B).reshape(B, D)
+        BA = -1 * AB
         return AB, BA
 
 
