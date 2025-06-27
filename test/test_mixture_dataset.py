@@ -81,7 +81,7 @@ def test_dataloader_iteration(tmp_dataset):
         dm.val_dataloader(),
         dm.test_dataloader(),
     ]:
-        batch = next(iter(split_loader))  # one forward pass is enough
+        batch = next(iter(split_loader))
         required_keys = {
             "input_ids_0",
             "attention_mask_0",
@@ -93,6 +93,5 @@ def test_dataloader_iteration(tmp_dataset):
             "target_mask",
         }
         assert required_keys.issubset(batch.keys())
-        # dtype sanity
         assert batch["target"].dtype == torch.float32
         assert batch["target_mask"].dtype == torch.bool
