@@ -27,4 +27,5 @@ def test_zeros():
 def test_basis():
     m = BezierFourthPredictionTaskHead(32, polynomial_order=4)
     b = m.compute_basis(m.parametric_var)
-    assert torch.linalg.matrix_rank(b) == m.polynomial_order
+    # polyn order excludes control points at zeros
+    assert torch.linalg.matrix_rank(b) == m.polynomial_order + 2
