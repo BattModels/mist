@@ -7,7 +7,12 @@ from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 
-from ..utils.metrics import get_metrics, masked_metric_update
+from ..utils.metrics import (
+    get_metrics,
+    masked_loss,
+    bootstrap_collection,
+    masked_metric_update,
+)
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
 from .normalize import AbstractNormalizer
@@ -89,7 +94,6 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             metrics,
             "regression",
             num_outputs=1,
-            target_channels="ln k",
         )
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")
@@ -242,3 +246,98 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 "lr_scheduler": {"scheduler": schedule(optimizer), "interval": "step"},
             }
         return optimizer
+
+
+class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
+    def __init__(
+        self,
+        encoder_ckpt: str,
+        freeze_encoder: bool = False,
+        include_linear_mixing: bool = True,
+        tokenizer: Optional[str] = None,
+        vocab_size: Optional[int] = None,
+        dropout: float = 0.1,
+        num_heads: Optional[int] = 4,
+        n_components: int = 2,
+        n_targets: int = 2,
+        polynomial_order: int = 4,
+        fusion: str | FusionStrategy = FusionStrategy.ATTENTION,
+        basis: str | PolynomialHead = PolynomialHead.RK,
+        optimizer: OptimizerCallable = torch.optim.AdamW,
+        metrics: List[str] = ["mae", "rmse", "mape"],
+        lr_schedule: LRSchedulerCallable | None = None,
+        transform: Optional[str | list[str]] = None,
+    ) -> None:
+        super().__init__()
+        self.freeze_encoder = freeze_encoder
+        self.encoder_ckpt = encoder_ckpt
+        # self.include_linear_mixing = include_linear_mixing
+        self.tokenizer = load_tokenizer(tokenizer or encoder_ckpt)
+        self.optimizer = optimizer
+        self.lr_schedule = lr_schedule
+        self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
+        self.n_components = n_components
+        self.num_heads = num_heads
+        self.temperature_normalization = (273, 400)
+        # self.basis = PolynomialHead(basis)
+        transform = "identity"
+        self.transform = AbstractNormalizer.get(transform, 1).eval()
+
+        # Load Encoder Model
+        if Path(encoder_ckpt).exists():
+            self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
+        else:
+            from transformers import AutoModel
+
+            self.encoder = AutoModel.from_pretrained(
+                encoder_ckpt,
+                trust_remote_code=True,
+            )
+
+        self.hidden_size = self.encoder.config.hidden_size
+        # Validate the vocab size
+        if vocab_size is not None:
+            if hasattr(self.encoder, "config") and hasattr(
+                self.encoder.config, "vocab_size"
+            ):
+                assert (
+                    self.encoder.config.vocab_size == vocab_size
+                ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
+
+        task_head_args = [
+            {
+                "fusion": fusion,
+                "embed_dim": self.hidden_size,
+                "polynomial_order": polynomial_order,
+                "n_components": n_components,
+                "num_heads": num_heads,
+                "include_linear_mixing": i,
+            }
+            for i in self.include_linear_mixing
+        ]
+
+        self.task_networks = [self.basis.get_class()(**t) for t in task_head_args]
+        self.lossfn = torch.nn.MSELoss(reduction="mean")
+
+        metrics = get_metrics(
+            metrics,
+            "regression",
+            num_outputs=1,
+        )
+        metrics = bootstrap_collection(metrics, num_bootstraps=100)
+        self.train_metrics = metrics.clone(prefix="train/")
+        self.val_metrics = metrics.clone(prefix="val/")
+        self.test_metrics = metrics.clone(prefix="test/")
+
+    def _scaled_pred_loss(self, batch):
+        """Compute loss before transforming the model's predictions"""
+        preds = self.forward(batch, transform=False)
+        target = batch["target"]
+        target = self.transform.inverse(target)
+        loss = masked_loss(self.lossfn, preds, target, batch["target_mask"])
+        preds = self.transform.forward(preds)
+        return preds, loss
+
+    def task_network(self, batch):
+        pred = torch.hstack(tuple(t(batch) for t in self.task_networks))
+        return pred
