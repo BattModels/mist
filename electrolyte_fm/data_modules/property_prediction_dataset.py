@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from lightning import LightningDataModule
 from datasets import Dataset
 from transformers import DataCollatorWithPadding
+from functools import partial
 
 from ..utils.tokenizer import load_tokenizer
 from .utils import (
@@ -31,6 +32,8 @@ class PropertyPredictionDataModule(LightningDataModule):
         additonal_columns: Optional[List[str]] = None,
         include_encoding: bool = False,
         randomize: bool = False,
+        truncation: bool = False,
+        max_seq_length: int = 510,
     ):
         super().__init__()
 
@@ -39,6 +42,11 @@ class PropertyPredictionDataModule(LightningDataModule):
         )
         self.token_collator = DataCollatorWithPadding(self.tokenizer)
         self.vocab_size = len(self.tokenizer)
+        self.truncation = truncation
+        self.max_length = max_seq_length
+        self.tokenize = partial(
+            self.tokenizer, truncation=self.truncation, max_length=self.max_length
+        )
 
         self.smi_column = smi_column
         self.target_columns = target_columns
@@ -92,7 +100,7 @@ class PropertyPredictionDataModule(LightningDataModule):
 
         # Tokenize
         ds = ds.map(
-            self.tokenizer,
+            self.tokenize,
             batched=is_fast(self.tokenizer),
             input_columns=self.smi_column,
         )
@@ -105,7 +113,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def collate_fn(self, batch):
-        tokenizer = self.tokenizer
+        tokenizer = self.tokenize
         encoding = self.encoding
         if self.randomize:
             for idx in range(len(batch)):

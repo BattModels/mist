@@ -7,8 +7,8 @@ import torch
 from smirk import SmirkTokenizerFast
 from transformers import AutoConfig, AutoModel, AutoTokenizer, DataCollatorWithPadding
 
-from electrolyte_fm.models.normalize import AbstractNormalizer
-from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
+from .prediction_task_head import PredictionTaskHead
+from .normalize import AbstractNormalizer
 
 AutoTokenizer.register("SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast)
 

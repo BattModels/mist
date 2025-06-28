@@ -29,7 +29,7 @@ function hydrocarbon_trends(df; qm_model="")
     axes = [
         Symbol("g298" * qm_model) => L"$G\degree$\n[eV]",
         Symbol("alpha" * qm_model) => L"$\alpha$\n$[\alpha_0^3]$",
-        Symbol("gap" * qm_model) => L"Gap\n[eV]$$",
+        # Symbol("gap" * qm_model) => L"Gap\n[eV]$$",
         Symbol("homo" * qm_model) => L"HOMO\n[eV]$$",
         :mp => L"$$Melt\n[$\degree C$ ]",
         :bp => L"$$Boil\n[$\degree C$ ]",
@@ -59,7 +59,7 @@ function hydrocarbon_trends(df; qm_model="")
     foreach(groupby(df, :type)) do gdf
         for (col, ax) in pairs(axes)
             y = convert_units(gdf[:, col], col)
-            errorlines!(ax, gdf.n_carbon, y;
+            lines!(ax, gdf.n_carbon, mean.(y);
                 label=string(first(gdf.type)),
                 color=levelcode.(gdf.type),
                 colormap,
@@ -437,7 +437,7 @@ function figure_fatty_acids(df; omega=3, alpha=0.8, qm_model="")
     # Trends with ω-n
     axes = [
         Symbol("g298" * qm_model) => L"$G\degree$\n[eV]",
-        Symbol("mu" * qm_model) => L"$\mu$\n[D]",
+        Symbol("alpha" * qm_model) => L"$\alpha$\n$[\alpha_0^3]$",
         # Symbol("alpha" * qm_model) => L"$\alpha$\n$[\alpha_0^3]$",
         # Symbol("gap" * qm_model) => L"Gap\n[eV]$$",
         :mp => L"$$Melt\n[$\degree C$ ]",
@@ -502,7 +502,7 @@ function figure_fatty_acids(df; omega=3, alpha=0.8, qm_model="")
         yminorticks=IntervalsBetween(5),
     )
     ax_fp_mu = Axis(gl_cross[1, 2];
-        xlabel=L"Dipole Moment [D]$$",
+        xlabel=L"$\alpha$ [$\alpha_0^3$]",
         ylabel=L"Flash Point [$\degree C$ ]",
         xlabelvisible=false,
         xticksvisible=false,
@@ -521,7 +521,7 @@ function figure_fatty_acids(df; omega=3, alpha=0.8, qm_model="")
         yminorticks=IntervalsBetween(5),
     )
     ax_mp_mu = Axis(gl_cross[2, 2];
-        xlabel=L"Dipole Moment [D]$$",
+        xlabel=L"$\alpha$ [$\alpha_0^3$]",
         ylabel=L"Melting Point [$\degree C$ ]",
         ylabelvisible=false,
         yticksvisible=false,
@@ -540,14 +540,14 @@ function figure_fatty_acids(df; omega=3, alpha=0.8, qm_model="")
     )
 
     sort!(df_unsat, :saturation)
-    mu = mean.(df_unsat[:, Symbol("mu" * qm_model)])
+    alpha_chn = mean.(df_unsat[:, Symbol("mu" * qm_model)])
     scatter!(ax_fp_c, df_unsat.c, mean.(df_unsat.fp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
-    scatter!(ax_fp_mu, mu, mean.(df_unsat.fp);
+    scatter!(ax_fp_mu, alpha_chn, mean.(df_unsat.fp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha,
@@ -560,7 +560,7 @@ function figure_fatty_acids(df; omega=3, alpha=0.8, qm_model="")
         alpha,
         MISTStyle.cb_attrs(cb_sat, Scatter)...
     )
-    scatter!(ax_mp_mu, mu, mean.(df_unsat.mp);
+    scatter!(ax_mp_mu, alpha_chn, mean.(df_unsat.mp);
         color=df_unsat.saturation,
         marker=:circle,
         alpha,

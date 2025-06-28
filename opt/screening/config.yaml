@@ -1,0 +1,37 @@
+generation:
+  db_path: zinc_fragment/fragments.sqlite
+  n_fragments: 1000
+  reference_fragments: electrolyte.smi.frag
+  epoch_size: 1200
+  limit_db_fragments: null
+  limit_ref_fragments: null
+  batch_size: 768
+critics:
+  - model_path: models/mist-26.9M-b302p09x-bp
+    limits:
+      bp:
+        - 75
+        - null
+    model_cls: MISTFinetuned
+  - model_path: models/mist-26.9M-y3ge5pf9-mp
+    limits:
+      mp:
+        - null
+        - 0
+    model_cls: MISTFinetuned
+  - model_path: models/mist-x4i8qzuq-qm9
+    limits:
+      gap:
+        - 0.183964066
+        - null
+      homo:
+        - null
+        - -0.257681261
+      lumo:
+        - null
+        - 0.1171
+    model_cls: MISTFinetuned
+  - model_path: models/mist-ti624ev1-moleculenet/tox21
+    model_cls: MISTFinetuned
+    all_passing: True
+    pass_positive: False

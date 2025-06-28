@@ -2,19 +2,18 @@ module MISTStyle
 
 using Makie
 using CategoricalArrays: levels
-using GLMakie: GLMakie
 using CairoMakie: CairoMakie
 
 const pt = 3 / 4
 const inch = 96
 
-export pt, inch, categorical_ticks
+export pt, inch, sublabel!
 
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
-    mkpath(fig_dir)
+    mkpath(dirname(joinpath(fig_dir, name)))
+    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=CairoMakie)
     save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1, backend=CairoMakie)
-    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=GLMakie)
     return nothing
 end
 
@@ -86,6 +85,9 @@ const CAT_COLORS = cgrad(
 UM_COLORS = (;
     blue=colorant"#00274C",
     maize=colorant"#FFCB05",
+    red=colorant"#9A3324",
+    orange=colorant"#D86018",
+    arboretum=colorant"#2F65A7",
 )
 
 
@@ -168,9 +170,6 @@ function theme()
         Scatter=(;
             markersize=5pt,
             marker=:x,
-        ),
-        BoxPlot=(;
-            markersize=4pt,
         ),
         ErrorLines=(;
             whiskerwidth=3,

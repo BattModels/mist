@@ -1,33 +1,20 @@
-import numpy as np
-import pandas as pd
 import itertools
 import os
-
 from typing import List, Union
+
+import matplotlib.pyplot as plt
+import mpltern  # noqa
+import numpy as np
+import pandas as pd
 import torch
 import tqdm
 from electrolyte_fm.data_modules import ComponentDataModule
-import matplotlib.pyplot as plt
 from electrolyte_fm.models.model_utils import DeepSpeedMixin
-from lipari_cm import lipari10_cmap
 from matplotlib.colors import Normalize
 
-plt.rcParams["figure.constrained_layout.use"] = False
-plt.rcParams["xtick.labelsize"] = 5
-plt.rcParams["ytick.labelsize"] = 5
-plt.rcParams["lines.markersize"] = 2
-plt.rcParams["lines.linewidth"] = 0.1
-plt.rcParams["font.size"] = 6
-plt.rcParams["axes.titlesize"] = 5
-plt.rcParams["axes.labelsize"] = 5
-plt.rcParams["xtick.labelsize"] = 5
-plt.rcParams["ytick.labelsize"] = 5
-plt.rcParams["legend.fontsize"] = 4
-plt.rcParams["font.family"] = "Serif"
-plt.rcParams["grid.linewidth"] = 0.1
-plt.rcParams["figure.dpi"] = 500
-plt.rcParams["savefig.dpi"] = 500
-plt.rcParams["mathtext.fontset"] = "stix"
+from lipari_cm import lipari10_cmap
+
+plt.style.use("./mist.mplstyle")
 
 
 def softmax_rowwise(arr):
@@ -136,7 +123,7 @@ targets = {
 
 target_names = {
     "transferance": "$t_+$",
-    "conductivity": "$\sigma [mS]$",
+    "conductivity": "$\sigma$ [mS/cm]",
     "product": "$t_+ \cdot \sigma$",
     "diffusioncoeff": "$\mathcal{D}_{Li} [cm^2/s]$",
 }
@@ -240,7 +227,7 @@ def plot_vector_fields(data_files: Union[List, str], target: str):
     n_files = len(data_files)
     n_cols = max(1, int(0.5 * n_files))
     fig, axes = plt.subplots(
-        2, n_cols, figsize=(n_files, 3.2), subplot_kw={"projection": "ternary"}
+        2, n_cols, figsize=(0.8 * n_files, 3), subplot_kw={"projection": "ternary"}
     )
     fig.subplots_adjust(left=0.075, right=0.85, wspace=1.0, hspace=0.5)
 
@@ -261,7 +248,7 @@ def plot_vector_fields(data_files: Union[List, str], target: str):
         composition = float(composition.split(".")[0])
         col = int(composition // 5) - 1
         composition = 1e-2 * composition
-        composition = "$\mathbf{x_{" + salt + "}}$" + f"= {composition:.2f}"
+        composition = "$\mathbf{x_{" + salt + "}}$" + f"$= {composition:.2f}$"
         row = i // n_cols
 
         ax = axes[row, col] if n_files > 1 else axes
@@ -308,14 +295,15 @@ def plot_vector_fields(data_files: Union[List, str], target: str):
         ax.set_tlabel("PC", fontweight="bold")
         ax.set_llabel("DMC", fontweight="bold")
         ax.set_rlabel("EC", fontweight="bold")
-        ax.set_title(
-            composition,
-            pad=5,
-        )
+        ax.set_title(composition, size=8)
 
     # Add a common color bar outside of the loop, aligned to the right of all plots
-    cbar_axis = fig.add_axes([0.94, 0.1, 0.015, 0.8])  # Adjust position as needed
+    cbar_axis = fig.add_axes([1.0, 0.1, 0.015, 0.9])  # Adjust position as needed
     cbar = fig.colorbar(cs, cax=cbar_axis)
-    cbar.ax.set_title(target_names[target], pad=5)
-
-    plt.savefig(f"{target}_salt_composition.png", bbox_inches="tight", dpi=500)
+    cbar.set_label(
+        target_names[target],
+        weight="bold",
+    )
+    cbar.ax.tick_params()
+    cbar.solids.set_rasterized(True)
+    plt.savefig(f"{target}_salt_composition.pdf", bbox_inches="tight", dpi=500)

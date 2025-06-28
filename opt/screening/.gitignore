@@ -1,0 +1,13 @@
+vendor/
+*.smi
+*.frag
+out/
+out
+fig/
+*.csv
+*.sqlite
+*.bin_cache
+models/
+models
+fig/
+*.csv
