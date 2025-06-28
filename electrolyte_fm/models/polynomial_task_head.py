@@ -23,7 +23,7 @@ class CrossAttentionFusion(nn.Module):
 
     def _pool(self, x, mask=None):
         if self.pool == "cls":  # use first token
-            return x[:, 0]  # Shape: (batch_size, d)
+            return x[:, 0]  # [batch_size, d]
 
         if mask is not None:  # set pads to −inf / 0
             if self.pool == "max":
@@ -32,7 +32,7 @@ class CrossAttentionFusion(nn.Module):
                 x = x.masked_fill(mask.unsqueeze(-1), 0)
 
         if self.pool == "max":
-            return x.max(dim=1).values  # Shape: (batch_size, d)
+            return x.max(dim=1).values  # [batch_size, d]
 
         # mean pooling
         if mask is None:
@@ -52,7 +52,7 @@ class CrossAttentionFusion(nn.Module):
             query=B_tokens, key=A_tokens, value=A_tokens, key_padding_mask=A_padmask
         )
 
-        pooled_AB = self._pool(AB_ctx, A_padmask)  # Shape: (batch_size, d)
+        pooled_AB = self._pool(AB_ctx, A_padmask)  # [batch_size, d]
         pooled_BA = self._pool(BA_ctx, B_padmask)
         return pooled_AB, pooled_BA
 
@@ -80,14 +80,14 @@ class CrossProductFusion(nn.Module):
     def _pair_cross(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         pieces = []
         for h in range(self.num_heads):
-            a3 = self.down_projection[h](a[:, h])  # (B, 3)
-            b3 = self.down_projection[h](b[:, h])  # (B, 3)
-            c3 = torch.cross(a3, b3, dim=-1)  # (B, 3)
-            pieces.append(self.up_projection[h](c3).unsqueeze(1))  # (B,1, D)
-        return torch.cat(pieces, dim=1)  # (B, H,  D)
+            a3 = self.down_projection[h](a[:, h])  # [batch_size, 3]
+            b3 = self.down_projection[h](b[:, h])  # [batch_size, 3]
+            c3 = torch.cross(a3, b3, dim=-1)  # [batch_size, 3]
+            pieces.append(self.up_projection[h](c3).unsqueeze(1))  # [batch_size, 1, D]
+        return torch.cat(pieces, dim=1)  # [batch_size, H, D]
 
     def forward(self, batch):
-        emb_A, emb_B = batch["embedding_0"], batch["embedding_1"]  # (B, D)
+        emb_A, emb_B = batch["embedding_0"], batch["embedding_1"]
         B, D = emb_A.shape
         H, d = self.num_heads, self.head_dim
         emb_A = emb_A.reshape(B, H, d)
@@ -211,8 +211,8 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         self.parametric_var = (chebyshev_nodes - self.shift) / self.scale
 
         # pre-compute basis & its inverse
-        basis = self.compute_basis(self.parametric_var)  # (n, n)
-        basis_inv = torch.linalg.inv(basis)  # (n, n)
+        basis = self.compute_basis(self.parametric_var)
+        basis_inv = torch.linalg.inv(basis)
 
         # keep on buffer so it moves with .to(device) / .cuda()
         self.register_buffer("basis_inv", basis_inv)
@@ -271,13 +271,13 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         P[:, 3, :] = P2[:, 0].unsqueeze(1)
         P[:, 4, :] = P2[:, -1].unsqueeze(1)
 
-        B_inv = self.basis_inv.to(P.device)  # (n, n)
+        B_inv = self.basis_inv.to(P.device)  # [n, n]
         B_inv = B_inv.expand(batch_size, -1, -1)  # batched view
-        c = torch.bmm(B_inv, P).to(embedding_BA.device)  # Shape: (batch_size, n, 1)
+        c = torch.bmm(B_inv, P).to(embedding_BA.device)  # [batch_size, n, 1]
 
         x = batch["composition_0"]
-        B_k = self.compute_basis(x.view(-1, 1)).unsqueeze(1)  # (batch_size, 1, n)
-        P_m += torch.bmm(B_k, c).squeeze(1)  # (batch_size, 1)
+        B_k = self.compute_basis(x.view(-1, 1)).unsqueeze(1)  # [batch_size, 1, n]
+        P_m += torch.bmm(B_k, c).squeeze(1)  # [batch_size, 1]
 
         return P_m
 
