@@ -1,14 +1,13 @@
 module BayesianScaling
 
 using Dates: Dates
-using Statistics: Statistics, mean, std, median
+using Statistics: Statistics
 using Random: Random, shuffle!, AbstractRNG
 using UUIDs: uuid4
 
-using Makie
 using DataFrames
 using Distributions: Distributions, Distribution, Normal, Uniform, LogNormal, MvLogNormal, MvNormal, Exponential, truncated, logpdf, loglikelihood, convolve
-using StatsBase: StatsBase, quantile, sample, mean_and_std, autocor, ecdf, aic, bic, response, coefnames
+using StatsBase: StatsBase, quantile, sample, mean, std, median, mean_and_std, autocor, ecdf, aic, bic, response, coefnames
 using StatsModels: StatsModels, apply_schema, schema, FormulaTerm, @formula
 using Optimization: OptimizationProblem, OptimizationFunction, LBFGS, solve
 using OnlineStats: OnlineStats, OnlineStat, KHist, fit!
@@ -41,10 +40,6 @@ include("checks.jl")
 # Neural Scaling Laws
 include("scaling.jl")
 include("models.jl")
-
-# Analysis of fitted curves
-include("plots.jl")
-# include("figures/summary.jl")
 
 # Planning Tools for LLM Training Campaigns
 include("analysis.jl")

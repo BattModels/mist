@@ -27,6 +27,7 @@ end
 
 """ Helper function to get the label of an plot element """
 label(x) = x.label[]
+label(x::AbstractVector) = map(label, x)
 
 categorical_ticks(x) = (1:length(levels(x)), levels(x))
 
@@ -65,6 +66,7 @@ include("errorcross.jl")
 include("powerlaw.jl")
 include("tantext.jl")
 include("quadrant.jl")
+include("predictionband.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [

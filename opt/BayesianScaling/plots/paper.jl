@@ -4,10 +4,9 @@ using DataFrames
 using StatsBase
 using JLD2: jldopen
 using BayesianScaling
-using BayesianScaling: pf_day, get_nbins
-using PrettyTables: PrettyTable
+using BayesianScaling: pf_day
 
-function mark_model!(ax_scale, ax_compute; model_loss, d_model, ff_ratio, n_layers, steps, eff_batch_size, colorbar, h_loss, kwargs...)
+function mark_model!(ax_scale, ax_compute; model_label=missing, model_loss, d_model, ff_ratio, n_layers, steps, eff_batch_size, colorbar, h_loss, kwargs...)
     N = BayesianScaling.non_embedding_size(d_model, ff_ratio * d_model, n_layers)
     D = steps * eff_batch_size
     C = 6 * float(N) * float(D)
@@ -21,8 +20,12 @@ function mark_model!(ax_scale, ax_compute; model_loss, d_model, ff_ratio, n_laye
         strokecolor=h_loss.strokecolor,
         markersize=@lift(2 * $(h_loss.markersize)),
     )
-    h_scale = scatter!(ax_scale, C ./ pf_day, N; kwargs...)
-    h_compute = scatter!(ax_compute, C ./ pf_day, model_loss; kwargs...)
+    h_scale = scatter!(ax_scale, C / pf_day, N; kwargs...)
+    h_compute = scatter!(ax_compute, C / pf_day, model_loss; kwargs...)
+    if !ismissing(model_label)
+        text, offset = model_label
+        text!(ax_compute, Point2(C/ pf_day, model_loss); text, offset, align=(:center, :bottom))
+    end
     return h_scale, h_compute
 end
 
@@ -39,9 +42,9 @@ function plot_scaling_params!(f, chains)
     a = @. β / (α + β)
     b = @. α / (α + β)
     balance = @. α / β
-    bins = get_nbins(:scott, a)
+    # bins = get_nbins(:scott, a)
 
-    hargs = (; bins, normalization=:probability, color=MISTStyle.UM_COLORS.blue)
+    hargs = (; normalization=:probability, color=MISTStyle.UM_COLORS.blue)
     ax_args = (;
         ylabel=L"p(\cdot)",
         yticks=WilkinsonTicks(3),
@@ -61,18 +64,18 @@ function plot_scaling_params!(f, chains)
     elem = map(enumerate(prior_works)) do (color, (label, _))
         LineElement(; color, label, vargs...)
     end
-    Legend(gl[1, 1:2], elem, MISTStyle.label.(elem);
+    Legend(gl[2, 1:2], elem, MISTStyle.label.(elem);
         tellwidth=true,
         tellheight=true,
-        nbanks=2,
+        nbanks=3,
         halign=:center,
         margin=2pt .* (1, 1, 1, 1),
         orientation=:horizontal,
     )
 
-   ax_a = Axis(gl[2, 1];
+   ax_a = Axis(gl[1, 1];
         limits=(nothing, (0, nothing)),
-        xlabel=L"\frac{\alpha \beta}{\alpha + \beta}",
+        xlabel=L"Convergence Rate: $\frac{\alpha \beta}{\alpha + \beta}$",
         ax_args...
     )
     for (color, (label, s)) in enumerate(prior_works)
@@ -82,9 +85,9 @@ function plot_scaling_params!(f, chains)
     hist!(ax_a, vec(ζ); hargs...)
 
 
-    ax = Axis(gl[2, 2];
+    ax = Axis(gl[1, 2];
         limits=(nothing, (0, nothing)),
-        xlabel=L"\frac{\alpha}{\beta}",
+        xlabel=L"Data/Model Scaling: $\frac{\alpha}{\beta}$",
         ax_args...
     )
     hideydecorations!(ax, grid=false)
@@ -178,7 +181,7 @@ function figure_bayesian(data;
     p=0.95,
     n_samples=500,
 )
-    f = Figure(; size=(4.5inch, 3inch))
+    f = Figure(; size=(680, 168))
 
     model = data["model"]
     chains = data["chains"]
@@ -191,8 +194,8 @@ function figure_bayesian(data;
     model_flops = @. 6 * float(df.model_size) * float(df.data_size)
 
     gl = GridLayout(f[1, 1])
-    sublabel!(gl[1,1, TopLeft()], "a"; left=5)
-    sublabel!(gl[1,2, TopLeft()], "b"; left=5)
+    # sublabel!(gl[1,1, TopLeft()], "a"; left=5)
+    # sublabel!(gl[1,2, TopLeft()], "b"; left=5)
     ax_compute = Axis(gl[1, 1];
         xlabel="Compute Budget [PF-Days]",
         limits=(extrema(C) ./ pf_day, nothing),
@@ -257,6 +260,7 @@ function figure_bayesian(data;
 
     # 4yzwys2z
     mark_model!(ax_scale, ax_compute;
+        model_label="MIST-228M" => (0, 4),
         d_model=1024,
         ff_ratio=4,
         n_layers=18,
@@ -269,6 +273,7 @@ function figure_bayesian(data;
 
     # dh61satt
     mark_model!(ax_scale, ax_compute;
+        model_label="MIST-1.8B" => (-5, 5),
         d_model=2304,
         ff_ratio=4,
         n_layers=28,
@@ -281,19 +286,21 @@ function figure_bayesian(data;
 
 
     # Fit distributions
-    gl = GridLayout(f[2,1])
-    sublabel!(gl[1,1, TopLeft()], "c"; left=5)
+    gl = GridLayout(f[1,2])
+    # sublabel!(gl[1,1, TopLeft()], "c"; left=5)
     plot_scaling_params!(gl, scaling(chains))
-    sublabel!(gl[1, 2, TopLeft()], "d"; left=5)
+    # sublabel!(gl[1, 2, TopLeft()], "d"; left=5)
 
     if model.formula isa BayesianScaling.ShapedScaling
-        sublabel!(gl[1, 3, TopLeft()], "e"; left=8)
+        # sublabel!(gl[1, 3, TopLeft()], "e"; left=8)
         plot_lr_partial_dependence!(gl[1, 3], model, chains)
         colsize!(gl, 3, Auto(0.5))
     end
 
     # Nudge layout
     colsize!(gl, 1, Auto(2))
+    colsize!(f.layout, 1, Auto(2))
+    colsize!(f.layout, 2, Auto(3))
     colgap!(gl, 3pt)
     rowgap!(f.layout, 6pt)
     resize_to_layout!(f)
