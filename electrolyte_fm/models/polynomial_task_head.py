@@ -282,6 +282,198 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         return P_m
 
 
+class RKPredictionTaskHead(PolynomialPredictionTaskHead):
+    def __init__(
+        self,
+        embed_dim: int,
+        polynomial_order: int = 4,
+        n_components: int = 2,
+        include_linear_mixing: bool = False,
+        **kwargs,  # allow used kwargs for compatibility between task heads
+    ) -> None:
+        super().__init__(
+            embed_dim=embed_dim,
+            polynomial_order=polynomial_order,
+            n_components=n_components,
+            include_linear_mixing=include_linear_mixing,
+        )
+
+    def forward(self, batch):
+        P_m = 0
+
+        for i in range(self.n_components):
+            single_emb_with_temp = torch.hstack(
+                (batch["temperature"].view(-1, 1), batch[f"embedding_{i}"])
+            ).float()
+            # non-fusion heads (all except BezierFourthPredictionTaskHead)
+            # have temperature concantenated to molecule embedding
+            batch[f"embedding_{i}"] = single_emb_with_temp
+
+        if self.include_linear_mixing:
+            # linear mixing term
+            for i in range(self.n_components):
+                P_i = self.single_substance_property(batch[f"embedding_{i}"])
+                P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
+
+        concat_embedding = tuple(
+            batch[f"embedding_{i}"] for i in range(self.n_components)
+        )
+        concat_embedding = torch.hstack(concat_embedding)
+        RK_coeffients = self.coeffients(concat_embedding)
+
+        # excess term
+        for i in range(self.n_components):
+            x_i = batch[f"composition_{i}"]
+            for j in range(i + 1, self.n_components):
+                x_j = batch[f"composition_{j}"]
+                x_ix_j = torch.mul(x_i, x_j)
+                difference = torch.abs((x_i - x_j))
+                for k in range(self.polynomial_order):
+                    RK_summation = torch.mul(
+                        RK_coeffients[:, k], torch.pow(difference, k)
+                    )
+                    P_m += torch.mul(x_ix_j, RK_summation).view(-1, 1)
+        return P_m
+
+
+class LegendrePredictionTaskHead(PolynomialPredictionTaskHead):
+    def __init__(
+        self,
+        embed_dim: int,
+        polynomial_order: int = 8,
+        n_components: int = 2,
+        include_linear_mixing: bool = False,
+        **kwargs,  # allow used kwargs for compatibility between task heads
+    ) -> None:
+        super().__init__(
+            embed_dim=embed_dim,
+            polynomial_order=polynomial_order,
+            n_components=n_components,
+            include_linear_mixing=include_linear_mixing,
+        )
+
+    def legendre_poly(self, n, x):
+        if n == 0:
+            # base case: T_0 = 1
+            return torch.ones_like(x)
+        elif n == 1:
+            # base case: T_1 = x
+            return x
+        else:
+            # recurrence relation for legendre polynomials
+            # Bonnet's formula: (n+1)*T_{n} = (2*n+1)*x*T_{n-1} - n*T_{n-2}
+            return torch.div(
+                torch.mul((2 * n + 1) * x, self.legendre_poly(n - 1, x))
+                - n * self.legendre_poly(n - 2, x),
+                n + 1,
+            )
+
+    def forward(self, batch):
+        P_m = 0
+
+        for i in range(self.n_components):
+            single_emb_with_temp = torch.hstack(
+                (batch["temperature"].view(-1, 1), batch[f"embedding_{i}"])
+            ).float()
+            # non-fusion heads (all except BezierFourthPredictionTaskHead)
+            # have temperature concantenated to molecule embedding
+            batch[f"embedding_{i}"] = single_emb_with_temp
+
+        if self.include_linear_mixing:
+            # linear mixing term
+            for i in range(self.n_components):
+                P_i = self.single_substance_property(batch[f"embedding_{i}"])
+                P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
+
+        concat_embedding = tuple(
+            batch[f"embedding_{i}"] for i in range(self.n_components)
+        )
+
+        concat_embedding = torch.hstack(concat_embedding)
+        coeffients = self.coeffients(concat_embedding)
+
+        # binary excess term
+        x_i = batch["composition_0"]
+        x_j = batch["composition_1"]
+        x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
+
+        x = torch.abs(1 - 2 * x_j)
+
+        for m in range(self.polynomial_order):
+            summation = torch.mul(coeffients[:, m], self.legendre_poly(m, x))
+            P_m += torch.mul(x_ix_j, summation).view(-1, 1)
+
+        return P_m  # [batch_size, 1]
+
+
+class ChebyshevPredictionTaskHead(PolynomialPredictionTaskHead):
+    def __init__(
+        self,
+        embed_dim: int,
+        polynomial_order: int = 4,
+        n_components: int = 2,
+        include_linear_mixing: bool = False,
+        **kwargs,  # allow used kwargs for compatibility between task heads
+    ) -> None:
+        super().__init__(
+            embed_dim=embed_dim,
+            polynomial_order=polynomial_order,
+            n_components=n_components,
+            include_linear_mixing=include_linear_mixing,
+        )
+
+    def chebyshev_poly(self, n, x):
+        """Recursive formula to compute Chebyshev Polynomials T_n(x)"""
+        if n == 0:
+            # base case: T_0 = 1
+            return torch.ones_like(x)
+        elif n == 1:
+            # base case: T_1 = x
+            return x
+        else:
+            # recurrence relation for chebyshev polynomials
+            # of the first kind  T_{n} = 2*x*T_{n-1} - T_{n-2}
+            return torch.mul(
+                2 * x, self.chebyshev_poly(n - 1, x)
+            ) - self.chebyshev_poly(n - 2, x)
+
+    def forward(self, batch):
+        P_m = 0
+
+        for i in range(self.n_components):
+            single_emb_with_temp = torch.hstack(
+                (batch["temperature"].view(-1, 1), batch[f"embedding_{i}"])
+            ).float()
+            # non-fusion heads (all except BezierFourthPredictionTaskHead)
+            # have temperature concantenated to molecule embedding
+            batch[f"embedding_{i}"] = single_emb_with_temp
+
+        if self.include_linear_mixing:
+            # linear mixing term
+            for i in range(self.n_components):
+                P_i = self.single_substance_property(batch[f"embedding_{i}"])
+                P_m += torch.mul(batch[f"composition_{i}"].view(-1, 1), P_i)
+
+        # predict polynomial coefficients
+        concat_embedding = tuple(
+            batch[f"embedding_{i}"] for i in range(self.n_components)
+        )
+        concat_embedding = torch.hstack(concat_embedding)
+        coeffients = self.coeffients(concat_embedding)
+
+        # binary excess term
+        x_i = batch["composition_0"]
+        x_j = batch["composition_1"]
+        x_ix_j = torch.mul(x_i, x_j)  # [batch_size, 1]
+        x = torch.abs(1 - 2.0 * x_j)
+
+        for m in range(self.polynomial_order):
+            summation = torch.mul(coeffients[:, m], self.chebyshev_poly(m, x))
+            P_m += torch.mul(x_ix_j, summation).view(-1, 1)
+
+        return P_m  # [batch_size, 1]
+
+
 class PolynomialHead(Enum):
     """Enumeration of supported polynomial heads."""
 
@@ -292,10 +484,10 @@ class PolynomialHead(Enum):
 
     def get_class(self):
         if self == PolynomialHead.RK:
-            return NotImplementedError("TODO: Bring back other polyns")
+            return RKPredictionTaskHead
         elif self == PolynomialHead.CHEBYSHEV:
-            raise NotImplementedError("TODO: Bring back other polyns")
+            return ChebyshevPredictionTaskHead
         elif self == PolynomialHead.LEGENDRE:
-            return NotImplementedError("TODO: Bring back other polyns")
+            return LegendrePredictionTaskHead
         elif self == PolynomialHead.BEZIERFOURTH:
             return BezierFourthPredictionTaskHead

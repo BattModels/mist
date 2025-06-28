@@ -265,7 +265,7 @@ class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
         fusion: str | FusionStrategy = FusionStrategy.ATTENTION,
         basis: str | PolynomialHead = PolynomialHead.RK,
         optimizer: OptimizerCallable = torch.optim.AdamW,
-        metrics: List[str] = ["mae", "rmse", "mape"],
+        metrics: List[str] = ["mae-channel"],
         lr_schedule: LRSchedulerCallable | None = None,
         transform: Optional[str | list[str]] = None,
     ) -> None:
@@ -326,7 +326,7 @@ class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
         metrics = get_metrics(
             metrics,
             "regression",
-            num_outputs=1,
+            num_outputs=len(self.task_networks),
         )
         metrics = bootstrap_collection(metrics, num_bootstraps=100)
         self.train_metrics = metrics.clone(prefix="train/")
@@ -344,6 +344,7 @@ class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
 
     def task_network(self, batch):
         pred = torch.hstack(tuple(t(batch) for t in self.task_networks))
+
         return pred
 
     def configure_optimizers(self):
