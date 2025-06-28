@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import torch
+from torch import nn
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
@@ -253,7 +254,7 @@ class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
         self,
         encoder_ckpt: str,
         freeze_encoder: bool = False,
-        include_linear_mixing: bool = True,
+        include_linear_mixing: List[bool] = [True, True],
         tokenizer: Optional[str] = None,
         vocab_size: Optional[int] = None,
         dropout: float = 0.1,
@@ -268,20 +269,21 @@ class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
         lr_schedule: LRSchedulerCallable | None = None,
         transform: Optional[str | list[str]] = None,
     ) -> None:
-        super().__init__()
+        super().__init__(encoder_ckpt=encoder_ckpt, basis=basis)
+
         self.freeze_encoder = freeze_encoder
         self.encoder_ckpt = encoder_ckpt
-        # self.include_linear_mixing = include_linear_mixing
         self.tokenizer = load_tokenizer(tokenizer or encoder_ckpt)
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
         self.n_components = n_components
         self.num_heads = num_heads
+        self.include_linear_mixing = include_linear_mixing
         self.temperature_normalization = (273, 400)
-        # self.basis = PolynomialHead(basis)
+
         transform = "identity"
-        self.transform = AbstractNormalizer.get(transform, 1).eval()
+        self.transform = AbstractNormalizer.get(transform, n_targets).eval()
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
@@ -316,8 +318,10 @@ class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
             for i in self.include_linear_mixing
         ]
 
-        self.task_networks = [self.basis.get_class()(**t) for t in task_head_args]
-        self.lossfn = torch.nn.MSELoss(reduction="mean")
+        self.task_networks = nn.ModuleList(
+            [self.basis.get_class()(**t) for t in task_head_args]
+        )
+        self.lossfn = torch.nn.MSELoss(reduction="none")
 
         metrics = get_metrics(
             metrics,
@@ -341,3 +345,18 @@ class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
     def task_network(self, batch):
         pred = torch.hstack(tuple(t(batch) for t in self.task_networks))
         return pred
+
+    def configure_optimizers(self):
+        learnable_params = self.task_networks[0].parameters()
+        for task_net in self.task_networks[1:]:
+            learnable_params = chain(learnable_params, task_net.parameters())
+        if not self.freeze_encoder:
+            learnable_params = chain(learnable_params, self.encoder.parameters())
+
+        optimizer = self.optimizer(learnable_params)
+        if schedule := self.lr_schedule:
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {"scheduler": schedule(optimizer), "interval": "step"},
+            }
+        return optimizer
