@@ -91,3 +91,12 @@ with_theme(MISTStyle.theme()) do
         name_df_order=("Baseline" => df_order, "Random" => df_order_rand)
     )
 end |> MISTStyle.savefig("permutations")
+
+
+with_theme(MISTStyle.theme()) do
+    DesignRules.figure_double_bond_loc(
+        "Baseline" => df_perm_ref, "Random" => df_perm_rand;
+        name_df_order=("Baseline" => df_order, "Augmented" => df_order_rand)
+    )
+end |> MISTStyle.savefig("double_bond_loc")
+

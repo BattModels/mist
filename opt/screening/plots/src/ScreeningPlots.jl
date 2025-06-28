@@ -2,6 +2,7 @@ module ScreeningPlots
 
 using Makie
 using DataFrames
+using Random: randperm
 using Graphs: complete_graph, boruvka_mst
 using Metaheuristics: Metaheuristics
 using JSON: JSON
@@ -9,10 +10,11 @@ using SQLite: SQLite
 using PythonCall: Py, PyList, pyimport, pyconvert
 using GLM: @formula, lm, glm, Normal, LogLink, coef
 using Format: format
-using Statistics: cor, mean
+using Statistics: cor, mean, std
 using CategoricalArrays: categorical, levelcode
 using LinearAlgebra: norm, dot
 using ManifoldLearning: ManifoldLearning, DiffMap, fit, predict, transform
+using Clustering: hclust
 
 using MISTStyle
 
