@@ -185,3 +185,15 @@ df_s = combine(groupby(df_surprise, :group)) do gdf
     end
     return DataFrame(out)
 end
+
+# Bar chart of top odor in generated molecules
+odor_model = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", "mist-26.9M-48kpooqf-odour"))
+df_odor = select(df_surprise, :smiles, :group)
+df_odor = innerjoin(df_odor, ScreeningPlots.predict_mist(odor_model, df_odor.smiles); on=:smiles)
+f = ScreeningPlots.figure_odor_counts(subset(df_odor, :group => ByRow(!=("ChEMBL"))), odor_model)
+MISTStyle.savefig("screening_odors", f)
+
+# Screen for odorless
+df_so = innerjoin(df_surprise, df_odor; on=["smiles", "group"])
+f = ScreeningPlots.plot_pareto_front_scent(df_so, "odorless")
+MISTStyle.savefig("electrolyte_odorless", f)

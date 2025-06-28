@@ -61,10 +61,13 @@ end
 
 function compare_creativity(df::DataFrame, M = missing)
     f = Figure(; size=(3.42inch, 1inch))
-    df.group = categorical(df.group; levels=["Generated", "ChEMBL", "Electrolytes"])
+    df = subset(df, :group => ByRow(in(["Generated", "Electrolytes"])))
+    df.group = categorical(df.group; levels=["Generated", "Electrolytes"])
+    df.gap .*= HARTREE_TO_EV
+    df.homo .*= HARTREE_TO_EV
     ax1 = Axis(f[1, 1];
         ylabel="Molecular Surprise",
-        xticks=(1:3, unique(df.group)),
+        xticks=(1:2, unique(df.group)),
         limits=((0, nothing), nothing),
         ygridvisible=true,
         yminorticksvisible=true,
@@ -84,27 +87,26 @@ function compare_creativity(df::DataFrame, M = missing)
     df = combine(groupby(df, :group)) do gdf
         pos = map(vcat, -gdf.gap, gdf.homo, gdf.mp, -gdf.bp)
         idx = Metaheuristics.get_non_dominated_solutions_perm(pos)
-        @info first(gdf.group) mean(gdf.surprise) mean(gdf.surprise[idx])
+        h_pareto = mean(gdf.surprise[idx])
+        h_std_pareto = std(gdf.surprise[idx])
+        h_dominated = mean(gdf.surprise[Not(idx)])
+        h_std_dominated = std(gdf.surprise[Not(idx)])
+        h_delta = h_pareto - h_dominated
+        h_std_delta = hypot(h_std_pareto, h_std_dominated)
+        @info first(gdf.group) mean(gdf.surprise) std(gdf.surprise) mean(gdf.surprise[idx]) h_delta h_std_delta
         gdf.group_frontier .= false
         gdf[idx, :group_frontier] .= true
         return gdf
     end
-
 
     ax2 = Axis(f[1, 2];
         xlabel=L"$$HOMO [eV]",
         ylabel=L"$$Molecular Surprise",
         xticks=WilkinsonTicks(3),
     )
-    color = map(df.group, df.group_frontier) do g, gf
-        alpha = gf ? 1.0 : 0.1
-        return (MISTStyle.CAT_COLORS[levelcode(g)], alpha)
-    end
-    marker = :circle
-    markersize = 3
-    sargs = (; marker, color, markersize)
+    sargs = (; markersize = 3)
     sort!(df, :group_frontier; rev=true)
-    scatter!(ax2, df.homo .* HARTREE_TO_EV, df.surprise; sargs...)
+    _mark_creative!(ax2, df, :homo, :surprise, df.group_frontier; sargs...)
 
     ax3 = Axis(f[1, 3];
         xlabel=L"$$Gap [eV]",
@@ -113,8 +115,7 @@ function compare_creativity(df::DataFrame, M = missing)
         yticks=ax1.yticks,
         ygridvisible=ax1.ygridvisible,
     )
-    scatter!(ax3, df.gap .* HARTREE_TO_EV, df.surprise; sargs...)
-
+    _mark_creative!(ax3, df, :gap, :surprise, df.group_frontier; sargs...)
 
     ax4 = Axis(f[1, 4];
         xlabel=L"$$Melt [$\degree C$ ]",
@@ -123,7 +124,7 @@ function compare_creativity(df::DataFrame, M = missing)
         yticks=ax1.yticks,
         ygridvisible=ax1.ygridvisible,
     )
-    scatter!(ax4, df.mp, df.surprise; sargs...)
+    _mark_creative!(ax4, df, :mp, :surprise, df.group_frontier; sargs...)
 
     ax5 = Axis(f[1, 5];
         xlabel=L"$$Boil [$\degree C$ ]",
@@ -132,7 +133,7 @@ function compare_creativity(df::DataFrame, M = missing)
         yticks=ax1.yticks,
         ygridvisible=ax1.ygridvisible,
     )
-    scatter!(ax5, df.bp, df.surprise; sargs...)
+    _mark_creative!(ax5, df, :bp, :surprise, df.group_frontier; sargs...)
 
     hideydecorations!(ax2; grid=false)
     hideydecorations!(ax3; grid=false)
@@ -141,6 +142,35 @@ function compare_creativity(df::DataFrame, M = missing)
     linkyaxes!(ax1, ax2, ax3)
 
     return f
+end
+
+function _annotate_creative!(ax, smiles, df, x, y; label_pos=nothing, kwargs...)
+    key = inchi_key(smiles)
+    @show row = first(df[df.inchi_key .== key, :])
+    if label_pos !== nothing
+        lx, ly = (row[x], row[y]) .+ label_pos
+        return annotation!(ax, label_pos..., row[x], row[y]; kwargs...)
+    else
+        return annotation!(ax, row[x], row[y]; kwargs...)
+    end
+end
+
+function _mark_creative!(ax, df, x, y, pareto; kwargs...)
+    idx = findall(pareto)
+    df_other = df[Not(idx), :]
+    scatter!(ax, df_other[!, x], df_other[!, y];
+        marker=:circle,
+        color=MISTStyle.CAT_COLORS[levelcode.(df_other.group)],
+        alpha=0.1,
+        kwargs...
+    )
+    df_pareto = df[idx, :]
+    scatter!(ax, df_pareto[!, x], df_pareto[!, y];
+        marker=:star5,
+        strokewidth=0.1,
+        color=MISTStyle.CAT_COLORS[levelcode.(df_pareto.group)],
+        kwargs...
+    )
 end
 
 function _select_creativity(df::DataFrame, model::Py, group::String)
@@ -184,7 +214,7 @@ angular_distance(a, b) = acos(min(max(cosine_similarity(a, b), 0), 1))
 
 function embedding_mst_distance(embeddings::Matrix; distance=eculidean_distance)
     n = size(embeddings, 1)
-    dd = Matrix{Float64}(undef, n, n)
+    dd = Matrix{}(undef, n, n)
     for I in eachindex(IndexCartesian(), dd)
         x = embeddings[I[1], :]
         y = embeddings[I[2], :]
