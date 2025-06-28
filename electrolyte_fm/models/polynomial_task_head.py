@@ -239,7 +239,10 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         P_m = 0
         if self.include_linear_mixing:
             for i in range(self.n_components):
-                P_i = self.single_substance_property(batch[f"embedding_{i}"])
+                single_emb_with_temp = torch.hstack(
+                    (batch["temperature"].view(-1, 1), batch[f"embedding_{i}"])
+                ).float()
+                P_i = self.single_substance_property(single_emb_with_temp)
                 P_m += batch[f"composition_{i}"].view(-1, 1) * P_i
 
         embedding_AB, embedding_BA = self.fusion(batch)
@@ -259,7 +262,7 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
 
         if self.fusion_strategy is FusionStrategy.DIFFERENCE:
             P1 = self.mlp(embedding_AB) - self.mlp(torch.zeros_like(embedding_AB))
-            P1 = self.mlp(embedding_BA) - self.mlp(torch.zeros_like(embedding_BA))
+            P2 = self.mlp(embedding_BA) - self.mlp(torch.zeros_like(embedding_BA))
 
         batch_size = embedding_BA.size()[0]
         P = torch.tile(torch.zeros_like(self.parametric_var), (batch_size, 1, 1))
