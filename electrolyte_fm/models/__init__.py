@@ -1,4 +1,3 @@
-from .electrolyte_model import ElectrolyteModel
 from .excess_physics_model import ExcessPhysicsModel, MultiTargetExcessPhysicsModel
 from .ionic_conductivity_model import IonicConductivityModel
 from .lm_finetuning import LMFinetuning

@@ -71,7 +71,6 @@ class ComponentDataModule(LightningDataModule):
         prefetch_factor: Optional[int] = None,
         include_temperature: str | bool = False,
         encoding: Optional[str | MolEncoding] = "smiles",
-        encoder_device: str = "cuda",
         iterable: bool = False,
         randomize: bool = False,
     ):
@@ -89,7 +88,6 @@ class ComponentDataModule(LightningDataModule):
                 target_col,
             ]
         self.target_col = target_col
-        self.encoder_device = torch.device(encoder_device)
         assert self.path.is_dir() or self.path.is_file()
 
         self.batch_size = batch_size

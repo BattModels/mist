@@ -127,7 +127,7 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
         if self.global_rank == 0:
             assert self.trainer.datamodule.target_dataset is not None
             ds = self.trainer.datamodule.target_dataset
-            state = self.transform.fit(ds.take(100000))
+            state = self.transform.fit(ds)
 
         state = self.trainer.strategy.broadcast(state)
         self.transform.load_state_dict(state)
