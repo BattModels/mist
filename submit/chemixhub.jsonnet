@@ -3,7 +3,7 @@ local pretrain = import 'pretrain.jsonnet';
 local tasks = import 'chemixhub_tasks.libsonnet';
 
 function(dataset='il_thermo_viscosity') {
-  walltime: '1:0:0',
+  walltime: '2:0:0',
   nodes: 1,  // Multi-node is not currently supported. Config is only on leader node
   env: {
     TOKENIZERS_PARALLELISM: true,

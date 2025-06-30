@@ -154,12 +154,12 @@ def process_il_thermo(
 
 
 if __name__ == "__main__":
-    # process_drug_solubility()
-    # process_binary_mixtures()
-    # process_binary_mixtures(
-    #     raw_datapath= "logV/processed_data/processed_logV.csv",
-    # )
-    # process_miscible_solvents()
-    # process_MON()
+    process_drug_solubility()
+    process_binary_mixtures()
+    process_binary_mixtures(
+        raw_datapath="logV/processed_data/processed_logV.csv",
+    )
+    process_miscible_solvents()
+    process_MON()
     process_il_thermo(prop="Viscosity")
     process_il_thermo(prop="Electrical conductivity")

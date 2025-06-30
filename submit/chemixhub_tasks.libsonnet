@@ -25,7 +25,7 @@
     n_components: 2,
   },
   MON: {
-    path: '/home/abhutani/chemixhub/datasets/chemixhub_mist/MON',
+    path: '~/chemixhub/datasets/chemixhub_mist/MON',
     temperature: false,
     target_columns: ['value'],
     transform: 'standardize',
@@ -33,15 +33,15 @@
     n_components: 121,
   },
   miscible_solvents: {
-    path: '/home/abhutani/chemixhub/datasets/chemixhub_mist/miscible-solvent',
+    path: '~/chemixhub/datasets/chemixhub_mist/miscible-solvent',
     temperature: false,
     target_columns: ['density_grams_per_cubic_meter', 'heat_of_vaporization_kcal_per_mol', 'enthalpy_of_mixing_kJ_per_mol'],
     transform: 'standardize',
-    metrics: ['mae'],
+    metrics: ['mae', 'mae-channel'],
     n_components: 5,
   },
   il_thermo_conductivity: {
-    path: '/home/abhutani/chemixhub/datasets/chemixhub_mist/ionic-liquids/Electrical conductivity',
+    path: '~/chemixhub/datasets/chemixhub_mist/ionic-liquids/Electrical conductivity',
     temperature: 'arrhenius',
     target_columns: ['value'],
     transform: 'standardize',
@@ -49,7 +49,7 @@
     n_components: 5,
   },
   il_thermo_viscosity: {
-    path: '/home/abhutani/chemixhub/datasets/chemixhub_mist/ionic-liquids/Viscosity',
+    path: '~/chemixhub/datasets/chemixhub_mist/ionic-liquids/Viscosity',
     temperature: 'arrhenius',
     target_columns: ['value'],
     transform: 'standardize',
