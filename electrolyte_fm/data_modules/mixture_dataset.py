@@ -73,6 +73,7 @@ class ComponentDataModule(LightningDataModule):
         encoding: Optional[str | MolEncoding] = "smiles",
         iterable: bool = False,
         randomize: bool = False,
+        max_length: int = 512,
     ):
         super().__init__()
 
@@ -98,7 +99,7 @@ class ComponentDataModule(LightningDataModule):
         self.prefetch_factor = prefetch_factor
         self.save_hyperparameters(logger=False)
         self.data_collator = DataCollatorWithPadding(
-            self.tokenizer, max_length=128, padding="max_length"
+            self.tokenizer, max_length=max_length, padding="max_length"
         )
 
     def prepare_data(self):

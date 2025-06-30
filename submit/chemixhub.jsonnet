@@ -2,7 +2,7 @@ local pretrain = import 'pretrain.jsonnet';
 
 local tasks = import 'chemixhub_tasks.libsonnet';
 
-function(dataset='drug_solubility') {
+function(dataset='il_thermo_viscosity') {
   walltime: '1:0:0',
   nodes: 1,  // Multi-node is not currently supported. Config is only on leader node
   env: {
@@ -16,7 +16,7 @@ function(dataset='drug_solubility') {
         path: tasks[dataset].path,
         target_col: tasks[dataset].target_columns,
         n_components: tasks[dataset].n_components,
-        batch_size: 128,
+        batch_size: 2,
         val_batch_size: 2 * self.batch_size,
         tokenizer: $.train.model.init_args.encoder_ckpt,
         include_temperature: tasks[dataset].temperature,
