@@ -51,10 +51,10 @@ def process_binary_mixtures(
     if "T" in df.columns:
         df["temperature"] = df["T"]
 
-    df_train = df.sample(frac=0.8)
+    df_train = df.sample(frac=0.7, random_state=42)
     df_train.to_csv(os.path.join(output_dir, "train.csv"))
     df = df.drop(df_train.index)
-    df_val = df.sample(frac=0.5, random_state=42)
+    df_val = df.sample(frac=0.33, random_state=42)
     df_val.to_csv(os.path.join(output_dir, "val.csv"))
     df_test = df.drop(df_val.index)
     df_test.to_csv(os.path.join(output_dir, "test.csv"))
@@ -78,10 +78,10 @@ def process_miscible_solvents(
         df[f"x{comp_num + 1}"] = df[f"comp_{comp_num}"] / df.total
         df[f"smi{comp_num + 1}"] = df[f"SMILES_{comp_num}"]
         df[f"smi{comp_num + 1}"].fillna("NONE", inplace=True)
-    df_train = df.sample(frac=0.8)
+    df_train = df.sample(frac=0.7, random_state=42)
     df_train.to_csv(os.path.join(output_dir, "train.csv"))
     df = df.drop(df_train.index)
-    df_val = df.sample(frac=0.5, random_state=42)
+    df_val = df.sample(frac=0.33, random_state=42)
     df_val.to_csv(os.path.join(output_dir, "val.csv"))
     df_test = df.drop(df_val.index)
     df_test.to_csv(os.path.join(output_dir, "test.csv"))
@@ -101,10 +101,10 @@ def process_MON(raw_datapath: str = "MON/raw_data/published_MONdata.csv"):
         df[f"x{comp_num + 1}"].fillna(0, inplace=True)
         df[f"smi{comp_num + 1}"] = df[f"cmp_{comp_num}_smiles"]
         df[f"smi{comp_num + 1}"].fillna("NONE", inplace=True)
-    df_train = df.sample(frac=0.8)
+    df_train = df.sample(frac=0.7, random_state=42)
     df_train.to_csv(os.path.join(output_dir, "train.csv"))
     df = df.drop(df_train.index)
-    df_val = df.sample(frac=0.5, random_state=42)
+    df_val = df.sample(frac=0.33, random_state=42)
     df_val.to_csv(os.path.join(output_dir, "val.csv"))
     df_test = df.drop(df_val.index)
     df_test.to_csv(os.path.join(output_dir, "test.csv"))
@@ -144,10 +144,10 @@ def process_il_thermo(
         df[f"smi{comp_num + 1}"] = df[f"cmp{comp_num + 1}"].map(compound_lookup)
         df[f"smi{comp_num + 1}"].fillna("NONE", inplace=True)
     df["temperature"] = df["Temperature, K"]
-    df_train = df.sample(frac=0.8)
+    df_train = df.sample(frac=0.7, random_state=42)
     df_train.to_csv(os.path.join(output_dir, "train.csv"))
     df = df.drop(df_train.index)
-    df_val = df.sample(frac=0.5, random_state=42)
+    df_val = df.sample(frac=0.33, random_state=42)
     df_val.to_csv(os.path.join(output_dir, "val.csv"))
     df_test = df.drop(df_val.index)
     df_test.to_csv(os.path.join(output_dir, "test.csv"))
