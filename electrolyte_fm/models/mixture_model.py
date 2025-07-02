@@ -15,7 +15,7 @@ from ..utils.metrics import (
 from .model_utils import DeepSpeedMixin
 from .normalize import AbstractNormalizer
 from .prediction_task_head import PredictionTaskHead
-from .physics_task_heads import ArrheniusTaskHead
+from .physics_task_heads import ArrheniusTaskHead, VFTTaskHead
 from enum import Enum
 from lightning.pytorch.loggers import WandbLogger
 
@@ -25,6 +25,7 @@ class TemperatureCondition(Enum):
 
     CONCAT = "concat"
     ARRHENIUS = "arrhenius"
+    VFT = "vft"
     NONE = False
 
 
@@ -96,6 +97,8 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
             self.task_network = ArrheniusTaskHead(
                 embed_dim=self.encoder.config.hidden_size
             )
+        elif self.temperature is TemperatureCondition.VFT:
+            self.task_network = VFTTaskHead(embed_dim=self.encoder.config.hidden_size)
         elif self.temperature is TemperatureCondition.CONCAT:
             # temperature concat increase emb size passed
             self.task_network = PredictionTaskHead(
