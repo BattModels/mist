@@ -3,7 +3,7 @@
   train: {
     tags: ['sae', 'debug'],
     model: {
-      class_path: 'electrolyte_fm.models.LightningSAE',
+      class_path: 'electrolyte_fm.models.sae.LightningSAE',
       init_args: {
         name_or_path: 'ibm/MoLFormer-XL-both-10pct',
         sae: {
