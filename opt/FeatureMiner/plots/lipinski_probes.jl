@@ -68,7 +68,13 @@ function figure_probe_similarity(df::DataFrame; model="dh61satti", dataset="pret
 end
 
 function figure_lipinski_probes(df::DataFrame)
-    f = Figure(size=(2inch, 1inch))
+    f = Figure(; size=(95, 122), figure_padding=(2, 4, 2, 2))
+
+    # Select the best probe per location
+    df = combine(groupby(df, [:encoder_dataset, :location, :layer])) do gdf
+        sort!(gdf, :val_loss; rev=true)
+        return gdf[1, :]
+    end
 
     df = dropmissing(df)
     subset!(df,
@@ -85,33 +91,52 @@ function figure_lipinski_probes(df::DataFrame)
 
     # Feature alignment
     gl = GridLayout(f[1,1])
-    ax = Axis(gl[1, 1];
-        xticks=categorical_ticks(df.encoder_dataset),
-        yticks=2:2:8,
-        # limits=(nothing, ),
-        xticklabelsvisible=false,
-        xticksvisible=false,
+    ax = Axis(gl[2, 1];
+        yticks=MISTStyle.categorical_ticks(df.encoder_dataset),
+        ylabel="MIST-28M Variant Probed",
+        xticks=2:2:8,
     )
 
-    h = heatmap!(ax, auroc)
-    Colorbar(gl[1, 2], h; label="AUROC")
+    h = heatmap!(ax, auroc';
+        colorscale=Makie.logit,
+        colorrange=(0.9, 0.995),
+    )
+    cb = Colorbar(gl[1, 1], h;
+        label="AUROC",
+        size=6pt,
+        vertical=false,
+        # flipaxis=false,
+        ticks=[0.9, 0.99],
+        tickformat="{:.0%}",
+        minorticks=IntervalsBetween(5),
+        minorticksvisible=true,
+        labelsize=7pt,
+    )
 
     # Additive Features
     df.additive_features = FeatureMiner.additive_features.(df.weight)
     df_af = combine(groupby(subset!(df, :location => ByRow(==("output"))), :encoder_dataset)) do gdf
-        unstack(gdf[:, [:layer, :additive_features]], :layer, :additive_features)
+        gdf = select(gdf, [:layer, :additive_features])
+        unstack(gdf, :layer, :additive_features)
     end
     af = Matrix(df_af[:, 2:end])
-    ax_add = Axis(gl[2, 1];
-        xticks=categorical_ticks(df.encoder_dataset),
-        yticks=ax.yticks,
+    ax_add = Axis(gl[2, 2];
+        yticks=MISTStyle.categorical_ticks(df.encoder_dataset),
+        xticks=ax.xticks,
+        yticklabelsvisible=false,
+        yticksvisible=false,
     )
-    h = heatmap!(ax_add, af; colorrange=(0, 1))
-    Colorbar(gl[2, 2], h; label="Additivity")
+    h = heatmap!(ax_add, af')
+    Colorbar(gl[1, 2], h;
+        ticks=WilkinsonTicks(3),
+        minorticks=IntervalsBetween(5),
+        minorticksvisible=true,
+        size=cb.size,
+        label="Additivity",
+        vertical=false,
+    )
     @info extrema(af)
-
-    # Add single Y-axis label
-    Label(gl[:, 0], text = "Encoder Layer", rotation = pi/2)
+    Label(gl[end+1, :], "Encoder Layer")
 
     return f
 end
