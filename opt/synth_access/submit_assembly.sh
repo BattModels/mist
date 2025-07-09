@@ -1,15 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=synth-access
-#SBATCH --cpus-per-task=96
-#SBATCH --time=1-0:0:0
-#SBATCH --partition venkvis-cpu
+#SBATCH --cpus-per-task=16
+#SBATCH --mem-per-cpu=1800M
+#SBATCH --time=2-0:0:0
+#SBATCH --partition venkvis-cpu,venkvis-largemem
 
 GIT_ROOT=$(git rev-parse --show-toplevel)
+module purge
+module load python/3.11.5
 export HF_HOME="$GIT_ROOT/.cache/huggingface"
-source .venv/bin/activate
-apptainer exec \
-    --bind /scratch,/nfs/turbo,/tmp \
-    /nfs/turbo/coe-venkvis/mist/mist+pytorch+25.01+v4.sif \
-/opt/uv/uv run python main.py \
+uv run --python $(which python) python main.py \
     --metric 'assembly-index' \
-    --output-format '{dataset}-asm.json'
+    --output-format '{dataset}-asm.json' \
+    --num-proc 1
