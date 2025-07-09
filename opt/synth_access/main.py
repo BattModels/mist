@@ -37,40 +37,6 @@ logging.basicConfig(level=logging.INFO)
 NUM_PROCS = int(environ.get("SLURM_CPUS_PER_TASK", 4))
 
 
-def timeout(seconds):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            def target(q, *args, **kwargs):
-                try:
-                    result = func(*args, **kwargs)
-                    q.put(result)
-                except Exception as e:
-                    q.put(e)
-
-            q = multiprocessing.Queue()
-            p = multiprocessing.Process(target=target, args=(q, *args), kwargs=kwargs)
-            p.start()
-            p.join(seconds)
-
-            if p.is_alive():
-                p.terminate()
-                p.join()
-                logging.warning(
-                    f"Function '{func.__name__}' timed out after {seconds} seconds with args={args}, kwargs={kwargs}"
-                )
-                return None
-
-            result = q.get()
-            if isinstance(result, Exception):
-                raise result
-            return result
-
-        return wrapper
-
-    return decorator
-
-
 def sascore(smiles: str) -> Optional[float]:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -159,8 +125,7 @@ class SynthAccessFM(torch.nn.Module):
         return cls(encoder, tokenizer, **kwargs)
 
 
-@timeout(30)  # molecular_assembly (v0.2.0) timeout flag doesn't timeout
-def molecular_assembly_timeout(smi: str) -> Optional[int]:
+def molecular_assembly_timeout(smi: str) -> int | None:
     mol = Chem.MolFromSmiles(smi)
     will_error = [
         "CC(C)(C)OC(=O)CCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCO",  # Panics in isomorphism.rs
@@ -168,7 +133,7 @@ def molecular_assembly_timeout(smi: str) -> Optional[int]:
     if smi in will_error:
         return None
     try:
-        return molecular_assembly(mol)
+        return molecular_assembly(mol, timeout=3600)
     except Exception as e:
         # Catch panics
         logging.error("molecular assembly threw an error for %s: %s", smi, e)
@@ -244,6 +209,7 @@ def evaluate_dataset(
     ds: Dataset,
     target: str | None = None,
     smi_column: str = "smiles",
+    num_proc: int = NUM_PROCS,
 ):
     if smi_column != "smiles":
         ds = ds.rename_column(smi_column, "smiles")
@@ -297,7 +263,7 @@ def evaluate_dataset(
                 input_columns=input_columns,
                 batched=False,
                 desc=name,
-                num_proc=NUM_PROCS,
+                num_proc=num_proc,
             )
             stats["time"][name] = perf_counter() - start
             if target:
@@ -318,6 +284,7 @@ if __name__ == "__main__":
     p.add_argument("--metric", type=str, action="append", default=None)
     p.add_argument("--skip-metric", type=str, action="append", default=None)
     p.add_argument("--output-format", type=str, default="{dataset}.json")
+    p.add_argument("--num-proc", type=int, default=NUM_PROCS)
     args = p.parse_args()
 
     syba = syba_scorer()
@@ -343,7 +310,6 @@ if __name__ == "__main__":
         if file.is_dir():
             metrics[file.name] = str(file)
 
-    # Uncomment to just run assembly-index
     if args.metric is not None:
         metrics = {metric: metrics[metric] for metric in args.metric}
 
@@ -364,7 +330,13 @@ if __name__ == "__main__":
     ds = ds.map(lambda x: {"is_hard": x["accessibility"] == "hs"}, batched=False)
     ds = ds.select_columns(["smiles", "is_hard"])
 
-    stats = evaluate_dataset(metrics, ds, target="is_hard", smi_column="smiles")
+    stats = evaluate_dataset(
+        metrics,
+        ds,
+        target="is_hard",
+        smi_column="smiles",
+        num_proc=args.num_proc,
+    )
     with open(args.output_format.format(dataset="ba-sascorer"), "w") as fid:
         json.dump(stats, fid, indent=4)
 
@@ -377,6 +349,12 @@ if __name__ == "__main__":
     ds = ds["train"]
     ds = ds.select_columns(["SMILES", "meanComplexity", "stdevComplexity"])
     ds = ds.map(lambda x: {"is_complex": x["meanComplexity"] > 2.85}, batched=False)
-    stats = evaluate_dataset(metrics, ds, target="is_complex", smi_column="SMILES")
+    stats = evaluate_dataset(
+        metrics,
+        ds,
+        target="is_complex",
+        smi_column="SMILES",
+        num_proc=args.num_proc,
+    )
     with open(args.output_format.format(dataset="crowdsourced"), "w") as fid:
         json.dump(stats, fid, indent=4)
