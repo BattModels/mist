@@ -1,0 +1,60 @@
+// Task Specification for CheMixHub Benchmarks
+{
+  drug_solubility: {
+    path: '~/chemixhub/datasets/chemixhub_mist/drug-solubility',
+    temperature: 'concat',
+    target_columns: ['LogS'],
+    transform: 'identity',
+    metrics: ['mae'],
+    n_components: 3,
+  },
+  nist_logV: {
+    path: '~/chemixhub/datasets/chemixhub_mist/nist-logV',
+    temperature: 'arrhenius',
+    target_columns: ['value'],
+    transform: 'identity',
+    metrics: ['mae'],
+    n_components: 2,
+  },
+  logV: {
+    path: '~/chemixhub/datasets/chemixhub_mist/logV',
+    temperature: 'arrhenius',
+    target_columns: ['value'],
+    transform: 'identity',
+    metrics: ['mae'],
+    n_components: 2,
+  },
+  MON: {
+    path: '~/chemixhub/datasets/chemixhub_mist/MON',
+    temperature: false,
+    target_columns: ['value'],
+    transform: 'standardize',
+    metrics: ['mae'],
+    n_components: 121,
+  },
+  miscible_solvents: {
+    path: '~/chemixhub/datasets/chemixhub_mist/miscible-solvent',
+    temperature: false,
+    target_columns: ['density_grams_per_cubic_meter', 'heat_of_vaporization_kcal_per_mol', 'enthalpy_of_mixing_kJ_per_mol'],
+    transform: 'standardize',
+    metrics: ['mae', 'mae-channel'],
+    n_components: 5,
+  },
+  il_thermo_conductivity: {
+    path: '~/chemixhub/datasets/chemixhub_mist/ionic-liquids/Electrical conductivity',
+    temperature: 'arrhenius',
+    target_columns: ['value'],
+    transform: 'standardize',
+    metrics: ['mae'],
+    n_components: 5,
+  },
+  il_thermo_viscosity: {
+    path: '~/chemixhub/datasets/chemixhub_mist/ionic-liquids/Viscosity',
+    temperature: 'arrhenius',
+    target_columns: ['value'],
+    transform: 'standardize',
+    metrics: ['mae'],
+    n_components: 5,
+  },
+
+}

@@ -3,15 +3,21 @@ from pathlib import Path
 from typing import List, Optional
 
 import torch
+from torch import nn
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 
-from ..utils.metrics import get_metrics, masked_metric_update
+from ..utils.metrics import (
+    get_metrics,
+    masked_loss,
+    bootstrap_collection,
+    masked_metric_update,
+)
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
-from .normalize import MaxScaleTransform
-from .polynomial_task_head import PolynomialHead
+from .normalize import AbstractNormalizer
+from .polynomial_task_head import PolynomialHead, FusionStrategy
 
 
 class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
@@ -27,13 +33,15 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         tokenizer: Optional[str] = None,
         vocab_size: Optional[int] = None,
         dropout: float = 0.1,
+        num_heads: Optional[int] = 4,
         n_components: int = 2,
         polynomial_order: int = 4,
-        max_scale: int = 1,
+        fusion: str | FusionStrategy = FusionStrategy.ATTENTION,
         basis: str | PolynomialHead = PolynomialHead.RK,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         metrics: List[str] = ["mae", "rmse", "mape"],
         lr_schedule: LRSchedulerCallable | None = None,
+        transform: Optional[str | list[str]] = None,
     ) -> None:
         super().__init__()
         self.freeze_encoder = freeze_encoder
@@ -44,9 +52,11 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.lr_schedule = lr_schedule
         self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
         self.n_components = n_components
+        self.num_heads = num_heads
         self.temperature_normalization = (273, 400)
         self.basis = PolynomialHead(basis)
-        self.transform = MaxScaleTransform(mx=max_scale)
+        transform = "identity"
+        self.transform = AbstractNormalizer.get(transform, 1).eval()
 
         # Load Encoder Model
         if Path(encoder_ckpt).exists():
@@ -70,9 +80,11 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
 
         task_head_args = {
+            "fusion": fusion,
             "embed_dim": self.hidden_size,
             "polynomial_order": polynomial_order,
             "n_components": n_components,
+            "num_heads": num_heads,
             "include_linear_mixing": self.include_linear_mixing,
         }
 
@@ -83,7 +95,6 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             metrics,
             "regression",
             num_outputs=1,
-            target_channels="ln k",
         )
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")
@@ -99,22 +110,36 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         state = self.trainer.strategy.broadcast(state)
         self.transform.load_state_dict(state)
 
-    def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
+    def forward(self, batch, transform: bool = True, **kwargs):  # type: ignore[override]
         mn, mx = self.temperature_normalization
-        temperature = (batch["temperature"] - mn) / (mx - mn)
+        # normalise temperature once per mixture
+        temperature = (batch["temperature"] - mn) / (mx - mn)  # (B,)
+        batch["temperature"] = temperature
         for i in range(self.n_components):
-            embedding = self.encoder(
-                batch[f"input_ids_{i}"],
+            enc_out = self.encoder(
+                input_ids=batch[f"input_ids_{i}"],
                 attention_mask=batch[f"attention_mask_{i}"],
                 return_dict=True,
-                output_hidden_states=True,
-            ).last_hidden_state.mean(axis=1)
-            embedding = torch.hstack((temperature.view(-1, 1), embedding))
-            batch[f"embedding_{i}"] = embedding.float()
-        pred = self.task_network(batch)
+                output_hidden_states=False,
+            )
+
+            token_seq = enc_out.last_hidden_state  # (B, L_i, d)
+            padmask = batch[f"attention_mask_{i}"] == 0  # (B, L_i)  bool
+
+            # save for cross-attention fusion
+            batch[f"tokens_{i}"] = token_seq.float()
+            batch[f"padmask_{i}"] = padmask
+
+            # mean-pool tokens_i: single-molecule embedding
+            pooled = token_seq.masked_fill(padmask.unsqueeze(-1), 0).mean(dim=1)
+            batch[f"embedding_{i}"] = pooled
+
+        #  property prediction
+        pred = self.task_network(batch)  # (B, 1)
+
         if transform:
-            pred = self.transform.forward(pred)
-        return pred  # [batch_size, 1]
+            pred = self.transform.forward(pred)  # rescale to original units
+        return pred
 
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
@@ -212,6 +237,120 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
 
     def configure_optimizers(self):
         learnable_params = self.task_network.parameters()
+        if not self.freeze_encoder:
+            learnable_params = chain(learnable_params, self.encoder.parameters())
+
+        optimizer = self.optimizer(learnable_params)
+        if schedule := self.lr_schedule:
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {"scheduler": schedule(optimizer), "interval": "step"},
+            }
+        return optimizer
+
+
+class MultiTargetExcessPhysicsModel(ExcessPhysicsModel):
+    def __init__(
+        self,
+        encoder_ckpt: str,
+        freeze_encoder: bool = False,
+        include_linear_mixing: List[bool] = [True, True],
+        tokenizer: Optional[str] = None,
+        vocab_size: Optional[int] = None,
+        dropout: float = 0.1,
+        num_heads: Optional[int] = 4,
+        n_components: int = 2,
+        n_targets: int = 2,
+        polynomial_order: int = 4,
+        fusion: str | FusionStrategy = FusionStrategy.ATTENTION,
+        basis: str | PolynomialHead = PolynomialHead.RK,
+        optimizer: OptimizerCallable = torch.optim.AdamW,
+        metrics: List[str] = ["mae-channel"],
+        lr_schedule: LRSchedulerCallable | None = None,
+        transform: Optional[str | list[str]] = None,
+    ) -> None:
+        super().__init__(encoder_ckpt=encoder_ckpt, basis=basis)
+
+        self.freeze_encoder = freeze_encoder
+        self.encoder_ckpt = encoder_ckpt
+        self.tokenizer = load_tokenizer(tokenizer or encoder_ckpt)
+        self.optimizer = optimizer
+        self.lr_schedule = lr_schedule
+        self.save_hyperparameters(ignore=["optimizer", "lr_schedule"])
+        self.n_components = n_components
+        self.num_heads = num_heads
+        self.include_linear_mixing = include_linear_mixing
+        self.temperature_normalization = (273, 400)
+
+        transform = "identity"
+        self.transform = AbstractNormalizer.get(transform, n_targets).eval()
+
+        # Load Encoder Model
+        if Path(encoder_ckpt).exists():
+            self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
+        else:
+            from transformers import AutoModel
+
+            self.encoder = AutoModel.from_pretrained(
+                encoder_ckpt,
+                trust_remote_code=True,
+            )
+
+        self.hidden_size = self.encoder.config.hidden_size
+        # Validate the vocab size
+        if vocab_size is not None:
+            if hasattr(self.encoder, "config") and hasattr(
+                self.encoder.config, "vocab_size"
+            ):
+                assert (
+                    self.encoder.config.vocab_size == vocab_size
+                ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
+
+        task_head_args = [
+            {
+                "fusion": fusion,
+                "embed_dim": self.hidden_size,
+                "polynomial_order": polynomial_order,
+                "n_components": n_components,
+                "num_heads": num_heads,
+                "include_linear_mixing": i,
+            }
+            for i in self.include_linear_mixing
+        ]
+
+        self.task_networks = nn.ModuleList(
+            [self.basis.get_class()(**t) for t in task_head_args]
+        )
+        self.lossfn = torch.nn.MSELoss(reduction="none")
+
+        metrics = get_metrics(
+            metrics,
+            "regression",
+            num_outputs=len(self.task_networks),
+        )
+        metrics = bootstrap_collection(metrics, num_bootstraps=100)
+        self.train_metrics = metrics.clone(prefix="train/")
+        self.val_metrics = metrics.clone(prefix="val/")
+        self.test_metrics = metrics.clone(prefix="test/")
+
+    def _scaled_pred_loss(self, batch):
+        """Compute loss before transforming the model's predictions"""
+        preds = self.forward(batch, transform=False)
+        target = batch["target"]
+        target = self.transform.inverse(target)
+        loss = masked_loss(self.lossfn, preds, target, batch["target_mask"])
+        preds = self.transform.forward(preds)
+        return preds, loss
+
+    def task_network(self, batch):
+        pred = torch.hstack(tuple(t(batch) for t in self.task_networks))
+
+        return pred
+
+    def configure_optimizers(self):
+        learnable_params = self.task_networks[0].parameters()
+        for task_net in self.task_networks[1:]:
+            learnable_params = chain(learnable_params, task_net.parameters())
         if not self.freeze_encoder:
             learnable_params = chain(learnable_params, self.encoder.parameters())
 

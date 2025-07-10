@@ -41,6 +41,6 @@ def get_embedding(
     # `hidden_states` is a tuple with length = number of hidden layers
     # each element has shape [batch_size, sequence_length, hidden_size]
     embedding = encoder(**encoding, output_hidden_states=True).hidden_states[-1][
-        :, -1, :
+        :, 0, :
     ]
     return embedding
