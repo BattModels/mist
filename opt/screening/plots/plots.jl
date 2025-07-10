@@ -1,3 +1,4 @@
+#!/usr/bin/env -S julia +release --color=auto --startup-file=no --project=@script
 using ScreeningPlots
 using Makie
 using MISTStyle
