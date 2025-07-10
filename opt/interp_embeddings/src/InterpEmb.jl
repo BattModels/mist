@@ -13,7 +13,7 @@ using LinearAlgebra: norm, dot
 using MISTStyle: MISTStyle, savefig, inch, pt, label
 using ManifoldLearning
 using SafeTensors: SafeTensors
-using Statistics: mean, std
+using Statistics: mean, std, median
 
 include("embedding_figure.jl")
 include("token_embeddings.jl")

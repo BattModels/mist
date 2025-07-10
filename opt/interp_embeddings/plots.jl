@@ -10,8 +10,8 @@ fig_dir = joinpath(@__DIR__, "fig")
 models = [
     "Pretrained" => "../../models/mist-ti624ev1-moleculenet/pretrained",
     "tmQM" => "../../models/mist-ti624ev1-moleculenet/tmqm",
-    "QM9" => "../../models/mist-ti624ev1-moleculenet/qm9",
     "FreeSolv" => "../../models/mist-ti624ev1-moleculenet/freesolv",
+    "QM9" => "../../models/mist-ti624ev1-moleculenet/qm9",
     "QM8" => "../../models/mist-ti624ev1-moleculenet/qm8",
     "Lipo" => "../../models/mist-ti624ev1-moleculenet/lipo",
     "ToxCast" => "../../models/mist-ti624ev1-moleculenet/toxcast",
@@ -24,7 +24,7 @@ models = [
     "BBBP" => "../../models/mist-ti624ev1-moleculenet/bbbp",
 ]
 with_theme(MISTStyle.theme()) do
-    figure_token_embeddings(models[1:8]; emb_models=4)
+    figure_token_embeddings(models[1:8]; emb_models=3, last_token=30)
 end |> MISTStyle.savefig("token_embeddings_updates"; fig_dir)
 with_theme(MISTStyle.theme()) do
     figure_token_embeddings(models; last_token=Inf, fig_size=(7inch, 4.5inch), min_update=1e-6)

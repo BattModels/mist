@@ -113,8 +113,7 @@ function token_ticks(tokens::Vector{String})
     return (collect(eachindex(labels)), labels)
 end
 
-
-function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_size=(4.5inch, 2inch), min_update=0.005)
+function eval_token_embeds(models; last_token=75, min_update=0.005)
     # Token movement during finetuning
     ref_emb, ref_tokens = token_embedding(models[1][2])
     vecl2 = x -> norm.(eachrow(x))
@@ -127,11 +126,10 @@ function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_
         push!(emb_movement, d)
         push!(emb_distance, vecl2(emb))
     end
-    emb_distanct =
     emb_movement = reduce(hcat, emb_movement)
     emb_distance = reduce(hcat, emb_distance)
     @assert 0 <= minimum(emb_movement) && maximum(emb_movement) <= 1 "Unexpected Cos. Dist. Range"
-    avg_update = vec(mean(emb_movement, dims=2))
+    avg_update = vec(median(emb_movement, dims=2))
     sdx = sortperm(avg_update; rev=true)
     emb_movement = emb_movement[sdx, :]
     avg_update = avg_update[sdx]
@@ -154,50 +152,25 @@ function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_
     emb_movement = emb_movement[sdx, :]
     tokens = tokens[sdx]
 
-    # Plot Results
-    f = Figure(;
-        size=fig_size,
-        figure_padding=(2, 2, 2, 3)
-    )
-    gl = GridLayout(f[1, 2])
-    MISTStyle.sublabel!(f[1, 2, TopLeft()], "b"; left=15)
-    xticks = token_ticks(tokens)
-    ax = Axis(gl[1, 1];
-        xticks,
-        xticklabelrotation=pi / 2,
-        xticklabelsize=5pt,
-        xticksvisible=false,
-        yticksvisible=false,
-        yticks=(axes(emb_movement, 2), model_labels),
-    )
-    h = heatmap!(ax, axes(emb_movement)..., emb_movement;
-        colorrange=(min_update, 1),
-        colorscale=log10,)
-    Colorbar(gl[1, 2], h;
-        ticks=LogTicks(WilkinsonTicks(3)),
-        label="Cosine Distance",
-        size=4pt,
-    )
+    return tokens, emb_movement, zip(model_labels, emb_distance)
+end
 
-    gl = GridLayout(f[2, 2])
-    MISTStyle.sublabel!(f[2, 2, TopLeft()], "c"; left=5)
-    ax_per_row = 4
-    emb_models = isnothing(emb_models) ? length(models) : emb_models
-    colormap = token_colormap()
-    for (idx, (label, model)) in enumerate(models[1:emb_models])
+function plot_token_tsne!(f, models; ax_per_row=4, tokens=nothing, colormap=token_colormap())
+    for (idx, (label, model)) in enumerate(models)
         emb, mtoks = token_embedding(model)
         emb = zscore(Float64.(emb); dims=2)
         r = predict(fit(TSNE, emb'))
         rdx = fld(idx - 1, ax_per_row) + 1
         cdx = (idx - 1) % ax_per_row + 1
         ax = Axis(
-            gl[rdx, cdx];
+            f[rdx, cdx];
             title=label,
             limits=(nothing, nothing),
         )
         hidedecorations!(ax)
         for (tok, pos) in zip(mtoks, eachcol(r))
-            tok in tokens || continue
+            isnothing(tokens) || tok in tokens || continue
+            tok in ["[MASK]", "[CLS]", "[UNK]", "[PAD]"] && continue
             text!(ax, pos[1], pos[2];
                 text=tok,
                 color=Int(token_type(tok)),
@@ -207,6 +180,39 @@ function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_
             )
         end
     end
+    return f
+end
+
+function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_size=(4.5inch, 2inch), min_update=0.005)
+    f = Figure(;
+        size=(360, 115),
+        figure_padding=(2, 2, 2, 3)
+    )
+    tokens, emb_movement, emb_distance = eval_token_embeds(models; last_token, min_update)
+
+    # Token Movement
+    model_labels = first.(emb_distance)
+    ax = Axis(f[1, 2];
+        yticks=token_ticks(tokens),
+        xticklabelrotation=0.3,
+        xticklabelsize=5pt,
+        xticksvisible=true,
+        yticksvisible=false,
+        xticks=(axes(emb_movement, 2), model_labels),
+        yticklabelsize=5pt,
+    )
+    h = heatmap!(ax, emb_movement';
+        colorrange=(min_update, 1),
+        colorscale=log10,)
+    Colorbar(f[1, 3], h;
+        ticks=LogTicks(WilkinsonTicks(3)),
+        label="Cosine Distance from Pretrained",
+        size=5pt,
+    )
+
+    gl = GridLayout(f[1, 1])
+    emb_models = isnothing(emb_models) ? length(models) : emb_models
+    colormap = token_colormap()
 
     tt_legend = map(unique(token_type.(tokens))) do tt
         color = colormap[Int(tt)+1]
@@ -223,44 +229,21 @@ function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_
         end
         return PolyElement(; color, label)
     end
-    Legend(f[3, 2], [tt_legend], [label.(tt_legend)], ["Token Class"];
+    Legend(gl[2, 1], [tt_legend], [label.(tt_legend)], ["Token Class"];
         titleposition=:left,
         titlegap=5pt,
         orientation=:horizontal,
         tellheight=true,
         tellwidth=false,
         nbanks=2,
-        margin=(0, 0, 0, -15),
     )
+    glt = GridLayout(gl[1,1])
+    plot_token_tsne!(glt, models[1:emb_models]; colormap)
 
-    ax = Axis(f[1:2, 1];
-        ylabel="Cumulative Distribution Function", xlabel="L2-Norm",
-        limits=(nothing, (0, 1)),
-        ytickformat="{:.0%}",
-    )
-    MISTStyle.sublabel!(f[1, 1, TopLeft()], "a"; left=15)
-    colormap = emb_models <= 4 ? MISTStyle.CAT_COLORS : collect(cgrad(:glasbey_bw_n256))
-    for (color, (label, dist)) in enumerate(zip(first.(models), eachcol(emb_distance)))
-        ecdfplot!(ax, dist;
-            label,
-            color,
-            linewidth=1pt,
-            colorrange=(1, length(colormap)),
-            colormap,
-        )
-    end
-    axislegend(ax;
-        tellwidth=false,
-        orientation=:horizontal,
-        position=:rb,
-        margin=(1, 1, 1, 1),
-        nbanks=4,
-    )
 
-    emb_models > 4 && rowsize!(f.layout, 1, 1inch)
     rowgap!(f.layout, 3pt)
     colgap!(f.layout, 3pt)
-    colsize!(f.layout, 2, Relative(3 / 4))
+    colsize!(f.layout, 1, Relative(3 / 4))
     resize_to_layout!(f)
     return f
 end

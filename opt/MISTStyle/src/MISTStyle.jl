@@ -92,6 +92,16 @@ UM_COLORS = (;
 const CONTINUOUS_COLORS = :lipari
 
 function theme()
+    # Axis Labels Sizes
+    labelsize=8pt
+
+    # Axis Tick Sizes
+    ticklabelsize=6pt
+    tickwidth=0.5pt
+    minortickwidth=0.25pt
+    ticksize=2pt
+    minorticksize=1pt
+
     Theme(
         rowgap=2,
         colgap=2,
@@ -120,20 +130,20 @@ function theme()
             spinewidth=0.5,
             xlabelsize=8pt,
             ylabelsize=8pt,
-            yticklabelsize=6pt,
-            xticklabelsize=6pt,
+            yticklabelsize=ticklabelsize,
+            xticklabelsize=ticklabelsize,
             ylabelpadding=1pt,
             xlabelpadding=1pt,
             yticklabelpad=2pt,
             xticklabelpad=2pt,
-            yticksize=2pt,
-            ytickwidth=0.5pt,
-            yminortickwidth=0.25pt,
-            yminorticksize=1pt,
-            xtickwidth=0.5pt,
-            xticksize=2pt,
-            xminortickwidth=0.25pt,
-            xminorticksize=1pt,
+            yticksize=ticksize,
+            ytickwidth=tickwidth,
+            yminortickwidth=minortickwidth,
+            yminorticksize=minorticksize,
+            xtickwidth=tickwidth,
+            xticksize=ticksize,
+            xminortickwidth=minortickwidth,
+            xminorticksize=minorticksize,
             xgridwidth=0.5,
             ygridwidth=0.5,
             xminorgridwidth=0.5,
@@ -148,7 +158,7 @@ function theme()
             rowgap=1pt,
             colgap=3pt,
             groupgap=4pt,
-            famevisible=true,
+            framevisible=true,
             framewidth=0.5,
             tellheight=false,
             tellwidth=false,
@@ -157,13 +167,14 @@ function theme()
         ),
         Colorbar=(;
             spinewidth=0.5,
-            tickwidth=0.5,
-            ticksize=2,
-            labelsize=8pt,
-            ticklabelsize=6pt,
+            tickwidth=tickwidth,
+            ticksize=ticksize,
+            labelsize=labelsize,
+            ticklabelsize=ticklabelsize,
+            minortickwidth=minortickwidth,
+            minorticksize=minorticksize,
             labelpadding=0pt,
             ticklabelpad=0pt,
-            size=8pt,
         ),
         Scatter=(;
             markersize=5pt,
