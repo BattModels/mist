@@ -104,3 +104,8 @@ def encode_molecules(
         **kwargs,
     )
     return ds.filter(lambda x: x[output_column] is not None, batched=False, **kwargs)
+
+
+def stack_columns(batch, columns: list[str], output: str):
+    n = len(batch[columns[0]])
+    return {output: [[batch[col][i] for col in columns] for i in range(n)]}
