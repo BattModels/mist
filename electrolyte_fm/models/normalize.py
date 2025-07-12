@@ -251,7 +251,7 @@ class MaxScaleTransform(AbstractNormalizer):
         return x_out
 
     def _fit(self, target: MaskedTensor) -> dict:
-        self.max = target.max(0).get_data().to(self.max)
+        self.max = torch.amax(target, dim=0).get_data().to(self.max)
         return self.state_dict()
 
 
