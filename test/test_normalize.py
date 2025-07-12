@@ -4,7 +4,9 @@ import pytest
 from electrolyte_fm.models.normalize import AbstractNormalizer
 
 
-@pytest.fixture(params=["standardize", "power_transform", "log_transform", "identity"])
+@pytest.fixture(
+    params=["standardize", "power_transform", "log_transform", "identity", "max_scale"]
+)
 def fitted_normalizer(request):
     tf = AbstractNormalizer.get(request.param, 1)
     x = MaskedTensor(torch.rand(100, 1), torch.ones(100, 1) == 1)

@@ -55,7 +55,7 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.num_heads = num_heads
         self.temperature_normalization = (273, 400)
         self.basis = PolynomialHead(basis)
-        transform = "identity"
+        transform = transform or "identity"
         self.transform = AbstractNormalizer.get(transform, 1).eval()
 
         # Load Encoder Model

@@ -236,12 +236,10 @@ class MaxScaleTransform(AbstractNormalizer):
     Divide by maximum value in training dataset.
     """
 
-    def __init__(self, mx: int, eps: float = 1e-8):
+    def __init__(self, num_outputs: int):
         super().__init__(1)
-        self.num_outputs = 1
-        self.max = mx
-        self.eps = float(eps)
-        assert 0 <= self.eps
+        self.num_outputs = num_outputs
+        self.register_buffer("max", torch.zeros(num_outputs))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Undo standardization
@@ -253,6 +251,7 @@ class MaxScaleTransform(AbstractNormalizer):
         return x_out
 
     def _fit(self, target: MaskedTensor) -> dict:
+        self.max = target.max(0).get_data().to(self.max)
         return self.state_dict()
 
 
