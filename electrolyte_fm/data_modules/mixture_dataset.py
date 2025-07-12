@@ -16,6 +16,7 @@ class ComponentDataModule(PropertyPredictionDataModule):
         include_temperature: bool | str = True,
         smi_column: str = "smi{:d}",
         x_column: str = "x{:d}",
+        excess_columns: list[str] | None = None,
         **kwargs,
     ):
         self.path = Path(path)
@@ -23,6 +24,7 @@ class ComponentDataModule(PropertyPredictionDataModule):
         self.n_components = int(n_components)
         self.smi_columns = [smi_column.format(n + 1) for n in range(self.n_components)]
         self.x_columns = [x_column.format(n + 1) for n in range(self.n_components)]
+        self.excess_columns = excess_columns or []
         assert self.path.exists()
         super().__init__(smi_column=smi_column, **kwargs)
         assert len(self.target_columns) >= 1
@@ -54,6 +56,17 @@ class ComponentDataModule(PropertyPredictionDataModule):
             remove_columns=self.target_columns,
         )
 
+        if self.excess_columns:
+            ds = ds.map(
+                collate_target,
+                batched=False,
+                fn_kwargs={
+                    "target_columns": self.excess_columns,
+                    "name": "target_excess",
+                },
+                remove_columns=self.excess_columns,
+            )
+
         ds = ds.map(
             stack_columns,
             batched=True,
@@ -79,6 +92,8 @@ class ComponentDataModule(PropertyPredictionDataModule):
         columns = ["target", "target_mask", "composition"]
         if self.include_encoding or self.randomize:
             columns.extend(self.smi_columns)
+        if self.excess_columns:
+            columns.extend(["target_excess", "target_excess_mask"])
 
         if not self.randomize:
             columns.extend(["input_ids", "attention_mask"])

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import torch
 from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import MetricCollection
 
@@ -86,3 +87,11 @@ class CanSkip:
             return True
         else:
             return False
+
+
+def masked_mean_pool(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    mask = mask.unsqueeze(-1)
+    x_masked = x * mask
+    s = x_masked.sum(dim=-2)
+    c = mask.sum(dim=-2).clamp(min=1)
+    return s / c
