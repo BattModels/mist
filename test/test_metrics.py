@@ -112,7 +112,7 @@ def test_masked_metric(name):
     # Repeat, changing the masked targets
     metric.reset()
     targets[1, 0] = 1
-    assert mask[1, 0]
+    assert ~mask[1, 0]
     masked_metric_update(metric, preds, targets, mask, input_ids)
     out_targets = metric.compute()
     assert out_targets == out_init
@@ -161,13 +161,13 @@ def test_masked_loss():
 
     # Repeat, changing a masked target
     targets[1, 0] = 423.0
-    assert mask[1, 0]
+    assert ~mask[1, 0]
     loss_targets = masked_loss(lossfn, preds, targets, mask)
     assert loss_targets == loss
 
     # Repeat, changing a masked prediction
     targets[0, 2] = 616.0
-    assert mask[0, 2]
+    assert ~mask[0, 2]
     loss_preds = masked_loss(lossfn, preds, targets, mask)
     assert loss_preds == loss
 
@@ -281,19 +281,19 @@ def test_oov_metric_masked():
     preds = torch.tensor([1, 0, 0])
     targets = torch.tensor([0, 1, 0])
     input_ids = torch.tensor([[3, 1], [0, 0], [3, 2]])
-    mask = torch.tensor([False, True, False])
+    mask = torch.tensor([True, False, True])
 
     # Initial variant
     masked_metric_update(metric, preds, targets, mask, input_ids)
     out = metric.compute()
     assert out["oov"] == torch.tensor(0)
-    assert out["non_oov"] == torch.tensor(1)
+    assert out["non_oov"] == torch.tensor(1.0)
     assert out["all"] == torch.tensor(0.5)
 
     # Repeat, changing a masked target
     metric.reset()
     targets[1] = False
-    assert mask[1]
+    assert ~mask[1]
     masked_metric_update(metric, preds, targets, mask, input_ids)
     out_targets = metric.compute()
     assert out_targets == out
@@ -301,7 +301,7 @@ def test_oov_metric_masked():
     # Repeat, changing a masked preds
     metric.reset()
     preds[1] = True
-    assert mask[1]
+    assert ~mask[1]
     masked_metric_update(metric, preds, targets, mask, input_ids)
     out_preds = metric.compute()
     assert out_preds == out
@@ -485,10 +485,10 @@ def test_ortho_procrustes():
     def check_alignment(x, y, matches=True):
         R_ref, _ = orthogonal_procrustes(x.numpy()[0], y.numpy()[0])
         R = metrics.OrthoProcrustes.procrustes_alignment(x, y)
-        loss = metrics.OrthoProcrustes.procrustes_disparity(x[0], y[0])
+        loss = metrics.OrthoProcrustes.procrustes_disparity(x, y)
         logging.debug({"R": R, "R_ref": R_ref, "loss": loss, "x": x, "y": y})
-        # assert R.isclose(torch.tensor(R_ref.tolist()), atol=1e-5).all()
-        assert loss.isclose(torch.tensor(0.0), atol=atol) == matches
+        assert loss.shape == (B, N)
+        assert (loss.isclose(torch.tensor(0.0), atol=atol) == matches).all()
 
     check_alignment(x, y)
 
