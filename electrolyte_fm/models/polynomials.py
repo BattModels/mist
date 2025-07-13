@@ -63,21 +63,24 @@ class LagrangePolynomial(nn.Module):
         return w
 
     def forward(self, coefs: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
-        x = x.unsqueeze(-1)  # (..., 1)
-        x_diff = x - self.nodes  # (..., n)
-        on_node = x_diff.abs() <= 1e-8
-
         if self.zero_endpoints:
             zeros = torch.zeros_like(coefs[..., :1])
             coefs = torch.cat([zeros, coefs, zeros], dim=-1)
-
         assert coefs.shape[-1] == self.polynomial_order
+
+        # Compute weights
+        x = x.unsqueeze(-1)  # (..., 1)
+        x_diff = x - self.nodes  # (..., n)
+        on_node = x_diff.abs() <= 1e-8
         w_over_diff = self.weights / x_diff  # (..., N)
+        w_over_diff = torch.where(~on_node, w_over_diff, 1.0)
+
+        # Evaluate polynomial
         num = (w_over_diff * coefs).sum(dim=-1)  # (...)
         den = w_over_diff.sum(dim=-1)  # (...)
         y = num / den
 
-        # Handle exact matches
+        # Handle on nodes
         if on_node.any():
             matched_idx = on_node.float().argmax(dim=-1)  # (...)
             gather_idx = matched_idx.unsqueeze(-1)  # (..., 1)

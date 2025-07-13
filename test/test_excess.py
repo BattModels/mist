@@ -82,6 +82,28 @@ def test_gradient(order, zero):
     assert coefs.grad is not None
 
 
+@pytest.mark.parametrize("order", [3, 4])
+def test_on_node_gradient(order):
+    interp = LagrangePolynomial(polynomial_order=order, zero_endpoints=True)
+    x = interp.active_nodes.clone()
+    N = len(interp.active_nodes)
+
+    # Construct coefficients
+    coefs = torch.rand((N))
+    coefs = torch.stack([coefs.clone() for _ in range(N)])
+    coefs.requires_grad = True
+
+    # Check value
+    y = interp(coefs, x)
+    assert torch.allclose(y, coefs[0])
+
+    # Check gradients
+    y.sum().backward()
+    assert coefs.grad is not None
+    assert coefs.grad.isnan().count_nonzero() == 0
+    assert coefs.grad.isinf().count_nonzero() == 0
+
+
 class MockedOutput:
     def __init__(self, x) -> None:
         self.last_hidden_state = x
