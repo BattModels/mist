@@ -1,11 +1,14 @@
 from pathlib import Path
 
 import torch
+import typer
 from datasets import Dataset, IterableDatasetDict, load_dataset
 from torch.utils.data import default_collate
 
 from .utils import MolEncoding, stack_columns
 from .property_prediction_dataset import PropertyPredictionDataModule, collate_target
+
+cli = typer.Typer()
 
 
 class ComponentDataModule(PropertyPredictionDataModule):
@@ -16,7 +19,7 @@ class ComponentDataModule(PropertyPredictionDataModule):
         include_temperature: bool | str = True,
         smi_column: str = "smi{:d}",
         x_column: str = "x{:d}",
-        excess_columns: list[str] | None = None,
+        excess_columns: str | list[str] | None = "excess {:s}",
         **kwargs,
     ):
         self.path = Path(path)
@@ -24,11 +27,20 @@ class ComponentDataModule(PropertyPredictionDataModule):
         self.n_components = int(n_components)
         self.smi_columns = [smi_column.format(n + 1) for n in range(self.n_components)]
         self.x_columns = [x_column.format(n + 1) for n in range(self.n_components)]
-        self.excess_columns = excess_columns or []
         assert self.path.exists()
         super().__init__(smi_column=smi_column, **kwargs)
         assert len(self.target_columns) >= 1
         assert len(self.smi_columns) == len(self.x_columns) == self.n_components
+
+        if isinstance(excess_columns, str):
+            self.excess_columns = [
+                excess_columns.format(col) for col in self.target_columns
+            ]
+        elif isinstance(excess_columns, list):
+            self.excess_columns = excess_columns
+            assert len(self.excess_columns) == len(self.target_columns)
+        else:
+            self.excess_columns = None
 
     def _get_dataset(self):
         ds = load_dataset(
@@ -95,9 +107,18 @@ class ComponentDataModule(PropertyPredictionDataModule):
         if self.excess_columns:
             columns.extend(["target_excess", "target_excess_mask"])
 
+        # Filter to complete entries
+        def has_training_data(x):
+            n_targets = x["target_mask"].sum() > 0
+            n_excess = x["target_excess_mask"].sum() > 0
+            return n_targets or n_excess
+
+        ds = ds.filter(has_training_data, batched=False)
+
         if not self.randomize:
             columns.extend(["input_ids", "attention_mask"])
         if self.include_temperature:
+            ds = ds.rename_column("temperature [kelvin]", "temperature")
             columns.append("temperature")
         ds = ds.select_columns(columns)
 
@@ -107,7 +128,21 @@ class ComponentDataModule(PropertyPredictionDataModule):
         self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
     def collate_fn(self, batch):
-        batch = default_collate(batch)
+        if self.include_encoding:
+            smi = {
+                k: batch[bdx][k] for k in self.smi_columns for bdx in range(len(batch))
+            }
+            batch = {
+                k: obs[k]
+                for obs in batch
+                for k in batch[0].keys()
+                if k not in self.smi_columns
+            }
+            batch = default_collate(batch)
+            batch.update(smi)
+        else:
+            batch = default_collate(batch)
+
         batch["composition"] = default_collate(batch["composition"]).T
         if self.randomize:
             batch = encode_and_tokenize_mixture(
@@ -121,6 +156,13 @@ class ComponentDataModule(PropertyPredictionDataModule):
             if not self.include_encoding:
                 for smi in self.smi_columns:
                     batch.pop(smi)
+
+        for k in ["target", "target_excess", "temperature", "composition"]:
+            if not isinstance(batch[k], torch.Tensor):
+                continue
+
+            if batch[k].dtype == torch.float64:
+                batch[k] = batch[k].to(torch.float32)
 
         return batch
 
@@ -142,3 +184,17 @@ def encode_and_tokenize_mixture(
         batch[k] = torch.reshape(toks[k], (B, len(smi_columns), -1))
 
     return batch
+
+
+@cli.command()
+def split_dataset(data: Path, output: Path):
+    from .molnet_dataset import train_val_test_split
+
+    ds = load_dataset("csv", data_files=[str(data)], split="train")
+    ds = ds.map(lambda x: {"x2": 1 - x["x1"]}, batched=False)
+    ds = train_val_test_split(ds)
+    ds.save_to_disk(output)
+
+
+if __name__ == "__main__":
+    cli()

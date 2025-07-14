@@ -1,11 +1,15 @@
+from unittest.mock import Mock, patch
+from pathlib import Path
 import pytest
 import torch
 from torch import nn
 import random
 
+from transformers import AutoConfig
 from electrolyte_fm.models.polynomials import LagrangePolynomial
 from electrolyte_fm.models.excess_physics_model import (
     ExcessPhysicsModel,
+    ExcessPhysicsConfig,
     pairwise_fusion,
 )
 
@@ -118,21 +122,29 @@ class MockedEncoder(nn.Module):
         return MockedOutput(self.mlp(x.unsqueeze(-1)))
 
 
-def test_excess():
+@pytest.mark.parametrize(
+    "interaction", ["square-difference", "gaussian", "difference", "softmax"]
+)
+def test_excess(interaction):
     B = 5  # Batch size
     C = 3  # Number of components
     L = 10  # Sequence length
-    E = 6  # Embedding Dimension
+    E = 8  # Embedding size
     P = 3  # polynomial_order
     T = 2  # Number of targets
 
-    component_properties = nn.Linear(E, T)
-
-    model = ExcessPhysicsModel(
-        encoder=MockedEncoder(E),
-        pairwise_interaction=pairwise_fusion("square-difference", E, P, n_targets=T),
-        component_properties=component_properties,
-    )
+    with patch("transformers.AutoModel.from_config") as mock_from_config:
+        mock_from_config.side_effect = lambda config: MockedEncoder(config.hidden_size)
+        encoder_config = Mock()
+        encoder_config.hidden_size = E
+        model = ExcessPhysicsModel(
+            ExcessPhysicsConfig(
+                encoder=encoder_config,
+                target_columns=range(T),
+                interactions=interaction,
+                num_control=P,
+            )
+        )
     model = model.eval()
 
     input_ids = torch.rand(B, C, L)
@@ -186,3 +198,40 @@ def rand_simplex(*dims) -> torch.Tensor:
     x = torch.rand(*dims)
     x /= x.sum(dim=-1, keepdim=True)
     return x.detach()
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        ExcessPhysicsModel.from_pretrained_encoder(
+            "ibm/MoLFormer-XL-both-10pct"
+        ).config,
+        ExcessPhysicsConfig(encoder=AutoConfig.for_model("roberta")),
+    ],
+)
+def test_config(config):
+    d = config.to_dict()
+    assert isinstance(d, dict)
+    c2 = ExcessPhysicsConfig.from_dict(d)
+    assert isinstance(c2, ExcessPhysicsConfig)
+    assert config.to_dict() == c2.to_dict()
+
+
+def test_saving(tmp_path):
+    model = ExcessPhysicsModel(
+        ExcessPhysicsConfig(
+            encoder=AutoConfig.for_model(
+                "roberta",
+                hidden_size=512,
+                intermediate_size=512,
+                num_attention_heads=8,
+                num_layers=2,
+            )
+        )
+    )
+    save_directory = Path(tmp_path, "model")
+    model.save_pretrained(save_directory)
+    assert save_directory.joinpath("config.json").exists()
+    assert save_directory.joinpath("model.safetensors").exists()
+    model2 = ExcessPhysicsModel.from_pretrained(save_directory)
+    assert model2.config.to_dict() == model.config.to_dict()
