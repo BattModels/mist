@@ -10,14 +10,16 @@ from torch import nn
 from transformers import AutoModel, AutoConfig, PretrainedConfig
 from transformers import CONFIG_MAPPING as HF_CONFIG_MAPPING
 
+from torchmetrics import MetricCollection
 from ..utils.metrics import (
-    get_metrics,
+    get_metric,
     masked_loss,
-    masked_metric_update,
 )
 from .model_utils import masked_mean_pool
 from .normalize import Standardize
 from .polynomials import LagrangePolynomial
+from .physics_task_heads import ArrtheniusActivation
+from ..utils.progressive_thawing import ProgressiveThawing
 
 
 def _default_targets():
@@ -34,7 +36,7 @@ class ExcessPhysicsConfig:
     target_columns: list[str] | None = field(default_factory=_default_targets)
     interactions: str = "difference"
     num_control: int = 3
-    temperature_dependence: list | float = 1.0
+    temperature_dependence: str | None = None
     dropout: float = 0.1
 
     @property
@@ -81,6 +83,8 @@ def pairwise_fusion(name: str, *args, **kwargs):
         return EquivariantInteraction(*args, **kwargs)
     elif name == "softmax":
         return SoftmaxFusion(*args, **kwargs)
+    elif name == "concat":
+        return ConcatFusion(*args, **kwargs)
     else:
         raise ValueError(f"Unknown fusion: {name}")
 
@@ -137,7 +141,7 @@ class EquivariantInteraction(PairwiseInteraction):
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         emb_a, emb_b = self.distance(a, b)
         y_a = self.mlp(emb_a).reshape(*emb_a.shape[:-1], self.n_targets, self.n_out)
-        y_b = self.mlp(emb_b).reshape(*emb_a.shape[:-1], self.n_targets, self.n_out)
+        y_b = self.mlp(emb_b).reshape(*emb_b.shape[:-1], self.n_targets, self.n_out)
         return y_a + y_b.flip(-1)
 
     def distance(self, a: torch.Tensor, b: torch.Tensor):
@@ -150,36 +154,47 @@ class SoftmaxFusion(EquivariantInteraction):
         return y[0], y[1]
 
 
+class ConcatFusion(EquivariantInteraction):
+    def __init__(self, n_in: int, n_out: int, **kwargs):
+        super().__init__(2 * n_in, n_out, **kwargs)
+
+    def distance(self, a: torch.Tensor, b: torch.Tensor):
+        return torch.cat([a, b], dim=-1), torch.cat([b, a], dim=-1)
+
+
 class ExcessPhysicsModel(nn.Module):
     def __init__(self, config: ExcessPhysicsConfig):
         super().__init__()
         self.config = config
         self.encoder = AutoModel.from_config(config.encoder)
+
+        if config.temperature_dependence == "arrhenius":
+            n_temperature_targets = 2
+            self.temperature_dependence = ArrtheniusActivation()
+        else:
+            n_temperature_targets = 1
+            self.temperature_dependence = nn.Identity()
+
         self.pairwise_interaction = pairwise_fusion(
             config.interactions,
             config.encoder.hidden_size,
-            config.num_control,
+            config.num_control * n_temperature_targets,
             n_targets=config.num_targets,
         )
         self.component_properties = nn.Sequential(
             nn.Linear(config.encoder.hidden_size, config.encoder.hidden_size),
             nn.Dropout(config.dropout),
             nn.SiLU(),
-            nn.Linear(config.encoder.hidden_size, config.num_targets),
+            nn.Linear(
+                config.encoder.hidden_size, config.num_targets * n_temperature_targets
+            ),
         )
         self.excess_polynomial = LagrangePolynomial(
             polynomial_order=self.config.num_control + 2,
             zero_endpoints=True,
         )
         self.transform = Standardize(num_outputs=config.num_targets)
-        self.register_buffer(
-            "temperature_dependence",
-            torch.tensor(
-                1.0
-                if config.temperature_dependence is None
-                else config.temperature_dependence
-            ),
-        )
+        self.excess_transform = Standardize(num_outputs=config.num_targets)
 
     def save_pretrained(self, save_directory: str | Path):
         from safetensors.torch import save_model
@@ -221,7 +236,6 @@ class ExcessPhysicsModel(nn.Module):
         attention_mask: torch.Tensor,
         composition: torch.Tensor,
         temperature: torch.Tensor,
-        transform: bool = True,
     ):
         # Get component embedding vectors
         hs = self.encoder(
@@ -248,39 +262,43 @@ class ExcessPhysicsModel(nn.Module):
         # Compute partial pairwise concentrations
         # I.e. Partial concentration of i assuming an i+j mixture
         x_t = composition[:, indices[0]] + composition[:, indices[1]]
+        x_t = x_t.clamp(min=0, max=1)
         x_i = composition[:, indices[0]] / x_t
         x_i = torch.where(x_i.abs() > 1e-8, x_i, torch.tensor(0.0).to(x_i))
-        x_i = x_i.reshape(B * I, 1)
+        x_i = x_i.clamp(min=0, max=1)
+        x_i = x_i.view(B * I, 1)
+
+        # Apply temperature dependence
+        pw_coeffs = self.temperature_dependence(pw_coeffs, temperature.view(B, 1, 1))
 
         # Evaluate interaction polynomials at compositions
-        pw = self.excess_polynomial(pw_coeffs, x_i)
+        pw = x_t.view(B * I, 1) * self.excess_polynomial(pw_coeffs, x_i)
         assert pw.shape == (B * I, T)
 
         # Sum over interactions to get excess properties
         y_excess = pw.reshape(B, I, -1).sum(dim=1)
         assert y_excess.shape == (B, T)
 
-        # Inject Temperature dependence
-        y_excess = y_excess * (temperature / 273.15).view(B, 1).pow(
-            self.temperature_dependence
-        )
-
         # Predict Pure Property (B, C, E) -> (B, C, T)
         y_target = self.component_properties(embs)
+        y_target = self.temperature_dependence(y_target, temperature.view(B, 1, 1))
         assert y_target.shape == (B, C, T), f"Got: {y_target.shape}, vs {(B, C, T)}"
 
         # Linear Mixing (B, C, T) -> (B, T)
         assert composition.shape == (B, C)
         y_linear = (y_target * composition.view(B, C, 1)).sum(dim=1)
+        assert y_linear.shape == (B, T)
 
         # Transform to real-units
-        if transform:
-            y_linear = self.transform.forward(y_linear)
-            y_excess = y_excess * self.transform.std
-
+        y_linear = self.transform.forward(y_linear)
+        y_excess = self.excess_transform.forward(y_excess)
         y = y_linear + y_excess
 
         return y, y_linear, y_excess
+
+
+def clean_target_name(target: str) -> str:
+    return target.split("[")[0].strip().replace(" ", "_")
 
 
 class ExcessPhysicsLightningModel(LightningModule):
@@ -293,7 +311,7 @@ class ExcessPhysicsLightningModel(LightningModule):
         model: ExcessPhysicsModel | ExcessPhysicsConfig,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
-        metrics: list[str] = ["rmse-channel", "mae-channel", "r2-channel"],
+        metrics: list[str] = ["rmse", "mae", "r2"],
     ) -> None:
         super().__init__()
 
@@ -313,13 +331,16 @@ class ExcessPhysicsLightningModel(LightningModule):
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.lossfn = nn.MSELoss(reduction="none")
+        self.target_metrics = metrics
 
-        metrics = get_metrics(
-            metrics,
-            "regression",
-            target_channels=self.model.config.target_columns,
-            num_outputs=self.model.config.num_targets,
-        )
+        mc = {}
+        for target in self.model.config.target_columns:
+            target = clean_target_name(target)
+            for metric in metrics:
+                mc[f"{target}/{metric}"] = get_metric(metric, "regression")
+                mc[f"excess_{target}/{metric}"] = get_metric(metric, "regression")
+
+        metrics = MetricCollection(mc)
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
@@ -337,9 +358,13 @@ class ExcessPhysicsLightningModel(LightningModule):
             assert self.trainer.datamodule.target_dataset is not None
             ds = self.trainer.datamodule.target_dataset
             state = self.model.transform.fit(ds)
+            state_excess = self.model.excess_transform.fit(ds, name="target_excess")
+            state_excess["mean"].zero_()
 
         state = self.trainer.strategy.broadcast(state)
+        state_excess = self.trainer.strategy.broadcast(state_excess)
         self.model.transform.load_state_dict(state)
+        self.model.excess_transform.load_state_dict(state_excess)
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -350,18 +375,20 @@ class ExcessPhysicsLightningModel(LightningModule):
             attention_mask=kwargs["attention_mask"],
             temperature=kwargs["temperature"],
             composition=kwargs["composition"],
-            transform=False,
         )
 
-        # Mixture Property Prediction
-        target = self.model.transform.inverse(kwargs["target"])
-        loss_mix = masked_loss(self.lossfn, y, target, kwargs["target_mask"])
+        # Compute standardized losses
+        loss_mix = masked_loss(
+            self.lossfn,
+            self.model.transform.inverse(y),
+            self.model.transform.inverse(kwargs["target"]),
+            kwargs["target_mask"],
+        )
         if "target_excess" in kwargs:
-            target_excess = kwargs["target_excess"] / self.model.transform.std
             loss_excess = masked_loss(
                 self.lossfn,
-                y_excess,
-                target_excess,
+                self.model.excess_transform.inverse(y_excess),
+                self.model.excess_transform.inverse(kwargs["target_excess"]),
                 kwargs["target_excess_mask"],
             )
         else:
@@ -370,90 +397,62 @@ class ExcessPhysicsLightningModel(LightningModule):
         # Combine losses
         loss = loss_mix + loss_excess
 
-        # Apply transform
-        y_linear = self.model.transform.forward(y_linear)
-        y_excess = self.model.transform.std * y_excess
-        y = y_linear + y_excess
+        return (y, y_linear, y_excess), loss
 
-        return y, loss
+    def update_metrics(self, preds, batch, metrics):
+        y, _, y_excess = preds  # Only y is used
+        targets = self.model.config.target_columns
+        self._masked_metric(
+            metrics,
+            y,
+            batch["target"],
+            batch["target_mask"],
+            (clean_target_name(t) for t in targets),
+        )
+        self._masked_metric(
+            metrics,
+            y_excess,
+            batch["target_excess"],
+            batch["target_excess_mask"],
+            ("excess_" + clean_target_name(t) for t in targets),
+        )
+
+    def _masked_metric(self, metrics, y, y_ref, mask, targets):
+        for idx, target in enumerate(targets):
+            y_pred = y[:, idx]
+            y_true = y_ref[:, idx]
+            target_mask = mask[:, idx]
+
+            if not target_mask.any():
+                continue
+
+            y_pred = y_pred[target_mask]
+            y_true = y_true[target_mask]
+            for metric in self.target_metrics:
+                metrics[f"{target}/{metric}"].update(y_pred, y_true)
+
+    def stage_step(self, stage: str, batch):
+        preds, loss = self.forward_loss(**batch)
+        self.log(
+            f"{stage}/loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+        )
+        metrics = getattr(self, f"{stage}_metrics")
+        self.update_metrics(preds, batch, metrics)
+        self.log_dict(metrics.compute(), on_step=False, on_epoch=True)
+        return loss
 
     def training_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        preds, loss = self.forward_loss(**batch)
-        self.log(
-            "train/loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            sync_dist=True,
-        )
-
-        masked_metric_update(
-            self.train_metrics,
-            preds,
-            batch["target"],
-            batch["target_mask"],
-        )
-        return loss
-
-    def on_train_epoch_end(self):
-        self.log_dict(
-            self.train_metrics.compute(),
-            on_epoch=True,
-            sync_dist=True,
-        )
-        self.train_metrics.reset()
+        return self.stage_step("train", batch)
 
     def validation_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        preds, loss = self.forward_loss(**batch)
-        self.log(
-            "val/loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            sync_dist=True,
-        )
-
-        masked_metric_update(
-            self.val_metrics,
-            preds,
-            batch["target"],
-            batch["target_mask"],
-        )
-        return loss
-
-    def on_validation_epoch_end(self):
-        self.log_dict(
-            self.val_metrics.compute(),
-            on_epoch=True,
-            sync_dist=True,
-        )
-        self.val_metrics.reset()
+        return self.stage_step("val", batch)
 
     def test_step(self, batch, batch_idx: int) -> torch.FloatTensor:
-        preds, loss = self.forward_loss(**batch)
-        self.log(
-            "test/loss",
-            loss,
-            on_step=True,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        masked_metric_update(
-            self.test_metrics,
-            preds.to(dtype=torch.float32),
-            batch["target"].to(dtype=torch.float32),
-            batch["target_mask"],
-        )
-        return loss
-
-    def on_test_epoch_end(self):
-        self.log_dict(
-            self.test_metrics.compute(),
-            on_epoch=True,
-            sync_dist=True,
-        )
-        self.test_metrics.reset()
+        return self.stage_step("test", batch)
 
     def configure_optimizers(self):
         learnable_params = []
@@ -516,6 +515,7 @@ if __name__ == "__main__":
         "data": {
             "path": "excess_dataset",
             "batch_size": 16,
+            "randomize": True,
         },
         "trainer": {
             "lr": 1e-3,
@@ -524,9 +524,9 @@ if __name__ == "__main__":
     }
     model = ExcessPhysicsModel.from_pretrained_encoder(
         name_or_path="models/mist-ti624ev1",
-        temperature_dependence=[-1, 1, 2],
+        temperature_dependence="arrhenius",
         num_control=2,
-        interactions="square-difference",
+        interactions="softmax",
     )
     config["model"] = model.config.to_dict()
 
@@ -543,9 +543,24 @@ if __name__ == "__main__":
         ),
     )
 
+    thawing_schedule = ProgressiveThawing(
+        initial=["model.encoder"],
+        stages=[
+            ["model.encoder.encoder.layer.7"],
+            ["model.encoder.encoder.layer.6"],
+        ],
+        stage_duration=5,
+    )
+
     trainer = Trainer(
         precision=32,
-        callbacks=[val_loss_ckpt, step_ckpt, LearningRateMonitor(), ModelCheckpoint()],
+        callbacks=[
+            val_loss_ckpt,
+            step_ckpt,
+            LearningRateMonitor(),
+            ModelCheckpoint(),
+            thawing_schedule,
+        ],
         logger=WandbLogger(project="excess_physics"),
         enable_progress_bar=False,
     )

@@ -125,21 +125,24 @@ class ComponentDataModule(PropertyPredictionDataModule):
         self.train_dataset: Dataset = ds["train"].shuffle()
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
-        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+
+        # Dataset for normalization
+        norm_columns = ["target", "target_mask", "temperature"]
+        if self.excess_columns:
+            norm_columns.extend(["target_excess", "target_excess_mask"])
+        self.target_dataset = ds["train"].select_columns(norm_columns)
 
     def collate_fn(self, batch):
         if self.include_encoding:
-            smi = {
-                k: batch[bdx][k] for k in self.smi_columns for bdx in range(len(batch))
-            }
+            compounds = [
+                [batch[bdx][k] for k in self.smi_columns] for bdx in range(len(batch))
+            ]
             batch = {
-                k: obs[k]
-                for obs in batch
+                k: default_collate([obs[k] for obs in batch])
                 for k in batch[0].keys()
                 if k not in self.smi_columns
             }
-            batch = default_collate(batch)
-            batch.update(smi)
+            batch["compounds"] = compounds
         else:
             batch = default_collate(batch)
 

@@ -2,6 +2,12 @@ import torch
 from torch import nn
 
 
+class ArrtheniusActivation(nn.Module):
+    def forward(self, x: torch.Tensor, temperature: torch.Tensor):
+        A, Ea = torch.chunk(x, 2, -1)
+        return A * torch.exp(Ea / temperature)
+
+
 class ArrheniusTaskHead(nn.Module):
     def __init__(self, embed_dim: int) -> None:
         super().__init__()

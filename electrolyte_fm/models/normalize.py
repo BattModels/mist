@@ -33,21 +33,21 @@ class AbstractNormalizer(torch.nn.Module):
         state = broadcast(state)
         self.load_state_dict(state)
 
-    def fit(self, ds) -> dict:
+    def fit(self, ds, name: str = "target") -> dict:
         """Fit the normalization parameters on dataset"""
         if isinstance(ds, IterableDataset):
             target = []
             mask = []
             for x in ds:
-                target.append(x["target"])
-                mask.append(x["target_mask"])
+                target.append(x[name])
+                mask.append(x[f"{name}_mask"])
 
             target = torch.stack(target)
             mask = torch.stack(mask)
 
         else:
-            target = torch.stack([torch.tensor(x) for x in ds["target"]])
-            mask = torch.stack([torch.tensor(x) for x in ds["target_mask"]])
+            target = torch.stack([torch.tensor(x) for x in ds[name]])
+            mask = torch.stack([torch.tensor(x) for x in ds[f"{name}_mask"]])
 
         # Use masked tensor to compute normalization parameters
         target = masked_tensor(target, mask)
@@ -123,15 +123,15 @@ class Standardize(AbstractNormalizer):
     def inverse(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.mean) / self.std
 
-    def fit(self, ds) -> dict:
+    def fit(self, ds, name: str = "target") -> dict:
         num_outputs = self.num_outputs
         assert num_outputs is not None
         mean = torch.zeros(num_outputs)
         m2 = torch.zeros(num_outputs)
         n = torch.zeros(num_outputs, dtype=torch.int)
         for row in ds:
-            target = torch.tensor(row["target"])
-            mask = torch.tensor(row["target_mask"])
+            target = torch.tensor(row[name])
+            mask = torch.tensor(row[f"{name}_mask"])
             x = masked_tensor(target, mask)
             n += mask.view(-1, num_outputs).sum(0)
             xs = x.view(-1, num_outputs).sum(0)
