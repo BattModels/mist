@@ -2,7 +2,7 @@ from pathlib import Path
 
 import torch
 import typer
-from datasets import Dataset, IterableDatasetDict, load_dataset
+from datasets import Dataset, DatasetDict, IterableDatasetDict, load_dataset
 from torch.utils.data import default_collate
 
 from .utils import MolEncoding, stack_columns
@@ -86,24 +86,9 @@ class ComponentDataModule(PropertyPredictionDataModule):
             remove_columns=self.x_columns,
         )
 
-        # Maybe encode and tokenize
-        if not self.randomize:
-            ds = ds.map(
-                encode_and_tokenize_mixture,
-                batched=True,
-                fn_kwargs={
-                    "smi_columns": self.smi_columns,
-                    "randomize": self.randomize,
-                    "encoding": self.encoding,
-                    "tokenizer": self.tokenize,
-                    "token_collator": self.token_collator,
-                },
-            )
-
         # Filter to input columns
         columns = ["target", "target_mask", "composition"]
-        if self.include_encoding or self.randomize:
-            columns.extend(self.smi_columns)
+        columns.extend(self.smi_columns)
         if self.excess_columns:
             columns.extend(["target_excess", "target_excess_mask"])
 
@@ -124,7 +109,8 @@ class ComponentDataModule(PropertyPredictionDataModule):
 
         self.train_dataset: Dataset = ds["train"].shuffle()
         self.val_dataset: Dataset = ds["validation"]
-        self.test_dataset: Dataset = ds["test"]
+        if "test" in ds:
+            self.test_dataset: Dataset = ds["test"]
 
         # Dataset for normalization
         norm_columns = ["target", "target_mask", "temperature"]
@@ -133,32 +119,17 @@ class ComponentDataModule(PropertyPredictionDataModule):
         self.target_dataset = ds["train"].select_columns(norm_columns)
 
     def collate_fn(self, batch):
-        if self.include_encoding:
-            compounds = [
-                [batch[bdx][k] for k in self.smi_columns] for bdx in range(len(batch))
-            ]
-            batch = {
-                k: default_collate([obs[k] for obs in batch])
-                for k in batch[0].keys()
-                if k not in self.smi_columns
-            }
-            batch["compounds"] = compounds
-        else:
-            batch = default_collate(batch)
-
-        batch["composition"] = default_collate(batch["composition"]).T
-        if self.randomize:
-            batch = encode_and_tokenize_mixture(
-                batch,
-                tokenizer=self.tokenize,
-                encoding=self.encoding,
-                smi_columns=self.smi_columns,
-                randomize=self.randomize,
-                token_collator=self.token_collator,
-            )
-            if not self.include_encoding:
-                for smi in self.smi_columns:
-                    batch.pop(smi)
+        batch = encode_and_tokenize_mixture(
+            batch,
+            tokenizer=self.tokenize,
+            encoding=self.encoding,
+            smi_columns=self.smi_columns,
+            randomize=self.randomize,
+            token_collator=self.token_collator,
+        )
+        if not self.include_encoding:
+            for smi in self.smi_columns:
+                batch.pop(smi)
 
         for k in ["target", "target_excess", "temperature", "composition"]:
             if not isinstance(batch[k], torch.Tensor):

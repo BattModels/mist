@@ -101,6 +101,10 @@ class PairwiseInteraction(nn.Module):
         self.n_in = n_in
         self.n_out = n_out
         self.n_targets = n_targets
+        self.mlp_emb = nn.Sequential(
+            nn.Linear(n_in, n_in),
+            nn.Dropout(dropout),
+        )
         self.mlp = nn.Sequential(
             nn.Linear(n_in, n_in),
             nn.Dropout(dropout),
@@ -123,7 +127,10 @@ class PairwiseInteraction(nn.Module):
         self.mlp.apply(init_weights)
 
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        y = self.mlp(self.distance(a, b))
+        a = self.mlp_emb(a)
+        b = self.mlp_emb(b)
+        d = self.distance(a, b)
+        y = self.mlp(d)
         y = y.reshape(*y.shape[:-1], self.n_targets, self.n_out)
         return y + y.flip(-1)
 
@@ -139,6 +146,8 @@ class GaussianFusion(PairwiseInteraction):
 
 class EquivariantInteraction(PairwiseInteraction):
     def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        a = self.mlp_emb(a)
+        b = self.mlp_emb(b)
         emb_a, emb_b = self.distance(a, b)
         y_a = self.mlp(emb_a).reshape(*emb_a.shape[:-1], self.n_targets, self.n_out)
         y_b = self.mlp(emb_b).reshape(*emb_b.shape[:-1], self.n_targets, self.n_out)
@@ -173,7 +182,7 @@ class ExcessPhysicsModel(nn.Module):
             self.temperature_dependence = ArrtheniusActivation()
         else:
             n_temperature_targets = 1
-            self.temperature_dependence = nn.Identity()
+            self.temperature_dependence = lambda x, t: x
 
         self.pairwise_interaction = pairwise_fusion(
             config.interactions,
