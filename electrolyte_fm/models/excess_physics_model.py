@@ -476,6 +476,7 @@ class ExcessPhysicsLightningModel(LightningModule):
 if __name__ == "__main__":
     import logging
     from datetime import timedelta
+    from argparse import ArgumentParser
 
     from lightning.pytorch import Trainer
     from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -485,6 +486,10 @@ if __name__ == "__main__":
     from electrolyte_fm.utils.lr_schedule import RelativeCosineWarmup
 
     from ..data_modules.mixture_dataset import ComponentDataModule
+
+    parser = ArgumentParser()
+    parser.add_argument("--config", type=str, default=None, required=False)
+    args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
 
@@ -512,22 +517,28 @@ if __name__ == "__main__":
     step_ckpt.CHECKPOINT_NAME_LAST = "last"
 
     config = {
+        "model": {
+            "name_or_path": "models/mist-ti624ev1",
+            "temperature_dependence": "arrhenius",
+            "num_control": 2,
+            "interactions": "softmax",
+        },
         "data": {
-            "path": "excess_dataset",
+            "path": "excess_dataset/k-compound-strict-0",
             "batch_size": 16,
             "randomize": True,
         },
         "trainer": {
             "lr": 1e-3,
             "num_training_steps": 10_000,
+            "thawing_epoch_duration": 10,
+            "thawing_depth": 2,
         },
     }
-    model = ExcessPhysicsModel.from_pretrained_encoder(
-        name_or_path="models/mist-ti624ev1",
-        temperature_dependence="arrhenius",
-        num_control=2,
-        interactions="softmax",
-    )
+    if args.config:
+        config = json.loads(Path(args.config).read_text())
+
+    model = ExcessPhysicsModel.from_pretrained_encoder(**config["model"])
     config["model"] = model.config.to_dict()
 
     config["data"]["target_columns"] = model.config.target_columns
@@ -543,14 +554,19 @@ if __name__ == "__main__":
         ),
     )
 
+    # Construct Thawing Schedule
+    last_layer = model.config.encoder.num_hidden_layers - 1
+    thaw_depth = config["trainer"]["thawing_depth"]
+    max_thaw = last_layer - thaw_depth if thaw_depth > 0 else 0
     thawing_schedule = ProgressiveThawing(
         initial=["model.encoder"],
         stages=[
-            ["model.encoder.encoder.layer.7"],
-            ["model.encoder.encoder.layer.6"],
+            [f"model.encoder.encoder.layer.{i}"]
+            for i in range(last_layer, max_thaw, -1)
         ],
-        stage_duration=5,
+        stage_duration=config["trainer"]["thawing_epoch_duration"],
     )
+    print(thawing_schedule.stages)
 
     trainer = Trainer(
         precision=32,

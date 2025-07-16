@@ -171,14 +171,6 @@ function parity_plots(df, model)
         return label
     end
 
-    # tf_norm = []
-    # for (tdx, target) in enumerate(targets)
-    #     push!(tf_norm, ["$(target)_excess", target] => ByRow(/) => "$(target)_excess")
-    #     push!(tf_norm, ["$(target)_excess_ref", "$(target)_ref"] => ByRow(/) => "$(target)_excess_ref")
-    # end
-    # dropmissing!(df)
-    # @info df
-
     f = Figure()
     gl_parity = GridLayout(f[1, 1])
     gl = GridLayout(gl_parity[1, 1])

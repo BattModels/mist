@@ -190,12 +190,46 @@ def encode_and_tokenize_mixture(
 
 
 @cli.command()
-def split_dataset(data: Path, output: Path):
+def split_dataset(data: Path, output: Path, split: str = "random", split_idx: int = 0):
     from .molnet_dataset import train_val_test_split
+    from .splits import (
+        StrictEntityHoldoutSplitter,
+        EntityHoldoutSplitter,
+        apply_splitter,
+    )
+    from sklearn.model_selection import GroupShuffleSplit
 
-    ds = load_dataset("csv", data_files=[str(data)], split="train")
+    ds: Dataset = load_dataset("csv", data_files=[str(data)], split="train")
     ds = ds.map(lambda x: {"x2": 1 - x["x1"]}, batched=False)
-    ds = train_val_test_split(ds)
+    if split == "random":
+        ds = train_val_test_split(ds)
+
+    elif split == "k-compound":
+        ds = apply_splitter(
+            ds,
+            EntityHoldoutSplitter(entity_cols=["smi1", "smi2"]),
+            split=split_idx,
+        )
+    elif split == "k-compound-strict":
+        ds = apply_splitter(
+            ds,
+            StrictEntityHoldoutSplitter(entity_cols=["smi1", "smi2"]),
+            split=split_idx,
+        )
+    elif split == "k-mixture":
+
+        def label_mixture(x):
+            compounds = [x["smi1"], x["smi2"]]
+            compounds.sort()
+            return {"_mixture_id": tuple(compounds)}
+
+        ds = ds.map(label_mixture, batched=False)
+        splitter = GroupShuffleSplit(n_splits=5, test_size=0.2, random_state=42)
+        ds = apply_splitter(ds, splitter, groups="_mixture_id", split=split_idx)
+
+    else:
+        raise ValueError(f"Unknown split type {split}")
+
     ds.save_to_disk(output)
 
 
