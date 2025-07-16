@@ -161,7 +161,13 @@ def encode_and_tokenize_mixture(
 
 
 @cli.command()
-def split_dataset(data: Path, output: Path, split: str = "random", split_idx: int = 0):
+def split_dataset(
+    data: Path,
+    output: Path,
+    split: str = "random",
+    split_idx: int = 0,
+    test: bool = False,
+):
     from .molnet_dataset import train_val_test_split
     from .splits import (
         StrictEntityHoldoutSplitter,
@@ -169,6 +175,7 @@ def split_dataset(data: Path, output: Path, split: str = "random", split_idx: in
         apply_splitter,
     )
     from sklearn.model_selection import GroupShuffleSplit
+    from datasets import DatasetDict, concatenate_datasets
 
     ds: Dataset = load_dataset("csv", data_files=[str(data)], split="train")
     ds = ds.map(lambda x: {"x2": 1 - x["x1"]}, batched=False)
@@ -201,6 +208,15 @@ def split_dataset(data: Path, output: Path, split: str = "random", split_idx: in
     else:
         raise ValueError(f"Unknown split type {split}")
 
+    if not test:
+        ds = DatasetDict(
+            {
+                "train": ds["train"],
+                "validation": concatenate_datasets(
+                    [ds[k] for k in ["validation", "test"]]
+                ),
+            }
+        )
     ds.save_to_disk(output)
 
 
