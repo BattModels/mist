@@ -1,6 +1,7 @@
 from enum import Enum
 import random
-from typing import Optional, TypeVar
+from typing import TypeVar
+import torch
 from rdkit import Chem
 from datasets import Dataset, DatasetDict, IterableDatasetDict
 from datasets.distributed import split_dataset_by_node
@@ -84,7 +85,7 @@ class MolEncoding(Enum):
 def encode_molecules(
     ds: AbstractDataset,
     input_column: str,
-    output_column: Optional[str] = None,
+    output_column: str | None = None,
     encoding: MolEncoding = MolEncoding.SMILES,
     random: bool = False,
     **kwargs,
@@ -106,6 +107,10 @@ def encode_molecules(
     return ds.filter(lambda x: x[output_column] is not None, batched=False, **kwargs)
 
 
-def stack_columns(batch, columns: list[str], output: str):
+def stack_columns(batch, columns: list[str], output: str, dtype=None):
     n = len(batch[columns[0]])
-    return {output: [[batch[col][i] for col in columns] for i in range(n)]}
+    if dtype is None:
+        convert = torch.tensor
+    else:
+        convert = lambda x: torch.tensor(x, dtype=dtype)
+    return {output: [convert([batch[col][i] for col in columns]) for i in range(n)]}

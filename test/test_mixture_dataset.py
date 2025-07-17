@@ -36,7 +36,17 @@ def tmp_dataset(tmp_path_factory):
         with fn.open("w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(
-                ["smi1", "x1", "smi2", "x2", "temperature", "propA", "propB"]
+                [
+                    "smi1",
+                    "x1",
+                    "smi2",
+                    "x2",
+                    "temperature",
+                    "propA",
+                    "propB",
+                    "excess propA",
+                    "excess propB",
+                ]
             )
             for i in range(n_rows):
                 x1 = random.random()
@@ -49,6 +59,8 @@ def tmp_dataset(tmp_path_factory):
                         298.15,
                         random.random(),  # propA
                         random.random(),  # propB
+                        random.random(),  # excess propA
+                        random.random(),  # excess propB
                     ]
                 )
 
@@ -70,9 +82,18 @@ def tmp_dataset(tmp_path_factory):
 
 @pytest.fixture(
     params=[
-        {"randomize": randomize, "include_temperature": include_temp}
+        {
+            "randomize": randomize,
+            "temperature_column": temperature_column,
+            "include_encoding": include_encoding,
+            "excess_columns": excess_columns,
+            "num_workers": num_workers,
+        }
         for randomize in [True, False]
-        for include_temp in [True, False]
+        for temperature_column in ["temperature", None]
+        for include_encoding in [True, False]
+        for excess_columns in ["excess {:s}", ["excess propA", "excess propB"], None]
+        for num_workers in [0, 2]
     ]
 )
 def datamodule(request, tmp_dataset):
@@ -81,10 +102,11 @@ def datamodule(request, tmp_dataset):
         target_columns=["propA", "propB"],
         batch_size=8,
         num_workers=0,
-        include_temperature=True,
+        temperature_column=request.param["temperature_column"],
         tokenizer="smirk",
         randomize=request.param["randomize"],
-        include_encoding=True,
+        include_encoding=request.param["include_encoding"],
+        excess_columns=request.param["excess_columns"],
     )
     dm.prepare_data()
     dm.setup("fit")
@@ -106,71 +128,83 @@ def check_mixture_batch(dm: ComponentDataModule, batch: dict):
         dm.n_components,
     )
 
+    # Check that floating point numbers are fp32
+    for k, v in batch.items():
+        if isinstance(v, torch.Tensor) and torch.is_floating_point(v):
+            assert v.dtype == torch.float32, f"{k} is of type {v.dtype} not float32"
+
     comp_sum = batch["composition"].sum(axis=1)
     assert comp_sum.shape == (dm.batch_size,)
-    assert torch.allclose(
-        comp_sum, torch.ones(dm.batch_size).to(comp_sum)
-    ), f"Composition sums to 1: {comp_sum}"
+    assert torch.allclose(comp_sum, torch.ones(dm.batch_size).to(comp_sum)), (
+        f"Composition sums to 1: {comp_sum}"
+    )
 
-    if dm.include_temperature:
+    if dm.temperature_column is not None:
         assert batch["temperature"].shape == (dm.batch_size,)
     else:
         assert "temperature" not in batch
 
+    if dm.include_encoding:
+        assert "compounds" in batch
+        assert isinstance(batch["compounds"], list)
+        assert len(batch["compounds"]) == dm.batch_size
+        for compounds in batch["compounds"]:
+            assert isinstance(compounds, tuple)
+            assert len(compounds) == dm.n_components
+            assert all(isinstance(smi, str) for smi in compounds)
+
 
 @pytest.mark.parametrize(
-    "batch",
+    "compounds",
     [
-        {"smi1": ["CO"], "smi2": ["CC"]},
-        {"smi1": ["CO", "CC", "CCC"], "smi2": ["C", "COC", "COCO"]},
-        {"smi0": ["C"], "smi1": ["CO"], "smi2": ["C"]},
-        {f"smi{n}": random.choices(SMILES, k=8) for n in range(2)},  # Binary
-        {f"smi{n}": random.choices(SMILES, k=8) for n in range(4)},  # 4-nary
+        [("CO", "CC")],
+        [("CO", "CC", "CCC"), ("C", "COC", "COCO")],
+        [("C", "CC"), ("CO", "CC"), ("C", None)],  # Mix of order
+        [tuple(random.choices(SMILES, k=2)) for n in range(8)],  # Binary
+        [tuple(random.choices(SMILES, k=4)) for n in range(8)],  # 4-nary
     ],
 )
-def test_encode_and_tokenize_mixture(batch):
+def test_encode_and_tokenize_mixture(compounds):
     """Check that tokenization collation is ordered correctly"""
-    smi_columns = list(batch.keys())
-    assert all(isinstance(v, list) for v in batch.values())
-    print(json.dumps(batch, indent=2))
+    assert all(isinstance(v, tuple) for v in compounds)
+    print(json.dumps(compounds, indent=2))
     tokenizer = SmirkTokenizerFast()
     collator = DataCollatorWithPadding(tokenizer)
     out = encode_and_tokenize_mixture(
-        deepcopy(batch),  # mutates batch, copy to retain input
+        deepcopy(compounds),
         tokenizer=tokenizer,
-        smi_columns=smi_columns,
         encoding=MolEncoding.SMILES,
         randomize=False,
         token_collator=collator,
     )
-
-    B = len(batch[smi_columns[0]])
-    n_components = len(batch.keys())
-    seq_len = max(
-        len(tokenizer(smi)["input_ids"]) for key in smi_columns for smi in batch[key]
-    )
-
     # Check output shapes and types
+    B = len(compounds)
+    N = len(compounds[0])
+    S = max(
+        len(tokenizer(compounds[bdx][idx] or "")["input_ids"])
+        for bdx in range(B)
+        for idx in range(N)
+    )
     assert isinstance(out["input_ids"], torch.Tensor)
     assert isinstance(out["attention_mask"], torch.Tensor)
     assert out["input_ids"].shape == out["attention_mask"].shape
-    assert out["input_ids"].shape == (B, n_components, seq_len)
+    assert out["input_ids"].shape == (B, N, S)
 
     # Check tokenization collation
     for bdx in range(B):
-        for idx, col in enumerate(smi_columns):
-            smi = batch[col][bdx]
-            assert isinstance(smi, str)
+        for idx in range(N):
+            smi = compounds[bdx][idx]
+            assert isinstance(smi, str | None)
             tok = tokenizer(
-                smi,
+                smi or "",
                 padding="max_length",
                 truncation=True,
-                max_length=seq_len,
+                max_length=S,
             )
             assert isinstance(input_ids := tok["input_ids"], list)
             assert isinstance(attention_mask := tok["attention_mask"], list)
-            assert len(input_ids) == seq_len
-            assert len(attention_mask) == seq_len
+            assert len(input_ids) == S
+            assert len(attention_mask) == S
             print("smi: ", smi)
             print("Got: ", out["input_ids"][bdx, idx, :])
             print("Expected: ", tok["input_ids"])

@@ -1,4 +1,5 @@
 from pathlib import Path
+from itertools import chain
 
 import torch
 import typer
@@ -16,14 +17,14 @@ class ComponentDataModule(PropertyPredictionDataModule):
         self,
         path: str | Path,
         n_components: int = 2,
-        include_temperature: bool | str = True,
+        temperature_column: str | None = "temperature [kelvin]",
         smi_column: str = "smi{:d}",
         x_column: str = "x{:d}",
         excess_columns: str | list[str] | None = "excess {:s}",
         **kwargs,
     ):
         self.path = Path(path)
-        self.include_temperature = bool(include_temperature)
+        self.temperature_column = temperature_column
         self.n_components = int(n_components)
         self.smi_columns = [smi_column.format(n + 1) for n in range(self.n_components)]
         self.x_columns = [x_column.format(n + 1) for n in range(self.n_components)]
@@ -67,7 +68,6 @@ class ComponentDataModule(PropertyPredictionDataModule):
             fn_kwargs={"target_columns": self.target_columns},
             remove_columns=self.target_columns,
         )
-        ds = ds.map(lambda x: {"target": x["target"].to(dtype=torch.float32)})
 
         if self.excess_columns:
             ds = ds.map(
@@ -79,34 +79,50 @@ class ComponentDataModule(PropertyPredictionDataModule):
                 },
                 remove_columns=self.excess_columns,
             )
-            ds = ds.map(
-                lambda x: {"target_excess": x["target_excess"].to(dtype=torch.float32)},
-            )
 
         ds = ds.map(
             stack_columns,
             batched=True,
-            fn_kwargs={"columns": self.x_columns, "output": "composition"},
+            fn_kwargs={
+                "columns": self.x_columns,
+                "output": "composition",
+                "dtype": torch.float32,
+            },
             remove_columns=self.x_columns,
         )
 
+        # Stack compounds
+        ds = ds.map(
+            stack_compounds,
+            batched=False,
+            fn_kwargs={"smi_columns": self.smi_columns},
+            remove_columns=self.smi_columns,
+        )
+
+        # Columns in final dataset
+        columns = ["target", "target_mask", "composition", "compounds"]
+
+        # Normalize temperature column
+        if self.temperature_column is not None:
+            if self.temperature_column != "temperature":
+                ds = ds.rename_column(self.temperature_column, "temperature")
+            columns.append("temperature")
+            ds = ds.map(
+                cast_dtype,
+                batched=True,
+                fn_kwargs={"column": "temperature", "dtype": torch.float32},
+            )
+
         # Filter to input columns
-        columns = ["target", "target_mask", "composition"]
-        columns.extend(self.smi_columns)
         if self.excess_columns:
             columns.extend(["target_excess", "target_excess_mask"])
 
-        # Filter to complete entries
-        def has_training_data(x):
-            n_targets = x["target_mask"].sum() > 0
-            n_excess = x["target_excess_mask"].sum() > 0
-            return n_targets or n_excess
+        ds = ds.filter(
+            has_training_data,
+            batched=False,
+            fn_kwargs={"has_excess": self.excess_columns is not None},
+        )
 
-        ds = ds.filter(has_training_data, batched=False)
-
-        if self.include_temperature:
-            ds = ds.rename_column("temperature [kelvin]", "temperature")
-            columns.append("temperature")
         ds = ds.select_columns(columns)
 
         self.train_dataset: Dataset = ds["train"].shuffle()
@@ -115,61 +131,77 @@ class ComponentDataModule(PropertyPredictionDataModule):
             self.test_dataset: Dataset = ds["test"]
 
         # Dataset for normalization
-        norm_columns = ["target", "target_mask", "temperature"]
-        if self.excess_columns:
-            norm_columns.extend(["target_excess", "target_excess_mask"])
+        norm_columns = {
+            "target",
+            "target_mask",
+            "temperature",
+            "target_excess",
+            "target_excess_mask",
+        }
+        norm_columns = list(set(norm_columns).intersection(columns))
         self.target_dataset = ds["train"].select_columns(norm_columns)
 
     def collate_fn(self, batch):
-        compounds = {
-            k: [batch[bdx][k] for bdx in range(len(batch))] for k in self.smi_columns
-        }
-        batch = {
+        out = {
             k: default_collate([obs[k] for obs in batch])
             for k in batch[0].keys()
-            if k not in self.smi_columns
+            if k != "compounds"
         }
-        batch.update(compounds)
-        batch["composition"] = torch.stack(batch["composition"], dim=1)
-        batch = encode_and_tokenize_mixture(
-            batch,
-            tokenizer=self.tokenize,
-            encoding=self.encoding,
-            smi_columns=self.smi_columns,
-            randomize=self.randomize,
-            token_collator=self.token_collator,
+        out.update(
+            encode_and_tokenize_mixture(
+                [obs["compounds"] for obs in batch],
+                tokenizer=self.tokenize,
+                encoding=self.encoding,
+                randomize=self.randomize,
+                token_collator=self.token_collator,
+                include_encoding=self.include_encoding,
+            )
         )
-        if not self.include_encoding:
-            for smi in self.smi_columns:
-                batch.pop(smi)
 
-        for k in ["target", "target_excess", "temperature", "composition"]:
-            if not isinstance(batch[k], torch.Tensor):
-                continue
+        return out
 
-            if batch[k].dtype == torch.float64:
-                batch[k] = batch[k].to(torch.float32)
 
-        return batch
+def stack_compounds(row: dict, smi_columns: list[str]):
+    return {"compounds": tuple(row[col] for col in smi_columns)}
+
+
+def cast_dtype(row: dict, column: str, dtype: torch.dtype):
+    return {column: torch.tensor(row[column], dtype=dtype)}
+
+
+def has_training_data(x, has_excess: bool = True) -> bool:
+    n_targets = x["target_mask"].sum() > 0
+    if has_excess:
+        n_excess = x["target_excess_mask"].sum() > 0
+        return n_targets or n_excess
+    return n_targets
 
 
 def encode_and_tokenize_mixture(
-    batch: dict[str, list | torch.Tensor],
+    compounds: list[tuple[str, ...]],
     tokenizer=None,
     encoding: MolEncoding = MolEncoding.SMILES,
-    smi_columns: list[str] = [],
     randomize: bool = True,
     token_collator=None,
+    include_encoding: bool = False,
 ):
+    # Encode molecules
     encode = encoding.random if randomize else encoding
-    B = len(batch[smi_columns[0]])
-    smi = [encode(batch[col][bdx]) for bdx in range(B) for col in smi_columns]  # (B*N)
+    smis = chain(*compounds)
+    smis = [encode(smi) if smi else "" for smi in smis]
+    toks = token_collator(tokenizer(smis))
 
-    toks = token_collator(tokenizer(smi))
+    # Collate
+    out = {}
+    B = len(compounds)
+    N = len(compounds[0])
     for k in ["input_ids", "attention_mask"]:
-        batch[k] = torch.reshape(toks[k], (B, len(smi_columns), -1))
+        out[k] = torch.reshape(toks[k], (B, N, -1))
 
-    return batch
+    if include_encoding:
+        out["compounds"] = compounds
+
+    return out
 
 
 @cli.command()
