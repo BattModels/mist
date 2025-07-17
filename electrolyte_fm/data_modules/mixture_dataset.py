@@ -67,6 +67,7 @@ class ComponentDataModule(PropertyPredictionDataModule):
             fn_kwargs={"target_columns": self.target_columns},
             remove_columns=self.target_columns,
         )
+        ds = ds.map(lambda x: {"target": x["target"].to(dtype=torch.float32)})
 
         if self.excess_columns:
             ds = ds.map(
@@ -77,6 +78,9 @@ class ComponentDataModule(PropertyPredictionDataModule):
                     "name": "target_excess",
                 },
                 remove_columns=self.excess_columns,
+            )
+            ds = ds.map(
+                lambda x: {"target_excess": x["target_excess"].to(dtype=torch.float32)},
             )
 
         ds = ds.map(
@@ -100,8 +104,6 @@ class ComponentDataModule(PropertyPredictionDataModule):
 
         ds = ds.filter(has_training_data, batched=False)
 
-        if not self.randomize:
-            columns.extend(["input_ids", "attention_mask"])
         if self.include_temperature:
             ds = ds.rename_column("temperature [kelvin]", "temperature")
             columns.append("temperature")
@@ -119,6 +121,16 @@ class ComponentDataModule(PropertyPredictionDataModule):
         self.target_dataset = ds["train"].select_columns(norm_columns)
 
     def collate_fn(self, batch):
+        compounds = {
+            k: [batch[bdx][k] for bdx in range(len(batch))] for k in self.smi_columns
+        }
+        batch = {
+            k: default_collate([obs[k] for obs in batch])
+            for k in batch[0].keys()
+            if k not in self.smi_columns
+        }
+        batch.update(compounds)
+        batch["composition"] = torch.stack(batch["composition"], dim=1)
         batch = encode_and_tokenize_mixture(
             batch,
             tokenizer=self.tokenize,

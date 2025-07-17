@@ -1,6 +1,6 @@
-from accelerate.utils.launch import env_var_path_add
 import torch
 from accelerate import Accelerator
+from pathlib import Path
 
 from smirk import SmirkTokenizerFast
 from electrolyte_fm.models.excess_physics_model import (
@@ -64,14 +64,15 @@ def evaluate_mixtures(model: ExcessPhysicsModel, mixtures: list[dict]):
 
 
 def evaluate_dataset(model: ExcessPhysicsModel, path):
+    assert Path(path).exists()
     dm = ComponentDataModule(
         path,
         batch_size=16,
         target_columns=model.config.target_columns,
-        include_encoding=True,
     )
     dm.prepare_data()
     dm.setup("fit")
+
     return evaluate(model, dm.train_dataloader())
 
 
@@ -109,12 +110,3 @@ def evaluate(model: ExcessPhysicsModel, dataloader):
                 out["target_excess_mask"] = batch["target_excess_mask"][bdx].tolist()
 
             yield out
-
-
-if __name__ == "__main__":
-    model = load_excess_model("../../excess_physics/mmm5ge37/checkpoints/best.ckpt")
-    out = evaluate_mixtures(model, [{"compounds": ["CC", "COC"]}])
-    print(list(out))
-
-    out = evaluate_dataset(model, "../../excess_dataset")
-    print(list(out))
