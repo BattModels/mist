@@ -210,6 +210,7 @@ def split_dataset(
     output: Path,
     split: str = "random",
     split_idx: int = 0,
+    num_shards: int = 4,
     test: bool = False,
 ):
     from .molnet_dataset import train_val_test_split
@@ -261,7 +262,7 @@ def split_dataset(
                 ),
             }
         )
-    ds.save_to_disk(output)
+    ds.save_to_disk(output, num_shards={k: num_shards for k in ds.keys()})
 
 
 if __name__ == "__main__":

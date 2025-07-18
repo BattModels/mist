@@ -23,16 +23,21 @@ class ProgressiveThawing(BaseFinetuning):
 
     @classmethod
     def matching_modules(cls, pl_module, patterns):
-        for name, module in pl_module.named_modules():
-            if name == "":
-                continue
-            for pattern in patterns:
+        for pattern in patterns:
+            pattern_matched = False
+            for name, module in pl_module.named_modules():
+                if name == "":
+                    continue
                 logging.debug(
                     f"Matching %s against %s: %d", name, pattern, fnmatch(name, pattern)
                 )
                 if fnmatch(name, pattern):
+                    pattern_matched = True
                     yield name, module
-                    break
+
+            if not pattern_matched:
+                names = [name for name, _ in pl_module.named_modules()]
+                raise ValueError(f"Pattern {pattern} not found in module: {names}")
 
     def unfreeze_and_add_param_group(self, modules, optimizer):
         self.make_trainable(modules)

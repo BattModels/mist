@@ -69,6 +69,7 @@ def evaluate_dataset(model: ExcessPhysicsModel, path):
         path,
         batch_size=16,
         target_columns=model.config.target_columns,
+        include_encoding=True,
     )
     dm.prepare_data()
     dm.setup("fit")

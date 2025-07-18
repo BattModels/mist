@@ -533,15 +533,19 @@ if __name__ == "__main__":
             "interactions": "softmax",
         },
         "data": {
-            "path": "excess_dataset/k-compound-strict-0",
+            "path": "excess_dataset_v5/random",
             "batch_size": 16,
             "randomize": True,
         },
         "trainer": {
             "lr": 1e-3,
             "num_training_steps": 10_000,
-            "thawing_epoch_duration": 10,
-            "thawing_depth": 2,
+            "freeze": {
+                "initial": ["model.encoder"],
+                "thaw_embeddings": True,
+                "stage_duration": 1,
+                "depth": 2,
+            },
         },
     }
     if args.config:
@@ -564,18 +568,23 @@ if __name__ == "__main__":
     )
 
     # Construct Thawing Schedule
-    last_layer = model.config.encoder.num_hidden_layers - 1
-    thaw_depth = config["trainer"]["thawing_depth"]
-    max_thaw = last_layer - thaw_depth if thaw_depth > 0 else 0
-    thawing_schedule = ProgressiveThawing(
-        initial=["model.encoder"],
-        stages=[
+    if config["trainer"]["freeze"] == "encoder":
+        freeze = ProgressiveThawing(initial=["model.encoder"], stages=[])
+    elif config["trainer"].get("freeze", None) is None:
+        freeze = ProgressiveThawing(initial=[], stages=[])
+    else:
+        freeze_config = config["trainer"]["freeze"]
+        last_layer = model.config.encoder.num_hidden_layers - 1
+        thaw_depth = freeze_config["depth"]
+        max_thaw = last_layer - thaw_depth if thaw_depth > 0 else 0
+        stages = [
             [f"model.encoder.encoder.layer.{i}"]
             for i in range(last_layer, max_thaw, -1)
-        ],
-        stage_duration=config["trainer"]["thawing_epoch_duration"],
-    )
-    print(thawing_schedule.stages)
+        ]
+        if freeze_config["thaw_embeddings"]:
+            stages = [["model.encoder.embeddings"], *stages]
+
+        freeze = ProgressiveThawing(initial=freeze_config["initial"], stages=stages)
 
     trainer = Trainer(
         precision=32,
@@ -584,7 +593,7 @@ if __name__ == "__main__":
             step_ckpt,
             LearningRateMonitor(),
             ModelCheckpoint(),
-            thawing_schedule,
+            freeze,
         ],
         logger=WandbLogger(project="excess_physics"),
         enable_progress_bar=False,
