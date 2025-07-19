@@ -544,12 +544,14 @@ if __name__ == "__main__":
                 "initial": ["model.encoder"],
                 "thaw_embeddings": True,
                 "stage_duration": 1,
-                "depth": 2,
+                "thaw_depth": 2,
             },
         },
     }
     if args.config:
         config = json.loads(Path(args.config).read_text())
+        if "fit" in config:
+            config = config["fit"]
 
     model = ExcessPhysicsModel.from_pretrained_encoder(**config["model"])
     config["model"] = model.config.to_dict()
@@ -566,6 +568,7 @@ if __name__ == "__main__":
             num_warmup_steps="beta2",
         ),
     )
+    lit.compile()
 
     # Construct Thawing Schedule
     if config["trainer"]["freeze"] == "encoder":
@@ -575,7 +578,7 @@ if __name__ == "__main__":
     else:
         freeze_config = config["trainer"]["freeze"]
         last_layer = model.config.encoder.num_hidden_layers - 1
-        thaw_depth = freeze_config["depth"]
+        thaw_depth = freeze_config["thaw_depth"]
         max_thaw = last_layer - thaw_depth if thaw_depth > 0 else 0
         stages = [
             [f"model.encoder.encoder.layer.{i}"]
@@ -597,6 +600,7 @@ if __name__ == "__main__":
         ],
         logger=WandbLogger(project="excess_physics"),
         enable_progress_bar=False,
+        max_steps=int(config["trainer"]["num_training_steps"]),
     )
     trainer.logger.log_hyperparams(config)
     trainer.fit(lit, datamodule=dm)
