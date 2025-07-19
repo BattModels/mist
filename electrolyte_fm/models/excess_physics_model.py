@@ -165,7 +165,9 @@ class SoftmaxFusion(EquivariantInteraction):
 
 class ConcatFusion(EquivariantInteraction):
     def __init__(self, n_in: int, n_out: int, **kwargs):
-        super().__init__(2 * n_in, n_out, **kwargs)
+        super().__init__(n_in, n_out, **kwargs)
+        self.mlp[0] = nn.Linear(2 * n_in, n_in)
+        self.reset_parameters()
 
     def distance(self, a: torch.Tensor, b: torch.Tensor):
         return torch.cat([a, b], dim=-1), torch.cat([b, a], dim=-1)
