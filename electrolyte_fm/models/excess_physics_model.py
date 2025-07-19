@@ -96,17 +96,19 @@ class PairwiseInteraction(nn.Module):
         n_out: int,
         n_targets: int = 1,
         dropout: float = 0.1,
+        n_env: int = 0,
     ) -> None:
         super().__init__()
         self.n_in = n_in
         self.n_out = n_out
         self.n_targets = n_targets
+        self.n_env = n_env
         self.mlp_emb = nn.Sequential(
             nn.Linear(n_in, n_in),
             nn.Dropout(dropout),
         )
         self.mlp = nn.Sequential(
-            nn.Linear(n_in, n_in),
+            nn.Linear(n_in + n_env, n_in),
             nn.Dropout(dropout),
             nn.GELU(),
             nn.Linear(n_in, n_out * n_targets),
@@ -126,10 +128,15 @@ class PairwiseInteraction(nn.Module):
 
         self.mlp.apply(init_weights)
 
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, a: torch.Tensor, b: torch.Tensor, e: torch.Tensor | None = None
+    ) -> torch.Tensor:
         a = self.mlp_emb(a)
         b = self.mlp_emb(b)
         d = self.distance(a, b)
+        if self.n_env > 0:
+            d = torch.cat([d, e], dim=-1)
+        print("Distance", d.shape)
         y = self.mlp(d)
         y = y.reshape(*y.shape[:-1], self.n_targets, self.n_out)
         return y + y.flip(-1)
@@ -145,10 +152,15 @@ class GaussianFusion(PairwiseInteraction):
 
 
 class EquivariantInteraction(PairwiseInteraction):
-    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, a: torch.Tensor, b: torch.Tensor, e: torch.Tensor | None = None
+    ) -> torch.Tensor:
         a = self.mlp_emb(a)
         b = self.mlp_emb(b)
         emb_a, emb_b = self.distance(a, b)
+        if self.n_env > 0:
+            emb_a = torch.cat([emb_a, e], dim=-1)
+            emb_b = torch.cat([emb_b, e], dim=-1)
         y_a = self.mlp(emb_a).reshape(*emb_a.shape[:-1], self.n_targets, self.n_out)
         y_b = self.mlp(emb_b).reshape(*emb_b.shape[:-1], self.n_targets, self.n_out)
         return y_a + y_b.flip(-1)
@@ -166,7 +178,7 @@ class SoftmaxFusion(EquivariantInteraction):
 class ConcatFusion(EquivariantInteraction):
     def __init__(self, n_in: int, n_out: int, **kwargs):
         super().__init__(n_in, n_out, **kwargs)
-        self.mlp[0] = nn.Linear(2 * n_in, n_in)
+        self.mlp[0] = nn.Linear(2 * self.n_in + self.n_env, self.n_in)
         self.reset_parameters()
 
     def distance(self, a: torch.Tensor, b: torch.Tensor):
@@ -179,11 +191,16 @@ class ExcessPhysicsModel(nn.Module):
         self.config = config
         self.encoder = AutoModel.from_config(config.encoder)
 
+        # Configure Pairwise interaction model
+        n_env = 0
+        n_temperature_targets = 1
         if config.temperature_dependence == "arrhenius":
             n_temperature_targets = 2
             self.temperature_dependence = ArrtheniusActivation()
+        elif config.temperature_dependence == "concat":
+            n_env = 1
+            self.temperature_dependence = lambda x, t: x
         else:
-            n_temperature_targets = 1
             self.temperature_dependence = lambda x, t: x
 
         self.pairwise_interaction = pairwise_fusion(
@@ -191,13 +208,15 @@ class ExcessPhysicsModel(nn.Module):
             config.encoder.hidden_size,
             config.num_control * n_temperature_targets,
             n_targets=config.num_targets,
+            n_env=n_env,
         )
         self.component_properties = nn.Sequential(
-            nn.Linear(config.encoder.hidden_size, config.encoder.hidden_size),
+            nn.Linear(config.encoder.hidden_size + n_env, config.encoder.hidden_size),
             nn.Dropout(config.dropout),
             nn.SiLU(),
             nn.Linear(
-                config.encoder.hidden_size, config.num_targets * n_temperature_targets
+                config.encoder.hidden_size,
+                config.num_targets * n_temperature_targets,
             ),
         )
         self.excess_polynomial = LagrangePolynomial(
@@ -265,7 +284,8 @@ class ExcessPhysicsModel(nn.Module):
         I = indices.shape[1]  # noqa: E741
         e_i = embs[:, indices[0]].reshape(B * I, E)
         e_j = embs[:, indices[1]].reshape(B * I, E)
-        pw_coeffs = self.pairwise_interaction(e_i, e_j)  # (B*I, E) -> (B*I, T, P)
+        t_ij = temperature.view(B, 1, 1).expand(-1, I, -1).view(-1, 1)
+        pw_coeffs = self.pairwise_interaction(e_i, e_j, t_ij)  # (B*I, E) -> (B*I, T, P)
         T = self.pairwise_interaction.n_targets
         P = self.pairwise_interaction.n_out
         assert pw_coeffs.shape == (B * I, T, P)
@@ -279,7 +299,7 @@ class ExcessPhysicsModel(nn.Module):
         x_i = x_i.clamp(min=0, max=1)
         x_i = x_i.view(B * I, 1)
 
-        # Apply temperature dependence
+        # Apply temperature dependence to coefficients
         pw_coeffs = self.temperature_dependence(pw_coeffs, temperature.view(B, 1, 1))
 
         # Evaluate interaction polynomials at compositions
@@ -291,9 +311,14 @@ class ExcessPhysicsModel(nn.Module):
         assert y_excess.shape == (B, T)
 
         # Predict Pure Property (B, C, E) -> (B, C, T)
-        y_target = self.component_properties(embs)
-        y_target = self.temperature_dependence(y_target, temperature.view(B, 1, 1))
+        if self.config.temperature_dependence == "concat":
+            t_e = temperature.view(B, 1, 1).expand(-1, C, -1)
+            y_target = self.component_properties(torch.cat([embs, t_e], dim=-1))
+        elif self.config.temperature_dependence == "arrhenius":
+            y_target = self.component_properties(embs)
         assert y_target.shape == (B, C, T), f"Got: {y_target.shape}, vs {(B, C, T)}"
+
+        y_target = self.temperature_dependence(y_target, temperature.view(B, 1, 1))
 
         # Linear Mixing (B, C, T) -> (B, T)
         assert composition.shape == (B, C)
@@ -530,9 +555,9 @@ if __name__ == "__main__":
     config = {
         "model": {
             "name_or_path": "models/mist-ti624ev1",
-            "temperature_dependence": "arrhenius",
+            "temperature_dependence": "concat",
             "num_control": 2,
-            "interactions": "softmax",
+            "interactions": "difference",
         },
         "data": {
             "path": "excess_dataset_v5/random",
