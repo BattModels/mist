@@ -115,12 +115,32 @@ class DifferenceFusion(nn.Module):
         return AB, BA
 
 
+class ConcatFusion(nn.Module):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int = 8,
+        dropout: float = 0.1,
+        pool: str = "mean",
+    ) -> None:
+        super().__init__()
+
+    def forward(self, batch):
+        emb_A = batch["embedding_0"]
+        emb_B = batch["embedding_1"]
+        AB = emb_A - emb_B
+        BA = torch.hstack((emb_B, emb_A))
+        AB = torch.hstack((emb_A, emb_B))
+        return AB, BA
+
+
 class FusionStrategy(Enum):
     """Enumeration of supported embedding fusion strategies."""
 
     ATTENTION = "attention"
     CROSSPRODUCT = "cross_product"
     DIFFERENCE = "difference"
+    CONCAT = "concat"
 
     def get_class(self):
         if self == FusionStrategy.ATTENTION:
@@ -129,6 +149,8 @@ class FusionStrategy(Enum):
             return CrossProductFusion
         elif self == FusionStrategy.DIFFERENCE:
             return DifferenceFusion
+        elif self == FusionStrategy.CONCAT:
+            return ConcatFusion
 
 
 class PolynomialPredictionTaskHead(nn.Module):
@@ -217,12 +239,15 @@ class BezierFourthPredictionTaskHead(PolynomialPredictionTaskHead):
         # keep on buffer so it moves with .to(device) / .cuda()
         self.register_buffer("basis_inv", basis_inv)
 
+        if self.fusion_strategy is FusionStrategy.CONCAT:
+            full_embed_dim = 2 * embed_dim + 1
+        else:
+            full_embed_dim = embed_dim + 1
+
         self.mlp = nn.Sequential(
-            nn.Linear(embed_dim + 1, 2 * embed_dim),
-            nn.Dropout(dropout),
+            nn.Linear(full_embed_dim, embed_dim),
             nn.GELU(),
-            nn.Linear(2 * embed_dim, embed_dim),
-            nn.Dropout(dropout),
+            nn.Linear(embed_dim, embed_dim),
             nn.GELU(),
             nn.Linear(embed_dim, 2),
         )
