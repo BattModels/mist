@@ -189,7 +189,6 @@ class ExcessPhysicsModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             on_epoch=True,
             sync_dist=True,
         )
-
         masked_metric_update(
             self.val_metrics,
             preds,

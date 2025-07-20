@@ -40,6 +40,14 @@ def collate_components_and_environment(
     return output
 
 
+def calculate_percent(x):
+    v = (
+        x["excess molar volume [centimeter ** 3 / mole]"]
+        / x["molar volume [centimeter ** 3 / mole]"]
+    )
+    return {"percent": v}
+
+
 def collate_target(x, target_columns):
     """Stack multiple target columns into a single vector,
     recording unknown elements to be masked out during training
@@ -133,6 +141,7 @@ class ComponentDataModule(LightningDataModule):
                     "test": str(self.path.joinpath("test.csv")),
                 },
             )
+
         return self._dataset
 
     def setup(self, stage: str) -> None:
@@ -144,6 +153,20 @@ class ComponentDataModule(LightningDataModule):
             input_columns.append("temperature")
 
         ds = self.dataset
+        if self.iterable:
+            ds = ds.filter(
+                lambda example: example["excess molar volume [centimeter ** 3 / mole]"]
+                is not None
+            )
+            ds = ds.filter(
+                lambda example: example["molar volume [centimeter ** 3 / mole]"]
+                is not None
+            )
+            ds = ds.rename_column("temperature [kelvin]", "temperature")
+            ds = ds.map(
+                calculate_percent,
+                batched=False,
+            )
         ds = ds.map(
             collate_target,
             batched=False,
@@ -165,7 +188,7 @@ class ComponentDataModule(LightningDataModule):
         )
 
         self.train_dataset: Dataset = ds["train"].shuffle()
-        self.val_dataset: Dataset = ds["validation"]
+        self.val_dataset: Dataset = ds["validation"].shuffle()
         self.test_dataset: Dataset = ds["test"]
         self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
