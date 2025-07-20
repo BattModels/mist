@@ -530,6 +530,7 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument("--config", type=str, default=None, required=False)
+    parser.add_argument("--config-patch", type=str, default=None, required=False)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -584,6 +585,12 @@ if __name__ == "__main__":
         config = json.loads(Path(args.config).read_text())
         if "fit" in config:
             config = config["fit"]
+
+    if args.config_patch:
+        from electrolyte_fm.utils.cli import recursive_update
+
+        patch = json.loads(Path(args.config_patch).read_text())
+        config = recursive_update(config, patch)
 
     model = ExcessPhysicsModel.from_pretrained_encoder(**config["model"])
     config["model"] = model.config.to_dict()
