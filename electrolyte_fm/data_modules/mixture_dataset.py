@@ -65,7 +65,7 @@ class ComponentDataModule(PropertyPredictionDataModule):
         ds = ds.map(
             collate_target,
             batched=False,
-            fn_kwargs={"target_columns": self.target_columns},
+            fn_kwargs={"target_columns": self.target_columns, "dtype": torch.float32},
             remove_columns=self.target_columns,
         )
 
@@ -76,6 +76,7 @@ class ComponentDataModule(PropertyPredictionDataModule):
                 fn_kwargs={
                     "target_columns": self.excess_columns,
                     "name": "target_excess",
+                    "dtype": torch.float32,
                 },
                 remove_columns=self.excess_columns,
             )
@@ -141,11 +142,12 @@ class ComponentDataModule(PropertyPredictionDataModule):
         norm_columns = list(set(norm_columns).intersection(columns))
         self.target_dataset = ds["train"].select_columns(norm_columns)
 
+    @torch.no_grad()
     def collate_fn(self, batch):
         out = {
             k: default_collate([obs[k] for obs in batch])
             for k in batch[0].keys()
-            if k != "compounds"
+            if k not in ["compounds"]
         }
         out.update(
             encode_and_tokenize_mixture(
@@ -157,7 +159,6 @@ class ComponentDataModule(PropertyPredictionDataModule):
                 include_encoding=self.include_encoding,
             )
         )
-
         return out
 
 

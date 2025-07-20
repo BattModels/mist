@@ -160,7 +160,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         )
 
 
-def collate_target(x, target_columns, name: str = "target"):
+def collate_target(x, target_columns, name: str = "target", dtype=None):
     """Stack multiple target columns into a single vector,
     recording unknown elements to be masked out during training
     """
@@ -169,10 +169,12 @@ def collate_target(x, target_columns, name: str = "target"):
     for k in target_columns:
         v = x[k]
         if v is None:
-            target.append(torch.tensor(0))  # Placeholder, should be masked out
+            target.append(
+                torch.tensor(0, dtype=dtype)
+            )  # Placeholder, should be masked out
             mask.append(torch.tensor(False))
         else:
-            target.append(torch.tensor(v))
+            target.append(torch.tensor(v, dtype=dtype))
             mask.append(torch.tensor(True))
 
     return {name: torch.stack(target), f"{name}_mask": torch.stack(mask)}
