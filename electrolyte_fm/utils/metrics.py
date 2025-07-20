@@ -349,7 +349,7 @@ def masked_loss(
     if lossfn.reduction != "none":
         raise RuntimeError("Reduction must be 'none'")
     loss = lossfn(preds, targets.to(preds))
-    return loss.masked_fill(mask, 0).sum() / mask.bitwise_not().sum()
+    return loss.masked_fill(~mask, 0).sum() / mask.count_nonzero().clamp(min=1)
 
 
 def masked_metric_update(
