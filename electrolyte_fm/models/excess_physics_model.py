@@ -7,6 +7,7 @@ from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 from torch import nn
+from torch.nn import functional as F
 from transformers import AutoModel, AutoConfig, PretrainedConfig
 from transformers import CONFIG_MAPPING as HF_CONFIG_MAPPING
 
@@ -37,6 +38,7 @@ class ExcessPhysicsConfig:
     interactions: str = "difference"
     num_control: int = 3
     temperature_dependence: str | None = None
+    relative_excess: bool = False
     dropout: float = 0.1
 
     @property
@@ -316,14 +318,17 @@ class ExcessPhysicsModel(nn.Module):
             y_target = self.component_properties(torch.cat([embs, t_e], dim=-1))
         elif self.config.temperature_dependence == "arrhenius":
             y_target = self.component_properties(embs)
-        assert y_target.shape == (B, C, T), f"Got: {y_target.shape}, vs {(B, C, T)}"
 
         y_target = self.temperature_dependence(y_target, temperature.view(B, 1, 1))
+        assert y_target.shape == (B, C, T), f"Got: {y_target.shape}, vs {(B, C, T)}"
 
         # Linear Mixing (B, C, T) -> (B, T)
         assert composition.shape == (B, C)
         y_linear = (y_target * composition.view(B, C, 1)).sum(dim=1)
         assert y_linear.shape == (B, T)
+
+        if self.config.relative_excess:
+            y_excess = (1 + F.elu(y_excess)) * y_linear
 
         # Transform to real-units
         y_linear = self.transform.forward(y_linear)
