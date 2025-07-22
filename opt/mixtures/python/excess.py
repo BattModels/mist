@@ -74,7 +74,14 @@ def evaluate_dataset(model: ExcessPhysicsModel, path):
     dm.prepare_data()
     dm.setup("fit")
 
-    return evaluate(model, dm.train_dataloader())
+    return evaluate(model, dm.val_dataloader())
+
+
+@torch.no_grad()
+def grad_target(y, target_idx):
+    yg = torch.zeros_like(y)
+    yg[:, target_idx] = 1
+    return yg
 
 
 def evaluate(model: ExcessPhysicsModel, dataloader):
@@ -86,13 +93,31 @@ def evaluate(model: ExcessPhysicsModel, dataloader):
         smi_columns = [
             k for k in batch.keys() if not isinstance(batch[k][0], torch.Tensor)
         ]
-        with torch.no_grad():
-            y, y_linear, y_excess = model(
-                input_ids=batch["input_ids"].to(device),
-                attention_mask=batch["attention_mask"].to(device),
-                temperature=batch["temperature"].to(device),
-                composition=batch["composition"].to(device),
-            )
+        temperature = batch["temperature"].to(device)
+        composition = batch["composition"].to(device)
+        temperature.requires_grad = True
+        composition.requires_grad = True
+        y, y_linear, y_excess = model(
+            input_ids=batch["input_ids"].to(device),
+            attention_mask=batch["attention_mask"].to(device),
+            temperature=temperature,
+            composition=composition,
+        )
+
+        # Compute gradients
+        temperature_grads = []
+        composition_grads = []
+        for tdx in range(y.shape[1]):
+            yg = grad_target(y, tdx)
+            yg.requires_grad = True
+            y.backward(yg, retain_graph=True)
+            temperature_grads.append(temperature.grad.detach().clone())
+            composition_grads.append(composition.grad.detach().clone())
+            temperature.grad = None
+            composition.grad = None
+
+        temperature_grads = torch.stack(temperature_grads, dim=1)
+        composition_grads = torch.stack(composition_grads, dim=1)
 
         for bdx in range(batch["input_ids"].shape[0]):
             out = {
@@ -100,6 +125,8 @@ def evaluate(model: ExcessPhysicsModel, dataloader):
                 "temperature": batch["temperature"][bdx].item(),
                 "composition": batch["composition"][bdx].tolist(),
                 "y": y[bdx].tolist(),
+                "dy_dt": temperature_grads[bdx, :].cpu(),
+                "dy_dx": composition_grads[bdx, :].cpu(),
                 "y_excess": y_excess[bdx].tolist(),
                 "y_linear": y_linear[bdx].tolist(),
             }
