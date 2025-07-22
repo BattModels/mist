@@ -154,14 +154,8 @@ class ComponentDataModule(LightningDataModule):
 
         ds = self.dataset
         if self.iterable:
-            ds = ds.filter(
-                lambda example: example["excess molar volume [centimeter ** 3 / mole]"]
-                is not None
-            )
-            ds = ds.filter(
-                lambda example: example["molar volume [centimeter ** 3 / mole]"]
-                is not None
-            )
+            ds = ds.map(lambda example: {"have_target": example["excess molar volume [centimeter ** 3 / mole]"] is not None and example["molar volume [centimeter ** 3 / mole]"] is not None})
+            ds = ds.filter(lambda example: example["have_target"])
             ds = ds.rename_column("temperature [kelvin]", "temperature")
             ds = ds.map(
                 calculate_percent,
