@@ -14,6 +14,7 @@ from electrolyte_fm.data_modules.mixture_dataset import (
     encode_and_tokenize_mixture,
 )
 from electrolyte_fm.data_modules.utils import MolEncoding
+from electrolyte_fm.models.model_utils import sparsity_weights
 
 SMILES = [
     "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
@@ -58,8 +59,10 @@ def tmp_dataset(tmp_path_factory):
                         1 - x1,
                         298.15,
                         random.random(),  # propA
-                        random.random(),  # propB
-                        random.random(),  # excess propA
+                        random.random() if random.random() > 0.2 else None,  # propB
+                        random.random()
+                        if random.random() > 0.2
+                        else None,  # excess propA
                         random.random(),  # excess propB
                     ]
                 )
@@ -234,3 +237,16 @@ def test_dataloader_iteration(datamodule):
             check_mixture_batch(datamodule, batch)
             if idx >= 10:
                 break
+
+
+def test_sparsity_weights(datamodule: ComponentDataModule):
+    columns = ["target_mask"]
+    if datamodule.excess_columns is not None:
+        columns.append("target_excess_mask")
+    weights = sparsity_weights(datamodule.val_dataset, columns)
+    assert set(weights.keys()) == set(columns)
+    for k in columns:
+        assert k in weights
+        assert isinstance(weights[k], torch.Tensor)
+        assert weights[k].shape == (2,)
+        assert weights[k].min() >= 1

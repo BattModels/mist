@@ -95,3 +95,25 @@ def masked_mean_pool(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     s = x_masked.sum(dim=-2)
     c = mask.sum(dim=-2).clamp(min=1)
     return s / c
+
+
+def sparsity_weights(
+    ds, column: list[str], eps=1e-6, max=None
+) -> dict[str, torch.Tensor]:
+    """Compute the relative sparsity of each channel in the target columns"""
+    sparsity = {}
+    for row in ds:
+        for col in column:
+            if col not in sparsity:
+                sparsity[col] = torch.zeros_like(row[col], dtype=torch.float32)
+
+            sparsity[col] += row[col]
+
+    # Normalize
+    for col in sparsity.keys():
+        sparsity[col] = (sparsity[col].max() / (sparsity[col] + eps)).clamp(
+            min=1, max=None
+        )
+        assert sparsity[col].min() >= 1
+
+    return sparsity
