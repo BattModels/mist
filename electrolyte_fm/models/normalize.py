@@ -136,9 +136,9 @@ class Standardize(AbstractNormalizer):
             n += mask.view(-1, num_outputs).sum(0)
             xs = x.view(-1, num_outputs).sum(0)
             delta = xs - mean
-            delta2 = xs - mean
             # Only update masked values
             mean += (delta / n).get_data().masked_fill(~delta.get_mask(), 0)
+            delta2 = xs - mean
             m2 += (delta * delta2).get_data().masked_fill(~delta.get_mask(), 0)
 
         self.mean = mean.to(self.mean)
