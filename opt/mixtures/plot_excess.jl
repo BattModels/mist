@@ -36,30 +36,42 @@ function evaluate_mixtures(model, mixtures)
     return DataFrame(rows)
 end
 
-clean_target_name(x::String) = replace((strip∘first∘split)(x, "["), " " => "_")
-
-function evaluate_dataset(model, ds_path)
-    targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
-    rows = map(pyexcess.evaluate_dataset(model, ds_path)) do row
-        row = pyconvert(Dict{String, Union{Float64, String, Vector}}, row)
-        out = Dict(
-            "compounds" => row["compounds"],
-            "composition" => row["composition"],
-            "temperature" => row["temperature"],
-        )
-
-        for (idx, target) in enumerate(targets)
-            out[target] = row["y"][idx]
-            out["$(target)_excess"] = row["y_excess"][idx]
-            out["$(target)_linear"] = row["y_linear"][idx]
-            out["$(target)_ref"] = row["target_mask"][idx] == 1 ? row["target"][idx] : missing
-            out["$(target)_excess_ref"] = row["target_excess_mask"][idx] == 1 ? row["target_excess"][idx] : missing
-        end
-
-        return out
+function plot_acn_edga(models::Vector{String})
+    f = Figure()
+    ax_excess = Axis(f[1, 1];
+        limits=((0, 1), nothing),
+        xlabel="Percent ACN",
+        ylabel="Excess Density",
+        xtickformat="{:.0%}",
+        ytickformat="{:.0%}",
+        xlabelvisible=false,
+        xticksvisible=false,
+        xticklabelsvisible=false,
+    )
+    ax_volume = Axis(f[2, 1];
+        limits=((0, 1), nothing),
+        xlabel="ACN Mole Fraction",
+        ylabel="Excess Molar Volume",
+        xtickformat="{:.0%}",
+        ytickformat="{:.0%}",
+    )
+    scatter!(ax_excess, x1, rho_excess ./ rho; label="Experimental")
+    scatter!(ax_volume, x1, mv_excess ./ mv; label="Experimental")
+    for model_path in models
+        name = splitpath(model_path)[end-2]
+        model = pyexcess.load_excess_model(model_path)
+        dfs = evaluate_mixtures(model, mixtures)
+        subset!(dfs, :temperature => ByRow(!=(300)))
+        lines!(ax_excess, first.(dfs.composition), dfs.density_excess ./ dfs.density; label=name)
+        lines!(ax_volume, first.(dfs.composition), dfs.molar_volume_excess ./ dfs.molar_volume; label=name)
     end
-    return DataFrame(rows)
+    # axislegend(ax_excess)
+    axislegend(ax_volume; orientation=:horizontal)
+    return f
 end
+
+
+
 
 function load_reference(path)
     df = DataFrame(CSV.File(path))
@@ -110,49 +122,9 @@ function compound_stats(df)
     return DataFrame(rows)
 end
 
-function mixture_dataset(df)
-    compounds = unique(Iterators.flatten(df.compounds))
-    pairs = Matrix{Float64}(undef, length(compounds), length(compounds))
-
-    for I in CartesianIndices(pairs)
-        smi1  = compounds[I[1]]
-        smi2  = compounds[I[2]]
-        df_c = subset(df, :compounds => ByRow(x -> smi1 in x && smi2 in x))
-        pairs[I] = nrow(df_c)
-    end
-    nobs = diag(pairs)
-    sdx = sortperm(nobs; rev=true)
-    pairs = pairs[sdx, sdx]
-
-    f = Figure()
-
-    axb = Axis(f[1, 1];
-        limits = ((0, nothing), nothing),
-        yticks = (1:length(compounds), compounds),
-    )
-    barplot!(axb, diag(pairs);
-        direction = :x,
-    )
-
-    gl = GridLayout(f[1, 2])
-    ax = Axis(gl[1, 1];
-        # xticks = (1:length(compounds), compounds),
-        # xticklabelrotation=pi/2,
-        yticksvisible=false,
-        yticklabelsvisible=false,
-    )
-    h = heatmap!(ax, pairs;
-        colormap=Reverse(:oslo),
-        colorscale=Makie.pseudolog10,
-    )
-    Colorbar(gl[1, 2], h)
-    linkyaxes!(ax, axb)
-
-    colsize!(f.layout, 1, Relative(0.2))
 
 
-    return f
-end
+
 
 function parity_plots(df, model)
     targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
