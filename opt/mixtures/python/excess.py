@@ -166,7 +166,7 @@ def evaluate(model: ExcessPhysicsModel, dataloader, gradients: bool = False):
                 "y_excess": y_excess[bdx].tolist(),
                 "y_linear": y_linear[bdx].tolist(),
             }
-            if compute_gradients:
+            if gradients:
                 out["dy_dT"] = y_grads["T"][bdx, :].cpu()
                 out["dy_excess_dT"] = y_excess_grads["T"][bdx, :].cpu()
                 out["dy_dx"] = y_grads["x"][bdx, :].cpu()
