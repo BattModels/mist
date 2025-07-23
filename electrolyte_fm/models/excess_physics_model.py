@@ -16,10 +16,10 @@ from ..utils.metrics import (
     get_metric,
     masked_loss,
 )
-from .model_utils import masked_mean_pool
+from .model_utils import masked_mean_pool, sparsity_weights
 from .normalize import Standardize
 from .polynomials import LagrangePolynomial
-from .physics_task_heads import ArrtheniusActivation
+from .physics_task_heads import ArrtheniusActivation, LinearExogenousEffect
 from ..utils.progressive_thawing import ProgressiveThawing
 
 
@@ -202,6 +202,11 @@ class ExcessPhysicsModel(nn.Module):
         elif config.temperature_dependence == "concat":
             n_env = 1
             self.temperature_dependence = lambda x, t: x
+        elif config.temperature_dependence == "locally-linear":
+            n_temperature_targets = 2
+            n_env = 1
+            self.temperature_dependence = LinearExogenousEffect()
+
         else:
             self.temperature_dependence = lambda x, t: x
 
@@ -286,7 +291,7 @@ class ExcessPhysicsModel(nn.Module):
         I = indices.shape[1]  # noqa: E741
         e_i = embs[:, indices[0]].reshape(B * I, E)
         e_j = embs[:, indices[1]].reshape(B * I, E)
-        t_ij = temperature.view(B, 1, 1).expand(-1, I, -1).view(-1, 1)
+        t_ij = temperature.view(B, 1, 1).expand(-1, I, -1).reshape(B * I, 1)
         pw_coeffs = self.pairwise_interaction(e_i, e_j, t_ij)  # (B*I, E) -> (B*I, T, P)
         T = self.pairwise_interaction.n_targets
         P = self.pairwise_interaction.n_out
@@ -302,7 +307,7 @@ class ExcessPhysicsModel(nn.Module):
         x_i = x_i.view(B * I, 1)
 
         # Apply temperature dependence to coefficients
-        pw_coeffs = self.temperature_dependence(pw_coeffs, temperature.view(B, 1, 1))
+        pw_coeffs = self.temperature_dependence(pw_coeffs, t_ij.view(B * I, 1, 1))
 
         # Evaluate interaction polynomials at compositions
         pw = x_t.view(B * I, 1) * self.excess_polynomial(pw_coeffs, x_i)
@@ -313,10 +318,10 @@ class ExcessPhysicsModel(nn.Module):
         assert y_excess.shape == (B, T)
 
         # Predict Pure Property (B, C, E) -> (B, C, T)
-        if self.config.temperature_dependence == "concat":
+        if self.config.temperature_dependence in ["concat", "locally-linear"]:
             t_e = temperature.view(B, 1, 1).expand(-1, C, -1)
             y_target = self.component_properties(torch.cat([embs, t_e], dim=-1))
-        elif self.config.temperature_dependence == "arrhenius":
+        else:
             y_target = self.component_properties(embs)
 
         y_target = self.temperature_dependence(y_target, temperature.view(B, 1, 1))
@@ -352,6 +357,7 @@ class ExcessPhysicsLightningModel(LightningModule):
         model: ExcessPhysicsModel | ExcessPhysicsConfig,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
+        sparsity_weighted_loss: bool = False,
         metrics: list[str] = ["rmse", "mae", "r2"],
     ) -> None:
         super().__init__()
@@ -369,6 +375,7 @@ class ExcessPhysicsLightningModel(LightningModule):
             raise ValueError(f"Unknown model type: {type(model)}")
         self.save_hyperparameters({"model": self.model.config.to_dict()})
 
+        self.sparsity_weighted_loss = sparsity_weighted_loss
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
         self.lossfn = nn.MSELoss(reduction="none")
@@ -386,6 +393,10 @@ class ExcessPhysicsLightningModel(LightningModule):
         self.val_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
 
+        # Sparsity Weights
+        self.target_weight: torch.Tensor | None = None
+        self.excess_weight: torch.Tensor | None = None
+
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
             for m in ["train/loss", "val/loss"]:
@@ -395,6 +406,7 @@ class ExcessPhysicsLightningModel(LightningModule):
     def on_fit_start(self):
         """Standardized training data"""
         state = None
+        sparsity = None
         if self.global_rank == 0:
             assert self.trainer.datamodule.target_dataset is not None
             ds = self.trainer.datamodule.target_dataset
@@ -402,10 +414,20 @@ class ExcessPhysicsLightningModel(LightningModule):
             state_excess = self.model.excess_transform.fit(ds, name="target_excess")
             state_excess["mean"].zero_()
 
+            # Compute target weights
+            sparsity = sparsity_weights(ds, ["target_mask", "target_excess_mask"])
+
+        # Broadcast normalization state
         state = self.trainer.strategy.broadcast(state)
         state_excess = self.trainer.strategy.broadcast(state_excess)
         self.model.transform.load_state_dict(state)
         self.model.excess_transform.load_state_dict(state_excess)
+
+        # Broadcast sparsity weights
+        sparsity = self.trainer.strategy.broadcast(sparsity)
+        assert sparsity is not None and isinstance(sparsity, dict)
+        self.target_weight = sparsity["target_mask"]
+        self.excess_weight = sparsity["target_excess_mask"]
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -424,6 +446,9 @@ class ExcessPhysicsLightningModel(LightningModule):
             self.model.transform.inverse(y),
             self.model.transform.inverse(kwargs["target"]),
             kwargs["target_mask"],
+            weight=self.target_sparsity.view(1, -1)
+            if self.sparsity_weighted_loss
+            else None,
         )
         if "target_excess" in kwargs:
             loss_excess = masked_loss(
@@ -431,11 +456,13 @@ class ExcessPhysicsLightningModel(LightningModule):
                 self.model.excess_transform.inverse(y_excess),
                 self.model.excess_transform.inverse(kwargs["target_excess"]),
                 kwargs["target_excess_mask"],
+                weight=self.excess_sparsity.view(1, -1)
+                if self.sparsity_weighted_loss
+                else None,
             )
         else:
             loss_excess = torch.tensor(0.0)
 
-        # Combine losses
         loss = loss_mix + loss_excess
 
         return (y, y_linear, y_excess), loss

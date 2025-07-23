@@ -8,6 +8,12 @@ class ArrtheniusActivation(nn.Module):
         return A * torch.exp(Ea / temperature)
 
 
+class LinearExogenousEffect(nn.Module):
+    def forward(self, x: torch.Tensor, temperature: torch.Tensor):
+        a, b = torch.chunk(x, 2, -1)
+        return a + b * (temperature / 293.15)
+
+
 class ArrheniusTaskHead(nn.Module):
     def __init__(self, embed_dim: int) -> None:
         super().__init__()
