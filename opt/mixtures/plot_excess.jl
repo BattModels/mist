@@ -10,10 +10,38 @@ using LinearAlgebra: diag
 pyexcess = pyimport("excess")
 
 
-mixtures = [
-    pydict(; compounds=@py(["CC#N", "CCOCCOCCOC(=O)C"]), temperature=293.15),
-    pydict(; compounds=@py(["CC#N", "CCOCCOCCOC(=O)C"]), temperature=300),
-]
+# mixtures = [
+#     # pydict(; compounds=@py(["CC#N", "CC(=O)OCCOC(=O)C"]), temperature=293.15),
+#     # pydict(; compounds=@py(["CC#N", "CC(=O)OCCOC(=O)C"]), temperature=300.0),
+#     pydict(; compounds=@py(["CCC(=O)C", "CC(=O)OCCOC(=O)C"  CC(C)CC(C)(C)C"]), temperature=293.15),
+# ]
+
+
+function label_smi(smi::String)
+    known = Dict(
+        "O" => "Water",
+        "CC#N" => "ACN",
+        "CC(=O)OCCOC(=O)C" => "EDGA",
+        "CN1CCN(C)C1=O" => "DMI",
+        "CN(CCO)CCO" => "MDEA",
+    )
+    return get(known, smi, smi)
+end
+
+
+
+# ACN & EDGA
+rho = [1.0462, 1.0874, 0.792, 0.9414, 1.047, 0.966, 1.0844, 1.1106, 1.087]
+x1 = [0.5, 0.25, 1, 0.75, 0.5, 0.75, 0.25, 0, 0]
+mw_acn = 41.05
+mw_edga = 176.21
+rho_acn = 0.786
+rho_edga = 1.104 #0.5 * (1.1106 + 1.087)
+linear_mix(x, a, b) = x * a + (1 - x) * b
+rho_excess = @. rho - linear_mix(x1, rho_acn, rho_edga)
+mw_ideal = linear_mix.(x1, mw_acn, mw_edga)
+mv = @. mw_ideal / rho
+mv_excess = @. mv - linear_mix(x1, mw_acn/rho_acn, mw_edga/rho_edga)
 
 function evaluate_mixtures(model, mixtures)
     targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
@@ -29,6 +57,7 @@ function evaluate_mixtures(model, mixtures)
             out[target] = row["y"][idx]
             out["$(target)_excess"] = row["y_excess"][idx]
             out["$(target)_linear"] = row["y_linear"][idx]
+            out["$(target)_dT"] = row["dy_dt"][idx]
         end
 
         return out
@@ -177,7 +206,16 @@ function parity_plots(df, model)
     gl_predict = GridLayout(f[2, 1])
     df = transform(df, :composition => ByRow(first) => :x1)
     dfs = lift(mixture_selection) do (smi1, smi2, temp)
-        subset(df, :compounds => ByRow(x -> smi1 in x && smi2 in x), :temperature => ByRow(==(temp)))
+        out = subset(df, :compounds => ByRow(x -> smi1 in x && smi2 in x), :temperature => ByRow(==(temp)))
+        # transform!(out,
+        #     ["molar_volume_excess", "molar_volume"] => ByRow(/) => "molar_volume_excess",
+        #     ["molar_volume_excess_ref", "molar_volume_ref"] => ByRow(/) => "molar_volume_excess_ref",
+        #     ["density_excess", "density"] => ByRow(/) => "density_excess",
+        #     ["density_excess_ref", "density_ref"] => ByRow(/) => "density_excess_ref",
+        #     # ["molar_enthalpy_excess" "molar_enthalpy"] => ByRow(/) => "molar_enthalpy_excess",
+        #     # ["molar_enthalpy_excess_ref", "molar_enthalpy_ref"] => ByRow(/) => "molar_enthalpy_excess_ref",
+        # )
+        return out
     end
     for (tdx, target) in enumerate(targets)
         ax = Axis(gl_predict[1, tdx]; limits=((0, 1), extrema(df[!, target])))
@@ -256,5 +294,73 @@ function plot_mixture(df, model)
     notify(smi2.selection)
 
 
+    return f
+end
+
+function argextreme(x, y)
+    x = x[(!ismissing).(y)]
+    y = y[(!ismissing).(y)]
+    if length(x) == 0
+        return missing
+    end
+    if abs(maximum(y)) > abs(minimum(y))
+        idx = argmax(y)
+    else
+        idx = argmin(y)
+    end
+    return x[idx]
+end
+
+function maximum_skew(df)
+    df = transform(df, :compounds => ByRow(sort) => :compound_id)
+    skew = combine(groupby(df, :compound_id)) do gdf
+        out = Dict()
+        for target in ["density", "molar_volume", "molar_enthalpy"]
+            # Model
+            x1 = first.(gdf.composition)
+            y = gdf[!, "$(target)_excess"]
+            out[target] = abs(0.5 - argextreme(x1, y))
+
+            # Reference
+            y = gdf[!, "$(target)_excess_ref"]
+            out["$(target)_ref"] = abs(0.5 - argextreme(x1, y))
+        end
+        return NamedTuple(Symbol(k) => v for (k, v) in pairs(out))
+    end
+end
+
+function plot_excess_skewness(df)
+    f = Figure(; size=(1.7inch, 1.5inch))
+    skew = maximum_skew(df)
+
+    ax = Axis(f[1, 1];
+        xlabel="Reference Excess Asymmetry",
+        ylabel="Predicted Excess Asymmetry",
+        xtickformat="{:.0%}",
+        ytickformat="{:.0%}",
+        aspect=DataAspect(),
+        limits=((0, 0.5), (0, 0.5)),
+    )
+
+    ablines!(ax, 0, 1; color=:black, linestyle=:dash)
+    points = Point2[]
+    text = []
+    for (label, target) in [("Density", "density"), ("Molar Volume", "molar_volume"), ("Molar Enthalpy", "molar_enthalpy")]
+        x = skew[!, "$(target)_ref"]
+        y = skew[!, target]
+        valid = @. !ismissing(y) && !ismissing(x)
+        scatter!(ax, x, y; label)
+        for row in eachrow(skew[valid, :])
+            if "O" in row.compound_id
+                smi1, smi2 = row.compound_id
+                name1 = label_smi(smi1)
+                name2 = label_smi(smi2)
+                push!(text, "$name1 & $name2")
+                push!(points, Point2(row.density_ref, row.density))
+            end
+        end
+    end
+
+    axislegend(ax; position=:rt)
     return f
 end
