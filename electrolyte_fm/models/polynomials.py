@@ -46,6 +46,11 @@ class LagrangePolynomial(nn.Module):
         self.register_buffer(
             "weights", self.barycentric_weights(self.nodes), persistent=False
         )
+        self.register_buffer(
+            "weights_mask",
+            ~torch.eye(self.polynomial_order, dtype=torch.bool),
+            persistent=False,
+        )
 
     @property
     def active_nodes(self):
@@ -68,25 +73,20 @@ class LagrangePolynomial(nn.Module):
             coefs = torch.cat([zeros, coefs, zeros], dim=-1)
         assert coefs.shape[-1] == self.polynomial_order
 
-        # Compute weights
         x = x.unsqueeze(-1)  # (..., 1)
-        x_diff = x - self.nodes  # (..., n)
-        on_node = x_diff.abs() <= 1e-8
-        w_over_diff = self.weights / x_diff  # (..., N)
-        w_over_diff = torch.where(~on_node, w_over_diff, 1.0)
+        nodes = self.nodes  # (n,)
+        n = self.polynomial_order
 
-        # Evaluate polynomial
-        num = (w_over_diff * coefs).sum(dim=-1)  # (...)
-        den = w_over_diff.sum(dim=-1)  # (...)
-        y = num / den
+        # Compute all (x - x_k) terms
+        x_diff = nodes - x  # (..., n)
 
-        # Handle on nodes
-        if on_node.any():
-            matched_idx = on_node.float().argmax(dim=-1)  # (...)
-            gather_idx = matched_idx.unsqueeze(-1)  # (..., 1)
-            y = torch.where(
-                on_node.any(dim=-1),
-                coefs.gather(dim=-1, index=gather_idx).squeeze(-1),
-                y,
-            )
+        # Mask diagonal in x - x_k products for each basis function
+        x_diff_masked = x_diff.unsqueeze(-2).expand(*x.shape[:-1], n, n)  # (..., n, n)
+        x_diff_masked = x_diff_masked.masked_select(self.weights_mask)  # (..., n*(n-1))
+        x_diff_masked = x_diff_masked.view(*x.shape[:-1], n, n - 1)
+
+        num = x_diff_masked.prod(dim=-1)
+        basis = num * self.weights
+        y = (basis * coefs).sum(dim=-1)  # (...)
+
         return y
