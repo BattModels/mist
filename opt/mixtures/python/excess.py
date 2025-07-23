@@ -8,7 +8,11 @@ from electrolyte_fm.models.excess_physics_model import (
     ExcessPhysicsLightningModel,
     ExcessPhysicsModel,
 )
-from electrolyte_fm.data_modules.mixture_dataset import ComponentDataModule
+from electrolyte_fm.data_modules.utils import MolEncoding
+from electrolyte_fm.data_modules.mixture_dataset import (
+    ComponentDataModule,
+    encode_and_tokenize_mixture,
+)
 from transformers import DataCollatorWithPadding
 from torch.utils.data import IterableDataset, default_collate
 
@@ -16,7 +20,7 @@ from torch.utils.data import IterableDataset, default_collate
 class MixtureDataset(IterableDataset):
     def __init__(self, mixtures: list[dict], tokenizer=None, n: int = 50):
         self.tokenizer = tokenizer or SmirkTokenizerFast()
-        self.token_collate = DataCollatorWithPadding(self.tokenizer)
+        self.token_collator = DataCollatorWithPadding(self.tokenizer)
         self.mixtures = mixtures
         self.n = n
 
@@ -30,11 +34,8 @@ class MixtureDataset(IterableDataset):
             assert len(compounds) == n_compounds, (
                 "Number of compounds must be consistent"
             )
-            o = self.token_collate(self.tokenizer(compounds))
             obs = {
                 "compounds": compounds,
-                "input_ids": o["input_ids"],
-                "attention_mask": o["attention_mask"],
                 "temperature": torch.tensor(temperature),
             }
 
@@ -48,12 +49,22 @@ class MixtureDataset(IterableDataset):
             collate_fn=self.collate_fn,
         )
 
-    @classmethod
     def collate_fn(self, batch):
-        out = default_collate(
-            [{k: obs[k] for k in batch[0].keys() if k != "compounds"} for obs in batch]
+        out = {
+            k: default_collate([obs[k] for obs in batch])
+            for k in batch[0].keys()
+            if k not in ["compounds"]
+        }
+        out.update(
+            encode_and_tokenize_mixture(
+                [obs["compounds"] for obs in batch],
+                tokenizer=self.tokenizer,
+                encoding=MolEncoding.KEKULE,
+                randomize=False,
+                token_collator=self.token_collator,
+                include_encoding=True,
+            )
         )
-        out["compounds"] = [obs["compounds"] for obs in batch]
         return out
 
 
