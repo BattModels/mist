@@ -7,15 +7,7 @@ using Format: format
 using StatsBase: mean
 using LinearAlgebra: diag
 
-pyexcess = pyimport("excess")
-
-
-# mixtures = [
-#     # pydict(; compounds=@py(["CC#N", "CC(=O)OCCOC(=O)C"]), temperature=293.15),
-#     # pydict(; compounds=@py(["CC#N", "CC(=O)OCCOC(=O)C"]), temperature=300.0),
-#     pydict(; compounds=@py(["CCC(=O)C", "CC(=O)OCCOC(=O)C"  CC(C)CC(C)(C)C"]), temperature=293.15),
-# ]
-
+using Mixtures: clean_target_name
 
 function label_smi(smi::String)
     known = Dict(
@@ -43,28 +35,6 @@ mw_ideal = linear_mix.(x1, mw_acn, mw_edga)
 mv = @. mw_ideal / rho
 mv_excess = @. mv - linear_mix(x1, mw_acn/rho_acn, mw_edga/rho_edga)
 
-function evaluate_mixtures(model, mixtures)
-    targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
-    rows = map(pyexcess.evaluate_mixtures(model, mixtures)) do row
-        row = pyconvert(Dict{String, Union{Float64, String, Vector}}, row)
-        out = Dict(
-            "compounds" => row["compounds"],
-            "composition" => row["composition"],
-            "temperature" => row["temperature"],
-        )
-
-        for (idx, target) in enumerate(targets)
-            out[target] = row["y"][idx]
-            out["$(target)_excess"] = row["y_excess"][idx]
-            out["$(target)_linear"] = row["y_linear"][idx]
-            out["$(target)_dT"] = row["dy_dt"][idx]
-        end
-
-        return out
-    end
-    return DataFrame(rows)
-end
-
 function plot_acn_edga(models::Vector{String})
     f = Figure()
     ax_excess = Axis(f[1, 1];
@@ -89,7 +59,7 @@ function plot_acn_edga(models::Vector{String})
     for model_path in models
         name = splitpath(model_path)[end-2]
         model = pyexcess.load_excess_model(model_path)
-        dfs = evaluate_mixtures(model, mixtures)
+        dfs = Mixtures.evaluate_mixtures(model, mixtures)
         subset!(dfs, :temperature => ByRow(!=(300)))
         lines!(ax_excess, first.(dfs.composition), dfs.density_excess ./ dfs.density; label=name)
         lines!(ax_volume, first.(dfs.composition), dfs.molar_volume_excess ./ dfs.molar_volume; label=name)
