@@ -56,6 +56,8 @@ class AbstractNormalizer(torch.nn.Module):
             return ChannelWiseTransform([cls.get(t, 1) for t in transform])
         elif transform in ["standardize", Standardize.__name__]:
             return Standardize(num_outputs)
+        elif transform in ["zero_mean_standardize", ZeroMeanStandardize.__name__]:
+            return ZeroMeanStandardize(num_outputs)
         elif transform in ["power_transform", PowerTransform.__name__]:
             return PowerTransform(num_outputs)
         elif transform in ["log_transform", LogTransform.__name__]:
@@ -123,6 +125,28 @@ class Standardize(AbstractNormalizer):
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         if "transform.mean" in state_dict.keys():
             state_dict["transform.mean"] = state_dict["transform.mean"].view(1)
+            state_dict["transform.std"] = state_dict["transform.std"].view(1)
+
+
+class ZeroMeanStandardize(AbstractNormalizer):
+    def __init__(self, num_outputs: int, eps: float = 1e-8):
+        super().__init__(num_outputs)
+        self.register_buffer("std", torch.zeros(num_outputs))
+        self.eps = float(eps)
+        assert 0 <= self.eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.std * x
+
+    def inverse(self, x: torch.Tensor) -> torch.Tensor:
+        return x / self.std
+
+    def _fit(self, target: MaskedTensor) -> dict:
+        self.std = target.std(0).get_data().to(self.std) + self.eps
+        return self.state_dict()
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        if "transform.std" in state_dict.keys():
             state_dict["transform.std"] = state_dict["transform.std"].view(1)
 
 
