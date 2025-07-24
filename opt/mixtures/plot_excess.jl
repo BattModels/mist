@@ -4,10 +4,10 @@ using Makie
 using CSV: CSV
 using MISTStyle
 using Format: format
-using StatsBase: mean
+using StatsBase: mean, cor, corspearman, weights, tiedrank
 using LinearAlgebra: diag
 
-using Mixtures: clean_target_name
+using Mixtures: Mixtures, clean_target_name
 
 function label_smi(smi::String)
     known = Dict(
@@ -267,70 +267,76 @@ function plot_mixture(df, model)
     return f
 end
 
-function argextreme(x, y)
-    x = x[(!ismissing).(y)]
-    y = y[(!ismissing).(y)]
-    if length(x) == 0
-        return missing
-    end
-    if abs(maximum(y)) > abs(minimum(y))
-        idx = argmax(y)
-    else
-        idx = argmin(y)
-    end
-    return x[idx]
-end
-
-function maximum_skew(df)
-    df = transform(df, :compounds => ByRow(sort) => :compound_id)
-    skew = combine(groupby(df, :compound_id)) do gdf
-        out = Dict()
-        for target in ["density", "molar_volume", "molar_enthalpy"]
-            # Model
-            x1 = first.(gdf.composition)
-            y = gdf[!, "$(target)_excess"]
-            out[target] = abs(0.5 - argextreme(x1, y))
-
-            # Reference
-            y = gdf[!, "$(target)_excess_ref"]
-            out["$(target)_ref"] = abs(0.5 - argextreme(x1, y))
-        end
-        return NamedTuple(Symbol(k) => v for (k, v) in pairs(out))
-    end
-end
-
-function plot_excess_skewness(df)
-    f = Figure(; size=(1.7inch, 1.5inch))
-    skew = maximum_skew(df)
+plot_excess_skewness(df) = plot_excess_skewness!(Figure(), df)
+function plot_excess_skewness!(f, df)
+    skew = Mixtures.excess_skew(df)
 
     ax = Axis(f[1, 1];
         xlabel="Reference Excess Asymmetry",
         ylabel="Predicted Excess Asymmetry",
         xtickformat="{:.0%}",
         ytickformat="{:.0%}",
-        aspect=DataAspect(),
         limits=((0, 0.5), (0, 0.5)),
+        xticks=WilkinsonTicks(5),
+        xminorticks=IntervalsBetween(5),
+        xminorticksvisible=true,
+        yticks=WilkinsonTicks(5),
+        yminorticks=IntervalsBetween(5),
+        yminorticksvisible=true,
+        xscale=sqrt,
+        yscale=sqrt,
     )
 
-    ablines!(ax, 0, 1; color=:black, linestyle=:dash)
-    points = Point2[]
-    text = []
-    for (label, target) in [("Density", "density"), ("Molar Volume", "molar_volume"), ("Molar Enthalpy", "molar_enthalpy")]
-        x = skew[!, "$(target)_ref"]
-        y = skew[!, target]
-        valid = @. !ismissing(y) && !ismissing(x)
-        scatter!(ax, x, y; label)
-        for row in eachrow(skew[valid, :])
-            if "O" in row.compound_id
-                smi1, smi2 = row.compound_id
-                name1 = label_smi(smi1)
-                name2 = label_smi(smi2)
-                push!(text, "$name1 & $name2")
-                push!(points, Point2(row.density_ref, row.density))
-            end
-        end
+    cb = Colorbar(f[1, 2];
+        label="Max. Abs. Relative Excess",
+        colormap=Reverse(:oslo),
+        colorrange=(0, 0.1),
+        tickformat="{:.0%}",
+        tellheight=true,
+        minorticksvisible=true,
+        minorticks=IntervalsBetween(2),
+    )
+    targets = [
+        ("Molar Volume", "molar_volume", :circle),
+        ("Density", "density", :rect),
+        ("Molar Enthalpy", "molar_enthalpy", :utriangle)
+    ]
+    for (label, target, marker) in targets
+        df_target = select(skew, "compound_id", target, "$(target)_ref", "$(target)_rel_ref")
+        dropmissing!(df_target)
+        transform!(df_target, "$(target)_rel_ref" => ByRow(abs) => "$(target)_rel_ref")
+        sort!(df_target, "$(target)_rel_ref"; rev=false)
+        x = df_target[!, "$(target)_ref"]
+        y = df_target[!, target]
+        color = df_target[!, "$(target)_rel_ref"]
+        nrow(df_target) == 0 && continue
+        scatter!(ax, x, y;
+            label,
+            marker,
+            color,
+            strokewidth=0.25pt,
+            strokecolor=MISTStyle.UM_COLORS.ash,
+            MISTStyle.cb_attrs(cb, Scatter)...
+        )
+
+        # Compute and report correlations
+        weight = weights(color)
+        pearson = cor(x, y)
+        pearson_weighted = cor(hcat(x, y), weight)[1, end]
+        spearman = corspearman(x, y)
+        spearman_weighted = cor(hcat(tiedrank(x), tiedrank(y)), weight)[1, end]
+        @info "Excess Skew Correlations: $target" pearson spearman pearson_weighted spearman_weighted
     end
 
-    axislegend(ax; position=:rt)
+    axislegend(ax; position=:rt, theme(:Legend)...)
+    return f
+end
+
+
+function mixture_panel(model, df_all)
+    f = Figure(; size=(89mm, 190mm))
+    plot_excess_skewness!(f[2, 2], df)
+    sublabel!(f[2, 2, TopLeft()], "d"; left=15pt)
+    Axis(f[4, :])
     return f
 end
