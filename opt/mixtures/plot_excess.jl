@@ -437,7 +437,7 @@ end
 
 function plot_ionic_conductivity!(f)
 
-    cb = Colorbar(f[2, 1:2];
+    cb = Colorbar(f[2, 1];
         label = L"Temperature (K)$$",
         colormap = MISTStyle.CONTINUOUS_COLORS,
         colorrange = (240, 340),
