@@ -6,8 +6,8 @@ import typer
 from datasets import Dataset, DatasetDict, IterableDatasetDict, load_dataset
 from torch.utils.data import default_collate
 
-from .utils import MolEncoding, stack_columns
-from .property_prediction_dataset import PropertyPredictionDataModule, collate_target
+from .utils import MolEncoding, stack_columns, collate_target
+from .property_prediction_dataset import PropertyPredictionDataModule
 
 cli = typer.Typer()
 

@@ -114,3 +114,23 @@ def stack_columns(batch, columns: list[str], output: str, dtype=None):
     else:
         convert = lambda x: torch.tensor(x, dtype=dtype)
     return {output: [convert([batch[col][i] for col in columns]) for i in range(n)]}
+
+
+def collate_target(x, target_columns, name: str = "target", dtype=None):
+    """Stack multiple target columns into a single vector,
+    recording unknown elements to be masked out during training
+    """
+    target = []
+    mask = []
+    for k in target_columns:
+        v = x[k]
+        if v is None:
+            target.append(
+                torch.tensor(0, dtype=dtype)
+            )  # Placeholder, should be masked out
+            mask.append(torch.tensor(False))
+        else:
+            target.append(torch.tensor(v, dtype=dtype))
+            mask.append(torch.tensor(True))
+
+    return {name: torch.stack(target), f"{name}_mask": torch.stack(mask)}

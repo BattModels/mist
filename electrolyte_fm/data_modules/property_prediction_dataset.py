@@ -14,6 +14,7 @@ from .utils import (
     AbstractDataset,
     maybe_shard_dataset,
     encode_molecules,
+    collate_target,
     is_fast,
 )
 
@@ -158,23 +159,3 @@ class PropertyPredictionDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             persistent_workers=self.num_workers > 0,
         )
-
-
-def collate_target(x, target_columns, name: str = "target", dtype=None):
-    """Stack multiple target columns into a single vector,
-    recording unknown elements to be masked out during training
-    """
-    target = []
-    mask = []
-    for k in target_columns:
-        v = x[k]
-        if v is None:
-            target.append(
-                torch.tensor(0, dtype=dtype)
-            )  # Placeholder, should be masked out
-            mask.append(torch.tensor(False))
-        else:
-            target.append(torch.tensor(v, dtype=dtype))
-            mask.append(torch.tensor(True))
-
-    return {name: torch.stack(target), f"{name}_mask": torch.stack(mask)}
