@@ -121,9 +121,6 @@ function theme()
             color=CAT_COLORS,
             linestyle=[:solid, :dot, :dashdot],
         ),
-        Lines=(;
-            cycle=Cycle([:color, :linestyle], covary=true),
-        ),
         Axis=(;
             spinewidth=0.5,
             xlabelsize=6pt,
