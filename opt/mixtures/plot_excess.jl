@@ -347,13 +347,13 @@ function plot_soap!(f)
         yticks=WilkinsonTicks(3; k_min = 3, k_max=5)
     )
     df = DataFrame(CSV.File("panel_data/soap_similarity.csv"))
-    
+
     df[!, :abs_target] = abs.(
         df[!,:"excess molar volume [centimeter ** 3 / mole]"] ./
         df[!,:"molar volume [centimeter ** 3 / mole]"]
     )
     transform!(df, ["smi1", "smi2" ] => ByRow((x, y) -> sort([x, y])) => :compound_id)
-    df = combine(groupby(df, [:compound_id])) do gdf 
+    df = combine(groupby(df, [:compound_id])) do gdf
         idx = argmax(gdf.abs_target)
         return (; 
             max_abs_relative_vol = gdf.abs_target[idx], 
@@ -361,14 +361,14 @@ function plot_soap!(f)
             name2 = title!(first(gdf.name2)), 
             similarity = first(gdf.similarity),
             temperature = gdf[idx, "temperature [kelvin]"]
-        ) 
+        )
     end
 
     dropmissing!(df)
     transform!(df, ["name1", "name2" ] => ByRow((x, y) -> "$x\n$y") => :labels)
 
     scatter!(
-        ax1, df[!, "similarity"],  df[!, "max_abs_relative_vol"]; 
+        ax1, df[!, "similarity"],  df[!, "max_abs_relative_vol"];
         color = (MISTStyle.UM_COLORS.blue, 0.5), marker=:circle,
         strokewidth=0.25pt, strokecolor=:black
     )
@@ -378,7 +378,7 @@ function plot_soap!(f)
             :max_abs_relative_vol => ByRow(>(excess_threshold)),
         )
     CSV.write("panel_data/df_up.csv", df_up)
-        
+
     points = Point2.(df_up.similarity, df_up.max_abs_relative_vol)
     annotation!(ax1, points; text =  df_up.labels, fontsize=5pt, shrink = (2.0, 2.0))
 
@@ -391,7 +391,7 @@ function plot_soap!(f)
     points = Point2.(df_left.similarity, df_left.max_abs_relative_vol)
     annotation!(ax1, points; text =  df_left.labels, fontsize=5pt, shrink = (2.0, 2.0))
     return f
-end  
+end
 
 function plot_soap_outliers!(f, model)
     ax2 = Axis(f[1, 1];
@@ -411,7 +411,7 @@ function plot_soap_outliers!(f, model)
     data = DataFrame(CSV.File("panel_data/soap_similarity.csv"))
 
     for gdf in groupby(df, ["compounds"])
-        
+
         @info nrow(gdf)
         df_ref = subset(data,
             :smi1 => ByRow(in(gdf.compounds[1])),
@@ -433,7 +433,7 @@ function plot_soap_outliers!(f, model)
     end
     axislegend(ax2, position = :rb, padding=(1, 1, 1, 1), margin=(1, 1, 1, 1))
     return f
-end 
+end
 
 function plot_ionic_conductivity!(f)
 
@@ -443,7 +443,7 @@ function plot_ionic_conductivity!(f)
         colorrange = (240, 340),
         flipaxis = false,
         vertical=false,
-        tellheight=true, 
+        tellheight=true,
         tellwidth=true
     )
 
@@ -503,16 +503,30 @@ function plot_ionic_temperature!(f)
     return f
 end
 
-function mixture_panel(model_path)
+function mixture_panel(model::Py, df_excess::DataFrame)
     model = Mixtures.load_excess_model(model_path)
     f = Figure(figure_padding = 5; size=(89mm, 190mm))
+    plot_excess_skewness!(f[1, 1], df_excess)
     plot_soap!(f[1, 2])
     plot_soap_outliers!(f[2, 2], model)
     # plot_ionic_temperature!(f[3, 1])
     plot_ionic_conductivity!(f[3, :])
     plot_experimental_data!(f[2, 1], model)
-    # plot_excess_skewness!(f[2, 2], df)
-    
+
+    sublabel!(f[1, 1, TopLeft()], "a"; left=15pt)
+    sublabel!(f[1, 2, TopLeft()], "b"; left=15pt)
+    sublabel!(f[2, 1, TopLeft()], "c"; left=15pt)
     sublabel!(f[2, 2, TopLeft()], "d"; left=15pt)
+
     return f
+end
+
+
+function mixture_panel(model_id::String, excess_dataset::String)
+    root_dir = realpath(joinpath(pkgdir(Mixtures), "..", ".."))
+    excess_dataset = joinpath(root_dir, "excess_v5.csv")
+    model = Mixtures.load_excess_model(joinpath(root_dir, "models", model_id)).to("mps")
+    df_excess = Mixtures.evaluate_binary_csv(model, excess_dataset)
+
+    return mixture_panel(model, df_excess)
 end
