@@ -7,13 +7,15 @@ from smirk import SmirkTokenizerFast
 from electrolyte_fm.models.excess_physics_model import (
     ExcessPhysicsLightningModel,
     ExcessPhysicsModel,
+    _default_targets,
 )
-from electrolyte_fm.data_modules.utils import MolEncoding
+from electrolyte_fm.data_modules.utils import MolEncoding, collate_target
 from electrolyte_fm.data_modules.mixture_dataset import (
     ComponentDataModule,
     encode_and_tokenize_mixture,
 )
 from transformers import DataCollatorWithPadding
+from datasets import load_dataset
 from torch.utils.data import IterableDataset, default_collate
 
 
@@ -68,6 +70,76 @@ class MixtureDataset(IterableDataset):
         return out
 
 
+class MixtureCSVDataset(MixtureDataset):
+    def __init__(
+        self,
+        path: str | Path,
+        tokenizer=None,
+        target_columns: list[str] | None = None,
+        excess_columns: str = "excess {:s}",
+    ):
+        self.tokenizer = tokenizer or SmirkTokenizerFast()
+        self.token_collator = DataCollatorWithPadding(self.tokenizer)
+        self.target_columns = target_columns or _default_targets()
+        self.excess_columns = [
+            excess_columns.format(col) for col in self.target_columns
+        ]
+        self.dataset = load_dataset(
+            "csv",
+            data_files=str(path),
+            keep_in_memory=False,
+            split="train",
+            streaming=True,
+        )
+
+    @classmethod
+    def format_row(cls, row):
+        obs = {
+            "compounds": [row["smi1"], row["smi2"]],
+            "temperature": torch.tensor(
+                row["temperature [kelvin]"], dtype=torch.float32
+            ),
+            "composition": torch.tensor(
+                [row["x1"], 1 - row["x1"]], dtype=torch.float32
+            ),
+        }
+        return obs
+
+    def __iter__(self):
+        yield from (
+            self.dataset.map(self.format_row)
+            .map(
+                collate_target,
+                batched=False,
+                fn_kwargs={
+                    "target_columns": self.target_columns,
+                    "dtype": torch.float32,
+                },
+            )
+            .map(
+                collate_target,
+                batched=False,
+                fn_kwargs={
+                    "target_columns": self.excess_columns,
+                    "name": "target_excess",
+                    "dtype": torch.float32,
+                },
+            )
+            .select_columns(
+                [
+                    "compounds",
+                    "temperature",
+                    "composition",
+                    "target",
+                    "target_mask",
+                    "target_excess",
+                    "target_excess_mask",
+                ]
+            )
+            .with_format("torch")
+        )
+
+
 def generate_simplex_grid(n, grid_size):
     """
     Generate a grid of evenly spaced points in an n-simplex using PyTorch.
@@ -104,6 +176,11 @@ def evaluate_mixtures(model: ExcessPhysicsModel, mixtures: list[dict], n=50, **k
     ds = MixtureDataset(mixtures, n=n)
     dl = ds.get_dataloader()
     return evaluate(model, dl, **kwargs)
+
+
+def evaluate_binary_csv(model: ExcessPhysicsModel, path: str | Path, **kwargs):
+    ds = MixtureCSVDataset(path)
+    return evaluate(model, ds.get_dataloader(), **kwargs)
 
 
 def evaluate_dataset(model: ExcessPhysicsModel, path, **kwargs):
@@ -199,8 +276,17 @@ if __name__ == "__main__":
         "~/Downloads/z8ido8hw/checkpoints/epoch=61-step=2232-val_loss=1.232.ckpt"
     )
     model = load_excess_model(name_or_path)
+    for out in evaluate_binary_csv(
+        model,
+        "/Users/alexwadell/Documents/repos/excess_density/excess_v5.csv",
+        gradients=True,
+    ):
+        print(out)
+
     mixtures = [
-        {"compounds": ["CC#N", "CC(=O)OCCOC(=O)C", "CC"], "temperature": 293.15},
+        {"compounds": ["CC#N", "CCCO"], "temperature": 293.15},
+        {"compounds": ["CC#N", "CO"], "temperature": 293.15},
+        {"compounds": ["CC#N", "CCCCCCCCCCO"], "temperature": 293.15},
     ]
     for out in evaluate_mixtures(model, mixtures, gradients=True):
         print(out)

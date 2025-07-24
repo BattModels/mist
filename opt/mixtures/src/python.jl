@@ -12,6 +12,10 @@ function evaluate_mixtures(model::Py, mixtures::Vector{<:Dict}; kwargs...)
     return evaluate_mixtures(model, pymixtures; kwargs...)
 end
 
+function evaluate_mixture(model::Py, compounds::String...; temperature::Real=298.15, kwargs...)
+    evaluate_mixtures(model, [Dict("compounds" => compounds, "temperature" => temperature)]; kwargs...)
+end
+
 function evaluate_mixtures(model::Py, mixtures::Union{Py, Vector{Py}}; n = 20, gradients=true)
     targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
     rows = map(pyexcess[].evaluate_mixtures(model, mixtures; n, gradients)) do row
@@ -39,9 +43,8 @@ function evaluate_mixtures(model::Py, mixtures::Union{Py, Vector{Py}}; n = 20, g
     return DataFrame(rows)
 end
 
-function evaluate_dataset(model::Py, ds_path; gradients=false)
-    targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
-    rows = map(pyexcess[].evaluate_dataset(model, ds_path; gradients)) do row
+function process_prediction_with_ref(iter::Py, targets::Vector{String}, gradients::Bool)
+    return map(iter) do row
         row = pyconvert(Dict{String, Union{Float64, String, Vector}}, row)
         out = Dict(
             "compounds" => row["compounds"],
@@ -62,15 +65,18 @@ function evaluate_dataset(model::Py, ds_path; gradients=false)
                 out["$(target)_excess_dx"] = pyconvert(Vector{Float64}, row["dy_excess_dx"][idx])
             end
         end
-
         return out
-    end
-    return DataFrame(rows)
+    end |> DataFrame
 end
 
-function evaluate_mixture(model::Py, compounds::Vector{String}, composition::Vector{<:Real})
-    smirk = pyimport("smirk").SmirkTokenizerFast()
+function evaluate_dataset(model::Py, ds_path; gradients=false)
+    targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
+    iter = pyexcess[].evaluate_dataset(model, ds_path; gradients)
+    process_prediction_with_ref(iter, targets, gradients)
+end
 
-
-
+function evaluate_binary_csv(model::Py, ds_path; gradients=false)
+    targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
+    iter = pyexcess[].evaluate_binary_csv(model, ds_path; gradients)
+    process_prediction_with_ref(iter, targets, gradients)
 end
