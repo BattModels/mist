@@ -21,32 +21,19 @@ function label_smi(smi::String)
 end
 
 
-function to_title_case(s::String)
+function title!(s)
     words = split(lowercase(s))
     return join([uppercasefirst(word) for word in words], " ")
 end
 
-# ACN & EDGA
-rho = [1.0462, 1.0874, 0.792, 0.9414, 1.047, 0.966, 1.0844, 1.1106, 1.087]
-x1 = [0.5, 0.25, 1, 0.75, 0.5, 0.75, 0.25, 0, 0]
-mw_acn = 41.05
-mw_edga = 176.21
-rho_acn = 0.786
-rho_edga = 1.104 #0.5 * (1.1106 + 1.087)
-linear_mix(x, a, b) = x * a + (1 - x) * b
-rho_excess = @. rho - linear_mix(x1, rho_acn, rho_edga)
-mw_ideal = linear_mix.(x1, mw_acn, mw_edga)
-mv = @. mw_ideal / rho
-mv_excess = @. mv - linear_mix(x1, mw_acn/rho_acn, mw_edga/rho_edga)
 
-function plot_acn_edga(models::Vector{String})
-    f = Figure()
-    ax_excess = Axis(f[1, 1];
+
+function plot_experimental_data!(f, model)
+    
+    ax_density = Axis(f[1, 1];
         limits=((0, 1), nothing),
-        xlabel="Percent ACN",
-        ylabel="Excess Density",
-        xtickformat="{:.0%}",
-        ytickformat="{:.0%}",
+        xlabel="ACN Mole Fraction",
+        ylabel=L"$\rho^E$ (g/cm$^3$)",
         xlabelvisible=false,
         xticksvisible=false,
         xticklabelsvisible=false,
@@ -54,22 +41,32 @@ function plot_acn_edga(models::Vector{String})
     ax_volume = Axis(f[2, 1];
         limits=((0, 1), nothing),
         xlabel="ACN Mole Fraction",
-        ylabel="Excess Molar Volume",
-        xtickformat="{:.0%}",
-        ytickformat="{:.0%}",
+        ylabel=L"$V^E_m$ (cm$^3$/mol)",
     )
-    scatter!(ax_excess, x1, rho_excess ./ rho; label="Experimental")
-    scatter!(ax_volume, x1, mv_excess ./ mv; label="Experimental")
-    for model_path in models
-        name = splitpath(model_path)[end-2]
-        model = pyexcess.load_excess_model(model_path)
-        dfs = Mixtures.evaluate_mixtures(model, mixtures)
-        subset!(dfs, :temperature => ByRow(!=(300)))
-        lines!(ax_excess, first.(dfs.composition), dfs.density_excess ./ dfs.density; label=name)
-        lines!(ax_volume, first.(dfs.composition), dfs.molar_volume_excess ./ dfs.molar_volume; label=name)
+    mixtures = [
+        pydict(; compounds=@py(["CC#N", "CC(=O)OCCOC(=O)C"]), temperature=299.25),
+        pydict(; compounds=@py(["CC#N", "CCC1COC(=O)O1"]), temperature=299.25),
+    ]
+    dfs = Mixtures.evaluate_mixtures(model, mixtures)
+    dfs.x1 = first.(dfs.composition)
+    for gdf in groupby(dfs, ["compounds"])
+        lines!(ax_volume, gdf.x1, gdf.molar_volume_excess; linewidth=1pt, linestyle=:solid
+        )
+        lines!(ax_density, gdf.x1, gdf.density_excess; linewidth=1pt, linestyle=:solid
+        )
     end
-    # axislegend(ax_excess)
-    axislegend(ax_volume; orientation=:horizontal)
+
+    exp_dfs = [
+        DataFrame(CSV.File("panel_data/experimental_ACN_EGDA.csv")) => "EGDA",
+        DataFrame(CSV.File("panel_data/experimental_ACN_BC.csv")) => "BC"
+    ]
+    for (df, label) in exp_dfs
+        scatter!(ax_volume, df.x1, df[!, "Excess Molar Volume [cm3/mol]"]; label=label)
+        scatter!(ax_density, df.x1, df[!, "Excess Density [g/cm3]"]; label=label)
+    end
+    scatter!(ax_density, [-1, -1], [0, 0.13]; label="Experimental", color=:black)
+    lines!(ax_density, [-1, -1], [0, 0.13]; label="MIST", color=:black)
+    axislegend(ax_density; nbanks=2, padding=(1, 1, 1, 1), margin=(1, 1, 1, 1))
     return f
 end
 
@@ -338,7 +335,7 @@ end
 
 function plot_soap!(f)
     x_min = 0.3
-    x_max = 1.0
+    x_max = 1.1
     y_min = 0.0
     y_max = 0.035
     sim_threshold = 0.6
@@ -346,13 +343,8 @@ function plot_soap!(f)
     ax1 = Axis(f[1, 1];
         limits=((x_min, 1), (0, y_max)),
         xlabel="Similarity",
-        ylabel=L"max$\left(\left|\frac{V^{E}_m}{V_m}\right|\right)$",
+        ylabel=L"Maximum Absolute $V^{E}_m$",
         yticks=WilkinsonTicks(3; k_min = 3, k_max=5)
-        # xtickformat="{:.0%}",
-        # ytickformat="{:.0%}",
-        # xlabelvisible=false,
-        # xticksvisible=false,
-        # xticklabelsvisible=false,
     )
     df = DataFrame(CSV.File("panel_data/soap_similarity.csv"))
     
@@ -365,8 +357,8 @@ function plot_soap!(f)
         idx = argmax(gdf.abs_target)
         return (; 
             max_abs_relative_vol = gdf.abs_target[idx], 
-            name1 = first(gdf.name1), 
-            name2 = first(gdf.name2), 
+            name1 = title!(first(gdf.name1)), 
+            name2 = title!(first(gdf.name2)), 
             similarity = first(gdf.similarity),
             temperature = gdf[idx, "temperature [kelvin]"]
         ) 
@@ -374,17 +366,7 @@ function plot_soap!(f)
 
     dropmissing!(df)
     transform!(df, ["name1", "name2" ] => ByRow((x, y) -> "$x\n$y") => :labels)
-    
-    # Shade low similarity, low excess
-    # poly!(
-    #     Point2f[(x_min, y_min), (x_min, y_max), (sim_threshold, y_max), (sim_threshold, y_min)], 
-    #     color = MISTStyle.UM_COLORS.maize, alpha = 0.2 , strokewidth = 0
-    # )
-    # # Shade high similarity, high excess
-    # poly!(
-    #     Point2f[(sim_threshold, excess_threshold), (sim_threshold, y_max), (x_max, y_max), (x_max, excess_threshold)], 
-    #     color = MISTStyle.UM_COLORS.maize, alpha = 0.2 , strokewidth = 0
-    # )
+
     scatter!(
         ax1, df[!, "similarity"],  df[!, "max_abs_relative_vol"]; 
         color = (MISTStyle.UM_COLORS.blue, 0.5), marker=:circle,
@@ -398,7 +380,7 @@ function plot_soap!(f)
     CSV.write("panel_data/df_up.csv", df_up)
         
     points = Point2.(df_up.similarity, df_up.max_abs_relative_vol)
-    annotation!(ax1, points; text =  df_up.labels, fontsize=5pt)
+    annotation!(ax1, points; text =  df_up.labels, fontsize=5pt, shrink = (2.0, 2.0))
 
     df_left = subset(df,
         :similarity => ByRow(<(sim_threshold)),
@@ -407,7 +389,7 @@ function plot_soap!(f)
     CSV.write("panel_data/df_left.csv", df_left)
 
     points = Point2.(df_left.similarity, df_left.max_abs_relative_vol)
-    annotation!(ax1, points; text =  df_left.labels, fontsize=5pt)
+    annotation!(ax1, points; text =  df_left.labels, fontsize=5pt, shrink = (2.0, 2.0))
     return f
 end  
 
@@ -436,8 +418,8 @@ function plot_soap_outliers!(f, model)
             :smi2 => ByRow(in(gdf.compounds[1])),
             "temperature [kelvin]" => ByRow(==(298.15))
         )
-        name1 = df_ref.name1[1]
-        name2 = df_ref.name2[1]
+        name1 = title!(df_ref.name1[1])
+        name2 = title!(df_ref.name2[1])
         label = "$name1 & $name2"
         @info nrow(df_ref)
         lines!(ax2, gdf.x1, gdf.molar_volume_excess; label = label, linewidth=1pt, linestyle=:solid
@@ -449,8 +431,6 @@ function plot_soap_outliers!(f, model)
             )
         end
     end
-
-    vargs = (; linewidth=1.5pt, colormap=:tab10, colorrange=(1, 10))
     axislegend(ax2, position = :rb, padding=(1, 1, 1, 1), margin=(1, 1, 1, 1))
     return f
 end 
@@ -458,7 +438,7 @@ end
 function plot_ionic_conductivity!(f)
 
     cb = Colorbar(f[2, 1:2];
-        label = L"Temperature [K]$$",
+        label = L"Temperature (K)$$",
         colormap = MISTStyle.CONTINUOUS_COLORS,
         colorrange = (240, 340),
         flipaxis = false,
@@ -468,36 +448,42 @@ function plot_ionic_conductivity!(f)
     )
 
     df = DataFrame(CSV.File("panel_data/ionic_conductivity_curves.csv"))
-
+    df = df[1:2:end, :]
     # List the two salts (panels) in order
     salts = unique(df.salt_name)
-
+    line_styles = [:solid, :dot]
     # Sort temperatures and build a continuous, dark‐cropped colormap
     temps = sort(unique(df.temperature))
-    axes = [
-        Axis(f[1, i];
-            xlabel           = L"x_{Li}",    # only show x‐label on bottom panels
-            ylabel           = L"\sigma\ [mS/cm]",
-            # xticks           = (0:0.05:0.2, ["0.0", "0.05","0.1","0.15","0.2"]),
-            # yticks           = (0:2:6, ["0","2","4","6"]),
-        )
-        for (i, salt) in enumerate(salts)
-    ]
 
+    ax = Axis(f[1, 1];
+            xlabel = L"x_{Li}",  
+            ylabel = L"\sigma (mS/cm)",
+            limits= ((0, 0.20), (0, 0.35)),
+            yticksvisible=true,
+            yticklabelsvisible=true,
+    )
+    x_min = 0.160369437447523
+    x_max = 0.20
+    y_min = 0.0
+    y_max = 0.35
+    poly!(ax, Point2f[(x_min, y_min), (x_min, y_max), (x_max, y_max), (x_max, y_min)], color = (MISTStyle.UM_COLORS.maize, 0.2), strokewidth = 0)
     # Plot each temperature curve in both panels
-    for (idx, ax) in enumerate(axes), T in temps
-        sol = salts[idx]
-        mask = (df.salt_name .== sol) .& (df.temperature .== T)
+    for (idx, salt) in enumerate(salts), T in temps
+        mask = (df.salt_name .== salt) .& (df.temperature .== T)
         sub = df[mask, :]
+        label = (salt == "LiPF6") ? L"LiPF$_6$" : salt
         lines!(
             ax,
             sub.composition,
             sub.predictions;
             linewidth = 1pt,
+            linestyle = line_styles[idx],
             color     = sub.temperature,
+            label=label,
             MISTStyle.cb_attrs(cb, Lines)...
         )
     end
+    axislegend(ax, position = :rt, padding=(1, 1, 1, 1), margin=(1, 1, 1, 1), unique=true)
     return f
 end
 
@@ -519,11 +505,12 @@ end
 
 function mixture_panel(model_path)
     model = Mixtures.load_excess_model(model_path)
-    f = Figure(; size=(89mm, 190mm))
+    f = Figure(figure_padding = 5; size=(89mm, 190mm))
     plot_soap!(f[1, 2])
     plot_soap_outliers!(f[2, 2], model)
     # plot_ionic_temperature!(f[3, 1])
     plot_ionic_conductivity!(f[3, :])
+    plot_experimental_data!(f[2, 1], model)
     # plot_excess_skewness!(f[2, 2], df)
     
     sublabel!(f[2, 2, TopLeft()], "d"; left=15pt)
