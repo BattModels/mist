@@ -4,6 +4,7 @@ using Makie
 using CSV: CSV
 using MISTStyle
 using Format: format
+using JSON
 using StatsBase: mean, cor, corspearman, weights, tiedrank
 using LinearAlgebra: diag
 
@@ -33,41 +34,38 @@ function plot_experimental_data!(f, model)
     ax_density = Axis(f[1, 1];
         limits=((0, 1), nothing),
         xlabel="ACN Mole Fraction",
-        ylabel=L"$\rho^E$ (g/cm$^3$)",
-        xlabelvisible=false,
-        xticksvisible=false,
-        xticklabelsvisible=false,
+        ylabel=L"% $\rho^E$ (g/cm$^3$)",
+        xtickformat="{:.0%}",
+        ytickformat="{:.0%}",
     )
-    ax_volume = Axis(f[2, 1];
-        limits=((0, 1), nothing),
-        xlabel="ACN Mole Fraction",
-        ylabel=L"$V^E_m$ (cm$^3$/mol)",
-    )
+
     mixtures = [
         Dict( "compounds" => ["CC#N", "CC(=O)OCCOC(=O)C"], "temperature" => 299.25),
         Dict( "compounds" => ["CC#N", "CCC1COC(=O)O1"], "temperature" => 299.25),
     ]
-    dfs = Mixtures.evaluate_mixtures(model, mixtures)
+    dfs = Mixtures.evaluate_mixtures(model, mixtures; gradients=false)
     dfs.x1 = first.(dfs.composition)
     for gdf in groupby(dfs, ["compounds"])
-        lines!(ax_volume, gdf.x1, gdf.molar_volume_excess; linestyle=:solid)
-        lines!(ax_density, gdf.x1, gdf.density_excess; linestyle=:solid)
+        lines!(ax_density, gdf.x1, gdf.density_excess./gdf.density; linestyle=:solid)
     end
 
     exp_dfs = [
-        DataFrame(CSV.File(joinpath(DATA_DIR, "mixture", "experimental_ACN_EGDA.csv"))) => "EGDA",
+        DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "experimental_ACN_EGDA.csv"))) => "EGDA",
         DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "experimental_ACN_BC.csv"))) => "BC"
     ]
-    for (df, label) in exp_dfs
-        scatter!(ax_volume, df.x1, df[!, "Excess Molar Volume [cm3/mol]"]; label)
-        scatter!(ax_density, df.x1, df[!, "Excess Density [g/cm3]"]; label)
-    end
-    scatter!(ax_density, [-1, -1], [0, 0.13]; label="Experimental", color=:black)
-    lines!(ax_density, [-1, -1], [0, 0.13]; label="MIST", color=:black)
 
-    margin = get(theme(:Legend), :margin, (1, 1, 1, 1))
-    axislegend(ax_density; nbanks=2)
-    axislegend(ax_volume; orientation=:horizontal, margin)
+    compounds = []
+    labels = []
+    for (df, label) in exp_dfs
+        c = scatter!(ax_density, df.x1, df[!, "Excess Density [g/cm3]"]./df[!, "Density (g/cm^3)"] ; label)
+        push!(compounds, c)
+        push!(labels, label)
+    end
+    exp = scatter!(ax_density, [-1, -1], [0, 0.13]; label="Experimental", color=:black)
+    mist = lines!(ax_density, [-1, -1], [0, 0.13]; label="MIST", color=:black)
+
+    # axislegend(ax_density, compounds, labels;  margin=(1, 1, 1, 1), padding=(1, 1, 1, 1))
+    # axislegend(ax_density, [exp, mist], ["Experiment", "MIST"];  merge=true, margin=(1, 1, 1, 1), padding=(1, 1, 1, 1))
     return f
 end
 
@@ -345,7 +343,7 @@ function plot_soap!(f)
         ylabel=L"Maximum Absolute $V^{E}_m$",
         yticks=WilkinsonTicks(3; k_min = 3, k_max=5)
     )
-    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv"))
+    df = DataFrame(CSV.File("panel_data/soap_similarity.csv"))
 
     df[!, :abs_target] = abs.(
         df[!,:"excess molar volume [centimeter ** 3 / mole]"] ./
@@ -354,10 +352,10 @@ function plot_soap!(f)
     transform!(df, ["smi1", "smi2" ] => ByRow((x, y) -> sort([x, y])) => :compound_id)
     df = combine(groupby(df, [:compound_id])) do gdf
         idx = argmax(gdf.abs_target)
-        return (;
-            max_abs_relative_vol = gdf.abs_target[idx],
-            name1 = titlecase(first(gdf.name1)),
-            name2 = titlecase(first(gdf.name2)),
+        return (; 
+            max_abs_relative_vol = gdf.abs_target[idx], 
+            name1 = titlecase(first(gdf.name1)), 
+            name2 = titlecase(first(gdf.name2)), 
             similarity = first(gdf.similarity),
             temperature = gdf[idx, "temperature [kelvin]"]
         )
@@ -407,7 +405,49 @@ function plot_soap_outliers!(f, model)
     df = Mixtures.evaluate_mixtures(model, mixtures; n=50, gradients=false)
     df.x1 = first.(df.composition)
 
-    data = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv"))
+    data = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
+
+    for gdf in groupby(df, ["compounds"])
+
+        @info nrow(gdf)
+        df_ref = subset(data,
+            :smi1 => ByRow(in(gdf.compounds[1])),
+            :smi2 => ByRow(in(gdf.compounds[1])),
+            "temperature [kelvin]" => ByRow(==(298.15))
+        )
+        name1 = titlecase(df_ref.name1[1])
+        name2 = titlecase(df_ref.name2[1])
+        label = "$name1 & $name2"
+        @info nrow(df_ref)
+        lines!(ax2, gdf.x1, gdf.molar_volume_excess; label = label, linewidth=1pt, linestyle=:solid
+        )
+
+        if nrow(df_ref)> 2
+            dropmissing!(df_ref, "excess molar volume [centimeter ** 3 / mole]")
+            scatter!(ax2, df_ref[!, "x1"], df_ref[!, "excess molar volume [centimeter ** 3 / mole]"];
+            )
+        end
+    end
+    axislegend(ax2, position = :rb, padding=(1, 1, 1, 1), margin=(1, 1, 1, 1))
+    return f
+end
+
+function plot_soap_outliers!(f, model)
+    ax2 = Axis(f[1, 1];
+        limits=((0, 1), (-2.4, nothing)),
+        xlabel=L"$x_1$",
+        ylabel=L"$V^{E}_m \;$ (cm$^3$/mol)",
+    )
+    mixtures = [
+        pydict(; compounds=@py(["CC1COC(=O)O1", "ClC(Cl)Cl"]), temperature=298.15),
+        pydict(; compounds=@py(["NCCN", "OCCO"]), temperature=298.15),
+        pydict(; compounds=@py(["CN(CCO)CCO", "O"]), temperature=298.15),
+        pydict(; compounds=@py(["CN1CCN(C)C1=O", "O"]), temperature=298.15)
+    ]
+    df = Mixtures.evaluate_mixtures(model, mixtures; n=50, gradients=false)
+    df.x1 = first.(df.composition)
+
+    data = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
 
     for gdf in groupby(df, ["compounds"])
         df_ref = subset(data,
@@ -444,9 +484,8 @@ function plot_ionic_conductivity!(f)
         tellwidth=true
     )
 
-    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "ionic_conductivity_curves.csv"))
+    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "ionic_conductivity_curves.csv")))
     df = df[1:2:end, :]
-    # List the two salts (panels) in order
     salts = unique(df.salt_name)
     line_styles = [:solid, :dot]
     # Sort temperatures and build a continuous, dark‐cropped colormap
@@ -454,7 +493,7 @@ function plot_ionic_conductivity!(f)
 
     ax = Axis(f[1, 1];
             xlabel = L"x_{Li}",
-            ylabel = L"\sigma (mS/cm)",
+            ylabel = L"$\sigma$ (mS/cm)",
             limits= ((0, 0.20), (0, 0.35)),
             yticksvisible=true,
             yticklabelsvisible=true,
@@ -561,21 +600,22 @@ function plot_thermal_alpha!(f, model)
 end
 
 function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
-    f = Figure(; size=(89mm, 140mm), figure_padding=(5,5,5,5))
-
-    plot_excess_skewness!(f[1, 2], df_excess)
-    plot_thermal_alpha!(f[2, 2], model)
+    f = Figure(; size=(183mm, 70mm), figure_padding=(5,5,5,5))
 
     plot_soap!(f[1, 1])
-    plot_soap_outliers!(f[2, 1], model)
-    plot_ionic_conductivity!(f[3, :])
-    plot_experimental_data!(f[4, 1], model)
+    plot_soap_outliers!(f[1, 2], model)
+    plot_experimental_data!(f[2, 2], model)
 
-    sublabel!(f[1, 1, TopLeft()], "a"; left=15pt)
-    sublabel!(f[1, 2, TopLeft()], "b"; left=15pt)
-    sublabel!(f[2, 1, TopLeft()], "c"; left=15pt)
-    sublabel!(f[2, 2, TopLeft()], "d"; left=15pt)
-    sublabel!(f[3, 1, TopLeft()], "e"; left=15pt)
+    plot_excess_skewness!(f[2, 3], df_excess)
+    plot_thermal_alpha!(f[1, 3], model)
+    plot_ionic_conductivity!(f[2, 1])
+
+    sublabel!(f[1, 1, TopLeft()], "c"; left=15pt)
+    sublabel!(f[1, 2, TopLeft()], "d"; left=15pt)
+    sublabel!(f[1, 3, TopLeft()], "e"; left=5pt)
+    sublabel!(f[2, 1, TopLeft()], "f"; left=15pt)
+    sublabel!(f[2, 2, TopLeft()], "g"; left=15pt)
+    sublabel!(f[2, 3, TopLeft()], "h"; left=20pt)
 
     return f
 end
