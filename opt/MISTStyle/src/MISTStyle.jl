@@ -69,6 +69,7 @@ include("powerlaw.jl")
 include("tantext.jl")
 include("quadrant.jl")
 include("asinh.jl")
+include("sci_notation.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
@@ -111,7 +112,7 @@ function theme()
         size=(246, 152),
         figure_padding=(2, 2, 2, 2),
         colormap=:lipari,
-        linewidth=0.5,
+        linewidth=1pt,
         CairoMakie=(;
             pt_per_unit=2,
             px_per_unit=300 / inch

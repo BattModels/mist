@@ -169,6 +169,8 @@ def generate_simplex_grid(n, grid_size):
 
 
 def load_excess_model(ckpt):
+    if Path(ckpt).is_dir():
+        return ExcessPhysicsModel.from_pretrained(ckpt)
     return ExcessPhysicsLightningModel.load_from_checkpoint(ckpt).model
 
 
