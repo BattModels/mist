@@ -13,30 +13,37 @@ using Mixtures: Mixtures, clean_target_name
 # Directory containing the data release files
 const DATA_DIR = realpath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
 
-function label_smi(smi::String)
+function label_smi(smi::AbstractString)
     known = Dict(
         "O" => "Water",
-        "CC#N" => "ACN",
-        "CC(=O)OCCOC(=O)C" => "EDGA",
-        "CN1CCN(C)C1=O" => "DMI",
-        "CN(CCO)CCO" => "MDEA",
+        "CC#N" => "ACN", # Acetonitrile
+        "CC(=O)OCCOC(=O)C" => "EDGA", # Ethylene Glycol Diacetate
+        "CN1CCN(C)C1=O" => "DMI", # 1,3-Dimethyl-2-imidazolidinone
+        "CN(CCO)CCO" => "MDEA", # N-Methyldiethanolamine
+        "NCCN" => "1,2-DE", # 1,2-Diaminoethane
+        "CC1COC(=O)O1" => "PC", # Propylene carbonate
+        "OCCO" => "1,2-ED", # 1,2-Ethanediol
+        "C(CO)O" => "1,2-ED", # 1,2-Ethanediol
+        "ClC(Cl)Cl" => "Chloroform",
     )
     return get(known, smi, smi)
 end
-
 
 function titlecase(s)
     words = split(lowercase(s))
     return join([uppercasefirst(word) for word in words], " ")
 end
 
-function plot_experimental_data!(f, model)
-    ax_density = Axis(f[1, 1];
-        limits=((0, 1), nothing),
-        xlabel="ACN Mole Fraction",
-        ylabel=L"% $\rho^E$ (g/cm$^3$)",
+function plot_experimental_data!(f, model; xaxisvisible=true)
+    ax = Axis(f[1, 1];
+        limits=((0, 1), (nothing, 0.15)),
+        xlabel=L"x_1",
+        ylabel=L"Relative $\rho^E$",
         xtickformat="{:.0%}",
         ytickformat="{:.0%}",
+        xticksvisible=xaxisvisible,
+        xlabelvisible=xaxisvisible,
+        xticklabelsvisible=xaxisvisible,
     )
 
     mixtures = [
@@ -46,27 +53,27 @@ function plot_experimental_data!(f, model)
     dfs = Mixtures.evaluate_mixtures(model, mixtures; gradients=false)
     dfs.x1 = first.(dfs.composition)
     for gdf in groupby(dfs, ["compounds"])
-        lines!(ax_density, gdf.x1, gdf.density_excess./gdf.density; linestyle=:solid)
+        lines!(ax, gdf.x1, gdf.density_excess./gdf.density; linestyle=:solid)
     end
 
     exp_dfs = [
-        DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "experimental_ACN_EGDA.csv"))) => "EGDA",
-        DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "experimental_ACN_BC.csv"))) => "BC"
+        DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "experimental_ACN_EGDA.csv"))) => "ACN & EGDA",
+        DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "experimental_ACN_BC.csv"))) => "ACN & BC"
     ]
 
-    compounds = []
-    labels = []
+    elems = PolyElement[]
     for (df, label) in exp_dfs
-        c = scatter!(ax_density, df.x1, df[!, "Excess Density [g/cm3]"]./df[!, "Density (g/cm^3)"] ; label)
-        push!(compounds, c)
-        push!(labels, label)
+        h = scatter!(ax, df.x1, df[!, "Excess Density [g/cm3]"]./df[!, "Density (g/cm^3)"] ; label)
+        push!(elems, PolyElement(; color=h.color, label=h.label))
     end
-    exp = scatter!(ax_density, [-1, -1], [0, 0.13]; label="Experimental", color=:black)
-    mist = lines!(ax_density, [-1, -1], [0, 0.13]; label="MIST", color=:black)
 
-    margin = something(theme(:Legend), (; margin=(1, 1, 1, 1))).margin
-    axislegend(ax_density; nbanks=2, margin)
-    return f
+    Legend(f[1, 1], elems, MISTStyle.label.(elems);
+        halign=:left,
+        valign=:top,
+        orientation=:horizontal,
+    )
+
+    return f, ax
 end
 
 function load_reference(path)
@@ -269,8 +276,8 @@ function plot_excess_skewness!(f, df)
     skew = Mixtures.excess_skew(df)
 
     ax = Axis(f[1, 1];
-        xlabel="Reference Excess Asymmetry",
-        ylabel="Predicted Excess Asymmetry",
+        xlabel="Reference Asymmetry",
+        ylabel="Predicted Asymmetry",
         xtickformat="{:.0%}",
         ytickformat="{:.0%}",
         limits=((0, 0.5), (0, 0.5)),
@@ -285,7 +292,7 @@ function plot_excess_skewness!(f, df)
     )
 
     cb = Colorbar(f[1, 2];
-        label="Max. Abs. Relative Excess",
+        label="Max Abs. Rel. Excess",
         colormap=Reverse(:oslo),
         colorrange=(0, 0.1),
         tickformat="{:.0%}",
@@ -326,7 +333,7 @@ function plot_excess_skewness!(f, df)
     end
 
     margin = something(theme(:Legend), (; margin=(1, 1, 1, 1))).margin
-    axislegend(ax; position=:rt, margin)
+    axislegend(ax; position=:rb, margin)
     return f
 end
 
@@ -339,8 +346,9 @@ function plot_soap!(f)
     excess_threshold = 0.025
     ax1 = Axis(f[1, 1];
         limits=((x_min, 1), (0, y_max)),
-        xlabel="Similarity",
-        ylabel=L"Maximum Absolute $V^{E}_m$",
+        xlabel="SOAP Similarity",
+        ylabel=L"Max $\left| V^{E}_m \right|$",
+        xtickformat="{:.0%}",
         yticks=WilkinsonTicks(3; k_min = 3, k_max=5)
     )
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
@@ -362,12 +370,14 @@ function plot_soap!(f)
     end
 
     dropmissing!(df)
-    transform!(df, ["name1", "name2" ] => ByRow((x, y) -> "$x\n$y") => :labels)
+    transform!(df, :compound_id => ByRow(x -> "$(label_smi(x[1])) & $(label_smi(x[2]))") => :labels)
 
     scatter!(
         ax1, df[!, "similarity"],  df[!, "max_abs_relative_vol"];
         color = (MISTStyle.UM_COLORS.blue, 0.5), marker=:circle,
-        strokewidth=0.25pt, strokecolor=:black
+        strokewidth=0.25pt,
+        strokecolor=:black,
+        markersize=4pt,
     )
 
     df_up = subset(df,
@@ -388,11 +398,15 @@ function plot_soap!(f)
     return f
 end
 
-function plot_soap_outliers!(f, model)
-    ax2 = Axis(f[1, 1];
+function plot_soap_outliers!(f, model; xaxisvisible=true)
+    ax = Axis(f[1, 1];
         limits=((0, 1), (-2.4, nothing)),
         xlabel=L"$x_1$",
         ylabel=L"$V^{E}_m \;$ (cm$^3$/mol)",
+        xtickformat="{:.0%}",
+        xticksvisible=xaxisvisible,
+        xlabelvisible=xaxisvisible,
+        xticklabelsvisible=xaxisvisible,
     )
     mixtures = [
         Dict("compounds" => ["CC1COC(=O)O1", "ClC(Cl)Cl"], "temperature" => 298.15),
@@ -404,38 +418,54 @@ function plot_soap_outliers!(f, model)
     df.x1 = first.(df.composition)
 
     data = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
+    subset!(data, "temperature [kelvin]" => ByRow(==(298.15)))
+    mix_elems = PolyElement[]
     for gdf in groupby(df, ["compounds"])
+        compounds = first(gdf.compounds)
         df_ref = subset(data,
-            :smi1 => ByRow(in(gdf.compounds[1])),
-            :smi2 => ByRow(in(gdf.compounds[1])),
-            "temperature [kelvin]" => ByRow(==(298.15))
+            :smi1 => ByRow(in(compounds)),
+            :smi2 => ByRow(in(compounds)),
         )
-        name1 = titlecase(df_ref.name1[1])
-        name2 = titlecase(df_ref.name2[1])
+        name1, name2 = label_smi.(compounds)
         label = "$name1 & $name2"
-        lines!(ax2, gdf.x1, gdf.molar_volume_excess; linestyle=:solid, label)
+        h = lines!(ax, gdf.x1, gdf.molar_volume_excess; linestyle=:solid, label)
+        push!(mix_elems, PolyElement(; color=h.color, label=h.label))
 
         if nrow(df_ref)> 2
             dropmissing!(df_ref, "excess molar volume [centimeter ** 3 / mole]")
-            scatter!(ax2, df_ref[!, "x1"], df_ref[!, "excess molar volume [centimeter ** 3 / mole]"]; label)
+            scatter!(ax, df_ref[!, "x1"], df_ref[!, "excess molar volume [centimeter ** 3 / mole]"];
+                label,
+                color=h.color,
+            )
         end
     end
 
-    margin = something(theme(:Legend), (; margin=(1, 1, 1, 1))).margin
-    axislegend(ax2, position = :rb)
-    return f
+    data_elems = [
+        LineElement(; color=:black, label="MIST"),
+        MarkerElement(; color=:black, label="MIST", marker=:x),
+    ]
+
+    Legend(f[1, 1],
+        mix_elems,
+        MISTStyle.label.(mix_elems);
+        nbanks=2,
+        valign=:bottom,
+        halign=:right,
+        titlesize=5pt,
+    )
+    return f, ax
 end
 
 function plot_ionic_conductivity!(f)
 
-    cb = Colorbar(f[2, 1];
+    cb = Colorbar(f[1, 1];
         label = L"Temperature (K)$$",
         colormap = MISTStyle.CONTINUOUS_COLORS,
         colorrange = (240, 340),
         flipaxis = false,
         vertical=false,
         tellheight=true,
-        tellwidth=true
+        tellwidth=true,
     )
 
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "ionic_conductivity_curves.csv")))
@@ -445,7 +475,7 @@ function plot_ionic_conductivity!(f)
     # Sort temperatures and build a continuous, dark‐cropped colormap
     temps = sort(unique(df.temperature))
 
-    ax = Axis(f[1, 1];
+    ax = Axis(f[2, 1];
             xlabel = L"x_{Li}",
             ylabel = L"$\sigma$ (mS/cm)",
             limits= ((0, 0.20), (0, 0.35)),
@@ -501,8 +531,8 @@ function plot_ionic_temperature!(f)
     return f
 end
 
-plot_thermal_alpha(model) = plot_thermal_alpha!(Figure(), model)
-function plot_thermal_alpha!(f, model)
+plot_thermal_alpha(model; kwargs...) = plot_thermal_alpha!(Figure(), model; kwargs...)
+function plot_thermal_alpha!(f, model; xaxisvisible=true)
     mixtures = [
         ("CC#N", "C(CO)O"),     # Acetonitrile and 1,2-ethanediol
         ("CC#N", "CC(CO)O"),    # ACN and 1,2-propanediol
@@ -526,18 +556,22 @@ function plot_thermal_alpha!(f, model)
     scale = 1
     ax = Axis(f[1, 1];
         limits=((0,1), (-2.25e-4, 0.5e-4)),
-        xlabel="ACN Mole Fraction",
-        ylabel=L"Experimental $\alpha^{\mathrm{E}}$ (K$^{-1}$)",
+        xlabel=L"x_1",
+        xtickformat="{:.0%}",
+        ylabel=L"$\alpha^{\mathrm{E}}$ (K$^{-1}$)",
         ytickformat=MISTStyle.sci_notation(),
         yticks=[0, -0.5, -1.0, -1.5] .* 1e-4,
         xminorticks=IntervalsBetween(5),
-        xminorticksvisible=true,
+        xminorticksvisible=xaxisvisible,
+        xticksvisible=xaxisvisible,
+        xlabelvisible=xaxisvisible,
+        xticklabelsvisible=xaxisvisible,
     )
     rel_scale = 3.3e-4
     ax_left = Axis(f[1, 1];
         limits=lift(x -> (x[1], rel_scale .* x[2]), ax.limits),
         yaxisposition=:right,
-        ylabel=L"Predicted $\alpha^{\mathrm{E}}$ (K$^{-1}$)",
+        # ylabel=L"Est. $\alpha^{\mathrm{E}}$ (K$^{-1}$)",
         ytickformat=ax.ytickformat,
         yticks=@lift($(ax.yticks) .* rel_scale),
     )
@@ -545,11 +579,11 @@ function plot_thermal_alpha!(f, model)
     hidexdecorations!(ax_left)
     linkxaxes!(ax, ax_left)
 
+    elems = PolyElement[]
     for mixture in ["ACN+PEG", "ACN+1,2-ED", "ACN+1,3-PD"]
         row = ref[mixture]
-        scatter!(ax, row["x1"], row["alpha"];
-            label=split(mixture, "+")[end],
-        )
+        h = scatter!(ax, row["x1"], row["alpha"]; label=replace(mixture, "+" => " & "))
+        push!(elems, PolyElement(; color=h.color, label=h.label))
     end
 
     foreach(groupby(df, [:compounds, :temperature])) do gdf
@@ -557,28 +591,118 @@ function plot_thermal_alpha!(f, model)
         lines!(ax_left, gdf.x1, gdf.alpha_excess)
     end
 
-    margin = something(theme(:Legend), (; margin=(1, 1, 1, 1))).margin
-    axislegend(ax; position=:rb, orientation=:horizontal, margin)
+    Legend(f[1, 1], elems, MISTStyle.label.(elems);
+        orientation=:horizontal,
+        halign=:right,
+        valign=:bottom,
+    )
+    return f, ax
+end
+
+function label_functional_groups(smi::String)
+    pyfg = @pyconst pyimport("electrolyte_fm.interpretibility.functional_groups")
+    groups = pyconvert(Vector{String}, pyfg.identify_functional_groups(smi))
+    length(groups) == 0 ? ["Other"] : groups
+end
+
+function plot_mixture_coverage!(f, df)
+    df = select(df,
+        :smi1 => ByRow(label_functional_groups) => :fg1,
+        :smi2 => ByRow(label_functional_groups) => :fg2,
+    )
+    fg = unique(Iterators.flatten(df.fg1))
+    union!(fg, Iterators.flatten(df.fg2))
+    pairs = Matrix{Int}(undef, length(fg), length(fg))
+    fg_count = Vector{Int}(undef, length(fg))
+    for I in CartesianIndices(pairs)
+        fga  = fg[I[1]]
+        fgb  = fg[I[2]]
+        pairs[I] = count(zip(df.fg1, df.fg2)) do (fg1, fg2)
+            return (fga in fg1 && fgb in fg2) || (fga in fg2 && fgb in fg1)
+        end
+        if I[1] == I[2]
+            fg_count[I[1]] = count(zip(df.fg1, df.fg2)) do (fg1, fg2)
+                return fga in fg1 || fga in fg2
+            end
+        end
+    end
+    sdx = sortperm(fg_count; rev=true)
+    pairs = pairs[sdx, sdx]
+    fg = fg[sdx]
+    fg_count = fg_count[sdx]
+
+    f = GridLayout(f)
+    axb = Axis(f[1, 1];
+        limits = ((0, nothing), nothing),
+        xticks = WilkinsonTicks(3),
+        yticks = (1:length(fg), titlecase.(fg)),
+        # xlabel = "Examples",
+    )
+
+    ax = Axis(f[1, 2];
+        yticksvisible=false,
+        yticklabelsvisible=false,
+        xticks = (1:length(fg), fg),
+        xticklabelrotation=pi/2,
+        xticksvisible=false,
+        xticklabelsvisible=false,
+    )
+    h = heatmap!(ax, pairs;
+        colormap=Reverse(:oslo10),
+        colorrange=(1, 3000),
+        colorscale=log10,
+        highclip=:black,
+        lowclip=:white,
+    )
+    cb = Colorbar(f[0, :], h;
+        label = "Examples",
+        vertical=false,
+        tellheight=true,
+        tellwidth=false,
+    )
+    barplot!(axb, fg_count;
+        direction = :x,
+        strokewidth=0.25pt,
+        strokecolor=:black,
+        color=fg_count,
+        colorscale=cb.scale,
+        colormap=cb.colormap,
+        highclip=cb.highclip,
+        lowclip=cb.lowclip,
+    )
+
+    linkyaxes!(ax, axb)
+    colgap!(f, 1, 2pt)
+
     return f
 end
 
 function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
-    f = Figure(; size=(183mm, 70mm), figure_padding=(5,5,5,5))
+    f = Figure(; size=(183mm, 70mm), figure_padding=(1, 1, 1, 1))
 
-    plot_soap!(f[1, 1])
-    plot_soap_outliers!(f[1, 2], model)
-    plot_experimental_data!(f[2, 2], model)
-
-    plot_excess_skewness!(f[2, 3], df_excess)
-    plot_thermal_alpha!(f[1, 3], model)
+    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "excess_v5.csv")))
+    plot_mixture_coverage!(f[1, 1], df)
     plot_ionic_conductivity!(f[2, 1])
 
-    sublabel!(f[1, 1, TopLeft()], "c"; left=15pt)
-    sublabel!(f[1, 2, TopLeft()], "d"; left=15pt)
-    sublabel!(f[1, 3, TopLeft()], "e"; left=5pt)
-    sublabel!(f[2, 1, TopLeft()], "f"; left=15pt)
-    sublabel!(f[2, 2, TopLeft()], "g"; left=15pt)
-    sublabel!(f[2, 3, TopLeft()], "h"; left=20pt)
+    gl = GridLayout(f[1:2, 2])
+    _, ax_soap = plot_soap_outliers!(gl[1, 1], model; xaxisvisible=false)
+    _, ax_expr = plot_experimental_data!(gl[2, 1], model; xaxisvisible=false)
+    _, ax_alpha = plot_thermal_alpha!(gl[3, 1], model; xaxisvisible=true)
+    linkxaxes!(ax_soap, ax_expr, ax_alpha)
+
+
+    plot_soap!(f[1, 3])
+    plot_excess_skewness!(f[2, 3], df_excess)
+
+    # sublabel!(f[1, 1, TopLeft()], "c"; left=15pt)
+    # sublabel!(f[1, 2, TopLeft()], "d"; left=15pt)
+    # sublabel!(f[1, 3, TopLeft()], "e"; left=5pt)
+    # sublabel!(f[2, 1, TopLeft()], "f"; left=15pt)
+    # sublabel!(f[2, 2, TopLeft()], "g"; left=15pt)
+    # sublabel!(f[2, 3, TopLeft()], "h"; left=20pt)
+
+    colgap!(f.layout, 6pt)
+    resize_to_layout!(f)
 
     return f
 end

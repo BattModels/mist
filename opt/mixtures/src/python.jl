@@ -18,7 +18,7 @@ end
 
 function evaluate_mixtures(model::Py, mixtures::Union{Py, Vector{Py}}; n = 20, gradients=true)
     targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
-    rows = map(pyexcess[].evaluate_mixtures(model, mixtures; n, gradients)) do row
+    rows = map(pyexcess[].evaluate_mixtures(model, mixtures; n=5, gradients)) do row
         row = pyconvert(Dict{String, Union{Float64, String, Vector}}, row)
         out = Dict(
             "compounds" => row["compounds"],
