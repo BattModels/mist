@@ -6,7 +6,7 @@ using MISTStyle
 using Format: format
 using JSON
 using StatsBase: mean, cor, corspearman, weights, tiedrank
-using LinearAlgebra: diag
+using JSON: JSON
 
 using Mixtures: Mixtures, clean_target_name
 
@@ -64,8 +64,8 @@ function plot_experimental_data!(f, model)
     exp = scatter!(ax_density, [-1, -1], [0, 0.13]; label="Experimental", color=:black)
     mist = lines!(ax_density, [-1, -1], [0, 0.13]; label="MIST", color=:black)
 
-    # axislegend(ax_density, compounds, labels;  margin=(1, 1, 1, 1), padding=(1, 1, 1, 1))
-    # axislegend(ax_density, [exp, mist], ["Experiment", "MIST"];  merge=true, margin=(1, 1, 1, 1), padding=(1, 1, 1, 1))
+    margin = something(theme(:Legend), (; margin=(1, 1, 1, 1))).margin
+    axislegend(ax_density; nbanks=2, margin)
     return f
 end
 
@@ -325,7 +325,7 @@ function plot_excess_skewness!(f, df)
         @info "Excess Skew Correlations: $target" pearson spearman pearson_weighted spearman_weighted
     end
 
-    margin = get(theme(:Legend), :margin, (1, 1, 1, 1))
+    margin = something(theme(:Legend), (; margin=(1, 1, 1, 1))).margin
     axislegend(ax; position=:rt, margin)
     return f
 end
@@ -343,7 +343,7 @@ function plot_soap!(f)
         ylabel=L"Maximum Absolute $V^{E}_m$",
         yticks=WilkinsonTicks(3; k_min = 3, k_max=5)
     )
-    df = DataFrame(CSV.File("panel_data/soap_similarity.csv"))
+    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
 
     df[!, :abs_target] = abs.(
         df[!,:"excess molar volume [centimeter ** 3 / mole]"] ./
@@ -352,10 +352,10 @@ function plot_soap!(f)
     transform!(df, ["smi1", "smi2" ] => ByRow((x, y) -> sort([x, y])) => :compound_id)
     df = combine(groupby(df, [:compound_id])) do gdf
         idx = argmax(gdf.abs_target)
-        return (; 
-            max_abs_relative_vol = gdf.abs_target[idx], 
-            name1 = titlecase(first(gdf.name1)), 
-            name2 = titlecase(first(gdf.name2)), 
+        return (;
+            max_abs_relative_vol = gdf.abs_target[idx],
+            name1 = titlecase(first(gdf.name1)),
+            name2 = titlecase(first(gdf.name2)),
             similarity = first(gdf.similarity),
             temperature = gdf[idx, "temperature [kelvin]"]
         )
@@ -371,10 +371,9 @@ function plot_soap!(f)
     )
 
     df_up = subset(df,
-            :similarity => ByRow(>(sim_threshold)),
-            :max_abs_relative_vol => ByRow(>(excess_threshold)),
-        )
-    CSV.write("panel_data/df_up.csv", df_up)
+        :similarity => ByRow(>(sim_threshold)),
+        :max_abs_relative_vol => ByRow(>(excess_threshold)),
+    )
 
     points = Point2.(df_up.similarity, df_up.max_abs_relative_vol)
     annotation!(ax1, points; text =  df_up.labels, fontsize=5pt, shrink = (2.0, 2.0))
@@ -383,7 +382,6 @@ function plot_soap!(f)
         :similarity => ByRow(<(sim_threshold)),
         :max_abs_relative_vol => ByRow(<(excess_threshold)),
     )
-    CSV.write("panel_data/df_left.csv", df_left)
 
     points = Point2.(df_left.similarity, df_left.max_abs_relative_vol)
     annotation!(ax1, points; text =  df_left.labels, fontsize=5pt, shrink = (2.0, 2.0))
@@ -397,58 +395,15 @@ function plot_soap_outliers!(f, model)
         ylabel=L"$V^{E}_m \;$ (cm$^3$/mol)",
     )
     mixtures = [
-        pydict(; compounds=@py(["CC1COC(=O)O1", "ClC(Cl)Cl"]), temperature=298.15),
-        pydict(; compounds=@py(["NCCN", "OCCO"]), temperature=298.15),
-        pydict(; compounds=@py(["CN(CCO)CCO", "O"]), temperature=298.15),
-        pydict(; compounds=@py(["CN1CCN(C)C1=O", "O"]), temperature=298.15)
+        Dict("compounds" => ["CC1COC(=O)O1", "ClC(Cl)Cl"], "temperature" => 298.15),
+        Dict("compounds" => ["NCCN", "OCCO"], "temperature" => 298.15),
+        Dict("compounds" => ["CN(CCO)CCO", "O"], "temperature" => 298.15),
+        Dict("compounds" => ["CN1CCN(C)C1=O", "O"], "temperature" => 298.15)
     ]
     df = Mixtures.evaluate_mixtures(model, mixtures; n=50, gradients=false)
     df.x1 = first.(df.composition)
 
     data = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
-
-    for gdf in groupby(df, ["compounds"])
-
-        @info nrow(gdf)
-        df_ref = subset(data,
-            :smi1 => ByRow(in(gdf.compounds[1])),
-            :smi2 => ByRow(in(gdf.compounds[1])),
-            "temperature [kelvin]" => ByRow(==(298.15))
-        )
-        name1 = titlecase(df_ref.name1[1])
-        name2 = titlecase(df_ref.name2[1])
-        label = "$name1 & $name2"
-        @info nrow(df_ref)
-        lines!(ax2, gdf.x1, gdf.molar_volume_excess; label = label, linewidth=1pt, linestyle=:solid
-        )
-
-        if nrow(df_ref)> 2
-            dropmissing!(df_ref, "excess molar volume [centimeter ** 3 / mole]")
-            scatter!(ax2, df_ref[!, "x1"], df_ref[!, "excess molar volume [centimeter ** 3 / mole]"];
-            )
-        end
-    end
-    axislegend(ax2, position = :rb, padding=(1, 1, 1, 1), margin=(1, 1, 1, 1))
-    return f
-end
-
-function plot_soap_outliers!(f, model)
-    ax2 = Axis(f[1, 1];
-        limits=((0, 1), (-2.4, nothing)),
-        xlabel=L"$x_1$",
-        ylabel=L"$V^{E}_m \;$ (cm$^3$/mol)",
-    )
-    mixtures = [
-        pydict(; compounds=@py(["CC1COC(=O)O1", "ClC(Cl)Cl"]), temperature=298.15),
-        pydict(; compounds=@py(["NCCN", "OCCO"]), temperature=298.15),
-        pydict(; compounds=@py(["CN(CCO)CCO", "O"]), temperature=298.15),
-        pydict(; compounds=@py(["CN1CCN(C)C1=O", "O"]), temperature=298.15)
-    ]
-    df = Mixtures.evaluate_mixtures(model, mixtures; n=50, gradients=false)
-    df.x1 = first.(df.composition)
-
-    data = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
-
     for gdf in groupby(df, ["compounds"])
         df_ref = subset(data,
             :smi1 => ByRow(in(gdf.compounds[1])),
@@ -458,16 +413,15 @@ function plot_soap_outliers!(f, model)
         name1 = titlecase(df_ref.name1[1])
         name2 = titlecase(df_ref.name2[1])
         label = "$name1 & $name2"
-        lines!(ax2, gdf.x1, gdf.molar_volume_excess; linestyle=:solid)
+        lines!(ax2, gdf.x1, gdf.molar_volume_excess; linestyle=:solid, label)
 
         if nrow(df_ref)> 2
             dropmissing!(df_ref, "excess molar volume [centimeter ** 3 / mole]")
-            scatter!(ax2, df_ref[!, "x1"], df_ref[!, "excess molar volume [centimeter ** 3 / mole]"];
-            )
+            scatter!(ax2, df_ref[!, "x1"], df_ref[!, "excess molar volume [centimeter ** 3 / mole]"]; label)
         end
     end
 
-    margin = get(theme(:Legend), :margin, (1, 1, 1, 1))
+    margin = something(theme(:Legend), (; margin=(1, 1, 1, 1))).margin
     axislegend(ax2, position = :rb)
     return f
 end
@@ -502,7 +456,11 @@ function plot_ionic_conductivity!(f)
     x_max = 0.20
     y_min = 0.0
     y_max = 0.35
-    poly!(ax, Point2f[(x_min, y_min), (x_min, y_max), (x_max, y_max), (x_max, y_min)], color = (MISTStyle.UM_COLORS.maize, 0.2), strokewidth = 0)
+    poly!(ax, Point2f[(x_min, y_min), (x_min, y_max), (x_max, y_max), (x_max, y_min)];
+        color = MISTStyle.UM_COLORS.maize,
+        alpha=0.2,
+        strokewidth = 0
+    )
     # Plot each temperature curve in both panels
     for (idx, salt) in enumerate(salts), T in temps
         mask = (df.salt_name .== salt) .& (df.temperature .== T)
@@ -533,7 +491,12 @@ function plot_ionic_temperature!(f)
     data_T_max = 293.150000
     x_min, x_max = extrema(df[!, "temperature"])
     y_min, y_max = extrema(df[!, "predicted"])
-    poly!(Point2f[(x_min, y_min), (x_min, y_max), (data_T_max, y_max), (data_T_max, y_min)], color = MISTStyle.UM_COLORS.maize, alpha = 0.2 , strokewidth = 0)
+    poly!(
+        Point2f[(x_min, y_min), (x_min, y_max), (data_T_max, y_max), (data_T_max, y_min)];
+        color = MISTStyle.UM_COLORS.maize,
+        alpha = 0.2,
+        strokewidth = 0
+    )
 
     return f
 end
@@ -594,7 +557,7 @@ function plot_thermal_alpha!(f, model)
         lines!(ax_left, gdf.x1, gdf.alpha_excess)
     end
 
-    margin = get(theme(:Legend), :margin, (1, 1, 1, 1))
+    margin = something(theme(:Legend), (; margin=(1, 1, 1, 1))).margin
     axislegend(ax; position=:rb, orientation=:horizontal, margin)
     return f
 end
