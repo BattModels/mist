@@ -36,7 +36,7 @@ end
 
 function plot_experimental_data!(f, model; xaxisvisible=true)
     ax = Axis(f[1, 1];
-        limits=((0, 1), (nothing, 0.15)),
+        limits=((0, 1), (nothing, 0.13)),
         xlabel=L"x_1",
         ylabel=L"Relative $\rho^E$",
         xtickformat="{:.0%}",
@@ -44,6 +44,7 @@ function plot_experimental_data!(f, model; xaxisvisible=true)
         xticksvisible=xaxisvisible,
         xlabelvisible=xaxisvisible,
         xticklabelsvisible=xaxisvisible,
+        tellwidth=true
     )
 
     mixtures = [
@@ -149,7 +150,7 @@ function parity_plots(df, model)
     f = Figure()
     gl_parity = GridLayout(f[1, 1])
     gl = GridLayout(gl_parity[1, 1])
-    cb = Colorbar(gl_parity[1, 2]; colormap=:managua, colorrange=extrema(df.temperature))
+    cb = Colorbar(gl_parity[1, 2]; colormap=:managua, colorrange=extrema(df.temperature), flip_vertical_label = true)
     temperature = df[!, "temperature"]
     inspector_columns = ["temperature", "compounds", "composition"]
     for (tdx, target) in enumerate(targets)
@@ -275,7 +276,7 @@ plot_excess_skewness(df) = plot_excess_skewness!(Figure(), df)
 function plot_excess_skewness!(f, df)
     skew = Mixtures.excess_skew(df)
 
-    ax = Axis(f[1, 1];
+    ax = Axis(f[2, 1];
         xlabel="Reference Asymmetry",
         ylabel="Predicted Asymmetry",
         xtickformat="{:.0%}",
@@ -291,7 +292,7 @@ function plot_excess_skewness!(f, df)
         yscale=sqrt,
     )
 
-    cb = Colorbar(f[1, 2];
+    cb = Colorbar(f[1, 1];
         label="Max Abs. Rel. Excess",
         colormap=Reverse(:oslo),
         colorrange=(0, 0.1),
@@ -299,6 +300,8 @@ function plot_excess_skewness!(f, df)
         tellheight=true,
         minorticksvisible=true,
         minorticks=IntervalsBetween(2),
+        flip_vertical_label = false,
+        vertical=false
     )
     targets = [
         ("Molar Volume", "molar_volume", :circle),
@@ -346,7 +349,7 @@ function plot_soap!(f)
     excess_threshold = 0.025
     ax1 = Axis(f[1, 1];
         limits=((x_min, 1), (0, y_max)),
-        xlabel="SOAP Similarity",
+        xlabel="ReMATCH Similarity",
         ylabel=L"Max $\left| V^{E}_m \right|$",
         xtickformat="{:.0%}",
         yticks=WilkinsonTicks(3; k_min = 3, k_max=5)
@@ -400,7 +403,7 @@ end
 
 function plot_soap_outliers!(f, model; xaxisvisible=true)
     ax = Axis(f[1, 1];
-        limits=((0, 1), (-2.4, nothing)),
+        limits=((0, 1), (-2.5, nothing)),
         xlabel=L"$x_1$",
         ylabel=L"$V^{E}_m \;$ (cm$^3$/mol)",
         xtickformat="{:.0%}",
@@ -458,14 +461,15 @@ end
 
 function plot_ionic_conductivity!(f)
 
-    cb = Colorbar(f[1, 1];
+    cb = Colorbar(f[1, 2];
         label = L"Temperature (K)$$",
         colormap = MISTStyle.CONTINUOUS_COLORS,
         colorrange = (240, 340),
-        flipaxis = false,
-        vertical=false,
+        vertical=true,
         tellheight=true,
         tellwidth=true,
+        flipaxis=true,
+        flip_vertical_label=true,
     )
 
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "ionic_conductivity_curves.csv")))
@@ -475,7 +479,7 @@ function plot_ionic_conductivity!(f)
     # Sort temperatures and build a continuous, dark‐cropped colormap
     temps = sort(unique(df.temperature))
 
-    ax = Axis(f[2, 1];
+    ax = Axis(f[1, 1];
             xlabel = L"x_{Li}",
             ylabel = L"$\sigma$ (mS/cm)",
             limits= ((0, 0.20), (0, 0.35)),
@@ -571,8 +575,9 @@ function plot_thermal_alpha!(f, model; xaxisvisible=true)
     ax_left = Axis(f[1, 1];
         limits=lift(x -> (x[1], rel_scale .* x[2]), ax.limits),
         yaxisposition=:right,
-        # ylabel=L"Est. $\alpha^{\mathrm{E}}$ (K$^{-1}$)",
+        ylabel=L"Est. $\alpha^{\mathrm{E}}$ (K$^{-1}$)",
         ytickformat=ax.ytickformat,
+        flip_ylabel=true,
         yticks=@lift($(ax.yticks) .* rel_scale),
     )
     hideydecorations!(ax_left; label=false, ticklabels=false, ticks=false)
@@ -636,16 +641,17 @@ function plot_mixture_coverage!(f, df)
         limits = ((0, nothing), nothing),
         xticks = WilkinsonTicks(3),
         yticks = (1:length(fg), titlecase.(fg)),
+        yticklabelrotation = 0.785,
         # xlabel = "Examples",
     )
 
     ax = Axis(f[1, 2];
         yticksvisible=false,
         yticklabelsvisible=false,
-        xticks = (1:length(fg), fg),
-        xticklabelrotation=pi/2,
+        xticks = (1:length(fg), titlecase.(fg)),
         xticksvisible=false,
         xticklabelsvisible=false,
+        xticklabelrotation = 0.785
     )
     h = heatmap!(ax, pairs;
         colormap=Reverse(:oslo10),
@@ -672,35 +678,34 @@ function plot_mixture_coverage!(f, df)
     )
 
     linkyaxes!(ax, axb)
-    colgap!(f, 1, 2pt)
+    colgap!(f, 1, 1pt)
 
     return f
 end
 
 function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
-    f = Figure(; size=(183mm, 70mm), figure_padding=(1, 1, 1, 1))
+    f = Figure(; size=(183mm, 72mm), figure_padding=(2, 2, 2, 2))
 
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "excess_v5.csv")))
-    plot_mixture_coverage!(f[1, 1], df)
-    plot_ionic_conductivity!(f[2, 1])
+    
+    gl = GridLayout(f[1:3, 1:2])
+    plot_mixture_coverage!(gl[1, 1], df)
+    plot_excess_skewness!(gl[2, 1], df_excess)
+    plot_ionic_conductivity!(gl[2, 2])
+    plot_soap!(gl[1, 2])
+    sublabel!(gl[1, 1, TopLeft()], "c"; left=15pt)
+    sublabel!(gl[2, 1, TopLeft()], "d"; left=15pt)
+    sublabel!(gl[1, 2, TopLeft()], "e"; left=5pt)
+    sublabel!(gl[2, 2, TopLeft()], "f"; left=5pt)
 
-    gl = GridLayout(f[1:2, 2])
+    gl = GridLayout(f[1:3, 3])
     _, ax_soap = plot_soap_outliers!(gl[1, 1], model; xaxisvisible=false)
     _, ax_expr = plot_experimental_data!(gl[2, 1], model; xaxisvisible=false)
     _, ax_alpha = plot_thermal_alpha!(gl[3, 1], model; xaxisvisible=true)
-    linkxaxes!(ax_soap, ax_expr, ax_alpha)
-
-
-    plot_soap!(f[1, 3])
-    plot_excess_skewness!(f[2, 3], df_excess)
-
-    # sublabel!(f[1, 1, TopLeft()], "c"; left=15pt)
-    # sublabel!(f[1, 2, TopLeft()], "d"; left=15pt)
-    # sublabel!(f[1, 3, TopLeft()], "e"; left=5pt)
-    # sublabel!(f[2, 1, TopLeft()], "f"; left=15pt)
-    # sublabel!(f[2, 2, TopLeft()], "g"; left=15pt)
-    # sublabel!(f[2, 3, TopLeft()], "h"; left=20pt)
-
+    sublabel!(gl[1, 1, TopLeft()], "g"; left=15pt)
+    sublabel!(gl[2, 1, TopLeft()], "h"; left=15pt)
+    sublabel!(gl[3, 1, TopLeft()], "i"; left=20pt)
+ 
     colgap!(f.layout, 6pt)
     resize_to_layout!(f)
 
