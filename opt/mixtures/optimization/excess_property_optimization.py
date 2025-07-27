@@ -1,18 +1,17 @@
+import sys
 from pathlib import Path
-from electrolyte_fm.models.excess_physics_model import (
-    ExcessPhysicsLightningModel,
-    ExcessPhysicsModel,
-)
 
+import numpy as np
 import pandas as pd
 import torch
-import numpy as np
-from torch.optim import LBFGS
-from difftopk import DiffTopkNet
-from electrolyte_fm.models.model_utils import masked_mean_pool
-from smirk import SmirkTokenizerFast
 import torch.nn.functional as F
-import sys
+from difftopk import DiffTopkNet
+from smirk import SmirkTokenizerFast
+from torch.optim import LBFGS
+
+from electrolyte_fm.models.excess_physics_model import (
+    ExcessPhysicsLightningModel, ExcessPhysicsModel)
+from electrolyte_fm.models.model_utils import masked_mean_pool
 
 sys.path.append(
     Path(__file__).absolute().parent.parent.joinpath("python", "excess.py")
