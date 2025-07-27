@@ -8,6 +8,7 @@ function plot_dataset_sparity!(f, df, prop_columns)
     ax = Axis(f[1, 1];
         limits = (nothing, (0, nothing)),
         xticks = (1:length(prop_columns), prop_columns),
+        xticklabelrotation=0.2,
         ylabel="Examples",
     )
     x = []
@@ -70,7 +71,7 @@ function plot_mixture_properties!(f, df, prop_columns)
         ["Excess $(col)", col] => ByRow(/) => "Percent Excess $(col)"
     end
     df = transform(df, tfs)
-    for (idx, (col, units)) in enumerate([("Density", L"g/\mathrm{mol}^3"), ("Molar Volume", L"cm^3/mol")])
+    for (idx, (col, units)) in enumerate([("Density", L"g/\mathrm{mol}^3"), ("Molar Volume", L"cm^3/mol"), ("Viscosity", L"S/m")])
         # Absolute Excess
         ax = Axis(gl_excess[1, idx];
             xlabel=L"Excess %$(col) ($ %$units $)",
@@ -97,19 +98,23 @@ end
 
 function mixture_dataset(df)
     df = transform(df, [:smi1, :smi2] => ByRow(vcat) => :compounds)
-    rename!(df,
-        "density [gram / centimeter ** 3]" => "Density",
-        "excess density [gram / centimeter ** 3]" => "Excess Density",
-        "molar enthalpy [joule / mole]" => "Molar Enthalpy",
-        "excess molar enthalpy [joule / mole]" => "Excess Molar Enthalpy",
-        "molar volume [centimeter ** 3 / mole]" => "Molar Volume",
-        "excess molar volume [centimeter ** 3 / mole]" => "Excess Molar Volume",
-        "temperature [kelvin]" => "temperature",
-    )
+    prop_columns = ["Density", "Molar Volume", "Molar Enthalpy", "Electrical Conductivity", "Viscosity", "Speed of Sound", "Thermal Diffusivity"]
+    rename_map = ["temperature [kelvin]" => "temperature"]
+    columns = names(df)
+    for col in prop_columns
+        lcol = lowercase(col)
+        idx = findfirst(startswith(lcol), columns)
+        if !isnothing(idx)
+            push!(rename_map, columns[idx] => col)
+        end
+        idx = findfirst(startswith("excess " * lcol), columns)
+        if !isnothing(idx)
+            push!(rename_map, columns[idx] => "Excess " * col)
+        end
+    end
+    rename!(df, rename_map...)
     compounds = unique(Iterators.flatten(df.compounds))
     pairs = Matrix{Float64}(undef, length(compounds), length(compounds))
-    prop_columns = ["Density", "Molar Volume", "Molar Enthalpy"]
-
 
     f = Figure(; size=(4.5inch, 3inch))
     plot_mixture_properties!(f[1, 1:2], df, prop_columns)
