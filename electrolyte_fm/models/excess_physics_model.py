@@ -333,7 +333,7 @@ class ExcessPhysicsModel(nn.Module):
         assert y_linear.shape == (B, T)
 
         if self.config.relative_excess:
-            y_excess = (1 + F.elu(y_excess)) * y_linear
+            y_excess *= y_linear
 
         # Transform to real-units
         y_linear = self.transform.forward(y_linear)
