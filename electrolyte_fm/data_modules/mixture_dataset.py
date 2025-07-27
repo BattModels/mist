@@ -225,6 +225,10 @@ def split_dataset(
 
     ds: Dataset = load_dataset("csv", data_files=[str(data)], split="train")
     ds = ds.map(lambda x: {"x2": 1 - x["x1"]}, batched=False)
+    ds = ds.filter(
+        lambda x: abs(x["pressure [megapascal]"] - 0.1) <= 0.02, batched=False
+    )
+
     if split == "random":
         ds = train_val_test_split(ds)
 
