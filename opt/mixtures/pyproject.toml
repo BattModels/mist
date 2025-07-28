@@ -7,7 +7,10 @@ dependencies = [
     "accelerate>=1.8.1",
     "dataset>=1.6.2",
     "electrolyte_fm",
+    "pubchempy>=1.0.4",
+    "rdkit>=2025.3.3",
     "transformers>=4.53.2",
+    "typer>=0.16.0",
 ]
 
 [tool.uv.sources]

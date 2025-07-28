@@ -3,13 +3,16 @@ using MISTStyle
 using PythonCall
 using DataFrames
 using CSV: CSV
+using StatsBase: mean
+using Mixtures
 
 function plot_dataset_sparity!(f, df, prop_columns)
     ax = Axis(f[1, 1];
-        limits = (nothing, (0, nothing)),
+        limits = (nothing, (1, nothing)),
         xticks = (1:length(prop_columns), prop_columns),
         xticklabelrotation=0.2,
-        ylabel="Examples",
+        ylabel="Unique Mixtures",
+        yscale=log10,
     )
     x = []
     dodge = Int[]
@@ -27,6 +30,7 @@ function plot_dataset_sparity!(f, df, prop_columns)
         color=dodge,
         colormap=MISTStyle.CAT_COLORS,
         colorrange=(1, length(MISTStyle.CAT_COLORS)),
+        fillto=0.5,
     )
     elems = [
         PolyElement(; color=MISTStyle.CAT_COLORS[1], label="Total"),
@@ -47,11 +51,11 @@ function plot_mixture_properties!(f, df, prop_columns)
     f = GridLayout(f)
     hist_kwargs = (;
         normalization=:none,
-        bins=90,
-        fillto=1,
+        bins=40,
+        fillto=0.1,
     )
     ax_kwargs = (;
-        limits = (nothing, (1, nothing)),
+        limits = (nothing, (0.1, 1e5)),
         yticksvisible=false,
         yscale=log10,
         yticklabelsvisible=false,
@@ -71,7 +75,7 @@ function plot_mixture_properties!(f, df, prop_columns)
         ["Excess $(col)", col] => ByRow(/) => "Percent Excess $(col)"
     end
     df = transform(df, tfs)
-    for (idx, (col, units)) in enumerate([("Density", L"g/\mathrm{mol}^3"), ("Molar Volume", L"cm^3/mol"), ("Viscosity", L"S/m")])
+    for (idx, (col, units)) in enumerate([("Density", L"g/\mathrm{mol}^3"), ("Molar Volume", L"cm^3/mol")])
         # Absolute Excess
         ax = Axis(gl_excess[1, idx];
             xlabel=L"Excess %$(col) ($ %$units $)",
@@ -97,24 +101,7 @@ function plot_mixture_properties!(f, df, prop_columns)
 end
 
 function mixture_dataset(df)
-    df = transform(df, [:smi1, :smi2] => ByRow(vcat) => :compounds)
-    prop_columns = ["Density", "Molar Volume", "Molar Enthalpy", "Electrical Conductivity", "Viscosity", "Speed of Sound", "Thermal Diffusivity"]
-    rename_map = ["temperature [kelvin]" => "temperature"]
-    columns = names(df)
-    for col in prop_columns
-        lcol = lowercase(col)
-        idx = findfirst(startswith(lcol), columns)
-        if !isnothing(idx)
-            push!(rename_map, columns[idx] => col)
-        end
-        idx = findfirst(startswith("excess " * lcol), columns)
-        if !isnothing(idx)
-            push!(rename_map, columns[idx] => "Excess " * col)
-        end
-    end
-    rename!(df, rename_map...)
-    compounds = unique(Iterators.flatten(df.compounds))
-    pairs = Matrix{Float64}(undef, length(compounds), length(compounds))
+    prop_columns = ["Density", "Molar Volume", "Molar Enthalpy"]
 
     f = Figure(; size=(4.5inch, 3inch))
     plot_mixture_properties!(f[1, 1:2], df, prop_columns)
@@ -127,8 +114,18 @@ function mixture_dataset(df)
         halign=:right,
         padding=(0, 4pt, 0, 0),
     )
-    plot_mixture_coverage!(f[2, 1], df)
-    plot_dataset_sparity!(f[2, 2], df, prop_columns)
+
+    # Restrict to pair-wise observations
+    df_mix = combine(groupby(df, [:doi, :compounds, :temperature])) do gdf
+        out = Dict{String, Any}("smi1" => first(gdf[!, "smi1"]), "smi2" => first(gdf[!, "smi2"]))
+        for col in prop_columns
+            out[col] = mean(skipmissing(gdf[!, col]))
+            out["Excess " * col] = mean(skipmissing(gdf[!, "Excess " * col]))
+        end
+        return NamedTuple(Symbol(k) => (!(v isa String) && isnan(v)) ? missing : v for (k, v) in pairs(out))
+    end
+    Mixtures.plot_mixture_coverage!(f[2, 1], df_mix)
+    plot_dataset_sparity!(f[2, 2], df_mix, prop_columns)
 
     MISTStyle.sublabel!(f[1, 1:2, TopLeft()], "a"; left=5)
     MISTStyle.sublabel!(f[2, 1, TopLeft()], "b"; left=5)
@@ -149,12 +146,12 @@ function dataset_stats(df)
 end
 
 function (@main)(ARGS=[])
-    filename = joinpath(dirname(@__FILE__), "..", "..", "excess_v5.csv")
+    filename = joinpath(dirname(@__FILE__), "..", "..", "excess_v6.csv")
     filename = length(ARGS) > 1 ? getindex(ARGS, 1) : filename
-    df = DataFrame(CSV.File(filename))
-
+    df = Mixtures.normalize_dataset(DataFrame(CSV.File(filename)))
     dataset_stats(df)
-
-    MISTStyle.savefig("mixture_dataset", mixture_dataset(df))
+    with_theme(MISTStyle.theme()) do
+        MISTStyle.savefig("mixture_dataset", mixture_dataset(df))
+    end
     return 0
 end

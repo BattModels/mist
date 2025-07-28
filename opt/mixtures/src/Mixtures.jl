@@ -1,5 +1,7 @@
 module Mixtures
 
+using Makie
+using MISTStyle: MISTStyle, pt
 using DataFrames
 using PythonCall: PythonCall, Py, pyconvert, pyimport
 
@@ -12,5 +14,6 @@ end
 
 include("python.jl")
 include("skew.jl")
+include("dataset.jl")
 
 end

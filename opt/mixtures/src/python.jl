@@ -80,3 +80,9 @@ function evaluate_binary_csv(model::Py, ds_path; gradients=false)
     iter = pyexcess[].evaluate_binary_csv(model, ds_path; gradients)
     process_prediction_with_ref(iter, targets, gradients)
 end
+
+function label_functional_groups(smi::String)
+    pyfg = PythonCall.@pyconst pyimport("electrolyte_fm.interpretibility.functional_groups")
+    groups = pyconvert(Vector{String}, pyfg.identify_functional_groups(smi))
+    length(groups) == 0 ? ["Other"] : groups
+end

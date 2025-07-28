@@ -868,7 +868,10 @@ dependencies = [
     { name = "accelerate" },
     { name = "dataset" },
     { name = "electrolyte-fm" },
+    { name = "pubchempy" },
+    { name = "rdkit" },
     { name = "transformers" },
+    { name = "typer" },
 ]
 
 [package.metadata]
@@ -876,7 +879,10 @@ requires-dist = [
     { name = "accelerate", specifier = ">=1.8.1" },
     { name = "dataset", specifier = ">=1.6.2" },
     { name = "electrolyte-fm", editable = "../../" },
+    { name = "pubchempy", specifier = ">=1.0.4" },
+    { name = "rdkit", specifier = ">=2025.3.3" },
     { name = "transformers", specifier = ">=4.53.2" },
+    { name = "typer", specifier = ">=0.16.0" },
 ]
 
 [[package]]
@@ -1635,6 +1641,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/50/e6/eecf58810b9d12e6427369784efe814a1eec0f492084ce8eb8f4d89d6d61/psutil-7.0.0-cp37-abi3-win32.whl", hash = "sha256:ba3fcef7523064a6c9da440fc4d6bd07da93ac726b5733c29027d7dc95b39d99", size = 241053 },
     { url = "https://files.pythonhosted.org/packages/50/1b/6921afe68c74868b4c9fa424dad3be35b095e16687989ebbb50ce4fceb7c/psutil-7.0.0-cp37-abi3-win_amd64.whl", hash = "sha256:4cf3d4eb1aa9b348dec30105c55cd9b7d4629285735a102beb4441e38db90553", size = 244885 },
 ]
+
+[[package]]
+name = "pubchempy"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/fb/8de3aa9804b614dbc8dc5c16ed061d819cc360e0ddecda3dcd01c1552339/PubChemPy-1.0.4.tar.gz", hash = "sha256:24e9dc2fc90ab153b2764bf805e510b1410700884faf0510a9e7cf0d61d8ed0e", size = 29767 }
 
 [[package]]
 name = "py-cpuinfo"

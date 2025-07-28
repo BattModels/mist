@@ -8,7 +8,7 @@ using JSON
 using StatsBase: mean, cor, corspearman, weights, tiedrank
 using JSON: JSON
 
-using Mixtures: Mixtures, clean_target_name
+using Mixtures: Mixtures, clean_target_name, titlecase
 
 # Directory containing the data release files
 const DATA_DIR = realpath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
@@ -28,12 +28,6 @@ function label_smi(smi::AbstractString)
     )
     return get(known, smi, smi)
 end
-
-function titlecase(s)
-    words = split(lowercase(s))
-    return join([uppercasefirst(word) for word in words], " ")
-end
-
 
 function plot_experimental_data!(f, model; xaxisvisible=true)
     ax = Axis(f[1, 1];
@@ -389,92 +383,14 @@ function plot_thermal_alpha!(f, model; xaxisvisible=true)
     return f, ax
 end
 
-function label_functional_groups(smi::String)
-    pyfg = @pyconst pyimport("electrolyte_fm.interpretibility.functional_groups")
-    groups = pyconvert(Vector{String}, pyfg.identify_functional_groups(smi))
-    length(groups) == 0 ? ["Other"] : groups
-end
-
-function plot_mixture_coverage!(f, df)
-    df = select(df,
-        :smi1 => ByRow(label_functional_groups) => :fg1,
-        :smi2 => ByRow(label_functional_groups) => :fg2,
-    )
-    fg = unique(Iterators.flatten(df.fg1))
-    union!(fg, Iterators.flatten(df.fg2))
-    pairs = Matrix{Int}(undef, length(fg), length(fg))
-    fg_count = Vector{Int}(undef, length(fg))
-    for I in CartesianIndices(pairs)
-        fga  = fg[I[1]]
-        fgb  = fg[I[2]]
-        pairs[I] = count(zip(df.fg1, df.fg2)) do (fg1, fg2)
-            return (fga in fg1 && fgb in fg2) || (fga in fg2 && fgb in fg1)
-        end
-        if I[1] == I[2]
-            fg_count[I[1]] = count(zip(df.fg1, df.fg2)) do (fg1, fg2)
-                return fga in fg1 || fga in fg2
-            end
-        end
-    end
-    sdx = sortperm(fg_count; rev=true)
-    pairs = pairs[sdx, sdx]
-    fg = fg[sdx]
-    fg_count = fg_count[sdx]
-
-    f = GridLayout(f)
-    axb = Axis(f[1, 1];
-        limits = ((0, nothing), nothing),
-        xticks = WilkinsonTicks(3),
-        yticks = (1:length(fg), titlecase.(fg)),
-        yticklabelrotation = 0.785,
-        # xlabel = "Examples",
-    )
-
-    ax = Axis(f[1, 2];
-        yticksvisible=false,
-        yticklabelsvisible=false,
-        xticks = (1:length(fg), titlecase.(fg)),
-        xticksvisible=false,
-        xticklabelsvisible=false,
-        xticklabelrotation = 0.785
-    )
-    h = heatmap!(ax, pairs;
-        colormap=Reverse(:oslo10),
-        colorrange=(1, 3000),
-        colorscale=log10,
-        highclip=:black,
-        lowclip=:white,
-    )
-    cb = Colorbar(f[0, :], h;
-        label = "Examples",
-        vertical=false,
-        tellheight=true,
-        tellwidth=false,
-    )
-    barplot!(axb, fg_count;
-        direction = :x,
-        strokewidth=0.25pt,
-        strokecolor=:black,
-        color=fg_count,
-        colorscale=cb.scale,
-        colormap=cb.colormap,
-        highclip=cb.highclip,
-        lowclip=cb.lowclip,
-    )
-
-    linkyaxes!(ax, axb)
-    colgap!(f, 1, 1pt)
-
-    return f
-end
-
 function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
     f = Figure(; size=(183mm, 72mm), figure_padding=(2, 2, 2, 2))
 
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "excess_v5.csv")))
-    
+    df = Mixtures.normalize_dataset(df)
+
     gl = GridLayout(f[1:3, 1:2])
-    plot_mixture_coverage!(gl[1, 1], df)
+    Mixtures.plot_mixture_coverage!(gl[1, 1], df)
     plot_excess_skewness!(gl[2, 1], df_excess)
     plot_ionic_conductivity!(gl[2, 2])
     plot_soap!(gl[1, 2])
@@ -490,7 +406,7 @@ function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
     sublabel!(gl[1, 1, TopLeft()], "g"; left=15pt)
     sublabel!(gl[2, 1, TopLeft()], "h"; left=15pt)
     sublabel!(gl[3, 1, TopLeft()], "i"; left=20pt)
- 
+
     colgap!(f.layout, 6pt)
     resize_to_layout!(f)
 
@@ -501,7 +417,7 @@ end
 function mixture_panel(model_id::String, model_strict_id::String)
 
     # Full Binary mixture dataset
-    excess_dataset = joinpath(DATA_DIR, "mixtures", "excess_v5.csv")
+    excess_dataset = joinpath(DATA_DIR, "mixtures", "excess_v6.csv")
 
     # Model Trained on Random Split
     model = Mixtures.load_excess_model(joinpath(DATA_DIR, "models", model_id)).to("mps")
