@@ -64,17 +64,15 @@ function plot_mixture_coverage!(f, df)
         xticklabelsvisible=false,
         xticklabelrotation = 0.785
     )
-    h = heatmap!(ax, pairs;
+
+    h = heatmap!(ax, transpose(tril(transpose(pairs)));
         colormap=Reverse(:oslo10),
-        colorrange=(1, 3000),
+        colorrange=(1, maximum(fg_count)),
         colorscale=log10,
         highclip=:black,
         lowclip=:white,
     )
-    ablines!(ax, 0, 1;
-        color=MISTStyle.UM_COLORS.maize,
-        linewidth=0.5pt,
-    )
+    
     cb = Colorbar(f[0, :], h;
         label = "Unique Mixtures",
         vertical=false,

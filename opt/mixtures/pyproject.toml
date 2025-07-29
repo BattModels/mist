@@ -6,6 +6,7 @@ requires-python = ">=3.10, <3.14"
 dependencies = [
     "accelerate>=1.8.1",
     "dataset>=1.6.2",
+    "difftopk>=0.2.0",
     "electrolyte_fm",
     "pubchempy>=1.0.4",
     "rdkit>=2025.3.3",
