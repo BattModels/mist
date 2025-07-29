@@ -78,7 +78,7 @@ end
 plot_excess_skewness(df) = plot_excess_skewness!(Figure(), df)
 function plot_excess_skewness!(f, df)
 	skew = Mixtures.excess_skew(df)
-	ax = Axis(f[2, 1];
+	ax = Axis(f[1, 1];
 		xlabel = "Reference Asymmetry",
 		ylabel = "Predicted Asymmetry",
 		xtickformat = "{:.0%}",
@@ -94,16 +94,16 @@ function plot_excess_skewness!(f, df)
 		yscale = sqrt,
 	)
 
-	cb = Colorbar(f[1, 1];
+	cb = Colorbar(f[1, 2];
 		label = "Max Abs. Rel. Excess",
-		colormap = Reverse(:oslo),
+		colormap = Reverse(MISTStyle.CONTINUOUS_COLORS),
 		colorrange = (0, 0.1),
 		tickformat = "{:.0%}",
 		tellheight = true,
 		minorticksvisible = true,
 		minorticks = IntervalsBetween(2),
-		flip_vertical_label = false,
-		vertical = false,
+		flip_vertical_label = true,
+		vertical = true,
 	)
 	targets = [
 		("Molar Volume", "molar_volume", :circle),
@@ -123,8 +123,7 @@ function plot_excess_skewness!(f, df)
 			label,
 			marker,
 			color,
-			strokewidth = 0.25pt,
-			strokecolor = MISTStyle.UM_COLORS.ash,
+			alpha=0.6,
 			MISTStyle.cb_attrs(cb, Scatter)...,
 		)
 
@@ -138,7 +137,7 @@ function plot_excess_skewness!(f, df)
 	end
 
 	margin = something(theme(:Legend), (; margin = (1, 1, 1, 1))).margin
-	axislegend(ax; position = :rb, margin)
+	axislegend(ax; position = :lt, orientation = :horizontal, margin)
 	return f
 end
 
@@ -396,76 +395,69 @@ end
 
 function plot_diffmix_enthalpy!(f, model)
 	col = "molar_enthalpy_excess"
-	markers_labels = [
-		(:circle, ":circle"),
-		(:rect, ":rect"),
-		(:diamond, ":diamond"),
-		(:hexagon, ":hexagon"),
-		(:cross, ":cross"),
-		(:xcross, ":xcross"),
-		(:utriangle, ":utriangle"),
-		(:dtriangle, ":dtriangle"),
-		(:ltriangle, ":ltriangle"),
-		(:rtriangle, ":rtriangle"),
-		(:pentagon, ":pentagon"),
-		(:star4, ":star4"),
-		(:star5, ":star5"),
-		(:star6, ":star6"),
-		(:star8, ":star8"),
-		(:vline, ":vline"),
-		(:hline, ":hline"),
-	]
 	smiles_to_name = Dict(
 		"CC1COC(=O)O1" => "PC", 
 		"CCCCC(=O)OCC" => "EP", # Ethyl pentanoate
 		"CCCOC(=O)CCC" => "PP", # Propyl Propanoate
 		"CC(=O)OCC(C)C" => "2-MA", # 2-methylpropyl acetate 
+		"CS(C)=O" => "DMS", # Dimethyl Sulfoxide
+		"CCOc1ccccc1" => "Phenetole",
+		"CCOc1ccccc1" => "Anisole",
+		"CCCCCCC(=O)OCC" => "EH", # Ethyl Heptanoate
+		"CCCCC(=O)OC" => "MP", # Methy Petanoate
+		"CCCCOC(=O)CCC" => "Butanoic", # Butonic acid
+		"CC(=O)OC(C)(C)C" => "Acetic",
+		"CCCCCCCC(=O)OCC" => "Octanoic",
+		"CCOC(=O)C(C)C" => "Propanoic",
+		"CCCCCC(=O)OCC" => "Hexanoic",
+		"CCOC(=O)OCC" => "EC",
+		"CCCOC(=O)CC" => "PE", # Propyl Ester
+		"COC(=O)OC" => "DMC"
 	)
-	cb = Colorbar(f[1, 2];
-		label = "Temperature (K)",
-        colormap =  MISTStyle.CONTINUOUS_COLORS,
-        colorrange = (298, 309),
-		tellheight = true,
-        tellwidth = true,
-		flipaxis = false,
-		vertical = false,
-	)
+	
 	excess_dataset = joinpath(DATA_DIR, "mixtures", "diffmix_enthalpy.csv")
 	df_excess = Mixtures.evaluate_binary_csv(model, excess_dataset)
-	@info unique!(first.(gdf.compounds))
-	@info unique!(last.(gdf.compounds))
-	ax2 = Axis(f[1, 1];
-		limits = ((0, 1), nothing),
+	df_excess = subset(df_excess,
+		:temperature => ByRow(<(300.)),
+	)
+	@info unique(first.(df_excess.temperature))
+	@info unique(last.(df_excess.compounds))
+	ax2 = Axis(f[1, :];
+		limits = ((0, 1), (0, nothing)),
 		xlabel = L"x_1",
-		ylabel =    L"$H^E_m$",
+		ylabel =    L"$H_m$",
 		tellwidth = true,
 	)
 
     df_excess.x1 = first.(df_excess.composition)
-    marker_lookup =  Dict(zip(unique(df_excess.compounds), first.(markers_labels)))
+	df_excess.smi2 = last.(df_excess.compounds)
+	sort!(df_excess, :smi2)
 
 	counter = 0
-    for gdf in groupby(df_excess, [ "compounds", "temperature"])
-		if counter > 5
+	elems = PolyElement[]
+    for gdf in groupby(df_excess, [ "compounds"])
+		if counter > 3
 			break
 		end
-		name1 = first(gdf.compounds)[1]
-		name2 = first(gdf.compounds)[2]
-		label = "$name1 and $name2"
-		lines!(ax2, gdf.x1, gdf[!, "$col"]; 
+		name1 = smiles_to_name[first(gdf.compounds)[1]]
+		name2 = smiles_to_name[first(gdf.compounds)[2]]
+		label = "$name2"
+		h = lines!(ax2, gdf.x1, gdf[!, "$col"]; 
             linestyle = :solid,
-            color     = gdf.temperature,
 			label,
-            MISTStyle.cb_attrs(cb, Lines)...,
         )
         
         scatter!(ax2, gdf.x1, gdf[!, "$(col)_ref"];
-            color     = gdf.temperature,
-            marker = marker_lookup[first(gdf.compounds)],
-            MISTStyle.cb_attrs(cb, Scatter)...,
         )
+		push!(elems, PolyElement(; color = h.color, label = h.label))
+		counter += 1
 	end
-	axislegend(ax2, position = :rt, padding = (1, 1, 1, 1), margin = (1, 1, 1, 1), unique = true)
+	Legend(f[1, 1], elems, MISTStyle.label.(elems);
+		orientation = :horizontal,
+		halign = :center,
+		valign = :bottom,
+		nbanks=2
+	)
     return f, ax2
 end
 
@@ -487,14 +479,14 @@ function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
     sublabel!(gl[2, 2, TopLeft()], "f"; left=5pt)
 
     gl = GridLayout(f[:, 3])
-	# _, ax_diffmix = plot_diffmix_enthalpy!(gl[3, :], model)
+	_, ax_diffmix = plot_diffmix_enthalpy!(gl[3, :], model)
     _, ax_soap = plot_soap_outliers!(gl[1,  :], model; xaxisvisible=false)
-    _, ax_expr = plot_experimental_data!(gl[2,  :], model_strict; xaxisvisible=true)
-	linkxaxes!(ax_soap, ax_expr)
+    _, ax_expr = plot_experimental_data!(gl[2,  :], model_strict; xaxisvisible=false)
+	linkxaxes!(ax_diffmix, ax_soap, ax_expr)
 
     sublabel!(gl[1, 1, TopLeft()], "g"; left=15pt)
     sublabel!(gl[2, 1, TopLeft()], "h"; left=15pt)
-    # sublabel!(gl[3, 1, TopLeft()], "i"; left=20pt)
+    sublabel!(gl[3, 1, TopLeft()], "i"; left=20pt)
 
     colgap!(f.layout, 6pt)
     resize_to_layout!(f)

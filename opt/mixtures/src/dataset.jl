@@ -50,9 +50,9 @@ function plot_mixture_coverage!(f, df)
     f = GridLayout(f)
     axb = Axis(f[1, 1];
         limits = ((0, nothing), nothing),
-        xticks = WilkinsonTicks(3),
+        xticks = WilkinsonTicks(5; k_min=2),
         yticks = (1:length(fg), titlecase.(fg)),
-        yticklabelrotation = 0.7,
+        # yticklabelrotation = 0.7,
         yticklabelsize=5pt,
     )
 
@@ -62,19 +62,23 @@ function plot_mixture_coverage!(f, df)
         xticks = (1:length(fg), titlecase.(fg)),
         xticksvisible=false,
         xticklabelsvisible=false,
-        xticklabelrotation = 0.785
+        backgroundcolor = :gray90
+        # xticklabelrotation = 0.785
     )
+    hidedecorations!(ax)
+    mask = fill(NaN, length(fg), length(fg))
+    tril!(mask, 0)
 
-    h = heatmap!(ax, transpose(tril(transpose(pairs)));
-        colormap=Reverse(:oslo10),
+    h = heatmap!(ax, pairs + mask;
+        colormap=MISTStyle.CONTINUOUS_COLORS,
         colorrange=(1, maximum(fg_count)),
         colorscale=log10,
-        highclip=:black,
-        lowclip=:white,
+        # highclip=:black,
+        # lowclip=:white,
     )
-    
+
     cb = Colorbar(f[0, :], h;
-        label = "Unique Mixtures",
+        label = "# Unique Mixtures",
         vertical=false,
         tellheight=true,
         tellwidth=false,

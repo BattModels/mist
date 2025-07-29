@@ -1,6 +1,7 @@
 module Mixtures
 
 using Makie
+using LinearAlgebra: tril
 using MISTStyle: MISTStyle, pt
 using DataFrames
 using PythonCall: PythonCall, Py, pyconvert, pyimport
