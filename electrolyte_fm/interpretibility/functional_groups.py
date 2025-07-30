@@ -24,6 +24,8 @@ functional_group_smarts = {
     "isocyanate": "N=C=O",
     "azo compound": "N=N",
     "thiol": "[SH]",
+    "aqueous": "[OH2]",
+    "salt": "[+1,+2,+3].[-1,-2,-3]"
 }
 
 # Compile SMARTS into RDKit molecules
