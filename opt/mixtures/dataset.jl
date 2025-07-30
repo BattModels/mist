@@ -11,7 +11,7 @@ function plot_dataset_sparity!(f, df, prop_columns)
         limits = (nothing, (1, nothing)),
         xticks = (1:length(prop_columns), prop_columns),
         xticklabelrotation=0.2,
-        ylabel="Unique Mixtures",
+        ylabel="# of Unique Mixtures",
         yscale=log10,
     )
     x = []

@@ -262,7 +262,7 @@ function diffmix_validation(model_id)
 		vertical = false,
         flip_vertical_label=true
 	)
-    
+
     for (idx, excess_dataset) in enumerate([ "diffmix/excess_molar_volume.csv", "diffmix/excess_molar_enthalpy.csv"])
         diffmix_validation!(model_id, f[idx, :], excess_dataset, cb)
     end
@@ -274,12 +274,12 @@ function diffmix_validation!(model_id, f, excess_dataset, cb)
     col = metadata[excess_dataset][2]
     model = Mixtures.load_excess_model(joinpath(DATA_DIR, "models", model_id)).to("mps")
 	df_excess = Mixtures.evaluate_binary_csv(model, excess_dataset)
-    df_ref = load_reference(excess_dataset)    
+    df_ref = load_reference(excess_dataset)
     ax1 = Axis(f[1, 1];
 		xlabel = "Exp",
 		ylabel =  "MIST",
 	)
-    
+
     scatter!(ax1, df_excess[!, "$(col)_ref"], df_excess[!, "$col"];
         color = df_excess[!, "temperature"],
         MISTStyle.cb_attrs(cb, Scatter)...,
@@ -299,12 +299,12 @@ function diffmix_validation!(model_id, f, excess_dataset, cb)
     df_excess.x1 = first.(df_excess.composition)
     marker_lookup =  Dict(zip(unique(df_excess.compounds), first.(markers_labels)))
     for gdf in groupby(df_excess, ["compounds", "temperature"])
-		lines!(ax2, gdf.x1, gdf[!, "$col"]; 
+		lines!(ax2, gdf.x1, gdf[!, "$col"];
             linestyle = :solid,
             color     = gdf.temperature,
             MISTStyle.cb_attrs(cb, Lines)...,
         )
-        
+
         scatter!(ax2, gdf.x1, gdf[!, "$(col)_ref"];
             color     = gdf.temperature,
             marker = marker_lookup[first(gdf.compounds)],

@@ -67,7 +67,7 @@ function plot_mixture_coverage!(f, df)
     )
     hidedecorations!(ax)
     mask = fill(NaN, length(fg), length(fg))
-    tril!(mask, 0)
+    tril!(mask, -1)
 
     h = heatmap!(ax, pairs + mask;
         colormap=MISTStyle.CONTINUOUS_COLORS,
@@ -76,9 +76,13 @@ function plot_mixture_coverage!(f, df)
         # highclip=:black,
         # lowclip=:white,
     )
+    stairs!(ax, (1:length(fg)) .+ 0.5, (1:length(fg)) .- 0.5;
+        linewidth=0.25pt,
+        color=:black,
+    )
 
     cb = Colorbar(f[0, :], h;
-        label = "# Unique Mixtures",
+        label = "# of Unique Mixtures",
         vertical=false,
         tellheight=true,
         tellwidth=false,
