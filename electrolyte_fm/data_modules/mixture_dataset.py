@@ -210,18 +210,17 @@ def split_dataset(
     data: Path,
     output: Path,
     split: str = "random",
-    split_idx: int = 0,
     num_shards: int = 4,
-    test: bool = False,
+    target_columns: list[str] | None = None,
 ):
+    import logging
     from .molnet_dataset import train_val_test_split
     from .splits import (
-        StrictEntityHoldoutSplitter,
         EntityHoldoutSplitter,
-        apply_splitter,
+        stratified_mixture_sparsity_split,
     )
-    from sklearn.model_selection import GroupShuffleSplit
-    from datasets import DatasetDict, concatenate_datasets
+
+    logging.basicConfig(level=logging.INFO)
 
     ds: Dataset = load_dataset("csv", data_files=[str(data)], split="train")
     ds = ds.map(lambda x: {"x2": 1 - x["x1"]}, batched=False)
@@ -231,43 +230,25 @@ def split_dataset(
 
     if split == "random":
         ds = train_val_test_split(ds)
+        ds.save_to_disk(output, num_shards={k: num_shards for k in ds.keys()})
+        return
 
-    elif split == "k-compound":
-        ds = apply_splitter(
-            ds,
-            EntityHoldoutSplitter(entity_cols=["smi1", "smi2"]),
-            split=split_idx,
-        )
+    if split == "k-compound":
+        splitter = EntityHoldoutSplitter(entity_cols=["inchi1", "inchi2"], verbose=True)
     elif split == "k-compound-strict":
-        ds = apply_splitter(
-            ds,
-            StrictEntityHoldoutSplitter(entity_cols=["smi1", "smi2"]),
-            split=split_idx,
+        splitter = EntityHoldoutSplitter(
+            entity_cols=["inchi1", "inchi2"], strict=True, verbose=True
         )
-    elif split == "k-mixture":
-
-        def label_mixture(x):
-            compounds = [x["smi1"], x["smi2"]]
-            compounds.sort()
-            return {"_mixture_id": tuple(compounds)}
-
-        ds = ds.map(label_mixture, batched=False)
-        splitter = GroupShuffleSplit(n_splits=5, test_size=0.2, random_state=42)
-        ds = apply_splitter(ds, splitter, groups="_mixture_id", split=split_idx)
-
     else:
         raise ValueError(f"Unknown split type {split}")
 
-    if not test:
-        ds = DatasetDict(
-            {
-                "train": ds["train"],
-                "validation": concatenate_datasets(
-                    [ds[k] for k in ["validation", "test"]]
-                ),
-            }
-        )
-    ds.save_to_disk(output, num_shards={k: num_shards for k in ds.keys()})
+    target_columns = target_columns or ["density", "molar volume", "molar enthalpy"]
+    for idx, ds in enumerate(
+        stratified_mixture_sparsity_split(ds, splitter, target_columns)
+    ):
+        name = Path(output.parent, output.name + f"-{idx}")
+        ds.save_to_disk(name, num_shards={k: num_shards for k in ds.keys()})
+        logging.debug("Saved split %d to %s", idx, name)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,6 @@ from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 from torch import nn
-from torch.nn import functional as F
 from transformers import AutoModel, AutoConfig, PretrainedConfig
 from transformers import CONFIG_MAPPING as HF_CONFIG_MAPPING
 
