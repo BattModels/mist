@@ -399,7 +399,7 @@ class ExcessPhysicsLightningModel(LightningModule):
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
             for m in ["train/loss", "val/loss"]:
-                for s in ["_step", "_epoch"]:
+                for s in ["", "_step", "_epoch"]:
                     self.logger.experiment.define_metric(m + s, summary="min,last")
 
     def on_fit_start(self):
