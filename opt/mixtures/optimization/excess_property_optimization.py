@@ -1,18 +1,18 @@
-import sys
 from pathlib import Path
-
-import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
-from difftopk import DiffTopkNet
-from smirk import SmirkTokenizerFast
+import numpy as np
 from torch.optim import LBFGS
+from difftopk import DiffTopkNet
+from electrolyte_fm.models.model_utils import masked_mean_pool
+from smirk import SmirkTokenizerFast
+import torch.nn.functional as F
+import sys
 
 from electrolyte_fm.models.excess_physics_model import (
-    ExcessPhysicsLightningModel, ExcessPhysicsModel)
-from electrolyte_fm.models.model_utils import masked_mean_pool
-
+    ExcessPhysicsLightningModel,
+    ExcessPhysicsModel,
+)
 sys.path.append(
     Path(__file__).absolute().parent.parent.joinpath("python", "excess.py")
 )
@@ -81,62 +81,16 @@ class ExcessOptimizer:
         # soft composition over those two
         comp = F.softmax(c_logits, dim=0).view(1, 2)  # (1,2)
 
-        # forward‑pass from "Compute Pairwise interactions" onward
-       
-        y_rel = self.forward(embs, comp)
+        y_rel = self.forward(comp, embs)
         mx, _ = torch.max(torch.abs(y_rel), dim=1)
         return -mx.sum()
 
-    def forward(self, embs, comp):
+    def forward(self, comp, embs):
         model = self.model
-        indices = torch.triu_indices(2, 2, offset=1)
-        
-        B = 1
-        I = 1
-        D = embs.size(-1)  # embedding dimension
-        temperature = torch.tensor([self.temperature], device=device).view(B, 1, 1).expand(-1, I, -1).reshape(B * I, 1)
-
-        e_i = embs[:, indices[0]].reshape(B * I, D)
-        e_j = embs[:, indices[1]].reshape(B * I, D)
-        pw_coeffs = model.pairwise_interaction(e_i, e_j, temperature)  # (B*I, T, P)
-        # partial concentrations
-        x_t = comp[:, indices[0]] + comp[:, indices[1]]
-        x_t = x_t.clamp(0, 1)
-        x_i = comp[:, indices[0]] / x_t
-        x_i = torch.where(x_i.abs() > 1e-8, x_i, torch.zeros_like(x_i))
-        x_i = x_i.clamp(0, 1).view(B * I, 1)
-
-        # temp‐dependence + polynomial eval
-        pw_coeffs = model.temperature_dependence(pw_coeffs, temperature.view(B * I, 1, 1))
-        pw = x_t.view(B * I, 1) * model.excess_polynomial(pw_coeffs, x_i)  # (B*I, T)
-        y_excess = pw.reshape(B, I, -1).sum(dim=1)  # (B, T)
-
-        # pure component prediction
-        if model.config.temperature_dependence in ["concat", "locally-linear"]:
-            t_e = temperature.view(B, 1, 1).expand(-1, 2, -1)
-            y_target = model.component_properties(torch.cat([embs, t_e], dim=-1))
-        else:
-            y_target = model.component_properties(embs)
-        y_target = model.temperature_dependence(y_target, temperature.view(B, 1, 1))  # (B,C,T)
-
-        # linear mix
-        y_linear = (y_target * comp.view(B, 2, 1)).sum(dim=1)  # (B, T)
-
-        if model.config.relative_excess:
-            y_excess = (1 + F.elu(y_excess)) * y_linear == y_excess / (
-                y_linear + y_excess
-            )
-
-        # transforms & final
-        y_linear = model.transform.forward(y_linear)
-        y_excess = model.excess_transform.forward(y_excess)
-        y = y_linear + y_excess  # (B, T)
-
+        y, _, y_excess = model.compute_interactions(comp, embs, torch.tensor(self.temperature))
         # loss = -∑_t max |y_excessₜ / yₜ|
         y_rel = y_excess / y
         return y_rel
-    
-
 
     def run_optimization(self):
         x = torch.randn(len(self.inventory), device=device, requires_grad=True)  # inventory scores

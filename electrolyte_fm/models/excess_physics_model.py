@@ -284,7 +284,10 @@ class ExcessPhysicsModel(nn.Module):
 
         # Mean pool over tokens (B, C, L, E) -> (B, C, E)
         embs = masked_mean_pool(hs, attention_mask)
+        y, y_linear, y_excess = self.compute_interactions(embs, composition, temperature)
+        return y, y_linear, y_excess
 
+    def compute_interactions(self, composition: torch.Tensor, embs: torch.Tensor, temperature: torch.Tensor):
         # Compute Pairwise interactions
         B, C, E = embs.shape
         indices = torch.triu_indices(C, C, offset=1)
