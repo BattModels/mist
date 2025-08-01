@@ -224,14 +224,16 @@ def stratified_mixture_sparsity_split(
     def compute_sparsity(gdf):
         bits = []
         for col in target_columns:
-            has_data = False
-            for c in df.columns.tolist():
-                if not (c.startswith(col) or c.startswith(f"excess {col}")):
-                    continue
-                if gdf[c].notna().any():
-                    has_data = True
-                    break
-            bits.append("1" if has_data else "0")
+            for prefix in ["", "excess "]:
+                has_data = False
+                col = prefix + col
+                for c in df.columns.tolist():
+                    if not c.startswith(col):
+                        continue
+                    if gdf[c].notna().any():
+                        has_data = True
+                        break
+                bits.append("1" if has_data else "0")
         return pd.Series({"sparsity": "".join(bits)})
 
     # Group by mixture_id and computed sparsity

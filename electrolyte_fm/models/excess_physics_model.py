@@ -137,7 +137,6 @@ class PairwiseInteraction(nn.Module):
         d = self.distance(a, b)
         if self.n_env > 0:
             d = torch.cat([d, e], dim=-1)
-        print("Distance", d.shape)
         y = self.mlp(d)
         y = y.reshape(*y.shape[:-1], self.n_targets, self.n_out)
         return y + y.flip(-1)
@@ -190,7 +189,7 @@ class ExcessPhysicsModel(nn.Module):
     def __init__(self, config: ExcessPhysicsConfig):
         super().__init__()
         self.config = config
-        self.encoder = AutoModel.from_config(config.encoder)
+        self.encoder = AutoModel.from_config(config.encoder, add_pooling_layer=False)
 
         # Configure Pairwise interaction model
         n_env = 0
@@ -259,7 +258,9 @@ class ExcessPhysicsModel(nn.Module):
         **kwargs,
     ):
         encoder = AutoModel.from_pretrained(
-            name_or_path, trust_remote_code=trust_remote_code
+            name_or_path,
+            trust_remote_code=trust_remote_code,
+            add_pooling_layer=False,
         )
         config = ExcessPhysicsConfig(encoder=encoder.config, **kwargs)
         model = cls(config)
@@ -283,10 +284,14 @@ class ExcessPhysicsModel(nn.Module):
 
         # Mean pool over tokens (B, C, L, E) -> (B, C, E)
         embs = masked_mean_pool(hs, attention_mask)
-        y, y_linear, y_excess = self.compute_interactions(composition, embs, temperature)
+        y, y_linear, y_excess = self.compute_interactions(
+            composition, embs, temperature
+        )
         return y, y_linear, y_excess
 
-    def compute_interactions(self, composition: torch.Tensor, embs: torch.Tensor, temperature: torch.Tensor):
+    def compute_interactions(
+        self, composition: torch.Tensor, embs: torch.Tensor, temperature: torch.Tensor
+    ):
         # Compute Pairwise interactions
         B, C, E = embs.shape
         indices = torch.triu_indices(C, C, offset=1)
@@ -467,7 +472,7 @@ class ExcessPhysicsLightningModel(LightningModule):
 
         loss = loss_mix + loss_excess
 
-        return (y, y_linear, y_excess), loss
+        return (y, y_linear, y_excess), (loss, loss_mix, loss_excess)
 
     def update_metrics(self, preds, batch, metrics):
         y, _, y_excess = preds  # Only y is used
@@ -502,10 +507,24 @@ class ExcessPhysicsLightningModel(LightningModule):
                 metrics[f"{target}/{metric}"].update(y_pred, y_true)
 
     def stage_step(self, stage: str, batch):
-        preds, loss = self.forward_loss(**batch)
+        preds, (loss, loss_mix, loss_excess) = self.forward_loss(**batch)
         self.log(
             f"{stage}/loss",
             loss,
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.log(
+            f"{stage}/loss_mix",
+            loss_mix,
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+        )
+        self.log(
+            f"{stage}/loss_excess",
+            loss_excess,
             on_step=False,
             on_epoch=True,
             sync_dist=True,
@@ -531,8 +550,6 @@ class ExcessPhysicsLightningModel(LightningModule):
                 param.requires_grad = False
                 continue
             learnable_params.append(param)
-        # if not self.freeze_encoder:
-        #     learnable_params = chain(learnable_params, self.encoder.parameters())
 
         optimizer = self.optimizer(learnable_params)
         if schedule := self.lr_schedule:
@@ -595,12 +612,12 @@ if __name__ == "__main__":
             "interactions": "difference",
         },
         "data": {
-            "path": "excess_dataset_v5/random",
+            "path": "excess_dataset_v8p2/random",
             "batch_size": 16,
             "randomize": True,
         },
         "trainer": {
-            "lr": 1e-3,
+            "lr": 5e-5,
             "num_training_steps": 10_000,
             "freeze": {
                 "initial": ["model.encoder"],
@@ -666,6 +683,8 @@ if __name__ == "__main__":
             ModelCheckpoint(),
             freeze,
         ],
+        val_check_interval=10,
+        limit_val_batches=4,
         logger=WandbLogger(project="excess_physics"),
         enable_progress_bar=False,
         max_steps=int(config["trainer"]["num_training_steps"]),
