@@ -13,6 +13,13 @@ function argextreme(x, y)
     return indices[idx], x[idx], y[idx]
 end
 
+function extreme(x)
+    any(!ismissing, x) || return missing
+    x = skipmissing(x)
+    l, h = extrema(x)
+    return abs(l) < abs(h) ? h : l
+end
+
 function excess_skew(df; targets=["density", "molar_volume", "molar_enthalpy"])
     df = transform(df, :compounds => ByRow(sort) => :compound_id)
     skew = combine(groupby(df, :compound_id)) do gdf

@@ -13,6 +13,8 @@ function plot_dataset_sparity!(f, df, prop_columns)
         xticklabelrotation=0.2,
         ylabel="# of Unique Mixtures",
         yscale=log10,
+        yminorticksvisible=true,
+        yminorticks=IntervalsBetween(10),
     )
     x = []
     dodge = Int[]
@@ -135,7 +137,7 @@ function mixture_dataset(df)
     return f
 end
 
-function dataset_stats(df)
+function dataset_stats(df, prop_columns)
     compounds = unique(Iterators.flatten([df.smi1, df.smi2]))
     @info "Number of compounds" length(compounds)
 
@@ -143,6 +145,20 @@ function dataset_stats(df)
         tuple(sort([smi1, smi2])...)
     end
     @info "Number of mixtures" length(unique(mixtures))
+
+end
+
+function target_sparsity(df)
+    if !("mixture_id" in string.(names(df)))
+        df = transform(df, [:smi1, :smi2] => ByRow((x...) -> sort([x...])) => :mixture_id)
+    end
+    combine(groupby(df, [:mixture_id])) do gdf
+        out = Dict{String, Bool}()
+        for col in prop_columns
+            out[col] = any(!ismissing, gdf[!, col]) || any(!ismissing, gdf[!, "Excess " * col])
+        end
+        return NamedTuple(Symbol(k) => v for (k, v) in pairs(out))
+    end
 end
 
 function (@main)(ARGS=[])
