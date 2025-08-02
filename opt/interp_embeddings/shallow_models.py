@@ -32,9 +32,9 @@ Array = np.ndarray
 @dataclass
 class ModelEvaluation:
     model_name: str  # "svm" or "random_forest"
-    original_label_values: Tuple[Any, Any]  # (negative_label, positive_label)
+    original_label_values: Tuple[Any, Any] 
     best_params: Dict[str, Any]
-    cv_scores: Dict[str, np.ndarray]  # e.g., {"f1": [...], "accuracy": [...], ...}
+    cv_scores: Dict[str, np.ndarray]
     test_classification_report: Dict[str, Any]
     test_confusion_matrix: Array
     test_roc_auc: float
@@ -94,7 +94,6 @@ def build_base_pipelines(random_state: int = 42) -> Dict[str, Pipeline]:
 def get_param_grids() -> Dict[str, Dict[str, List[Any]]]:
     return {
         "svm": {
-            "svc__kernel": ["rbf", "linear"],
             "svc__C": [0.1, 1, 10],
             "svc__gamma": ["scale", "auto"],
         },
@@ -154,7 +153,7 @@ def cross_validated_scores(
         n_jobs=-1,
     )
     return {
-        metric.replace("test_", ""): res[metric]
+        metric : res[metric]
         for metric in res
         if metric.startswith("test_")
     }
@@ -211,7 +210,7 @@ def plot_decision_boundary_2d(
     """
     vis_clf = make_pipeline(
         StandardScaler(),
-        SVC(kernel="rbf", probability=True, gamma="scale", random_state=0),
+        SVC(kernel="linear", probability=True, gamma="scale", random_state=0),
     )
     vis_clf.fit(embedding_2d, binary_labels)
 
@@ -360,6 +359,40 @@ def annotate_with_predictions(
 
     return annotated
 
+def linear_separability_diagnostics(X: np.ndarray, y: np.ndarray, tol: float = 1e-6, margin: int = 1e6):
+    clf = SVC(kernel="linear", C=margin)  # large C ~ hard margin
+    clf.fit(X, y)
+    w = clf.coef_[0]
+    b = clf.intercept_[0]
+
+    # functional margins
+    functional_margins = y * (X @ w + b)  # not normalized
+    min_func_margin = functional_margins.min()
+    # geometric margin
+    norm_w = np.linalg.norm(w)
+    geometric_margins = functional_margins / norm_w
+    min_geo_margin = geometric_margins.min()
+
+    # hinge losses
+    hinge_losses = np.maximum(0, 1 - functional_margins)
+    avg_hinge = hinge_losses.mean()
+
+    # violations (strictly less than 1 - tol)
+    violations = np.sum(functional_margins < 1 - tol)
+
+    # training accuracy
+    train_pred = clf.predict(X)
+    accuracy = np.mean(train_pred == y)
+
+    return {
+        "training_accuracy": accuracy,
+        "min_functional_margin": min_func_margin,
+        "min_geometric_margin": min_geo_margin,
+        "average_hinge_loss": avg_hinge,
+        "violations": int(violations),
+        "n_support_vectors": clf.n_support_.sum(),
+    }
+
 def prepare_aromaticity_paper_example():
     embedding_files = glob.glob("compas_2/*.csv")
     filepath = embedding_files[3]
@@ -377,22 +410,28 @@ def prepare_condensation_paper_example():
     X  =  compas[[str(i) for i in range(hidden_size)]].values
     return X, compas["dataset"].values == 1
 
-if __name__ == "__main__":
+if __name__ == "__main__":  
+    import pprint
 
     X, y = prepare_condensation_paper_example()
+    # X, y = prepare_aromaticity_paper_example()
     X_embedded = None
 
-    evaluations = train_compare_binary(
-        X=X,
-        y_raw=y,
-        positive_label=None,  # or specify which value counts as "positive"
-        embedding_2d=X_embedded,
-        test_size=0.2,
-        random_state=42,
-        cv=5,
-        scoring="f1",
-        visualize_embedding=False,
-    )
+    linear_sep = linear_separability_diagnostics(X, y)
+    pprint.pprint(linear_sep)
 
-    for model, eval in evaluations.items():
-        print(f"{model} \n {eval.test_confusion_matrix} \n AUROC: {eval.test_average_precision}")
+    # evaluations = train_compare_binary(
+    #     X=X,
+    #     y_raw=y,
+    #     positive_label=None, 
+    #     embedding_2d=X_embedded,
+    #     test_size=0.2,
+    #     random_state=42,
+    #     cv=5,
+    #     scoring="f1",
+    #     visualize_embedding=False,
+    # )
+
+    # for model, eval in evaluations.items():
+    #     print(evaluations.keys())
+    #     print(f"{model} \n {eval.test_confusion_matrix} \n AUROC: {eval.test_average_precision}")
