@@ -57,3 +57,6 @@ addopts = "--color yes"
 
 [tool.ruff.lint.extend-per-file-ignores]
 "**/__init__.py" = ["F401"]
+
+[tool.uv.workspace]
+members = ["opt/interp_embeddings"]

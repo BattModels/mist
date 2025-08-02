@@ -11,6 +11,12 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'linux'",
 ]
 
+[manifest]
+members = [
+    "electrolyte-fm",
+    "interp-embeddings",
+]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
@@ -734,6 +740,17 @@ sdist = { url = "https://files.pythonhosted.org/packages/f2/97/ebf4da567aa6827c9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2c/e1/e6716421ea10d38022b952c159d5161ca1193197fb744506875fbb87ea7b/iniconfig-2.1.0-py3-none-any.whl", hash = "sha256:9deba5723312380e77435581c6bf4935c94cbfab9b1ed33ef8d238ea168eb760", size = 6050 },
 ]
+
+[[package]]
+name = "interp-embeddings"
+version = "0.1.0"
+source = { virtual = "opt/interp_embeddings" }
+dependencies = [
+    { name = "matplotlib" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "matplotlib", specifier = ">=3.10.1" }]
 
 [[package]]
 name = "jinja2"
