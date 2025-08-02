@@ -337,7 +337,7 @@ function plot_thermal_alpha!(f, model; xaxisvisible = true)
 	ref = Dict(x["mixture"] => x for x in ref)
 
 	# scale = 1e3
-	scale = 1
+	scale = 3e-4
 	ax = Axis(f[1, 1];
 		limits = ((0, 1), (-2.25e-4, 0.5e-4)),
 		xlabel = L"x_1",
@@ -359,7 +359,7 @@ function plot_thermal_alpha!(f, model; xaxisvisible = true)
 		itp = LinearInterpolation(gdf.x1, gdf.alpha_excess )
 		result_scale += mean(itp(row["x1"])./row["alpha"])
 	end
-	rel_scale = result_scale/3
+	rel_scale = 3e-4
 
 	ax_left = Axis(f[1, 1];
 		limits = lift(x -> (x[1], rel_scale .* x[2]), ax.limits),
@@ -461,9 +461,53 @@ function plot_diffmix_enthalpy!(f, model)
     return f, ax2
 end
 
-function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
+function plot_viscosity!(f, df_excess)
+	print(names(df_excess))
+	col = "density_excess"
+	
+	@info unique(countmap(df_excess.temperature))
+	# @info unique(last.(df_excess.compounds))
+	ax2 = Axis(f[1, :];
+		# limits = ((0, 1), (0, nothing)),
+		xlabel = L"x_1",
+		ylabel =    L"$\rho^E_m$ (g/cm$^3$)",
+		tellwidth = true,
+	)
 
-	f = Figure(; size = (183mm, 72mm), figure_padding = (2, 2, 2, 2))
+    df_excess.x1 = first.(df_excess.composition)
+	df_excess.smi2 = last.(df_excess.compounds)
+
+	counter = 0
+	elems = PolyElement[]
+    for gdf in groupby(df_excess, ["temperature", "compounds"])
+		if counter > 5
+			break
+		end
+		sort!(gdf, :x1)
+		name1 = first(gdf.compounds)[1]
+		name2 = first(gdf.compounds)[2]
+		label = "$name1 & $name2"
+		h = lines!(ax2, gdf.x1, gdf[!, "$col"]; 
+            linestyle = :solid,
+			label,
+        )
+        
+        scatter!(ax2, gdf.x1, gdf[!, "$(col)_ref"];
+        )
+		push!(elems, PolyElement(; color = h.color, label = h.label))
+		counter += 1
+	end
+	Legend(f[1, 1], elems, MISTStyle.label.(elems);
+		orientation = :horizontal,
+		halign = :center,
+		valign = :bottom,
+		nbanks=2
+	)
+    return f, ax2
+end
+
+function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
+    f = Figure(; size=(183mm, 72mm), figure_padding=(2, 2, 2, 2))
 
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "excess_v6.csv")))
     df = Mixtures.normalize_dataset(df)
@@ -478,27 +522,24 @@ function mixture_panel(model::Py, model_strict::Py, df_excess::DataFrame)
     sublabel!(gl[1, 2, TopLeft()], "e"; left=5pt)
     sublabel!(gl[2, 2, TopLeft()], "f"; left=5pt)
 
-    gl = GridLayout(f[:, 3])
-	_, ax_diffmix = plot_diffmix_enthalpy!(gl[3, :], model)
-    _, ax_soap = plot_soap_outliers!(gl[1,  :], model; xaxisvisible=false)
-    _, ax_expr = plot_experimental_data!(gl[2,  :], model_strict; xaxisvisible=false)
-	linkxaxes!(ax_diffmix, ax_soap, ax_expr)
-
+    gl = GridLayout(f[1:3, 3])
+    _, ax_soap = plot_soap_outliers!(gl[1, 1], model; xaxisvisible=false)
+    _, ax_expr = plot_experimental_data!(gl[2, 1], model_strict; xaxisvisible=false)
+    # _, ax_alpha = plot_thermal_alpha!(gl[3, 1], model_strict; xaxisvisible=true)
     sublabel!(gl[1, 1, TopLeft()], "g"; left=15pt)
     sublabel!(gl[2, 1, TopLeft()], "h"; left=15pt)
-    sublabel!(gl[3, 1, TopLeft()], "i"; left=20pt)
+    # sublabel!(gl[3, 1, TopLeft()], "i"; left=20pt)
 
     colgap!(f.layout, 6pt)
     resize_to_layout!(f)
 
-	return f
+    return f
 end
-
 
 function mixture_panel(model_id::String, model_strict_id::String)
 
     # Full Binary mixture dataset
-    excess_dataset = joinpath(DATA_DIR, "mixtures", "excess_dataset_v6", "random")
+    excess_dataset = joinpath(DATA_DIR, "mixtures", "excess_dataset_v6", "k-compound-0")
 	# Model Trained on Random Split
 	model = Mixtures.load_excess_model(joinpath(DATA_DIR, "models", model_id)).to("mps")
 	df_excess = Mixtures.evaluate_dataset(model, excess_dataset)
