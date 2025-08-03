@@ -107,13 +107,13 @@ class PairwiseInteraction(nn.Module):
         self.n_targets = n_targets
         self.n_env = n_env
         self.mlp_emb = nn.Sequential(
-            nn.Linear(n_in, n_in),
             nn.BatchNorm1d(n_in),
+            nn.Linear(n_in, n_in),
             nn.Dropout(dropout),
         )
         self.mlp = nn.Sequential(
+            nn.BatchNorm1d(n_in + n_env),
             nn.Linear(n_in + n_env, n_in),
-            nn.BatchNorm1d(n_in),
             nn.Dropout(dropout),
             nn.GELU(),
             nn.Linear(n_in, n_out * n_targets),
@@ -220,8 +220,8 @@ class ExcessPhysicsModel(nn.Module):
             n_env=n_env,
         )
         self.component_properties = nn.Sequential(
+            nn.LayerNorm(config.encoder.hidden_size + n_env),
             nn.Linear(config.encoder.hidden_size + n_env, config.encoder.hidden_size),
-            nn.LayerNorm(config.encoder.hidden_size),
             nn.Dropout(config.dropout),
             nn.SiLU(),
             nn.Linear(
@@ -298,6 +298,9 @@ class ExcessPhysicsModel(nn.Module):
     def compute_interactions(
         self, composition: torch.Tensor, embs: torch.Tensor, temperature: torch.Tensor
     ):
+        # Normalize temperature
+        temperature = temperature / 293.15
+
         # Compute Pairwise interactions
         B, C, E = embs.shape
         indices = torch.triu_indices(C, C, offset=1)
