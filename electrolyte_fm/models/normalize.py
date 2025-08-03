@@ -226,11 +226,15 @@ class PowerTransform(AbstractNormalizer):
         if abs(lmbda) < eps:  # lmbda == 0
             x_out[pos] = torch.exp(x[pos]) - 1
         else:  # lmbda != 0
-            x_out[pos] = torch.pow(x[pos] * lmbda + 1, 1 / lmbda) - 1
+            z = x[pos] * lmbda + 1
+            z = z.clamp(min=eps)
+            x_out[pos] = torch.pow(z, 1 / lmbda) - 1
 
         # when x < 0
         if abs(lmbda - 2) > eps:  # lmbda != 2
-            x_out[~pos] = 1 - torch.pow(-(2 - lmbda) * x[~pos] + 1, 1 / (2 - lmbda))
+            z = -(2 - lmbda) * x[~pos] + 1
+            z = z.clamp(min=eps)
+            x_out[~pos] = 1 - torch.pow(z, 1 / (2 - lmbda))
         else:  # lmbda == 2
             x_out[~pos] = 1 - torch.exp(-x[~pos])
         return x_out
