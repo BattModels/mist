@@ -23,13 +23,14 @@ sys.path.append(
 sys.path.append(
     Path(__file__).absolute().parent.joinpath("utils.py")
 )
-from excess import evaluate_mixtures
+from excess import evaluate_mixtures, generate_simplex_grid
 from utils import process_prediction_with_ref
 
 @dataclass
 class OptimizationConfig:
     lr: float
     num_iterations: int
+    target_quantities: list[str]
 
 class ExcessOptimizer:
     def __init__(
@@ -39,7 +40,7 @@ class ExcessOptimizer:
         self.model = self._load_model(self.pretrained_ckpt)
         self.tokenizer = SmirkTokenizerFast()
         self.temperature = temperature
-
+        self.n = 5
         self.sorter = DiffTopkNet(
             sorting_network_type="bitonic",
             size=len(self.inventory),
@@ -84,55 +85,56 @@ class ExcessOptimizer:
             E = masked_mean_pool(hs, attention_mask)  # (n, E)
         return E
 
-    def cost(self, x: torch.Tensor, c_logits: torch.Tensor):
+    def cost(self, x: torch.Tensor):
         # soft top‑2 selection
         _, S = self.sorter(x.unsqueeze(0))  # S: (1, n, 2)
         S = S.squeeze(0)  # (n, 2)
 
         # mixture embeddings from E
         mixture_embeds = S.T @ self.inventory_matrix  # (2, D)
-        embs = mixture_embeds.unsqueeze(0)  # (1, 2, D)
-
-        # soft composition over those two
-        comp = F.softmax(c_logits, dim=0).view(1, 2)  # (1,2)
-
+        embs = mixture_embeds.unsqueeze(0).repeat(self.n, 1, 1)  # (N, 2, D)
+        comp = torch.linspace(0, 1, steps = self.n)
+        comp = torch.vstack((comp, 1 - comp)).T
         y_rel = self.forward(comp, embs)
-        self.target_trajectory.append(y_rel.detach().numpy())
-        mx, _ = torch.max(torch.abs(y_rel), dim=1)
+        mask = torch.tensor([i in self.config.target_quantities for i in self.model.config.target_columns]).unsqueeze(0).repeat(self.n, 1)
+        y_masked = torch.masked_select(y_rel, mask)        
+        if y_masked.ndim > 1:
+            mx, _ = torch.max(torch.abs(y_masked), dim=1)
+        else:
+            mx = torch.abs(y_masked).max()
+        self.target_trajectory.append(mx.detach())
         return -mx.sum()
 
     def forward(self, comp: torch.Tensor, embs: torch.Tensor):
         model = self.model
-        y, _, y_excess = model.compute_interactions(comp, embs, torch.tensor(self.temperature))
+        temperature = torch.tensor(self.temperature).repeat(self.n, 1, 1)
+        y, _, y_excess = model.compute_interactions(comp, embs, temperature)
         # loss = -∑_t max |y_excessₜ / yₜ|
         y_rel = y_excess / y
         return y_rel
 
     def run_optimization(self):
         x = torch.randn(len(self.inventory), device=device, requires_grad=True)  # inventory scores
-        c_logits = torch.randn(2, device=device, requires_grad=True)  # raw mix logits
-        optimizer = LBFGS([x, c_logits], lr=self.config.lr, max_iter=self.config.lr)
+        optimizer = LBFGS([x], lr=self.config.lr, max_iter=self.config.num_iterations)
      
         def closure():
             optimizer.zero_grad()
-            loss = self.cost(x, c_logits)
+            loss = self.cost(x)
             loss.backward()
             print(
-                f"loss={loss.item():.4f}, ‖x.grad‖={x.grad.norm().item():.4f}, ‖c.grad‖={c_logits.grad.norm().item():.4f}"
+                f"loss={loss.item():.4f}, ‖x.grad‖={x.grad.norm().item():.4f}"
             )
             return loss
 
         optimizer.step(closure)
 
         _, top2 = torch.topk(x, k=2)
-        self.best_fracs = F.softmax(c_logits, dim=0).tolist()
         self.optimal_mixture = [
             {
                 "compounds": [self.inventory[i] for i in top2],
                 "temperature": self.temperature
             },
         ]
-        print("Mixture fractions :", self.best_fracs)
         self.target_trajectory = np.squeeze(np.array(self.target_trajectory))
     
     def save_run(self):
@@ -162,8 +164,12 @@ class ExcessOptimizer:
     
     def plot_trajectory(self):
         fig, ax = plt.subplots()
-        for idx, target in enumerate(self.model.config.target_columns):
-            ax.plot(self.target_trajectory[:, idx], label = target)
+        n_targets = len(self.config.target_quantities)
+        for idx, target in enumerate(self.config.target_quantities):
+            if n_targets > 1:
+                ax.plot(self.target_trajectory[:, idx], label = target)
+            else:
+                ax.plot(self.target_trajectory[:], label = target)
         ax.set_xlabel("Iterations")
         ax.set_ylabel("% Excess")
         fig.legend()
@@ -173,7 +179,7 @@ class ExcessOptimizer:
     def plot_optimization_results(self, results_df: pd.DataFrame):
         fig, ax = plt.subplots()
         x1 = [i[0] for i in results_df.composition]
-        for idx, target in enumerate(self.model.config.target_columns):
+        for target in self.config.target_quantities:
             y_rel = results_df[f"relative excess {target}"]
             ax.plot(x1, y_rel, label = target)
         ax.set_xlabel("$x_1$")
@@ -190,7 +196,7 @@ if __name__ == "__main__":
     
     name_or_path = "/Users/anoushka/VSCodeProjects/electrolyte-fm/data/models/mist-mixtures-17o0xho9"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    config = OptimizationConfig(lr=0.1, num_iterations=30)
+    config = OptimizationConfig(lr=1, num_iterations=30, target_quantities = ["density [gram / centimeter ** 3]"])
     opt = ExcessOptimizer(name_or_path, temperature = 298.15, config=config)
     opt.run_optimization()
     opt.save_run()

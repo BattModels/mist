@@ -189,7 +189,7 @@ class ExcessPhysicsModel(nn.Module):
     def __init__(self, config: ExcessPhysicsConfig):
         super().__init__()
         self.config = config
-        self.encoder = AutoModel.from_config(config.encoder, add_pooling_layer=False)
+        self.encoder = AutoModel.from_config(config.encoder)
 
         # Configure Pairwise interaction model
         n_env = 0
@@ -260,7 +260,6 @@ class ExcessPhysicsModel(nn.Module):
         encoder = AutoModel.from_pretrained(
             name_or_path,
             trust_remote_code=trust_remote_code,
-            add_pooling_layer=False,
         )
         config = ExcessPhysicsConfig(encoder=encoder.config, **kwargs)
         model = cls(config)
