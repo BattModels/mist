@@ -16,7 +16,7 @@ from ..utils.metrics import (
     masked_loss,
 )
 from .model_utils import masked_mean_pool, sparsity_weights
-from .normalize import Standardize
+from .normalize import AbstractNormalizer
 from .polynomials import LagrangePolynomial
 from .physics_task_heads import ArrtheniusActivation, LinearExogenousEffect
 from ..utils.progressive_thawing import ProgressiveThawing
@@ -39,6 +39,8 @@ class ExcessPhysicsConfig:
     temperature_dependence: str | None = None
     relative_excess: bool = False
     dropout: float = 0.1
+    transform: str | list[str] = "standardize"
+    excess_transform: str | list[str] = "standardize"
 
     @property
     def num_targets(self):
@@ -106,10 +108,12 @@ class PairwiseInteraction(nn.Module):
         self.n_env = n_env
         self.mlp_emb = nn.Sequential(
             nn.Linear(n_in, n_in),
+            nn.BatchNorm1d(n_in),
             nn.Dropout(dropout),
         )
         self.mlp = nn.Sequential(
             nn.Linear(n_in + n_env, n_in),
+            nn.BatchNorm1d(n_in),
             nn.Dropout(dropout),
             nn.GELU(),
             nn.Linear(n_in, n_out * n_targets),
@@ -217,6 +221,7 @@ class ExcessPhysicsModel(nn.Module):
         )
         self.component_properties = nn.Sequential(
             nn.Linear(config.encoder.hidden_size + n_env, config.encoder.hidden_size),
+            nn.LayerNorm(config.encoder.hidden_size),
             nn.Dropout(config.dropout),
             nn.SiLU(),
             nn.Linear(
@@ -228,8 +233,10 @@ class ExcessPhysicsModel(nn.Module):
             polynomial_order=self.config.num_control + 2,
             zero_endpoints=True,
         )
-        self.transform = Standardize(num_outputs=config.num_targets)
-        self.excess_transform = Standardize(num_outputs=config.num_targets)
+        self.transform = AbstractNormalizer.get(config.transform, config.num_targets)
+        self.excess_transform = AbstractNormalizer.get(
+            config.excess_transform, config.num_targets
+        )
 
     def save_pretrained(self, save_directory: str | Path):
         from safetensors.torch import save_model
@@ -418,7 +425,6 @@ class ExcessPhysicsLightningModel(LightningModule):
             ds = self.trainer.datamodule.target_dataset
             state = self.model.transform.fit(ds)
             state_excess = self.model.excess_transform.fit(ds, name="target_excess")
-            state_excess["mean"].zero_()
 
             # Compute target weights
             sparsity = sparsity_weights(ds, ["target_mask", "target_excess_mask"])
@@ -476,6 +482,7 @@ class ExcessPhysicsLightningModel(LightningModule):
     def update_metrics(self, preds, batch, metrics):
         y, _, y_excess = preds  # Only y is used
         targets = self.model.config.target_columns
+
         self._masked_metric(
             metrics,
             y,
@@ -605,13 +612,15 @@ if __name__ == "__main__":
 
     config = {
         "model": {
-            "name_or_path": "models/mist-ti624ev1",
+            "name_or_path": "/scratch/venkvis_root/venkvis/awadell/models/mist-ti624ev1",
             "temperature_dependence": "concat",
             "num_control": 2,
             "interactions": "difference",
+            "transform": "power_transform",
+            "excess_transform": "power_transform",
         },
         "data": {
-            "path": "excess_dataset_v8p2/random",
+            "path": "excess_dataset_v8p1/random",
             "batch_size": 16,
             "randomize": True,
         },
@@ -682,11 +691,10 @@ if __name__ == "__main__":
             ModelCheckpoint(),
             freeze,
         ],
-        val_check_interval=10,
-        limit_val_batches=4,
         logger=WandbLogger(project="excess_physics"),
         enable_progress_bar=False,
         max_steps=int(config["trainer"]["num_training_steps"]),
+        detect_anomaly=True,
     )
     trainer.logger.log_hyperparams(config)
     trainer.fit(lit, datamodule=dm)
