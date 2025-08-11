@@ -215,4 +215,3 @@ inbounds(x::Real, lb::Real, ub::Real) = x >= lb && x <= ub
 inbounds(x::Real, lb::Nothing, ub::Real) = x <= ub
 inbounds(x::Real, lb::Real, ub::Nothing) = x >= lb
 inbounds(x::Real, lb::Nothing, ub::Nothing) = true
-

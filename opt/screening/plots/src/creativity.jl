@@ -235,4 +235,3 @@ function renyi_entropy_estimate(embeddings; kwargs...)
     renyi = (1 / (1-γ)) * (log(mst) - γ * log(n))
     return (; renyi, mst)
 end
-

@@ -7,7 +7,7 @@ import multiprocessing
 from os import environ
 from pathlib import Path
 from time import perf_counter
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import torch
 import accelerate  # noqa: F401

@@ -99,9 +99,9 @@ def logit_limits(
 def limits_to_bounds(limits: dict[str, tuple[float, float]], channels: list[str]):
     lower = []
     upper = []
-    assert limits.keys() <= set(channels), (
-        f"limits must be a subset of channels: {limits.keys()} ⊆ {channels}"
-    )
+    assert limits.keys() <= set(
+        channels
+    ), f"limits must be a subset of channels: {limits.keys()} ⊆ {channels}"
     for chn in channels:
         if chn in limits:
             lb, ub = limits[chn]
