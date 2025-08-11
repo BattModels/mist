@@ -413,25 +413,25 @@ def prepare_condensation_paper_example():
 if __name__ == "__main__":  
     import pprint
 
-    X, y = prepare_condensation_paper_example()
-    # X, y = prepare_aromaticity_paper_example()
+    # X, y = prepare_condensation_paper_example()
+    X, y = prepare_aromaticity_paper_example()
     X_embedded = None
 
-    linear_sep = linear_separability_diagnostics(X, y)
-    pprint.pprint(linear_sep)
+    # linear_sep = linear_separability_diagnostics(X, y)
+    # pprint.pprint(linear_sep)
 
-    # evaluations = train_compare_binary(
-    #     X=X,
-    #     y_raw=y,
-    #     positive_label=None, 
-    #     embedding_2d=X_embedded,
-    #     test_size=0.2,
-    #     random_state=42,
-    #     cv=5,
-    #     scoring="f1",
-    #     visualize_embedding=False,
-    # )
+    evaluations = train_compare_binary(
+        X=X,
+        y_raw=y,
+        positive_label=None, 
+        embedding_2d=X_embedded,
+        test_size=0.2,
+        random_state=42,
+        cv=5,
+        scoring="f1",
+        visualize_embedding=False,
+    )
 
-    # for model, eval in evaluations.items():
-    #     print(evaluations.keys())
-    #     print(f"{model} \n {eval.test_confusion_matrix} \n AUROC: {eval.test_average_precision}")
+    for model, eval in evaluations.items():
+        print(evaluations.keys())
+        print(f"{model} \n {eval.test_confusion_matrix} \n AUROC: {eval.test_average_precision}")
