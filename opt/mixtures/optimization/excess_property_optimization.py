@@ -1,7 +1,10 @@
 import os
 import sys
 import json
+import h5py
 import time
+from functools import cached_property
+from tqdm import tqdm
 from pathlib import Path
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -28,17 +31,22 @@ from utils import process_prediction_with_ref
 
 epsilon_float = torch.finfo(torch.float32).eps
 
+
 @dataclass
 class TopKConfig:
     sorting_network_type: str
     steepness: float
     distribution: str
+
+
 @dataclass
 class OptimizationConfig:
     lr: float
     num_iterations: int
     target_quantities: list[str]
-    top_k : TopKConfig
+    top_k: TopKConfig
+    inventory_size: int = 10_000
+    precomputed_inventory: str | None = None
 
 
 class ExcessOptimizer:
@@ -65,32 +73,63 @@ class ExcessOptimizer:
             return ExcessPhysicsModel.from_pretrained(ckpt)
         return ExcessPhysicsLightningModel.load_from_checkpoint(ckpt).model
 
-    @property
+    @cached_property
     def inventory(self):
+        if self.config.precomputed_inventory is not None:
+            with h5py.File(self.config.precomputed_inventory, "r") as f:
+                smiles = f["smiles"]
+                self.inventory_size = len(smiles)
+            return smiles
         inventory = pd.read_csv(
             Path(__file__)
             .absolute()
             .parent.parent.parent.parent.joinpath("data", "mixtures", "excess_v7.csv")
         )
-        return list(set(np.append(inventory.smi1.unique(), inventory.smi2.unique())))
-
-    @property
-    def inventory_matrix(self):
-        enc = self.tokenizer(
-            self.inventory,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
+        inventory = np.append(inventory.smi1.unique(), inventory.smi2.unique())
+        chembl = pd.read_csv(
+            Path(__file__)
+            .absolute()
+            .parent.parent.parent.parent.joinpath(
+                "data", "mixtures", "chembl_22_clean_1576904_sorted_std_final.smi"
+            ),
+            sep="\t",
+            header=None,
+            nrows=self.config.inventory_size,
         )
+        return list(set(np.append(chembl[0].unique(), inventory)))[
+            : self.config.inventory_size
+        ]
 
-        input_ids = enc["input_ids"].to(self.model.encoder.device)  # (n, L_max)
-        attention_mask = enc["attention_mask"].to(self.model.encoder.device)  # (n, L_max)
+    @cached_property
+    def inventory_matrix(self):
+        if self.config.precomputed_inventory is not None:
+            with h5py.File(self.config.precomputed_inventory, "r") as f:
+                inv = f["matrix"]
+                assert inv.size[0] == len(self.inventory)
+            return inv
+        batch_size = 512
+        E = []
+        for start in tqdm(
+            range(0, len(self.inventory), batch_size), desc="Inventory Calculation"
+        ):
+            enc = self.tokenizer(
+                self.inventory[start : start + batch_size],
+                padding=True,
+                truncation=True,
+                return_tensors="pt",
+            )
 
-        with torch.no_grad():
-            hs = self.model.encoder(
-                input_ids, attention_mask=attention_mask, return_dict=True
-            ).last_hidden_state  # (n, L_max, E)
-            E = masked_mean_pool(hs, attention_mask)  # (n, E)
+            input_ids = enc["input_ids"].to(self.model.encoder.device)  # (n, L_max)
+            attention_mask = enc["attention_mask"].to(
+                self.model.encoder.device
+            )  # (n, L_max)
+
+            with torch.no_grad():
+                hs = self.model.encoder(
+                    input_ids, attention_mask=attention_mask, return_dict=True
+                ).last_hidden_state  # (n, L_max, D)
+                E.append(masked_mean_pool(hs, attention_mask))  # (n, D)
+        E = torch.cat(E, dim=0)
         return E
 
     def cost(self, x: torch.Tensor):
@@ -120,7 +159,7 @@ class ExcessOptimizer:
         else:
             mx = torch.abs(y_masked).max()
         self.target_trajectory.append(mx.detach())
-        return (0.35 - mx.sum())**2
+        return (0.35 - mx.sum()) ** 2
 
     def forward(self, comp: torch.Tensor, embs: torch.Tensor):
         model = self.model
@@ -136,7 +175,7 @@ class ExcessOptimizer:
             len(self.inventory), device=device, requires_grad=True
         )  # inventory scores
         optimizer = Adam(
-            [x], 
+            [x],
             lr=self.config.lr,
         )
 
@@ -155,22 +194,47 @@ class ExcessOptimizer:
             },
         ]
         self.target_trajectory = np.squeeze(np.array(self.target_trajectory))
-        self.runtime = time.time() - self.runtime 
+        self.runtime = time.time() - self.runtime
 
     def save_run(self):
         run_id = f"run_{datetime.now().strftime(format='%d%m%y_%H%M')}"
-        save_path = Path(__file__).absolute().parent.joinpath("results", self.__class__.__name__, run_id)
+        save_path = (
+            Path(__file__)
+            .absolute()
+            .parent.joinpath("results", self.__class__.__name__, run_id)
+        )
         os.makedirs(save_path, exist_ok=True)
+
+        if self.config.precomputed_inventory is None:
+            with h5py.File(
+                Path(__file__)
+                .absolute()
+                .parent.joinpath(f"inventory_{len(self.inventory)}"),
+                "w",
+            ) as f:
+                f.create_dataset("smiles", data=self.inventory)
+                f.create_dataset("matrix", data=self.inventory_matrix)
+
         if len(self.config.target_quantities) < 2:
-            max_excess = {self.config.target_quantities[0]:  float(np.abs(self.target_trajectory.max()))}
-        else: 
-            max_excess = dict(zip(self.config.target_quantities, float(np.abs(self.target_trajectory.max(axis=0)))))
+            max_excess = {
+                self.config.target_quantities[0]: float(
+                    np.abs(self.target_trajectory.max())
+                )
+            }
+        else:
+            max_excess = dict(
+                zip(
+                    self.config.target_quantities,
+                    float(np.abs(self.target_trajectory.max(axis=0))),
+                )
+            )
         # Save config and results
         with open(save_path.joinpath("run_summary.json"), "w") as json_file:
             summary = asdict(self.config)
             summary["molecules"] = self.optimal_mixture
             summary["max_excess"] = max_excess
             summary["walltime"] = self.runtime
+            summary["inventory_size"] = len(self.inventory)
             json.dump(summary, json_file, indent=4)
 
         # Save optimized curves
@@ -209,7 +273,7 @@ class ExcessOptimizer:
             y_rel = results_df[f"relative excess {target}"]
             ax.plot(x1, y_rel, label=target)
         ax.set_xlabel("$x_1$")
-        ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0)) 
+        ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
         ax.set_ylabel("% Excess")
         fig.legend()
         return fig
@@ -222,12 +286,16 @@ if __name__ == "__main__":
 
     for steepness in [5.0, 10.0, 15.0]:
         for lr in [0.1, 0.5, 1.0, 2.0, 4.0]:
-            topk_config = TopKConfig(sorting_network_type="bitonic", steepness=steepness, distribution="logistic")
+            topk_config = TopKConfig(
+                sorting_network_type="bitonic",
+                steepness=steepness,
+                distribution="logistic",
+            )
             config = OptimizationConfig(
-                lr=lr, 
-                num_iterations=50, 
+                lr=lr,
+                num_iterations=50,
                 target_quantities=["density [gram / centimeter ** 3]"],
-                top_k=topk_config
+                top_k=topk_config,
             )
             # ["molar volume [centimeter ** 3 / mole]"]
             # ["density [gram / centimeter ** 3]"]
@@ -235,5 +303,5 @@ if __name__ == "__main__":
             try:
                 opt.run_optimization()
                 opt.save_run()
-            except IndexError as e:
+            except IndexError:
                 continue
