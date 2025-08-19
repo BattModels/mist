@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 from pathlib import Path
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -8,29 +9,37 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn.functional as F
 from difftopk import DiffTopkNet
 from smirk import SmirkTokenizerFast
-from torch.optim import LBFGS
+from torch.optim import Adam
+import matplotlib.ticker as mtick
+
 
 from electrolyte_fm.models.excess_physics_model import (
-    ExcessPhysicsLightningModel, ExcessPhysicsModel)
+    ExcessPhysicsLightningModel,
+    ExcessPhysicsModel,
+)
 from electrolyte_fm.models.model_utils import masked_mean_pool
 
-sys.path.append(
-    Path(__file__).absolute().parent.parent.joinpath("python", "excess.py")
-)
-sys.path.append(
-    Path(__file__).absolute().parent.joinpath("utils.py")
-)
-from excess import evaluate_mixtures, generate_simplex_grid
+sys.path.append(Path(__file__).absolute().parent.parent.joinpath("python", "excess.py"))
+sys.path.append(Path(__file__).absolute().parent.joinpath("utils.py"))
+from excess import evaluate_mixtures
 from utils import process_prediction_with_ref
 
+epsilon_float = torch.finfo(torch.float32).eps
+
+@dataclass
+class TopKConfig:
+    sorting_network_type: str
+    steepness: float
+    distribution: str
 @dataclass
 class OptimizationConfig:
     lr: float
     num_iterations: int
     target_quantities: list[str]
+    top_k : TopKConfig
+
 
 class ExcessOptimizer:
     def __init__(
@@ -40,17 +49,15 @@ class ExcessOptimizer:
         self.model = self._load_model(self.pretrained_ckpt)
         self.tokenizer = SmirkTokenizerFast()
         self.temperature = temperature
-        self.n = 5
+        self.n = 15
+        self.config = config
         self.sorter = DiffTopkNet(
-            sorting_network_type="bitonic",
+            **asdict(self.config.top_k),
             size=len(self.inventory),
             k=2,
             sparse=False,
             device=device,
-            steepness=10.0,
-            distribution="cauchy",
         )
-        self.config = config
         self.target_trajectory = []
 
     def _load_model(self, ckpt: str):
@@ -61,22 +68,23 @@ class ExcessOptimizer:
     @property
     def inventory(self):
         inventory = pd.read_csv(
-            Path(__file__).absolute().parent.parent.parent.parent.joinpath("data", "mixtures", "excess_v5.csv")
+            Path(__file__)
+            .absolute()
+            .parent.parent.parent.parent.joinpath("data", "mixtures", "excess_v7.csv")
         )
         return list(set(np.append(inventory.smi1.unique(), inventory.smi2.unique())))
 
     @property
     def inventory_matrix(self):
-
         enc = self.tokenizer(
             self.inventory,
-            padding=True, 
-            truncation=True, 
+            padding=True,
+            truncation=True,
             return_tensors="pt",
         )
 
-        input_ids = enc["input_ids"].to(device)  # (n, L_max)
-        attention_mask = enc["attention_mask"].to(device)  # (n, L_max)
+        input_ids = enc["input_ids"].to(self.model.encoder.device)  # (n, L_max)
+        attention_mask = enc["attention_mask"].to(self.model.encoder.device)  # (n, L_max)
 
         with torch.no_grad():
             hs = self.model.encoder(
@@ -93,61 +101,81 @@ class ExcessOptimizer:
         # mixture embeddings from E
         mixture_embeds = S.T @ self.inventory_matrix  # (2, D)
         embs = mixture_embeds.unsqueeze(0).repeat(self.n, 1, 1)  # (N, 2, D)
-        comp = torch.linspace(0, 1, steps = self.n)
+        comp = torch.linspace(0, 1, steps=self.n)
         comp = torch.vstack((comp, 1 - comp)).T
         y_rel = self.forward(comp, embs)
-        mask = torch.tensor([i in self.config.target_quantities for i in self.model.config.target_columns]).unsqueeze(0).repeat(self.n, 1)
-        y_masked = torch.masked_select(y_rel, mask)        
+        mask = (
+            torch.tensor(
+                [
+                    i in self.config.target_quantities
+                    for i in self.model.config.target_columns
+                ]
+            )
+            .unsqueeze(0)
+            .repeat(self.n, 1)
+        )
+        y_masked = torch.masked_select(y_rel, mask)
         if y_masked.ndim > 1:
             mx, _ = torch.max(torch.abs(y_masked), dim=1)
         else:
             mx = torch.abs(y_masked).max()
         self.target_trajectory.append(mx.detach())
-        return -mx.sum()
+        return (0.35 - mx.sum())**2
 
     def forward(self, comp: torch.Tensor, embs: torch.Tensor):
         model = self.model
-        temperature = torch.tensor(self.temperature).repeat(self.n, 1, 1)
+        temperature = torch.tensor(self.temperature).repeat(comp.shape[0], 1, 1)
         y, _, y_excess = model.compute_interactions(comp, embs, temperature)
         # loss = -∑_t max |y_excessₜ / yₜ|
         y_rel = y_excess / y
         return y_rel
 
     def run_optimization(self):
-        x = torch.randn(len(self.inventory), device=device, requires_grad=True)  # inventory scores
-        optimizer = LBFGS([x], lr=self.config.lr, max_iter=self.config.num_iterations)
-     
-        def closure():
+        self.runtime = time.time()
+        x = torch.randn(
+            len(self.inventory), device=device, requires_grad=True
+        )  # inventory scores
+        optimizer = Adam(
+            [x], 
+            lr=self.config.lr,
+        )
+
+        for _ in range(self.config.num_iterations):
             optimizer.zero_grad()
             loss = self.cost(x)
             loss.backward()
-            print(
-                f"loss={loss.item():.4f}, ‖x.grad‖={x.grad.norm().item():.4f}"
-            )
-            return loss
+            optimizer.step()
 
-        optimizer.step(closure)
-
+        # final hard top-2 for reporting
         _, top2 = torch.topk(x, k=2)
         self.optimal_mixture = [
             {
                 "compounds": [self.inventory[i] for i in top2],
-                "temperature": self.temperature
+                "temperature": self.temperature,
             },
         ]
         self.target_trajectory = np.squeeze(np.array(self.target_trajectory))
-    
+        self.runtime = time.time() - self.runtime 
+
     def save_run(self):
-        run_id = f'run_{datetime.now().strftime(format="%d%m%y_%H%M")}'
-        save_path = Path(__file__).absolute().parent.joinpath("results", run_id)
+        run_id = f"run_{datetime.now().strftime(format='%d%m%y_%H%M')}"
+        save_path = Path(__file__).absolute().parent.joinpath("results", self.__class__.__name__, run_id)
         os.makedirs(save_path, exist_ok=True)
-        # Save config
-        with open(save_path.joinpath("config.json"), 'w') as json_file:
-            json.dump(asdict(self.config), json_file, indent=4)
+        if len(self.config.target_quantities) < 2:
+            max_excess = {self.config.target_quantities[0]:  float(np.abs(self.target_trajectory.max()))}
+        else: 
+            max_excess = dict(zip(self.config.target_quantities, float(np.abs(self.target_trajectory.max(axis=0)))))
+        # Save config and results
+        with open(save_path.joinpath("run_summary.json"), "w") as json_file:
+            summary = asdict(self.config)
+            summary["molecules"] = self.optimal_mixture
+            summary["max_excess"] = max_excess
+            summary["walltime"] = self.runtime
+            json.dump(summary, json_file, indent=4)
 
         # Save optimized curves
-        out = evaluate_mixtures(model = self.model, mixtures = self.optimal_mixture)
-        df = process_prediction_with_ref(out, targets = self.model.config.target_columns)
+        out = evaluate_mixtures(model=self.model, mixtures=self.optimal_mixture)
+        df = process_prediction_with_ref(out, targets=self.model.config.target_columns)
         df.to_csv(save_path.joinpath("optimized_curves.csv"))
 
         # Save trajectory
@@ -160,43 +188,52 @@ class ExcessOptimizer:
         f_curves = self.plot_optimization_results(df)
         f_curves.savefig(save_path.joinpath("optimal_curves.png"))
 
-       
-    
     def plot_trajectory(self):
         fig, ax = plt.subplots()
         n_targets = len(self.config.target_quantities)
         for idx, target in enumerate(self.config.target_quantities):
             if n_targets > 1:
-                ax.plot(self.target_trajectory[:, idx], label = target)
+                ax.plot(self.target_trajectory[:, idx], label=target)
             else:
-                ax.plot(self.target_trajectory[:], label = target)
+                ax.plot(self.target_trajectory[:], label=target)
+        ax.xaxis.set_major_locator(mtick.MaxNLocator(integer=True))
         ax.set_xlabel("Iterations")
         ax.set_ylabel("% Excess")
         fig.legend()
         return fig
 
-    
     def plot_optimization_results(self, results_df: pd.DataFrame):
         fig, ax = plt.subplots()
         x1 = [i[0] for i in results_df.composition]
         for target in self.config.target_quantities:
             y_rel = results_df[f"relative excess {target}"]
-            ax.plot(x1, y_rel, label = target)
+            ax.plot(x1, y_rel, label=target)
         ax.set_xlabel("$x_1$")
+        ax.yaxis.set_major_formatter(mtick.PercentFormatter(1.0)) 
         ax.set_ylabel("% Excess")
         fig.legend()
         return fig
 
 
-        
-        
-
-
 if __name__ == "__main__":
-    
+    # density target 0.279603
     name_or_path = "/Users/anoushka/VSCodeProjects/electrolyte-fm/data/models/mist-mixtures-17o0xho9"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    config = OptimizationConfig(lr=1, num_iterations=30, target_quantities = ["density [gram / centimeter ** 3]"])
-    opt = ExcessOptimizer(name_or_path, temperature = 298.15, config=config)
-    opt.run_optimization()
-    opt.save_run()
+
+    for steepness in [5.0, 10.0, 15.0]:
+        for lr in [0.1, 0.5, 1.0, 2.0, 4.0]:
+            topk_config = TopKConfig(sorting_network_type="bitonic", steepness=steepness, distribution="logistic")
+            config = OptimizationConfig(
+                lr=lr, 
+                num_iterations=50, 
+                target_quantities=["density [gram / centimeter ** 3]"],
+                top_k=topk_config
+            )
+            # ["molar volume [centimeter ** 3 / mole]"]
+            # ["density [gram / centimeter ** 3]"]
+            opt = ExcessOptimizer(name_or_path, temperature=298.15, config=config)
+            try:
+                opt.run_optimization()
+                opt.save_run()
+            except IndexError as e:
+                continue
