@@ -100,16 +100,16 @@ function compare_creativity(df::DataFrame, M = missing)
     end
 
     ax2 = Axis(f[1, 2];
-        xlabel=L"$$HOMO [eV]",
+        xlabel=L"$$HOMO (eV)",
         ylabel=L"$$Molecular Surprise",
         xticks=WilkinsonTicks(3),
     )
-    sargs = (; markersize = 3)
+    sargs = (; markersize = 4)
     sort!(df, :group_frontier; rev=true)
     _mark_creative!(ax2, df, :homo, :surprise, df.group_frontier; sargs...)
 
     ax3 = Axis(f[1, 3];
-        xlabel=L"$$Gap [eV]",
+        xlabel=L"$$Gap (eV)",
         ylabel=L"$$Molecular Surprise",
         xticks=WilkinsonTicks(3),
         yticks=ax1.yticks,
@@ -118,7 +118,7 @@ function compare_creativity(df::DataFrame, M = missing)
     _mark_creative!(ax3, df, :gap, :surprise, df.group_frontier; sargs...)
 
     ax4 = Axis(f[1, 4];
-        xlabel=L"$$Melt [$\degree C$ ]",
+        xlabel=L"$$Melt ($\degree C$)",
         xticks=WilkinsonTicks(3),
         ylabel=L"$$Molecular Surprise",
         yticks=ax1.yticks,
@@ -127,7 +127,7 @@ function compare_creativity(df::DataFrame, M = missing)
     _mark_creative!(ax4, df, :mp, :surprise, df.group_frontier; sargs...)
 
     ax5 = Axis(f[1, 5];
-        xlabel=L"$$Boil [$\degree C$ ]",
+        xlabel=L"$$Boil ($\degree C$)",
         xticks=WilkinsonTicks(3),
         ylabel=L"$$Molecular Surprise",
         yticks=ax1.yticks,
