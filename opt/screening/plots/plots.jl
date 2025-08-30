@@ -1,4 +1,5 @@
 #!/usr/bin/env -S julia +release --color=auto --startup-file=no --project=@script
+# Script to generate screening plots and analysis
 using ScreeningPlots
 using Makie
 using MISTStyle
@@ -12,13 +13,18 @@ using Format: format
 
 using ScreeningPlots: searchfirst
 
+# Input Files and Path
+# ROOTDIR: opt/screening folder
+# GIT_ROOT: MIST Project Root
+# DATA_DIR: Path to the screening files (to be released in data drop)
 ROOTDIR = realpath(joinpath(pkgdir(ScreeningPlots), ".."))
 GIT_ROOT = realpath(joinpath(ROOTDIR, "..", ".."))
+DATA_DIR = joinpath(GIT_ROOT, "data", "screening")
 fig_dir = joinpath(ROOTDIR, "fig")
 isdir(fig_dir) || mkdir(fig_dir)
 
 # Filter to screening runs
-df = ScreeningPlots.collate_performance_stats(joinpath(ROOTDIR, "runs"))
+df = ScreeningPlots.collate_performance_stats(joinpath(DATA_DIR, "runs"))
 df = filter(df) do row
     config = row.config
     get(config, "limit_walltime", nothing) == 300 || return false
@@ -80,7 +86,7 @@ regtable(
 
 # Plot generated molecules
 prod_id = "b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df"
-production_run_path = joinpath(ROOTDIR, "runs", prod_id)
+production_run_path = joinpath(DATA_DIR, "runs", prod_id)
 df_mol = ScreeningPlots.load_generated_molecules(production_run_path)
 prod_config = JSON.parsefile(joinpath(production_run_path, "config.json"))
 
@@ -111,16 +117,19 @@ with_theme(MISTStyle.theme()) do
     MISTStyle.savefig(joinpath("panel" * "-" * prod_id), f)
 
     # Verify qmist can reproduce QM9 calculations
-    qmist = realpath(joinpath(pkgdir(ScreeningPlots), "..", "..", "qmist"))
-    df_qm9 = ScreeningPlots.load_jsonl(joinpath(qmist, "qm9.jsonl"))
-    label = "QM9 (Ramakrishnan et al.)" => "Ours"
-    for version in [joinpath(qmist, "veri_v1"), joinpath(qmist, "veri_v2"), joinpath(qmist, "veri_v3")]
+    df_qm9 = ScreeningPlots.load_jsonl(joinpath(DATA_DIR, "qm9.jsonl"))
+    for (version, vlabel) in [
+        (joinpath(DATA_DIR, "veri_v1"), "v1"),
+        (joinpath(DATA_DIR, "veri_v2"), "v2"),
+        (joinpath(DATA_DIR, "veri_v3"), "v3"),
+    ]
         df_qmist = ScreeningPlots.load_qmist_results(version)
         df, cols = ScreeningPlots.merge_qmist_results(df_qmist, df_qm9)
         μ = mean(df_qmist.walltime)
         σ = std(df_qmist.walltime)
         walltime_p95 = quantile(df_qmist.walltime, 0.95)
         @info basename(version) nrow(df) walltime=format("\\({:.0f} \\pm {:.0f}\\)", μ, σ) walltime_p95
+        label = "QM9 (Ramakrishnan et al.)" => "Ours ($vlabel)"
         ScreeningPlots.figure_parity(df, cols; label) |> MISTStyle.savefig(basename(version) * "_parity")
     end
 
@@ -129,7 +138,7 @@ with_theme(MISTStyle.theme()) do
         f = ScreeningPlots.compare_qmist(
             production_run_path,
             joinpath(production_run_path, dir_name);
-            label="B3LYP/6-31G(2df,p)" => "MIST",
+            label="B3LYP/6-31G(2df,p) - Ours (v3)" => "MIST",
         )
         MISTStyle.savefig(joinpath("parity-$(label)-$(prod_id)"), f)
     end
@@ -146,7 +155,7 @@ with_theme(MISTStyle.theme()) do
     f = ScreeningPlots.compare_qmist(
         production_run_path,
         joinpath(production_run_path, "qm9_conf"),
-        joinpath(ROOTDIR, "veri_chembl"),
+        joinpath(DATA_DIR, "veri_chembl"),
         mist_qm9;
         label="B3LYP/6-31G(2df,p)" => "MIST",
     )
@@ -160,7 +169,7 @@ mist_bp = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", "mist
 
 f, df_surprise = ScreeningPlots.compare_creativity(
     production_run_path,
-    joinpath(ROOTDIR, "veri_chembl"),
+    joinpath(DATA_DIR, "veri_chembl"),
     df_ref;
     mol_surprise,
     mist_mp,

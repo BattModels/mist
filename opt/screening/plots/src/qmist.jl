@@ -43,7 +43,7 @@ function merge_qmist_results(qmist::DataFrame, ref::DataFrame)
     return df, cols
 end
 
-figure_parity(args...; kwargs...) = figure_parity!(Figure(; size=(3.42inch, 2inch)), args...; kwargs...)
+figure_parity(args...; kwargs...) = figure_parity!(Figure(; size=(3.42inch, 3inch)), args...; kwargs...)
 function figure_parity!(f, df::DataFrame, cols::Vector{String}; ref="_qm9", other="_qmist", label::Union{Pair{String,String},Nothing}=nothing)
     nrow = floor(Int, sqrt(length(cols)))
     ncol = ceil(Int, length(cols) / nrow)
@@ -57,7 +57,7 @@ function figure_parity!(f, df::DataFrame, cols::Vector{String}; ref="_qm9", othe
         xlim = extrema(x)
         ylim = extrema(y)
         ax = Axis(gl[i, j];
-            title=format("{}\nρ: {:.2f}, MAE: {:.3f}", col, cor(x,y), mae(x .- y)),
+            title=format("{}\nρ: {:.2f}\nRMSD: {:.3f}\nMAE: {:.3f}", col, cor(x,y), rmsd(x, y), mae(x .- y)),
             limits=MISTStyle.parity_limits(x, y),
             xticks=WilkinsonTicks(2),
             yticks=WilkinsonTicks(2),
@@ -84,12 +84,15 @@ function figure_parity!(f, df::DataFrame, cols::Vector{String}; ref="_qm9", othe
         elements = map(enumerate(["Generated (n=$ng)", "Inventory (n=$ni)"])) do (idx, label)
             MarkerElement(; label, marker=:circle, color=MISTStyle.CAT_COLORS[idx])
         end
-        Legend(gl[begin, end], elements, MISTStyle.label.(elements);
+        Legend(f[end+1, :], elements, MISTStyle.label.(elements);
+            orientation=:horizontal,
             fontsize=6pt,
             margin=(2pt, 2pt, 2pt, 2pt),
             padding=2pt,
             valign=:bottom,
-            halign=:right,
+            halign=:center,
+            tellwidth=false,
+            tellheight=true,
         )
     end
 
@@ -144,11 +147,40 @@ function compare_qmist(
     return compare_qmist(df_qmist, df_mist, cols; on="inchi_key", kwargs...)
 end
 
+function calibrate_qmist(df_qm9::DataFrame, df_qmist::DataFrame...)
+    """ Linearly Calibrate Qmist replication attempts to QM9 Ground truth """
+    cols = filter(!in(["smiles", "inchi_key", "InChI", "walltime"]), names(df_qm9))
+    smiles = df_qm9.smiles
+    for df in df_qmist
+        smiles = intersect(smiles, df.smiles)
+    end
+    df_qm9 = subset(df_qm9, :smiles => ByRow(∈(smiles)))
+    dropmissing!(df_qm9)
+
+    Y = Matrix(df_qm9[!, cols])
+    dfo = select(df_qm9, :smiles)
+    transform!(dfo, :smiles => ByRow(inchi_key) => :inchi_key)
+    kcols = vcat(["inchi_key"], cols)
+    for df in df_qmist
+        leftjoin!(dfo, select(df, kcols); on=:inchi_key, makeunique=true)
+    end
+    dropmissing!(dfo)
+    X = Matrix(select(dfo, Not([:smiles, :inchi_key])))
+    X = hcat(X, ones(eltype(X), size(X, 1), 1))
+
+    # Fit General Linear Model
+    B = X \ Y
+    df = DataFrame(eachcol(X * B), cols)
+    df[!, :smiles] .= dfo.smiles
+    transform!(df, :smiles => ByRow(inchi_key) => :InChIKey)
+    return B, df
+end
+
 function compare_qmist(df_qmist::DataFrame, df_mist::DataFrame, cols::Vector{String}; on="InChIKey" => "inchi", kwargs...)
     df = innerjoin(df_qmist, df_mist; on, renamecols="_qmist" => "_mist")
     disallowmissing!(df)
 
-    f = Figure(; size=(3.42inch, 1inch))
+    f = Figure(; size=(3.42inch, 1.4inch))
     figure_parity!(f ,df, cols; ref="_qmist", other="_mist", kwargs...)
     return f
 end
