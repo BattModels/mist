@@ -27,6 +27,11 @@ from electrolyte_fm.data_modules.pubchem_qc import (
 from electrolyte_fm.models.token_level import distance_matrix_loss
 
 
+@pytest.fixture(autouse=True)
+def set_random_seed():
+    random.seed(42)  # Set a fixed seed for reproducibility
+
+
 def pubchem_qc_dataset_path():
     dir = Path(__file__).parent.parent.joinpath(
         "opt", "pubchem-qc", "pubchemqc_jcim2017-split"
@@ -324,9 +329,9 @@ def test_smi_token_type(smi: str, token_types: list[SmiTokenType]):
         zip(pubchem_qc.smi_token_type(tok, tokens), token_types)
     ):
         token = tok.convert_ids_to_tokens(tokens[idx])
-        assert (
-            token_type == ref
-        ), f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
+        assert token_type == ref, (
+            f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
+        )
 
 
 @pytest.mark.skipif(

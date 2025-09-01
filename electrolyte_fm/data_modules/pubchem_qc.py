@@ -686,63 +686,110 @@ def mol_from_prediction(
 
 
 @torch.cuda.nvtx.range("mds_svd")
-def mds_svd(D: torch.Tensor, dim=3):
-    n = D.size(0)
+def mds_svd(D: torch.Tensor, dim: int = 3) -> torch.Tensor:
+    """
+    Classical (unmasked) MDS via double-centering and eigendecomposition.
+
+    Args:
+        D: (N, N) distance matrix (unbatched).
+        dim: target embedding dimension.
+
+    Returns:
+        X: (N, dim) coordinates (zero-padded if N < dim).
+    """
+    assert D.dim() == 2 and D.shape[0] == D.shape[1], "D must be (N, N)"
+
+    N = D.size(0)
     factory_kwargs = {"device": D.device, "dtype": D.dtype}
 
-    if n == 1:
-        return torch.zeros(*D.shape[:-1], dim, **factory_kwargs)
-    elif n == 2:
-        p1 = torch.zeros(*D.shape[1:-1], dim, **factory_kwargs)
-        p2 = torch.zeros(*D.shape[1:-2], dim, **factory_kwargs)
-        p2[..., -1] += D[..., 0, 1]
-        return torch.stack([p1, p2])
-    elif n < dim:
-        raise RuntimeError(
-            "Insufficient points to compute coordinates (Dim reduction not implimented)"
-        )
+    # Trivial cases
+    if N == 1:
+        return torch.zeros(N, dim, **factory_kwargs)
+    if N == 2:
+        # Put the two points along one axis separated by D[0,1]
+        X = torch.zeros(N, dim, **factory_kwargs)
+        X[1, -1] = D[0, 1]
+        return X
 
-    # Compute the Gram matrix using double centering
-    B = D.pow(2)
-    B -= B.mean(-1, keepdim=True)
-    B -= B.mean(-2, keepdim=True)
-    B *= 0.5
+    # Work in at least float32 for stability
+    work_dtype = torch.promote_types(D.dtype, torch.float32)
+    D2 = (D.to(dtype=work_dtype)) ** 2
 
-    # Run SVD in at least float32 precision
-    dtype = torch.promote_types(D.dtype, torch.float32)
-    u, s, _ = torch.linalg.svd(B.to(dtype=dtype))
+    # Double-centering: B = -0.5 * (D^2 - row_mean - col_mean + grand_mean)
+    row_mean = D2.mean(dim=1, keepdim=True)  # (N, 1)
+    col_mean = D2.mean(dim=0, keepdim=True)  # (1, N)
+    grand_mean = D2.mean()  # scalar
+    B = -0.5 * (D2 - row_mean - col_mean + grand_mean)
 
-    # Select the top 'dim' components, clamping to avoid numerical issues
-    u = u[..., :dim]
-    s = s[:dim].clamp(min=0)
-    s = torch.diag_embed(s.sqrt())
+    # Enforce symmetry to reduce numerical noise
+    B = 0.5 * (B + B.T)
 
-    # Compute the coordinates: X = U * sqrt(S)
-    return u @ s
+    # Eigendecomposition of symmetric Gram matrix
+    # (ascending eigenvalues)
+    evals, evecs = torch.linalg.eigh(B)
+
+    # Keep top-k components with nonnegative eigenvalues
+    k = min(dim, N)
+    evals_k = evals[-k:].clamp_min(0).sqrt()  # (k,)
+    evecs_k = evecs[:, -k:]  # (N, k)
+
+    # Coordinates: X = V * sqrt(Lambda)
+    Xk = evecs_k * evals_k.unsqueeze(0)  # (N, k)
+
+    # Pad to (N, dim) if N < dim
+    if k < dim:
+        X = F.pad(Xk, (0, dim - k))
+    else:
+        X = Xk
+
+    return X.to(dtype=D.dtype)
 
 
 @torch.cuda.nvtx.range("batched_mds_svd")
-def masked_mds_svd(D: torch.Tensor, mask: torch.Tensor, dim=3):
-    # Zero Mask
-    mask_pw = mask.unsqueeze(-1) & mask.unsqueeze(-2)
+def masked_mds_svd(D: torch.Tensor, mask: torch.Tensor, dim: int = 3) -> torch.Tensor:
+    """
+    Classical MDS with masking. Returns coordinates of shape (..., N, dim).
+    """
+    # Pairwise mask (True where D_ij is observed)
+    mask_pw = (mask.unsqueeze(-1) & mask.unsqueeze(-2)).to(D.dtype)
     assert mask_pw.shape == D.shape
 
-    # Gram matrix from distance matrix
-    B = D.pow(2)
-    B -= B.sum(-1, keepdim=True) / mask_pw.sum(-1, keepdim=True).clamp(min=1)
-    B -= B.sum(-2, keepdim=True) / mask_pw.sum(-2, keepdim=True).clamp(min=1)
-    B *= -0.5
-    B[~mask_pw] = 0
-
-    # Run SVD in at least float32 precision
+    # Work in at least float32
     dtype = torch.promote_types(D.dtype, torch.float32)
-    u, s, _ = torch.linalg.svd(B.to(dtype=dtype))
+    D2 = (D.to(dtype=dtype)) ** 2
 
-    u = u[..., :dim]
-    s = s[..., :dim].clamp(min=0)
-    s = torch.diag_embed(s.sqrt())
-    coords_raw = u @ s
-    return coords_raw
+    # Masked means for double-centering: row, col, grand
+    eps1 = mask_pw.sum(-1, keepdim=True).clamp_min(1.0)  # (..., N, 1)
+    eps2 = mask_pw.sum(-2, keepdim=True).clamp_min(1.0)  # (..., 1, N)
+    epsg = mask_pw.sum(dim=(-1, -2), keepdim=True).clamp_min(1.0)  # (..., 1, 1)
+
+    row_mean = (D2 * mask_pw).sum(-1, keepdim=True) / eps1  # (..., N, 1)
+    col_mean = (D2 * mask_pw).sum(-2, keepdim=True) / eps2  # (..., 1, N)
+    grand_mean = (D2 * mask_pw).sum(dim=(-1, -2), keepdim=True) / epsg  # (..., 1, 1)
+
+    # Double-centered Gram matrix with masking
+    B = -0.5 * (D2 - row_mean - col_mean + grand_mean)
+
+    # Zero out unobserved entries (optional but keeps SVD clean) and re-symmetrize
+    B = B * mask_pw
+    B = 0.5 * (B + B.transpose(-1, -2))
+
+    # SVD
+    u, s, _ = torch.linalg.svd(B)
+    k = min(dim, B.shape[-1])
+
+    # Take top-k components, sqrt the eigenvalues
+    u_k = u[..., :k]
+    s_k = s[..., :k].clamp_min(0).sqrt()
+    coords_k = u_k * s_k.unsqueeze(-2)  # (..., N, k)
+
+    # Pad to requested dim if needed
+    if k < dim:
+        coords = F.pad(coords_k, (0, dim - k))  # pad last dimension
+    else:
+        coords = coords_k
+
+    return coords.to(D.dtype)
 
 
 def mol_from_pairwise(
