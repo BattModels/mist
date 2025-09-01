@@ -30,17 +30,21 @@ from rdkit.Chem.inchi import MolToInchi, MolToInchiKey
 from sklearn.model_selection import StratifiedShuffleSplit
 
 
-# Column names from the website/export script
-COL_SMILES = "SMILES"
-COL_CHIRALITY = "Chirality"
-COL_MW = "Molecular Weight"
-COL_ZP = "Zero-point correction"
-COL_TE = "Thermal correction to Energy"
-COL_TH = "Thermal correction to Enthalpy"
-COL_TG = "Thermal correction to Gibbs Free Energy"
-COL_HOMO = "HOMO Energy (eV)"
-COL_LUMO = "LUMO Energy (eV)"
-COL_GAP = "HOMO-LUMO Gap (eV)"
+# Column names from the normalized snake_case export
+COL_SMILES = "smiles"
+COL_CHIRALITY = "chirality"
+COL_MW = "molecular_weight"
+COL_ZP = "zero_point_correction"
+COL_TE = "thermal_correction_energy"
+COL_TH = "thermal_correction_enthalpy"
+COL_TG = "thermal_correction_gibbs"
+COL_SUM_ZP = "sum_electronic_zero_point"
+COL_SUM_TE = "sum_electronic_thermal_energy"
+COL_SUM_TH = "sum_electronic_thermal_enthalpy"
+COL_SUM_TG = "sum_electronic_thermal_free_energy"
+COL_HOMO = "homo_energy"
+COL_LUMO = "lumo_energy"
+COL_GAP = "homo_lumo_gap"
 
 
 def _to_float(x: Any) -> float | None:
@@ -133,9 +137,13 @@ def load_rows(csv_path: str) -> list[dict[str, Any]]:
             "thermal_correction_energy": _to_float(r.get(COL_TE)),
             "thermal_correction_enthalpy": _to_float(r.get(COL_TH)),
             "thermal_correction_gibbs": _to_float(r.get(COL_TG)),
-            "homo": _to_float(r.get(COL_HOMO)),
-            "lumo": _to_float(r.get(COL_LUMO)),
-            "gap": _to_float(r.get(COL_GAP)),
+            "sum_electronic_zero_point": _to_float(r.get(COL_SUM_ZP)),
+            "sum_electronic_thermal_energy": _to_float(r.get(COL_SUM_TE)),
+            "sum_electronic_thermal_enthalpy": _to_float(r.get(COL_SUM_TH)),
+            "sum_electronic_thermal_free_energy": _to_float(r.get(COL_SUM_TG)),
+            "homo_energy": _to_float(r.get(COL_HOMO)),
+            "lumo_energy": _to_float(r.get(COL_LUMO)),
+            "homo_lumo_gap": _to_float(r.get(COL_GAP)),
         }
         rows.append(row)
     return rows
@@ -199,9 +207,13 @@ def to_hf_datasets(
             "thermal_correction_energy": Value("float64"),
             "thermal_correction_enthalpy": Value("float64"),
             "thermal_correction_gibbs": Value("float64"),
-            "homo": Value("float64"),
-            "lumo": Value("float64"),
-            "gap": Value("float64"),
+            "sum_electronic_zero_point": Value("float64"),
+            "sum_electronic_thermal_energy": Value("float64"),
+            "sum_electronic_thermal_enthalpy": Value("float64"),
+            "sum_electronic_thermal_free_energy": Value("float64"),
+            "homo_energy": Value("float64"),
+            "lumo_energy": Value("float64"),
+            "homo_lumo_gap": Value("float64"),
         }
     )
 
