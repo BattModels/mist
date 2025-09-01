@@ -3,8 +3,10 @@
 Build a HuggingFace dataset from one or more ASE LMDB (".aselmdb") files.
 
 - Input: a directory containing ``*.aselmdb`` files (single split) OR a
-  directory with subdirectories, each containing ``*.aselmdb`` (multi-split).
-  You may also pass a single ``.aselmdb`` file.
+  directory with subdirectories, each containing ``*.aselmdb`` (multi-split),
+  or a directory containing ``*.tar.gz``/``*.tgz`` archives where each archive
+  represents a split and contains ``*.aselmdb`` inside. You may also pass a
+  single ``.aselmdb`` or ``.tar.gz`` file.
 - Processing: entries are read, normalized with RDKit (bonding, identifiers),
   and curated fields are produced.
 - Output: an Arrow dataset written via ``datasets`` (``save_to_disk``).
@@ -25,6 +27,10 @@ import argparse
 import json
 import os
 from pathlib import Path
+import tarfile
+import tempfile
+import threading
+from queue import Queue
 import zlib
 from collections.abc import Generator
 from typing import Any
@@ -352,6 +358,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Number of processes for per-record processing (datasets.map)",
     )
     ap.add_argument(
+        "--read-workers",
+        type=int,
+        default=4,
+        help="Number of threads to stream LMDB entries from files/archives",
+    )
+    ap.add_argument(
         "--max-shard-size",
         default="1GB",
         help="Maximum shard size passed to save_to_disk (e.g., 1GB, 500MB)",
@@ -381,9 +393,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # Build dataset(s)
     datasets = {}
-    for split, files in splits.items():
-        logging.info("Building split '%s' from %d file(s)", split, len(files))
-        ds = _build_split_dataset(files, num_proc=args.num_proc)
+    for split, sources in splits.items():
+        logging.info("Building split '%s' from %d source(s)", split, len(sources))
+        ds = _build_split_dataset(sources, num_proc=args.num_proc, read_workers=args.read_workers)
         datasets[split] = ds
 
     # Save to disk (always as DatasetDict for predictable structure)
@@ -401,41 +413,151 @@ def main(argv: list[str] | None = None) -> int:
 # ------------------------
 
 
-def _discover_splits(root: Path) -> dict[str, list[str]]:
+def _discover_splits(root: Path) -> dict[str, list[tuple[str, ...]]]:
     """Find input .aselmdb files and group them into splits.
 
     Rules:
-    - If ``root`` is a file ending with .aselmdb -> one split named 'train'.
+    - If ``root`` is a file ending with .aselmdb -> one split named by stem.
+    - If ``root`` is a .tar.gz/.tgz -> one split named by archive basename; all
+      .aselmdb members are included.
     - If ``root`` is a directory with ``*.aselmdb`` -> one split named after the
-      directory (commonly a split name like 'neural_val'). If the directory name
-      is 'train'/'validation'/'test', keep it, otherwise default to 'train'.
+      directory (e.g., 'neural_val').
     - If ``root`` contains subdirectories, each subdirectory with ``*.aselmdb``
       becomes a split named by the subdirectory.
+    - If ``root`` contains ``*.tar.gz``/``*.tgz`` archives, each archive becomes
+      a split named by its basename (without the archive suffix).
     """
     if root.is_file() and root.suffix == ".aselmdb":
-        return {root.stem: [str(root)]}
+        return {root.stem: [("file", str(root))]}
+    if root.is_file() and (str(root).endswith(".tar.gz") or str(root).endswith(".tgz")):
+        split = _basename_without_targz(root.name)
+        members = _list_aselmdb_in_tar(str(root))
+        return {split: [("tar", str(root), m) for m in members]}
 
     if root.is_dir():
         # Case 1: directory has *.aselmdb directly
         files_here = sorted(str(p) for p in root.glob("*.aselmdb"))
         if files_here:
-            return {root.name: files_here}
+            return {root.name: [("file", f) for f in files_here]}
 
         # Case 2: subdirectories are splits
-        splits: dict[str, list[str]] = {}
+        splits: dict[str, list[tuple[str, ...]]] = {}
         for sub in sorted([p for p in root.iterdir() if p.is_dir()]):
             files = sorted(str(p) for p in sub.glob("*.aselmdb"))
             if files:
-                splits[sub.name] = files
+                splits[sub.name] = [("file", f) for f in files]
+        # Tarball splits at root
+        for tb in sorted(
+            [
+                p
+                for p in root.iterdir()
+                if p.is_file() and (str(p).endswith(".tar.gz") or str(p).endswith(".tgz"))
+            ]
+        ):
+            split = _basename_without_targz(tb.name)
+            members = _list_aselmdb_in_tar(str(tb))
+            if members:
+                splits[split] = [("tar", str(tb), m) for m in members]
         return splits
 
     return {}
 
+def _basename_without_targz(name: str) -> str:
+    for suf in (".tar.gz", ".tgz"):
+        if name.endswith(suf):
+            return name[: -len(suf)]
+    # fallback
+    return Path(name).stem
 
-def _entries_from_files(files: list[str]):
-    for f in files:
-        for entry in iter_aselmdb(f):
-            yield {"raw": json.dumps(entry)}
+
+def _list_aselmdb_in_tar(tar_path: str) -> list[str]:
+    with tarfile.open(tar_path, "r:gz") as tf:
+        return [m.name for m in tf.getmembers() if m.isfile() and m.name.endswith(".aselmdb")]
+
+
+def _iter_aselmdb_from_tar(tar_path: str, member_name: str):
+    """Iterate entries from a single .aselmdb member inside a tar.gz archive.
+
+    Streams the member to a temporary file without extracting the entire archive,
+    then uses the existing LMDB reader to iterate entries.
+    """
+    with tarfile.open(tar_path, "r:gz") as tf:
+        try:
+            m = tf.getmember(member_name)
+        except KeyError:
+            logging.warning("Missing member %s in %s", member_name, tar_path)
+            return
+        fobj = tf.extractfile(m)
+        if fobj is None:
+            logging.warning("Could not open member %s from %s", member_name, tar_path)
+            return
+        with tempfile.NamedTemporaryFile(suffix=".aselmdb", delete=False) as tmp:
+            tmp_path = tmp.name
+            while True:
+                chunk = fobj.read(1024 * 1024)
+                if not chunk:
+                    break
+                tmp.write(chunk)
+    try:
+        for entry in iter_aselmdb(tmp_path):
+            yield entry
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            logging.debug("Failed to remove temp file %s", tmp_path, exc_info=True)
+
+
+def _entries_from_sources(sources: list[tuple[str, ...]], read_workers: int):
+    """Concurrent producer that streams entries from file and tar sources."""
+    q: "Queue[object]" = Queue(maxsize=2048)
+    sentinel = object()
+    src_iter = iter(sources)
+    lock = threading.Lock()
+    finished = 0
+    n_workers = max(1, int(read_workers))
+
+    def next_src():
+        nonlocal src_iter
+        with lock:
+            try:
+                return next(src_iter)
+            except StopIteration:
+                return None
+
+    def worker():
+        nonlocal finished
+        while True:
+            src = next_src()
+            if src is None:
+                break
+            try:
+                if src[0] == "file":
+                    _, path = src
+                    it = iter_aselmdb(path)
+                elif src[0] == "tar":
+                    _, tar_path, member = src
+                    it = _iter_aselmdb_from_tar(tar_path, member)
+                else:
+                    it = iter(())
+                for entry in it:
+                    q.put({"raw": json.dumps(entry)}, block=True)
+            except Exception:
+                logging.exception("Reader failed for source: %s", src)
+        with lock:
+            finished += 1
+            if finished == n_workers:
+                q.put(sentinel)
+
+    threads = [threading.Thread(target=worker, daemon=True) for _ in range(n_workers)]
+    for t in threads:
+        t.start()
+
+    while True:
+        item = q.get()
+        if item is sentinel:
+            break
+        yield item
 
 
 OUTPUT_COLUMNS = [
@@ -498,11 +620,11 @@ def _process_batch(batch: dict) -> dict:
     return out
 
 
-def _build_split_dataset(files: list[str], num_proc: int) -> Dataset:
+def _build_split_dataset(sources: list[tuple[str, ...]], num_proc: int, read_workers: int) -> Dataset:
     # Stage 1: build a lightweight dataset of raw JSON strings
     ds = Dataset.from_generator(
-        _entries_from_files,
-        gen_kwargs={"files": files},
+        _entries_from_sources,
+        gen_kwargs={"sources": sources, "read_workers": read_workers},
         keep_in_memory=False,
     )
 
