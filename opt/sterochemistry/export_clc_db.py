@@ -71,9 +71,10 @@ class Molecule:
         return []
 
     def csv_row(self) -> dict[str, Any]:
-        """Return a row dict with the same columns the website exports.
+        """Return a row dict using snake_case field names.
 
-        Column order mirrors the client code seen in the website bundle.
+        The website exports Title Case columns; we normalize to snake_case so
+        downstream processing can rely on consistent names.
         """
         d = self.data
 
@@ -98,46 +99,47 @@ class Molecule:
                 return ""
 
         return {
-            "Name": d.get("name", ""),
-            "CAS ID": d.get("cas_id", ""),
-            "PubChem CID": d.get("pubchem_cid", ""),
-            "Category": _join(d.get("category")),
-            "URL": d.get("url", ""),
-            "PubChem URL": d.get("pubchem_url", ""),
-            "SMILES": d.get("smiles", ""),
-            "Chirality": _join(d.get("chirality")),
-            "Description": d.get("description", ""),
-            "SMILES IUPAC": d.get("smiles_iupac", ""),
-            "Molecule Formula": d.get("molecule_formula", ""),
-            "Molecular Weight": _fmt(d.get("molecular_weight"), 3),
-            "Heavy Atom Count": _int(d.get("heavy_atom_count")),
-            "Ring Count": _int(d.get("ring_count")),
-            "Hydrogen Bond Acceptor Count": _int(d.get("hydrogen_bond_acceptor_count")),
-            "Hydrogen Bond Donor Count": _int(d.get("hydrogen_bond_donor_count")),
-            "Rotatable Bond Count": _int(d.get("rotatable_bond_count")),
-            "Zero-point correction": _fmt(d.get("zero_point_correction"), 6),
-            "Thermal correction to Energy": _fmt(d.get("thermal_correction_energy"), 6),
-            "Thermal correction to Enthalpy": _fmt(
+            # identifiers and core metadata
+            "name": d.get("name", ""),
+            "cas_id": d.get("cas_id", ""),
+            "pubchem_cid": d.get("pubchem_cid", ""),
+            "category": _join(d.get("category")),
+            "url": d.get("url", ""),
+            "pubchem_url": d.get("pubchem_url", ""),
+            # chemistry strings
+            "smiles": d.get("smiles", ""),
+            "chirality": _join(d.get("chirality")),
+            "description": d.get("description", ""),
+            "smiles_iupac": d.get("smiles_iupac", ""),
+            "molecule_formula": d.get("molecule_formula", ""),
+            # basic properties
+            "molecular_weight": _fmt(d.get("molecular_weight"), 3),
+            "heavy_atom_count": _int(d.get("heavy_atom_count")),
+            "ring_count": _int(d.get("ring_count")),
+            "hydrogen_bond_acceptor_count": _int(d.get("hydrogen_bond_acceptor_count")),
+            "hydrogen_bond_donor_count": _int(d.get("hydrogen_bond_donor_count")),
+            "rotatable_bond_count": _int(d.get("rotatable_bond_count")),
+            # thermochemistry (snake_case normalized names)
+            "zero_point_correction": _fmt(d.get("zero_point_correction"), 6),
+            "thermal_correction_energy": _fmt(d.get("thermal_correction_energy"), 6),
+            "thermal_correction_enthalpy": _fmt(
                 d.get("thermal_correction_enthalpy"), 6
             ),
-            "Thermal correction to Gibbs Free Energy": _fmt(
-                d.get("thermal_correction_gibbs"), 6
-            ),
-            "Sum of electronic and zero-point Energies": _fmt(
-                d.get("sum_electronic_zero_point"), 6
-            ),
-            "Sum of electronic and thermal Energies": _fmt(
+            "thermal_correction_gibbs": _fmt(d.get("thermal_correction_gibbs"), 6),
+            "sum_electronic_zero_point": _fmt(d.get("sum_electronic_zero_point"), 6),
+            "sum_electronic_thermal_energy": _fmt(
                 d.get("sum_electronic_thermal_energy"), 6
             ),
-            "Sum of electronic and thermal Enthalpies": _fmt(
+            "sum_electronic_thermal_enthalpy": _fmt(
                 d.get("sum_electronic_thermal_enthalpy"), 6
             ),
-            "Sum of electronic and thermal Free Energies": _fmt(
+            "sum_electronic_thermal_free_energy": _fmt(
                 d.get("sum_electronic_thermal_free_energy"), 6
             ),
-            "HOMO Energy (eV)": _fmt(d.get("homo_energy"), 6),
-            "LUMO Energy (eV)": _fmt(d.get("lumo_energy"), 6),
-            "HOMO-LUMO Gap (eV)": _fmt(d.get("homo_lumo_gap"), 6),
+            # frontier orbitals
+            "homo_energy": _fmt(d.get("homo_energy"), 6),
+            "lumo_energy": _fmt(d.get("lumo_energy"), 6),
+            "homo_lumo_gap": _fmt(d.get("homo_lumo_gap"), 6),
         }
 
 
@@ -292,9 +294,9 @@ def write_csv(rows: list[dict[str, Any]], out_csv: str) -> None:
 
     # Use pandas for convenience and de-duplication on CAS ID
     df = pd.DataFrame(rows)
-    # Drop duplicates by CAS ID keeping first occurrence
-    if "CAS ID" in df.columns:
-        df = df.drop_duplicates(subset=["CAS ID"], keep="first")
+    # Drop duplicates by cas_id keeping first occurrence
+    if "cas_id" in df.columns:
+        df = df.drop_duplicates(subset=["cas_id"], keep="first")
     df.to_csv(out_csv, index=False)
 
 
@@ -304,8 +306,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument(
         "--out-dir",
-        default=os.path.join("opt", "sterochemistry", "data", "clc_db"),
-        help="Output directory for SDFs and CSV (default: opt/sterochemistry/data/clc_db)",
+        default=os.path.join("data", "clc_db"),
+        help="Output directory for SDFs and CSV (default: data/clc_db)",
     )
     p.add_argument(
         "--by-category",
