@@ -329,9 +329,9 @@ def test_smi_token_type(smi: str, token_types: list[SmiTokenType]):
         zip(pubchem_qc.smi_token_type(tok, tokens), token_types)
     ):
         token = tok.convert_ids_to_tokens(tokens[idx])
-        assert token_type == ref, (
-            f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
-        )
+        assert (
+            token_type == ref
+        ), f"Wrong label for {token} at pos {idx}: {str(token_type)} != {str(ref)}"
 
 
 @pytest.mark.skipif(

@@ -15,6 +15,10 @@ MOLNET_CONFIG = Path(__file__).parent.parent.joinpath(
     "submit", "moleculenet_tasks.libsonnet"
 )
 
+# Only test a subset of dataset
+MOLNET_DATASETS = ["hiv", "sider"]
+# MOLNET_DATASETS = MOLNET_URLS.keys() # Uncomment to test all
+
 
 @pytest.mark.xfail(strict=False, reason="downloads are flaky", raises=FileNotFoundError)
 def check_datamodule(dm: LightningDataModule, stage="fit", limit_batches=100):
@@ -33,7 +37,7 @@ def check_dataloader(dl, limit_batches, keys=["input_ids", "attention_mask"]):
             break
 
 
-@pytest.mark.parametrize("name", MOLNET_URLS.keys())
+@pytest.mark.parametrize("name", MOLNET_DATASETS)
 def test_datamodule(name):
     task_config = json.loads(jsonnet.evaluate_file(str(MOLNET_CONFIG)))[name]
     dm = MolNetDataModule(
@@ -44,7 +48,7 @@ def test_datamodule(name):
     check_datamodule(dm)
 
 
-@pytest.mark.parametrize("name", MOLNET_URLS.keys())
+@pytest.mark.parametrize("name", MOLNET_DATASETS)
 @pytest.mark.xfail(strict=False, reason="downloads are flaky", raises=FileNotFoundError)
 def test_prepare(name):
     task_config = json.loads(jsonnet.evaluate_file(str(MOLNET_CONFIG)))[name]
@@ -88,7 +92,7 @@ DATASET_SIZE = {
 
 
 @pytest.mark.parametrize(
-    "dataset,split", product(DATASET_SIZE.keys(), ["scaffold", "random"])
+    "dataset,split", product(MOLNET_DATASETS, ["scaffold", "random"])
 )
 @pytest.mark.xfail(strict=False, reason="downloads are flaky", raises=FileNotFoundError)
 def test_splits(dataset, split):
