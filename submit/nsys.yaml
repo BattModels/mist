@@ -2,6 +2,7 @@ nsys:
   trace: cuda,cudnn,cublas,nvtx
   o: "nsys_multinode_%q{JOBID}_%q{NODE_RANK}"
   sampling-period: 16000000
+  duration: 200
   # sample: none # Disable CPU Profiling
 
   # Uncomment to profile GPU memory usage

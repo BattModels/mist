@@ -1,3 +1,4 @@
+import asyncio
 from enum import Enum
 import random
 from typing import Optional, TypeVar
@@ -79,6 +80,19 @@ class MolEncoding(Enum):
             return Chem.MolToSmiles(mol, canonical=True, doRandom=True)
 
         assert False, "Not Reachable, missing Enum Branch"
+
+
+def filter_invalid_smi(
+    ds: AbstractDataset, input_column: str, max_procs: int = 20, **kwargs
+) -> AbstractDataset:
+    sem = asyncio.Semaphore(max_procs)
+
+    async def is_valid(x: dict):
+        async with sem:
+            mol = Chem.MolFromSmiles(x[input_column])
+            return mol is not None
+
+    return ds.filter(is_valid, batched=False, **kwargs)
 
 
 def encode_molecules(
