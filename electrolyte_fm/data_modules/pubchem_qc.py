@@ -10,6 +10,7 @@ from typing import Optional
 from enum import IntEnum, auto
 
 import torch
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from transformers import DataCollatorWithPadding
