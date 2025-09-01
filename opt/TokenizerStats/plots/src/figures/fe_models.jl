@@ -204,4 +204,3 @@ function val_ci_dodge(models; dodge::Union{AbstractVector,Nothing}=nothing, scal
     )
     return val, ci, kwargs
 end
-

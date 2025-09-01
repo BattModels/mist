@@ -84,4 +84,3 @@ function Base.show(io::IO, mime::MIME"text/plain", stt::SpearmanTTest)
     println(io, "t:       $(round(stt.t; sigdigits=3))")
     println(io, "p-value: $(round(pvalue(stt); sigdigits=3))")
 end
-

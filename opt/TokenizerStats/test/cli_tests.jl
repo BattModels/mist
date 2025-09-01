@@ -11,4 +11,3 @@ end
     @test Set(parse_splits("val,train")) == Set(["val", "train"])
     @test Set(parse_splits("all")) == Set(["train", "val", "test"])
 end
-

@@ -1,4 +1,3 @@
-from itertools import islice
 from pathlib import Path
 from dataclasses import dataclass
 from datasets import load_dataset

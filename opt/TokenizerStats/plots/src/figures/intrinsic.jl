@@ -144,4 +144,3 @@ function Makie.plot!(plt::VSpan)
     poly!(plt, p; Makie.shared_attributes(plt, Poly)...)
     return plt
 end
-

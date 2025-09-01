@@ -10,10 +10,10 @@ from electrolyte_fm.data_modules import (
     RobertaDataSet,
     tmQMDataModule,
 )
-from electrolyte_fm.data_modules.molnet_dataset import strip_unk_tokens
 from electrolyte_fm.data_modules.utils import (
     MolEncoding,
     encode_molecules,
+    strip_unk_tokens,
 )
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 

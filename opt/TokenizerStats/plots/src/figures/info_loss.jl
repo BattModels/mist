@@ -578,4 +578,3 @@ function figure_ngram_metrics(tok_info, df_loss, df_info; ngram=5)
 
     return f
 end
-

@@ -175,4 +175,3 @@ with_theme(SmirkPaperPlots.theme()) do
         end
     end
 end
-

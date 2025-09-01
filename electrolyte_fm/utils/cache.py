@@ -51,7 +51,11 @@ def cached_download(url: str, path: Path, disable_ssl=False) -> Path:
         import ssl
         import urllib.request
 
-        ctx = ssl.create_default_context() if not disable_ssl else ssl._create_unverified_context()
+        ctx = (
+            ssl.create_default_context()
+            if not disable_ssl
+            else ssl._create_unverified_context()
+        )
 
         user_agent = "Wget/1.19.5"  # Pretend to be wget
         req = urllib.request.Request(url, headers={"User-Agent": user_agent})

@@ -319,5 +319,3 @@ function barploterrors!(ax, x, y, dodge; std=nothing, colormap, colorrange=nothi
 
     return h
 end
-
-
