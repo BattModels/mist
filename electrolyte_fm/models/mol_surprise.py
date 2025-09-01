@@ -1,5 +1,4 @@
 import torch
-from torch.fx import has_side_effect
 from torch.nn import functional as F
 from transformers import AutoModelForMaskedLM, AutoConfig, DataCollatorWithPadding
 from ..utils.tokenizer import load_tokenizer

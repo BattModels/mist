@@ -48,4 +48,3 @@ function performance_trace(logfile::String)
     end
     return trace, rank_throughput
 end
-
