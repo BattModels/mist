@@ -1,0 +1,16 @@
+[project]
+name = "sterochemistry"
+version = "0.1.0"
+description = "Ingest datasets training"
+readme = "README.md"
+requires-python = ">=3.10, <3.14"
+dependencies = [
+    "datasets>=4.0.0",
+    "lmdb>=1.7.3",
+    "numpy",
+    "pandas>=2.2.3",
+    "rdkit",
+    "requests>=2.32.3",
+    "tenacity>=9.1.2",
+    "tqdm>=4.67.1",
+]
