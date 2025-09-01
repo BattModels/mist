@@ -7,7 +7,7 @@ class ProgressiveThawing(BaseFinetuning):
     def __init__(
         self,
         initial: list[str],
-        stages: list[str],
+        stages: list[list[str]],
         stage_duration: int = 1,
         lr_initial: float = 10,
         lr_decay: float = 0.99,
@@ -21,6 +21,11 @@ class ProgressiveThawing(BaseFinetuning):
         self.lr_initial = float(lr_initial)
         self.lr_decay = float(lr_decay)
 
+    def setup(self, trainer, pl_module, stage) -> None:
+        if not hasattr(pl_module, "encoder"):
+            pl_module.configure_model()
+        self.freeze_before_training(pl_module)
+
     @classmethod
     def matching_modules(cls, pl_module, patterns):
         for pattern in patterns:
@@ -29,7 +34,7 @@ class ProgressiveThawing(BaseFinetuning):
                 if name == "":
                     continue
                 logging.debug(
-                    f"Matching %s against %s: %d", name, pattern, fnmatch(name, pattern)
+                    "Matching %s against %s: %d", name, pattern, fnmatch(name, pattern)
                 )
                 if fnmatch(name, pattern):
                     pattern_matched = True
@@ -60,7 +65,7 @@ class ProgressiveThawing(BaseFinetuning):
                 param_group["lr"] = base_lr / (self.lr_scale[idx] + 1)
 
     def lr_scheduler_step(self, scheduler, metric) -> None:
-        print(f"LR Scheduler step", scheduler, metric)
+        print("LR Scheduler step", scheduler, metric)
 
     def freeze_before_training(self, pl_module):
         for name, module in self.matching_modules(pl_module, self.initial):
