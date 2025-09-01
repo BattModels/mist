@@ -80,7 +80,6 @@ class PropertyPredictionDataModule(LightningDataModule):
         ds = self.dataset
         ds = maybe_shard_dataset(self.trainer, ds)
         ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
-        print(ds["train"])
 
         # Remove extraneous columns and tokenize smiles
         if targets := self.target_columns:
@@ -147,7 +146,6 @@ class PropertyPredictionDataModule(LightningDataModule):
         )
 
     def val_dataloader(self):
-        print("has validation dataloader")
         return DataLoader(
             self.val_dataset,
             collate_fn=self.collate_fn,
@@ -167,3 +165,23 @@ class PropertyPredictionDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor,
             persistent_workers=self.num_workers > 0,
         )
+
+
+class HFDataset(PropertyPredictionDataModule):
+    def __init__(
+        self,
+        name_or_path: str,
+        **kwargs,
+    ):
+        self.name_or_path = name_or_path
+        super().__init__(**kwargs)
+
+    @property
+    def _get_dataset(self):
+        if not hasattr(self, "__dataset"):
+            self.__dataset = load_dataset(
+                self.name_or_path,
+                streaming=True,
+                trust_remote_code=True,
+            )
+        return self.__dataset
