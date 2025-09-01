@@ -20,7 +20,7 @@ dependencies = [
     "scikit-learn>=1.5.1",
     "selfies>=2.1.0",
     "rdkit>=2024.3.5",
-    "smirk==0.1.0",
+    "smirk",
     "safetensors>=0.5.1",
     "pytorch-lightning~=2.5",
     "pandas>=2.2.3",
@@ -65,3 +65,7 @@ ignore = ["F401"]
 
 [tool.ruff.lint.extend-per-file-ignores]
 "test_*.py" = ["F811"]
+"**/__init__.py" = ["F401"]
+
+[tool.uv.sources]
+smirk = { git = "https://github.com/BattModels/smirk", rev = "main" }

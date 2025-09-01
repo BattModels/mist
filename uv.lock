@@ -526,7 +526,7 @@ requires-dist = [
     { name = "safetensors", specifier = ">=0.5.1" },
     { name = "scikit-learn", specifier = ">=1.5.1" },
     { name = "selfies", specifier = ">=2.1.0" },
-    { name = "smirk", git = "ssh://git@github.com/BattModels/smirk.git?rev=dfdd9dc27c066f956b69d1f55c2d4717beb7838d" },
+    { name = "smirk", git = "https://github.com/BattModels/smirk?rev=main" },
     { name = "torch", specifier = "~=2.6" },
     { name = "torchmetrics", specifier = "~=1.7" },
     { name = "transformers", specifier = ">=4.40" },
@@ -2658,8 +2658,13 @@ wheels = [
 
 [[package]]
 name = "smirk"
+<<<<<<< HEAD
 version = "0.2.0"
 source = { git = "ssh://git@github.com/BattModels/smirk.git?rev=dfdd9dc27c066f956b69d1f55c2d4717beb7838d#dfdd9dc27c066f956b69d1f55c2d4717beb7838d" }
+=======
+version = "0.2.0.dev0"
+source = { git = "https://github.com/BattModels/smirk?rev=main#742e81c85acc123873f3c58ab84edc6ce7e90c18" }
+>>>>>>> 2fcc8ce (Use latest smirk, update CI to reflect)
 dependencies = [
     { name = "transformers" },
 ]
