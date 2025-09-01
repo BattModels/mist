@@ -99,4 +99,3 @@ with_theme(MISTStyle.theme()) do
         name_df_order=("Baseline" => df_order, "Augmented" => df_order_rand)
     )
 end |> MISTStyle.savefig("double_bond_loc")
-
