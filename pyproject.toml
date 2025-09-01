@@ -20,7 +20,7 @@ dependencies = [
     "scikit-learn>=1.5.1",
     "selfies>=2.1.0",
     "rdkit>=2024.3.5",
-    "smirk @ git+ssh://git@github.com/BattModels/smirk.git@dfdd9dc27c066f956b69d1f55c2d4717beb7838d",
+    "smirk==0.1.0",
     "safetensors>=0.5.1",
     "pytorch-lightning~=2.5"
 ]
