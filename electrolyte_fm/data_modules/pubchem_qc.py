@@ -597,20 +597,28 @@ def annotated_tokens(
 
 @torch.no_grad
 def sparse_topo_distance(mol: Chem.Mol, atom_indices: list[int]):
+    """Return sparse pairwise topology features for selected atom indices.
+
+    Produces a stacked sparse tensor with the last dimension containing:
+    - Adjacency (0/1 hop connectivity)
+    - Topological distance (shortest-path hop count)
+
+    The tensor shape is (A, A, 2) where A is 1 + max(atom_indices), matching
+    the behavior expected by tests that include out-of-range indices for padding.
+    """
     adx = torch.tensor(atom_indices)
     rdx, cdx = torch.meshgrid(adx, adx, indexing="ij")
     idx = torch.stack((rdx.flatten(), cdx.flatten()))
-    S = []
 
-    # Number of Hops
-    for d in [
-        # Chem.rdmolops.GetDistanceMatrix(mol, force=True),
-        Chem.rdmolops.GetAdjacencyMatrix(mol, force=True),
-        # Chem.rdmolops.GetDistanceMatrix(mol, useBO=True, force=True),
-    ]:
-        S.append(torch.sparse_coo_tensor(idx, d.flatten()))
+    # Collect dense matrices from RDKit
+    adj = Chem.rdmolops.GetAdjacencyMatrix(mol, force=True)
+    topo = Chem.rdmolops.GetDistanceMatrix(mol)  # shortest-path (hop) distances
 
-    return torch.stack(S, dim=-1)
+    # Build sparse tensors aligned to the provided indices; infer size from idx
+    S_adj = torch.sparse_coo_tensor(idx, adj.flatten())
+    S_topo = torch.sparse_coo_tensor(idx, topo.flatten())
+
+    return torch.stack([S_adj, S_topo], dim=-1)
 
 
 @torch.no_grad

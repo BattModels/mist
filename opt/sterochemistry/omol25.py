@@ -395,7 +395,9 @@ def main(argv: list[str] | None = None) -> int:
     datasets = {}
     for split, sources in splits.items():
         logging.info("Building split '%s' from %d source(s)", split, len(sources))
-        ds = _build_split_dataset(sources, num_proc=args.num_proc, read_workers=args.read_workers)
+        ds = _build_split_dataset(
+            sources, num_proc=args.num_proc, read_workers=args.read_workers
+        )
         datasets[split] = ds
 
     # Save to disk (always as DatasetDict for predictable structure)
@@ -451,7 +453,8 @@ def _discover_splits(root: Path) -> dict[str, list[tuple[str, ...]]]:
             [
                 p
                 for p in root.iterdir()
-                if p.is_file() and (str(p).endswith(".tar.gz") or str(p).endswith(".tgz"))
+                if p.is_file()
+                and (str(p).endswith(".tar.gz") or str(p).endswith(".tgz"))
             ]
         ):
             split = _basename_without_targz(tb.name)
@@ -461,6 +464,7 @@ def _discover_splits(root: Path) -> dict[str, list[tuple[str, ...]]]:
         return splits
 
     return {}
+
 
 def _basename_without_targz(name: str) -> str:
     for suf in (".tar.gz", ".tgz"):
@@ -472,7 +476,11 @@ def _basename_without_targz(name: str) -> str:
 
 def _list_aselmdb_in_tar(tar_path: str) -> list[str]:
     with tarfile.open(tar_path, "r:gz") as tf:
-        return [m.name for m in tf.getmembers() if m.isfile() and m.name.endswith(".aselmdb")]
+        return [
+            m.name
+            for m in tf.getmembers()
+            if m.isfile() and m.name.endswith(".aselmdb")
+        ]
 
 
 def _iter_aselmdb_from_tar(tar_path: str, member_name: str):
@@ -620,7 +628,9 @@ def _process_batch(batch: dict) -> dict:
     return out
 
 
-def _build_split_dataset(sources: list[tuple[str, ...]], num_proc: int, read_workers: int) -> Dataset:
+def _build_split_dataset(
+    sources: list[tuple[str, ...]], num_proc: int, read_workers: int
+) -> Dataset:
     # Stage 1: build a lightweight dataset of raw JSON strings
     ds = Dataset.from_generator(
         _entries_from_sources,
