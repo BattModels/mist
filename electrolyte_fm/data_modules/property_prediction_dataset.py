@@ -170,9 +170,9 @@ def collate_target(x, target_columns):
         v = x[k]
         if v is None:
             target.append(torch.tensor(0))  # Placeholder, should be masked out
-            mask.append(torch.tensor(True))
+            mask.append(torch.tensor(False))
         else:
             target.append(torch.tensor(v))
-            mask.append(torch.tensor(False))
+            mask.append(torch.tensor(True))
 
     return {"target": torch.stack(target), "target_mask": torch.stack(mask)}

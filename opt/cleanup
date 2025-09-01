@@ -13,13 +13,33 @@ logging.basicConfig(level=logging.INFO)
 api = wandb.Api()
 
 
+def run_is_tracked(run_id: str, entity: str, projects: list[str]):
+    logging.info("checking %s", run_id)
+    for project in projects:
+        try:
+            api.run(f"{entity}/{project}/{run_id}")
+            return True
+
+        except wandb.errors.CommError:
+            continue
+
+        except Exception as e:
+            logging.error(f"Error while checking {run_id}: {e}")
+
+    return False
+
+
 @cli.command()
 def cleanup(
     dir: Path,
     entity="incite-mist",  # Replace with your W&B entity
     trash=".trash",
-    project="mist",
+    projects: list[str] | None = None,
 ):
+    if projects is None:
+        projects = [project.name for project in api.projects(entity)]
+        logging.info("Checking for runs in projects: %s", ",".join(projects))
+
     trash = Path(dir, trash).expanduser()
     trash.mkdir(exist_ok=True)
     for dir in Path(dir).expanduser().iterdir():
@@ -29,16 +49,9 @@ def cleanup(
             continue
 
         run_id = dir.name
-        try:
-            logging.info("checking %s", run_id)
-            api.run(f"{entity}/{project}/{run_id}")
-
-        except wandb.errors.CommError:
+        if not run_is_tracked(dir.name, entity, projects):
             logging.info(f"Moving {run_id} to trash")
             shutil.move(dir, Path(trash, run_id))
-
-        except Exception as e:
-            logging.error(f"Error while checking {run_id}: {e}")
 
 
 if __name__ == "__main__":

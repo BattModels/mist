@@ -349,7 +349,7 @@ def masked_loss(
     if lossfn.reduction != "none":
         raise RuntimeError("Reduction must be 'none'")
     loss = lossfn(preds, targets.to(preds))
-    return loss.masked_fill(mask, 0).sum() / mask.bitwise_not().sum()
+    return loss.masked_fill(~mask, 0).sum() / mask.count_nonzero().clamp(min=1)
 
 
 def masked_metric_update(
@@ -362,10 +362,11 @@ def masked_metric_update(
     int_cast: bool = False,
 ):
     """Update metrics, masking out targets as needed"""
-    targets = targets.masked_fill(mask.to(dtype=bool), IGNORE_INDEX)
+    targets = targets.masked_fill(~(mask.to(dtype=bool)), IGNORE_INDEX)
     if int_cast:
         targets = targets.int()
     if isinstance(metrics, OOVMetric):
+        assert input_ids is not None
         metrics.update(preds, targets, input_ids, is_oov)
     else:
         metrics.update(preds, targets)
@@ -423,3 +424,59 @@ def bootstrap_collection(metrics: MetricCollection, **kwargs) -> MetricCollectio
             mc[k] = BootStrapper(v, **kwargs)
 
     return MetricCollection(mc)
+
+
+class OrthoProcrustes(Metric):
+    def __init__(self, reduction="mean", **kwargs):
+        super.__init__(**kwargs)
+        self.reduction = reduction
+        self.add_state("distance", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    def compute(self):
+        return self.distance / self.total
+
+    def update(self, preds: torch.Tensor, targets: torch.Tensor):
+        dists = self.procrustes_disparity(preds, targets)
+        if self.reduction == "mean":
+            self.distance += dists.mean()
+        elif self.reduction == "rmsd":
+            self.distance += dists.square().mean().sqrt()
+        else:
+            self.reduction = dists.sum()
+
+        self.total += preds.size(0)
+
+    @staticmethod
+    def procrustes_disparity(preds: torch.Tensor, targets: torch.Tensor):
+        # Zero centroids
+        preds = preds - preds.mean(-2, keepdim=True)
+        targets = targets - targets.mean(-2, keepdim=True)
+        dtype = preds.dtype
+
+        # Rotate targets to align with preds
+        R = OrthoProcrustes.procrustes_alignment(targets, preds)
+        targets = (targets @ R).to(dtype=dtype).detach()
+
+        # Atom-wise distances
+        return (preds - targets).pow(2).sum(-1).sqrt()
+
+    @staticmethod
+    @torch.autocast("cuda", dtype=torch.float32)
+    def procrustes_alignment(pc1: torch.Tensor, pc2: torch.Tensor) -> torch.Tensor:
+        M = (pc1.mT @ pc2).mT.to(dtype=torch.float32)
+
+        # Promote to at least float32 for svd
+        u, _, v = torch.linalg.svd(M, full_matrices=False)
+        d = u.det() * v.det()
+        if d.ndim == 0:
+            s = torch.tensor([1, 1, d.item()]).diag()
+            assert s.shape == (3, 3)
+        else:
+            s = torch.stack([torch.tensor([1, 1, ds]).diag() for ds in d])
+            assert s.shape == (pc1.shape[0], 3, 3)
+
+        s = s.to(u)
+        R = u.matmul(s).matmul(v).mT.to(pc1)
+
+        return R
