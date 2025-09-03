@@ -25,6 +25,7 @@ class ProgressiveThawing(BaseFinetuning):
         if not hasattr(pl_module, "encoder"):
             pl_module.configure_model()
         self.freeze_before_training(pl_module)
+        super().setup(trainer, pl_module, stage)
 
     @classmethod
     def matching_modules(cls, pl_module, patterns):
@@ -84,3 +85,34 @@ class ProgressiveThawing(BaseFinetuning):
                 logging.info("Thawing %s", name)
                 to_thaw.append(module)
             self.unfreeze_and_add_param_group(to_thaw, optimizer)
+
+
+class ProgressiveEncoderThawing(ProgressiveThawing):
+    def __init__(
+        self,
+        initial: list[str],
+        thaw_depth: int = 0,
+        thaw_embeddings: bool = True,
+        embeddings="model.encoder.embeddings",
+        layers="model.encoder.encoder.layer.%d",
+        num_layers=lambda pl_model: pl_model.config.encoder.num_hidden_layers,
+        **kwargs,
+    ):
+        super().__init__(initial, [], **kwargs)
+        self.thaw_depth = thaw_depth
+        self.thaw_embeddings = thaw_embeddings
+        self.embeddings = embeddings
+        self.layers = layers
+        self.num_layers = num_layers
+
+    def setup(self, trainer, pl_module, stage) -> None:
+        freeze_config = config["trainer"]["freeze"]
+        last_layer = self.num_layers(pl_module) - 1
+        thaw_depth = self.thaw_depth
+        max_thaw = last_layer - thaw_depth if thaw_depth > 0 else 0
+        stages = [[self.layers.format(i)] for i in range(last_layer, max_thaw, -1)]
+        if self.thaw_embeddings:
+            stages = [[self.embeddings], *stages]
+
+        self.stages = stages
+        super().setup(trainer, pl_module, stage)
