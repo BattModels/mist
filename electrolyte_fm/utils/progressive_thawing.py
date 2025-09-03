@@ -95,7 +95,7 @@ class ProgressiveEncoderThawing(ProgressiveThawing):
         thaw_embeddings: bool = True,
         embeddings="model.encoder.embeddings",
         layers="model.encoder.encoder.layer.%d",
-        num_layers=lambda pl_model: pl_model.config.encoder.num_hidden_layers,
+        num_layers_accessor=None,
         **kwargs,
     ):
         super().__init__(initial, [], **kwargs)
@@ -103,10 +103,17 @@ class ProgressiveEncoderThawing(ProgressiveThawing):
         self.thaw_embeddings = thaw_embeddings
         self.embeddings = embeddings
         self.layers = layers
-        self.num_layers = num_layers
+
+        if num_layers_accessor is None:
+            self.num_layers = self._default_num_layers
+        else:
+            self.num_layers = num_layers_accessor
+
+    @staticmethod
+    def _default_num_layers(pl_module):
+        return pl_module.model.config.encoder.num_hidden_layers
 
     def setup(self, trainer, pl_module, stage) -> None:
-        freeze_config = config["trainer"]["freeze"]
         last_layer = self.num_layers(pl_module) - 1
         thaw_depth = self.thaw_depth
         max_thaw = last_layer - thaw_depth if thaw_depth > 0 else 0
