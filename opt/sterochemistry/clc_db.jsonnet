@@ -2,6 +2,7 @@
   queue: 'venkvis-a100,venkvis-h100',
   walltime: '1:0:0',
   nodes: 1,  // Multi-node is not currently supported. Config is only on leader node
+  container: '/nfs/turbo/coe-venkvis/mist/mist+pytorch+25.01+v4.sif',
   env: {
     TOKENIZERS_PARALLELISM: true,
   },
@@ -14,7 +15,7 @@
         batch_size: 64,
         val_batch_size: 2 * self.batch_size,
         tokenizer: "smirk-cls",
-        smiles_column: "smiles",
+        smi_column: "smiles",
         encoding: "smiles",
         randomize: true,
         target_columns: [
@@ -36,14 +37,17 @@
       },
     },
     model: {
-      class_path: 'electrolyte_fm.models.LMFinetuning.',
+      class_path: 'electrolyte_fm.models.sparse_regression.SparseRegressionLightningModel',
       init_args: {
-        encoder_ckpt: '/scratch/venkvis_root/venkvis/awadell/models/mist-ti624ev1',
-        task: "regression",
-        metrics: ["rmse", "mae", "r2"],
-        freeze_encoder: false,
-        output_size: std.length($.train.data.init_args.target_columns),
-        target_columns: $.train.data.init_args.target_columns,
+        bootstrap: true,
+        model: {
+          class_path: 'electrolyte_fm.models.sparse_regression.SparseRegressionFromPretrainedEncoder',
+          init_args: {
+            name_or_path: '/scratch/venkvis_root/venkvis/awadell/models/mist-4yzwys2z',
+            target_columns: $.train.data.init_args.target_columns,
+            transform: "power_transform",
+          }
+        },
 
         // Duplicate pre-training optimizer config
         optimizer: {
@@ -68,6 +72,16 @@
       max_steps: 100000,
       precision: 'bf16-true',
       enable_progress_bar: false,
+      strategy: 'auto',
+      callbacks: [
+        {
+          class_path: 'electrolyte_fm.utils.progressive_thawing.ProgressiveEncoderThawing',
+          init_args: {
+            initial: ['model.encoder'],
+            stage_duration: 3,
+          },
+        },
+      ]
     },
   }
 }
