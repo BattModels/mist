@@ -17,6 +17,7 @@ function load_generated_molecules(path)
     cols = keys(JSON.parse(df[1, :props]))
     transform!(df, :props => ByRow(JSON.parse) => Symbol.(cols))
     select!(df, Not(:props))
+    rename!(df, "inchi" => "inchi_key")
     return df
 end
 

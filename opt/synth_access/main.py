@@ -7,7 +7,7 @@ import multiprocessing
 from os import environ
 from pathlib import Path
 from time import perf_counter
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 
 import torch
 import accelerate  # noqa: F401
@@ -20,14 +20,11 @@ from rdkit.Chem.Descriptors import MolWt
 from sklearn.metrics import roc_auc_score
 from syba.syba import SybaClassifier
 from smirk import SmirkTokenizerFast
-from torch.nn import functional as F
-from transformers import AutoModelForMaskedLM, AutoConfig, DataCollatorWithPadding
 from vendor.scscore.scscore import SCScorer
 
+from electrolyte_fm.models.mol_surprise import MolSurpriseFM
 from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
-from electrolyte_fm.models.model_utils import DeepSpeedMixin
 from electrolyte_fm.utils.cache import cached_download, extract_file
-from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 # Suppress DeprecationWarnings for MorganGenerator
 rdBase.DisableLog("rdApp.warning")
@@ -94,71 +91,6 @@ def syba_scorer():
     return syba
 
 
-class SynthAccessFM(torch.nn.Module):
-    def __init__(self, encoder, tokenizer):
-        super().__init__()
-        self.encoder = encoder
-        self.tokenizer = tokenizer
-        self.collate_fn = DataCollatorWithPadding(self.tokenizer)
-
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        special_tokens_mask: torch.Tensor,
-        per_token: bool = False,
-    ):
-        logits = self.encoder(input_ids, attention_mask).logits
-        B = input_ids.shape[0]
-        V = logits.shape[-1]
-
-        labels = input_ids.detach().masked_fill(special_tokens_mask.bool(), -100)
-
-        score = (
-            F.cross_entropy(logits.view(-1, V), labels.view(-1), reduction="none")
-            .reshape(B, -1)
-            .sum(-1)
-        )
-        if per_token:
-            score = score / attention_mask.sum(-1)
-        return score
-
-    def score(self, smiles: List[str], per_token: bool = False) -> List[float]:
-        batch = self.tokenizer(smiles, return_special_tokens_mask=True)
-        batch = self.collate_fn(batch).to(self.encoder.device)
-        with torch.inference_mode():
-            return self.forward(
-                batch["input_ids"],
-                batch["attention_mask"],
-                batch["special_tokens_mask"],
-                per_token,
-            ).to("cpu")
-
-    @classmethod
-    def from_checkpoint(cls, ckpt: str, **kwargs):
-        encoder = DeepSpeedMixin.load(ckpt).model
-        tokenizer = load_tokenizer(ckpt)
-        return cls(encoder, tokenizer, **kwargs)
-
-    @classmethod
-    def from_pretrained(cls, name_or_path: str, dtype=None, **kwargs):
-        encoder = AutoModelForMaskedLM.from_pretrained(
-            name_or_path,
-            trust_remote_code=True,
-            device_map="auto",
-            torch_dtype="auto",
-        )
-        tokenizer = load_tokenizer(name_or_path)
-        return cls(encoder, tokenizer, **kwargs)
-
-    @classmethod
-    def from_untrained(cls, name_or_path: str, dtype=None, **kwargs):
-        config = AutoConfig.from_pretrained(name_or_path, trust_remote_code=True)
-        encoder = AutoModelForMaskedLM.from_config(config)
-        tokenizer = load_tokenizer(name_or_path)
-        return cls(encoder, tokenizer, **kwargs)
-
-
 @timeout(30)  # molecular_assembly (v0.2.0) timeout flag doesn't timeout
 def molecular_assembly_timeout(smi: str) -> Optional[int]:
     mol = Chem.MolFromSmiles(smi)
@@ -203,7 +135,7 @@ def map_batchsize_finder(ds, f, batch_size: int = 64, **kwargs):
 
 
 def eval_fm_model(
-    metric_name: str, model: SynthAccessFM, ds: Dataset, target: str | None = None
+    metric_name: str, model: MolSurpriseFM, ds: Dataset, target: str | None = None
 ):
     model = model.to("cuda")
     model = model.eval()
@@ -269,8 +201,8 @@ def evaluate_dataset(
     for name, metric in metrics.items():
         if isinstance(metric, str):
             for suffix, init_model in [
-                ("", SynthAccessFM.from_pretrained),
-                ("-untrained", SynthAccessFM.from_untrained),
+                ("", MolSurpriseFM.from_pretrained),
+                ("-untrained", MolSurpriseFM.from_untrained),
             ]:
                 ds, metric_runtime, metric_auroc = eval_fm_model(
                     metric + suffix,

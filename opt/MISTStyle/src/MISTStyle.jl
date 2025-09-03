@@ -3,6 +3,7 @@ module MISTStyle
 using Makie
 using CategoricalArrays: levels
 using CairoMakie: CairoMakie
+using StatsBase: StatsBase, AbstractWeights
 
 const pt = 3 / 4
 const inch = 96
@@ -48,6 +49,12 @@ function cb_attrs(cb::Colorbar, plt)
     return Base.structdiff(attrs, NamedTuple{(invalid...,)})
 end
 
+function parity_limits(x::AbstractVector, y::AbstractVector; inflate=0.05)
+    l, u = extrema(Iterators.flatten((x, y)))
+    limits = (l - inflate * (u - l), u + inflate * (u - l))
+    return (limits, limits)
+end
+
 
 function sublabel!(f, letter; left=0, kwargs...)
     label_kwargs = (;
@@ -65,6 +72,7 @@ include("errorcross.jl")
 include("powerlaw.jl")
 include("tantext.jl")
 include("quadrant.jl")
+include("nbins.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
@@ -95,8 +103,8 @@ const CONTINUOUS_COLORS = :lipari
 
 function theme()
     Theme(
-        rowgap=2,
-        colgap=2,
+        rowgap=3pt,
+        colgap=3pt,
         fonts=(;
             regular="Times New Roman Regular",
             bold="Times New Roman Bold",
@@ -117,6 +125,10 @@ function theme()
         ),
         Lines=(;
             cycle=Cycle([:color, :linestyle], covary=true),
+        ),
+        GridLayout=(;
+            default_rowgap=3pt,
+            default_colgap=3pt,
         ),
         Axis=(;
             spinewidth=0.5,
