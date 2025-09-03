@@ -2,9 +2,9 @@ from abc import abstractmethod
 from typing import List, Optional
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, default_collate
 from lightning import LightningDataModule
-from datasets import Dataset
+from datasets import Dataset, load_dataset
 from transformers import DataCollatorWithPadding
 from functools import partial
 
@@ -88,24 +88,19 @@ class PropertyPredictionDataModule(LightningDataModule):
                 batched=False,
                 fn_kwargs={"target_columns": targets},
                 remove_columns=targets,
-            )
-
-            # Save training dataset for target transformations
-            self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
-            ds = ds.select_columns(
+            ).select_columns(
                 [self.smi_column, "target", "target_mask", *self.additonal_columns]
             )
         else:
             ds = ds.select_columns([self.smi_column, *self.additonal_columns])
 
-        # Tokenize
-        ds = ds.map(
-            self.tokenize,
-            batched=is_fast(self.tokenizer),
-            input_columns=self.smi_column,
-        )
         if not self.include_encoding and not self.randomize:
             ds = ds.remove_columns(self.smi_column)
+
+        ds = ds.with_format("torch")
+
+        if self.target_columns:
+            self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
 
         self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
         self.val_dataset: Dataset = ds["validation"]
@@ -113,26 +108,19 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def collate_fn(self, batch):
-        tokenizer = self.tokenize
-        encoding = self.encoding
+        out = default_collate(batch)
         if self.randomize:
-            for idx in range(len(batch)):
-                new_smi = encoding.random(batch[idx][self.smi_column])
-                if new_smi is not None:
-                    batch[idx].update(tokenizer(new_smi))
+            encode = self.encoding.random
+            smi = [encode(obs[self.smi_column]) for obs in batch]
+        else:
+            smi = [obs[self.smi_column] for obs in batch]
 
-                if not self.include_encoding:
-                    batch[idx].pop(self.smi_column, None)
+        out.update(self.token_collator(self.tokenize(smi)))
 
-        output = self.token_collator(batch)
-        if self.target_columns:
-            output["target"] = torch.stack([torch.tensor(x["target"]) for x in batch])
-            output["target_mask"] = torch.stack(
-                [torch.tensor(x["target_mask"]) for x in batch]
-            )
-            assert output["target"].shape == output["target_mask"].shape
+        if not self.include_encoding:
+            out.pop(self.smi_column, None)
 
-        return output
+        return out
 
     def train_dataloader(self):
         return DataLoader(
@@ -176,7 +164,6 @@ class HFDataset(PropertyPredictionDataModule):
         self.name_or_path = name_or_path
         super().__init__(**kwargs)
 
-    @property
     def _get_dataset(self):
         if not hasattr(self, "__dataset"):
             self.__dataset = load_dataset(
