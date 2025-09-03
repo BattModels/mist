@@ -339,6 +339,22 @@ def get_metric(name: str, task_type: str, **kwargs) -> Metric:
     return m
 
 
+def clean_target_name(target: str) -> str:
+    return target.split("[")[0].strip().replace(" ", "_")
+
+
+def setup_channel_metrics(targets: list[str], metrics: list[str]):
+    mc = {}
+    clean_target_names: list[str] = []
+    for target in targets:
+        target = clean_target_name(target)
+        clean_target_names.append(target)
+        for metric in metrics:
+            mc[f"{target}/{metric}"] = get_metric(metric, "regression")
+
+    return TmMetricCollection(mc), clean_target_names
+
+
 def masked_loss(
     lossfn,
     preds: torch.Tensor,
@@ -370,6 +386,28 @@ def masked_metric_update(
         metrics.update(preds, targets, input_ids, is_oov)
     else:
         metrics.update(preds, targets)
+
+
+def masked_metric_regression_update(
+    metrics: TmMetricCollection,
+    preds: torch.Tensor,
+    target: torch.Tensor,
+    mask: torch.BoolTensor,
+    target_names: list[str],
+    metric_names: list[str],
+):
+    for idx, target_name in enumerate(target_names):
+        y_pred = preds[:, idx]
+        y_true = target[:, idx]
+        target_mask = mask[:, idx]
+
+        if not target_mask.any():
+            continue
+
+        y_pred = y_pred[target_mask]
+        y_true = y_true[target_mask]
+        for metric in metric_names:
+            metrics[f"{target_name}/{metric}"].update(y_pred, y_true)
 
 
 class TokenCounter(Metric):

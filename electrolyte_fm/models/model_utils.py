@@ -1,7 +1,11 @@
+import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import MetricCollection
+from transformers import CONFIG_MAPPING as HF_CONFIG_MAPPING
+from transformers import AutoConfig, PretrainedConfig
 
 from ..utils.ckpt import SaveConfigWithCkpts
 
@@ -86,3 +90,38 @@ class CanSkip:
             return True
         else:
             return False
+
+
+@dataclass
+class ModelConfig:
+    encoder: PretrainedConfig
+
+    def to_dict(self):
+        d = {k: v for k, v in self.__dict__.items() if k != "encoder"}
+        d["encoder"] = self.encoder.to_diff_dict()
+        d["encoder"]["model_type"] = self.encoder.model_type
+        if hasattr(self.encoder, "_name_or_path") and self.encoder._name_or_path:
+            d["encoder"]["_name_or_path"] = self.encoder._name_or_path
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        encoder_config = d.pop("encoder")
+        if (
+            encoder_config["model_type"] not in HF_CONFIG_MAPPING
+            and "_name_or_path" in encoder_config
+        ):
+            model_id = encoder_config.pop("_name_or_path")
+            encoder = AutoConfig.from_pretrained(
+                model_id, **encoder_config, trust_remote_code=True
+            )
+        else:
+            encoder = AutoConfig.for_model(**encoder_config)
+        return cls(encoder, **d)
+
+    def to_json_file(self, config_file: str | Path):
+        Path(config_file).write_text(json.dumps(self.to_dict(), indent=2))
+
+    @classmethod
+    def from_json_file(cls, config_file: str | Path):
+        return cls.from_dict(json.loads(Path(config_file).read_text()))

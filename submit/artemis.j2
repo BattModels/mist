@@ -27,7 +27,12 @@ module --ignore_cache load spack/0.21 python/3.11.5 cuda/12.2 openmpi/4.1.6
 source ./activate
 
 # Set env variables
+ENV_FILE="${TMPDIR}/env-${SLURM_JOB_ID}.sh"
+cat > $ENV_FILE<<EOF
 {{- export_env( env ) }}
+EOF
+source $ENV_FILE
+sbcast -fp $ENV_FILE $ENV_FILE
 
 {% if deepspeed is defined %}
 # Write out deepspeed config
@@ -41,10 +46,11 @@ export DEEPSPEED_CONFIG=$(cat $PL_DEEPSPEED_CONFIG_PATH)
 {{- export_job_config( __config__ ) }}
 
 # Write out  lightning config
-export PL_CONFIG=$TMPDIR/lightning.json
+export PL_CONFIG=$TMPDIR/lightning-${SLURM_JOB_ID}-${SLURM_ARRAY_TASK_ID:-0}.json
 cat > ${PL_CONFIG}<<EOF
 {{ {"fit": train } | tojson }}
 EOF
+sbcast -fp ${PL_CONFIG} ${PL_CONFIG}
 
 {%- if requeue %}
 # Look for a requeue checkpoint
@@ -57,9 +63,17 @@ fi
 {%- endif %}
 
 srun --mpi=pmix \
+{%- if container is defined %}
+apptainer exec \
+--bind /scratch,/nfs,$TMPDIR \
+--env-file $ENV_FILE \
+--nv \
+{{ container }} \
+/opt/uv/uv run \
+{%- endif %}
 ${PWD}/submit/set_node_rank \
 {%- if nsys is defined %}
 nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
-    python3 train.py fit
+    python3 train.py --config ${PL_CONFIG}
