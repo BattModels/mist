@@ -126,8 +126,13 @@ function lr_partial_dependence(model::ShapedScaling, chains::AbstractChains{T}, 
             P = expected_penalties(model, θ, run)
             loss = hoffman_scaling(run.model_size, run.data_size; θ.scaling...)
             P_marginal = P.ff + P.kv + P.aspect
-            ŷ = model.geometric_penalty ? xexpy(loss, P_marginal) : loss + P_marginal
-            resid = y[i] / ŷ
+            if model.geometric_penalty
+                ŷ =  xexpy(loss, P_marginal)
+                resid = y[i] / ŷ
+            else
+                ŷ =  loss + P_marginal
+                resid = y[i] - ŷ
+            end
             fit!(resid_ci, resid)
 
             lr_opt = ideal_lr(model, θ, run)
