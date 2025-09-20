@@ -10,9 +10,9 @@ function load_qmist_results(folder::String)
 end
 
 
-function predict_mist(model::Py, smi::Vector{String}; batch_size=32)
+function predict_mist(model::Py, smi::Vector{String}; batch_size=32, encoding="smiles-kekule")
     model = model.eval()
-    transcode = __data_utils[].MolEncoding("smiles-kekule")
+    transcode = __data_utils[].MolEncoding(encoding)
     smi = map(x -> pyconvert(String, transcode(x)), smi)
     ds = Iterators.partition(smi, batch_size)
     channels = pyconvert(Vector{String}, [chn["name"] for chn in model.channels])
