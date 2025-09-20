@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10, <3.14"
 dependencies = [
     "datasets>=4.0.0",
+    "electrolyte-fm",
     "lmdb>=1.7.3",
     "numpy",
     "pandas>=2.2.3",
@@ -14,4 +15,8 @@ dependencies = [
     "scikit-learn>=1.7.1",
     "tenacity>=9.1.2",
     "tqdm>=4.67.1",
+    "typer>=0.17.4",
 ]
+
+[tool.uv.sources]
+electrolyte-fm = { path = "../../", editable = true }
