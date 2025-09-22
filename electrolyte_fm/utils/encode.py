@@ -38,14 +38,12 @@ def robust_smiles_encode(mol: Mol, charge: int = 0):
     # Validate encoding
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
-        raise RuntimeError(
-            "failed to convert %s to a valid SMILES: %s".format(mol, smi)
-        )
+        raise RuntimeError("failed to convert %s to a valid SMILES: %s".format())
 
     # Validate encoded molecule
     try:
         Chem.SanitizeMol(mol)
     except Exception:
-        raise RuntimeError("failed to sanitize %s: %s".format(mol, smi))
+        raise RuntimeError("failed to sanitize %s: %s".format())
 
     return smi
