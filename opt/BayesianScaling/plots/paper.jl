@@ -324,19 +324,6 @@ function figure_bayesian(data;
         strokecolor=h_loss.strokecolor,
     )
 
-    # 4yzwys2z
-    mark_model!(ax_scale, ax_compute, "MIST-228M", (-15pt, -10pt);
-        d_model=1024,
-        ff_ratio=4,
-        n_layers=18,
-        steps=374_685,
-        eff_batch_size=4*8*16*32,
-        model_loss=0.01019080262631178,
-        colorbar=cb,
-        h_loss,
-        fontsize=6pt,
-    )
-
     # dh61satt
     mark_model!(ax_scale, ax_compute, "MIST-1.8B", (-5pt, 10pt);
         d_model=2304,
@@ -466,18 +453,6 @@ function figure_bayesian_panel(data;
         strokecolor=h_loss.strokecolor,
     )
 
-    # 4yzwys2z
-    mark_model!(ax_scale, ax_compute, "MIST-228M", (-10pt, -10pt);
-        d_model=1024,
-        ff_ratio=4,
-        n_layers=18,
-        steps=374_685,
-        eff_batch_size=4*8*16*32,
-        model_loss=0.01019080262631178,
-        colorbar=cb,
-        h_loss,
-    )
-
     # dh61satt
     mark_model!(ax_scale, ax_compute, "MIST-1.8B", (-5pt, 10pt);
         d_model=2304,
@@ -532,4 +507,20 @@ function plot_all(dir; kwargs...)
         isfile(joinpath(model, "chains.jld2")) || continue
         plot_model(model)
     end
+end
+
+function (@main)(ARGS=[])
+    chains_dir = ARGS[1]
+    @assert isdir(chains_dir)
+
+    # SI figures
+    # plot_all(chains_dir)
+
+    # Panel figure
+    data = jldopen(joinpath(chains_dir, "dec-3-sweep-smoothed-1.0--geometric-shape-gamma", "chains.jld2"), "r")
+    with_theme(MISTStyle.theme()) do
+        figure_bayesian(data)
+    end |> MISTStyle.savefig("scaling_panel_baseline")
+
+    return nothing
 end
