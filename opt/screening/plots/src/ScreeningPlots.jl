@@ -14,6 +14,7 @@ using Statistics: cor, mean, std
 using CategoricalArrays: categorical, levelcode
 using LinearAlgebra: norm, dot
 using ManifoldLearning: ManifoldLearning, DiffMap, fit, predict, transform
+using PrettyTables: LatexTableFormat, LatexCell, pretty_table
 using Clustering: hclust
 
 using MISTStyle

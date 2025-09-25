@@ -129,6 +129,22 @@ function plot_gen_trace!(f, trace)
     return f
 end
 
+label_electrolyte_pareto(df) = label_electrolyte_pareto!(deepcopy(df))
+function label_electrolyte_pareto!(case)
+    bp = -case[!, :bp]
+    gap = -case[!, :gap] .* HARTREE_TO_EV
+    homo = case[!, :homo] .* HARTREE_TO_EV
+    mp = case[!, :mp]
+    canidates = map(vcat, homo, gap, mp, bp)
+    front = Metaheuristics.get_non_dominated_solutions(canidates)
+    nidx = findall(in(front), canidates)
+    case = deepcopy(case)
+    case.dominated .= true
+    case.dominated[nidx] .= false
+    sort!(case, :dominated; rev=true)
+    return case
+end
+
 function plot_pareto_front(case, ref)
     f = Figure(; size=(210pt, 100pt), figure_padding=(1, 3, 1, 2))
     plot_pareto_front!(f, case, ref)
@@ -143,17 +159,7 @@ function plot_pareto_front!(f, case, ref)
     )
 
     # Net non-dominated
-    bp = -case[!, :bp]
-    gap = -case[!, :gap] .* HARTREE_TO_EV
-    homo = case[!, :homo] .* HARTREE_TO_EV
-    mp = case[!, :mp]
-    canidates = map(vcat, homo, gap, mp, bp)
-    front = Metaheuristics.get_non_dominated_solutions(canidates)
-    nidx = findall(in(front), canidates)
-    case = deepcopy(case)
-    case.dominated .= true
-    case.dominated[nidx] .= false
-    sort!(case, :dominated; rev=true)
+    label_electrolyte_pareto!(case)
     @info "non-dominated" sort(case[nidx, :], :inchi_key)
     front = map(front) do p
         p[1] *= -1
@@ -221,4 +227,50 @@ function scatter_samples!(ax, x, y, dominated)
         color=MISTStyle.UM_COLORS.blue,
     )
     return h1, h2
+end
+
+function save_pareto_front(df_mol)
+    df_front = label_electrolyte_pareto(df_mol)
+    subset!(df_front, :dominated => ByRow(!))
+    transform!(df_front, [:bp, :mp] => ByRow(-) => :thermal_window)
+    to_hartree = ByRow(x -> x*HARTREE_TO_EV)
+    transform!(df_front,
+        :homo => to_hartree => :homo,
+        :lumo => to_hartree => :lumo,
+        :gap => to_hartree => :gap,
+    )
+    sort!(df_front, [:gap, :thermal_window]; rev=true)
+
+    df_front.id = 1:nrow(df_front)
+    columns = [
+        "id" => "#",
+        "homo" => "HOMO",
+        "lumo" => "LUMO",
+        "gap" => "Gap",
+        "mp" => LatexCell("Melt"),
+        "bp" => LatexCell("Boil"),
+    ]
+
+    function fmt_lr(v, i, j)
+        col = first(columns[j])
+        if col in ["homo", "lumo", "gap"]
+            return format("{:.1f}", v)
+        elseif col in ["mp", "bp"]
+            return format("{:.0f}", v)
+        else
+            return v
+        end
+    end
+
+    # Latex Table
+    table = pretty_table(String, df_front[!, first.(columns)];
+        tf = LatexTableFormat(),
+        formatters=(fmt_lr,),
+        alignment=[:c for idx in eachindex(columns)],
+        backend=Val(:latex),
+        hlines=[:header],
+        header=last.(columns),
+        table_type=:longtable,
+    )
+    return table, df_front
 end

@@ -100,7 +100,11 @@ df_ref.inchi_key = ScreeningPlots.inchi_key.(df_ref.smi)
 df_novel = subset(df_mol, :inchi_key => ByRow(∉(df_ref.inchi_key)))
 df_unfound = subset(df_ref, :inchi_key => ByRow(∉(df_mol.inchi_key)))
 @info "Novel Molecules" nrow(df_novel) nrow(df_ref) nrow(df_novel) / nrow(df_mol) nrow(df_unfound) / nrow(df_ref)
-# @info "Prod. Perf" throughput=production_run.global_throughput / production_run.gpus uniq_throughput = production_run.global_unique_throughput / production_run.gpus
+
+# Save Pareto Front
+table, df_front = ScreeningPlots.save_pareto_front(df_mol)
+CSV.write(joinpath(DATA_DIR, "generated_pareto_front.csv"), df_front)
+write(joinpath("fig", "pareto_front_table.tex"), table)
 
 # Generate Plots
 trace, _ = ScreeningPlots.performance_trace(joinpath(production_run_path, "screen.jsonl"))
@@ -220,4 +224,4 @@ function figure_odor_filter(df_so, df_odor_counts)
 end
 with_theme(MISTStyle.theme()) do
     figure_odor_filter(df_so, df_odor_counts)
-end |> MISTStyle.savefig("electrolyte_odorless")
+end |> MISTStyle.savefig("screening_olfaction")
