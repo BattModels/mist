@@ -136,7 +136,7 @@ function lr_partial_dependence(model::ShapedScaling, chains::AbstractChains{T}, 
             fit!(resid_ci, resid)
 
             lr_opt = ideal_lr(model, θ, run)
-            lr_dev = model.harmonic_shape_penalty ? run.lr - lr_opt : run.lr / lr_opt
+            lr_dev = run.lr / lr_opt
             fit!(lr_ci, lr_dev)
         end
         residual[i] = OnlineStats.value(resid_ci)
