@@ -17,9 +17,11 @@ using ScreeningPlots: searchfirst
 # ROOTDIR: opt/screening folder
 # GIT_ROOT: MIST Project Root
 # DATA_DIR: Path to the screening files (to be released in data drop)
+# MODEL_DIR: Path to the model checkpoints (to be released in data drop)
 ROOTDIR = realpath(joinpath(pkgdir(ScreeningPlots), ".."))
 GIT_ROOT = realpath(joinpath(ROOTDIR, "..", ".."))
 DATA_DIR = joinpath(GIT_ROOT, "data", "screening")
+MODEL_DIR = joinpath(GIT_ROOT, "data", "models")
 fig_dir = joinpath(ROOTDIR, "fig")
 isdir(fig_dir) || mkdir(fig_dir)
 
@@ -91,7 +93,7 @@ df_mol = ScreeningPlots.load_generated_molecules(production_run_path)
 prod_config = JSON.parsefile(joinpath(production_run_path, "config.json"))
 
 # Reference Molecules
-df_ref = DataFrame(CSV.File(joinpath(ROOTDIR, "electrolytes_predictons.csv")))
+df_ref = DataFrame(CSV.File(joinpath(DATA_DIR, "electrolytes_predictons.csv")))
 df_mol.inchi_key = ScreeningPlots.inchi_key.(df_mol.smiles)
 df_ref.inchi_key = ScreeningPlots.inchi_key.(df_ref.smi)
 
@@ -144,11 +146,7 @@ with_theme(MISTStyle.theme()) do
     end
 
     # Load the QM9 Model used for screening
-    qm9_model_name = searchfirst(
-        c -> occursin("qm9", c),
-        [ basename(c["model_path"]) for c in prod_config["critics"] ]
-    )
-    mist_qm9 = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", qm9_model_name))
+    mist_qm9 = ScreeningPlots.load_mist_pretrained(joinpath(MODEL_DIR, "mist-ti624ev1-moleculenet", "qm9"))
     mist_qm9 = mist_qm9.to("mps")
     #
     # Parity Plots with Chembl data
@@ -163,11 +161,11 @@ with_theme(MISTStyle.theme()) do
 
 end
 
-mol_surprise = ScreeningPlots.load_mol_surprise(joinpath(GIT_ROOT, "models", "mist-ti624ev1"))
-mist_mp = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", "mist-26.9M-y3ge5pf9-mp"))
-mist_bp = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", "mist-26.9M-b302p09x-bp"))
+mol_surprise = ScreeningPlots.load_mol_surprise(joinpath(MODEL_DIR, "mist-ti624ev1-moleculenet", "pretrained"))
+mist_mp = ScreeningPlots.load_mist_pretrained(joinpath(MODEL_DIR, "mist-26.9M-y3ge5pf9-mp"))
+mist_bp = ScreeningPlots.load_mist_pretrained(joinpath(MODEL_DIR, "mist-26.9M-b302p09x-bp"))
 
-f, df_surprise = ScreeningPlots.compare_creativity(
+_, df_surprise = ScreeningPlots.compare_creativity(
     production_run_path,
     joinpath(DATA_DIR, "veri_chembl"),
     df_ref;
@@ -175,7 +173,9 @@ f, df_surprise = ScreeningPlots.compare_creativity(
     mist_mp,
     mist_bp
 )
-MISTStyle.savefig("surprise_vs_utility", f)
+with_theme(MISTStyle.theme()) do
+    ScreeningPlots.compare_creativity(df_surprise)
+end |> MISTStyle.savefig("surprise_vs_utility")
 
 # Compute Renyi Entropy Metrics
 df_surprise.embed_mean = eachrow(ScreeningPlots.mist_embedding(mol_surprise, df_surprise.smiles; pooling=ScreeningPlots.mean_pooling))
@@ -197,13 +197,27 @@ df_s = combine(groupby(df_surprise, :group)) do gdf
 end
 
 # Bar chart of top odor in generated molecules
-odor_model = ScreeningPlots.load_mist_pretrained(joinpath(GIT_ROOT, "models", "mist-26.9M-48kpooqf-odour"))
+odor_model = ScreeningPlots.load_mist_pretrained(joinpath(MODEL_DIR, "mist-26.9M-48kpooqf-odour"))
 df_odor = select(df_surprise, :smiles, :group)
 df_odor = innerjoin(df_odor, ScreeningPlots.predict_mist(odor_model, df_odor.smiles); on=:smiles)
-f = ScreeningPlots.figure_odor_counts(subset(df_odor, :group => ByRow(!=("ChEMBL"))), odor_model)
+df_odor_counts = ScreeningPlots.odor_counts(subset(df_odor, :group => ByRow(!=("ChEMBL"))), odor_model)
+f = ScreeningPlots.figure_odor_counts(df_odor_counts)
 MISTStyle.savefig("screening_odors", f)
 
 # Screen for odorless
 df_so = innerjoin(df_surprise, df_odor; on=["smiles", "group"])
 f = ScreeningPlots.plot_pareto_front_scent(df_so, "odorless")
 MISTStyle.savefig("electrolyte_odorless", f)
+
+function figure_odor_filter(df_so, df_odor_counts)
+    f = Figure(; size=(3inch, 3inch), figure_padding=(3pt, 3pt, 3pt, 3pt))
+    ScreeningPlots.plot_pareto_front_scent!(GridLayout(f[1:2, 1]), df_so, "odorless")
+    ScreeningPlots.figure_odor_counts!(GridLayout(f[1:2, 2]), df_odor_counts)
+    sublabel!(f[1, 1, TopLeft()], "a"; left=5pt)
+    sublabel!(f[2, 1, TopLeft()], "b"; left=5pt, down=10pt)
+    sublabel!(f[1, 2, TopLeft()], "c"; left=5pt)
+    return f
+end
+with_theme(MISTStyle.theme()) do
+    figure_odor_filter(df_so, df_odor_counts)
+end |> MISTStyle.savefig("electrolyte_odorless")

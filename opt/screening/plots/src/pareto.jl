@@ -72,7 +72,7 @@ end
 
 function figure_screening(trace, case, ref, df_speed)
     f = Figure(;
-        size=(3.42inch, 2inch),
+        size=(3.42inch, 2.5inch),
         figure_padding=(2, 2, 2, 5)
     )
     gl_perf = GridLayout(f[1, 1])
@@ -130,7 +130,7 @@ function plot_gen_trace!(f, trace)
 end
 
 function plot_pareto_front(case, ref)
-    f = Figure(; size=(2inch, 1inch), figure_padding=(1, 3, 1, 2))
+    f = Figure(; size=(210pt, 100pt), figure_padding=(1, 3, 1, 2))
     plot_pareto_front!(f, case, ref)
 end
 function plot_pareto_front!(f, case, ref)
@@ -138,6 +138,7 @@ function plot_pareto_front!(f, case, ref)
     bp_limits = extrema(vcat(case.bp, [75]))
     pareto_kwargs = (;
         linewidth=1.5pt,
+        linestyle=:solid,
         alpha=0.7,
     )
 
@@ -163,8 +164,8 @@ function plot_pareto_front!(f, case, ref)
 
     ax = Axis(f[1, 1];
         limits=(mp_limits, bp_limits),
-        xlabel=L"Melting Point [$\degree C$]",
-        ylabel=L"Boiling Point [$\degree C$]",
+        xlabel=L"Melt ($\degree C$)",
+        ylabel=L"Boil ($\degree C$)",
     )
     scatter_samples!(ax, case.mp, case.bp, case.dominated)
     stairs!(ax, get_pareto_front(ref.mp, ref.bp; ax);
@@ -178,25 +179,31 @@ function plot_pareto_front!(f, case, ref)
 
     ax = Axis(f[1, 2];
         limits=((-10.5, -7), (5, 13)),
-        xlabel=L"HOMO [eV]$$",
-        ylabel=L"Gap [eV]$$",
+        xlabel=L"HOMO (eV)$$",
+        ylabel=L"Gap (eV)$$",
         xticks=WilkinsonTicks(5; k_max=7),
         yticks=WilkinsonTicks(5; k_max=7),
     )
-    h, _ = scatter_samples!(ax, case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV, case.dominated)
+    h, h_front = scatter_samples!(ax, case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV, case.dominated)
     h.label = "Generated"
-    lines!(ax, get_pareto_front(ref.homo .* HARTREE_TO_EV, ref.gap .* HARTREE_TO_EV; ax);
+    h_front.label = "On Pareto Front, Generated"
+    h_ref_front = lines!(ax, get_pareto_front(ref.homo .* HARTREE_TO_EV, ref.gap .* HARTREE_TO_EV; ax);
         color=MISTStyle.UM_COLORS.maize,
         label="Ref. Pareto Front",
         pareto_kwargs...
     )
-    stairs!(ax, get_pareto_front(case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV; ax)[];
+    h_gen_front = stairs!(ax, get_pareto_front(case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV; ax);
         color=MISTStyle.UM_COLORS.blue,
         label="Generated Pareto Front",
         pareto_kwargs...
     )
-    Legend(f[2, :], ax;
-        tellheight=true, tellwidth=false,
+    # Stairs! leaves linestyle unset...
+    elems = [h, h_front,
+        LineElement(; label=h_ref_front.label, linestyle=:solid, color=h_ref_front.color, linewidth=h_ref_front.linewidth),
+        LineElement(; label=h_gen_front.label, linestyle=:solid, color=h_gen_front.color, linewidth=h_gen_front.linewidth),
+    ]
+    Legend(f[2, :], elems, MISTStyle.label.(elems);
+        tellheight=true, tellwidth=true,
         orientation=:horizontal,
     )
 

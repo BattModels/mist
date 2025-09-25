@@ -49,6 +49,7 @@ include("creativity.jl")
 include("collate.jl")
 include("sqlite.jl")
 include("pareto.jl")
+include("odor.jl")
 include("xyz.jl")
 
 function canonicalize(smi::String)

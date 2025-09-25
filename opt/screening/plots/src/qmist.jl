@@ -43,7 +43,7 @@ function merge_qmist_results(qmist::DataFrame, ref::DataFrame)
     return df, cols
 end
 
-figure_parity(args...; kwargs...) = figure_parity!(Figure(; size=(3.42inch, 3inch)), args...; kwargs...)
+figure_parity(args...; kwargs...) = figure_parity!(Figure(; size=(5inch, 4inch)), args...; kwargs...)
 function figure_parity!(f, df::DataFrame, cols::Vector{String}; ref="_qm9", other="_qmist", label::Union{Pair{String,String},Nothing}=nothing)
     nrow = floor(Int, sqrt(length(cols)))
     ncol = ceil(Int, length(cols) / nrow)
