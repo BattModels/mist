@@ -10,7 +10,7 @@ from lightning.pytorch.loggers import WandbLogger
 from ..utils.metrics import get_metrics, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
-from .physics_task_heads import VFTTaskHeadWithDecay
+from .physics_task_heads import VFTTaskHead
 
 
 class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
@@ -58,9 +58,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 assert (
                     self.encoder.config.vocab_size == vocab_size
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
-        self.task_network = VFTTaskHeadWithDecay(
-            embed_dim=self.encoder.config.hidden_size
-        )
+        self.task_network = VFTTaskHead(embed_dim=self.encoder.config.hidden_size)
         self.lossfn = torch.nn.MSELoss(reduction="mean")
 
         metrics = get_metrics(
@@ -81,7 +79,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 attention_mask=batch[f"attention_mask_{i}"],
                 return_dict=True,
                 output_hidden_states=True,
-            ).last_hidden_state.mean(axis=1)
+            ).last_hidden_state[:, 0, :]
 
             embedding = torch.stack(
                 [
