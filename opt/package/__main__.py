@@ -15,6 +15,7 @@ import typer
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
+from electrolyte_fm.models.model_utils import DeepSpeedMixin
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 import utils
@@ -80,6 +81,26 @@ def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     utils.export_code(save_dir, model, model.transform, model.task_network)
     utils.save_model(model, save_dir, safe)
     shutil.move(Path(save_dir, "prod_finetune.py"), Path(save_dir, "model.py"))
+    logging.info("Saved model to %s", save_dir)
+    utils.create_tar_gz(save_dir)
+
+
+@cli.command()
+def mixtures(ckpt: Path, name: Optional[str] = None, safe: bool = True):
+    """Export a mixture model"""
+    if Path(ckpt).joinpath("config.json").is_file():
+        ckpt = get_best_ckpt(ckpt)
+
+    model = DeepSpeedMixin.load(ckpt)
+
+    name = utils.name_model(
+        model,
+        template=name or "mist-{model_size}-{ckpt}",
+        ckpt=ckpt_id(ckpt),
+    )
+    save_dir = create_save_directory(name, ckpt)
+    utils.export_code(save_dir, model, model.transform, model.task_network)
+    utils.save_model(model, save_dir, safe)
     logging.info("Saved model to %s", save_dir)
     utils.create_tar_gz(save_dir)
 
