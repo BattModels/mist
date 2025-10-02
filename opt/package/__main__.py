@@ -16,10 +16,11 @@ import typer
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
 from electrolyte_fm.models.model_utils import DeepSpeedMixin
+from electrolyte_fm.models.prod_finetune import save_model
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 import utils
-from utils import get_best_ckpt, create_save_directory, ckpt_id
+from utils import get_best_ckpt, create_save_directory, ckpt_id, save_tokenizer
 
 cli = typer.Typer()
 
@@ -92,15 +93,26 @@ def mixtures(ckpt: Path, name: Optional[str] = None, safe: bool = True):
         ckpt = get_best_ckpt(ckpt)
 
     model = DeepSpeedMixin.load(ckpt)
-
     name = utils.name_model(
         model,
         template=name or "mist-{model_size}-{ckpt}",
         ckpt=ckpt_id(ckpt),
     )
     save_dir = create_save_directory(name, ckpt)
-    utils.export_code(save_dir, model, model.transform, model.task_network)
-    utils.save_model(model, save_dir, safe)
+
+    # Some mixture model classes don't have a transform
+    if hasattr(model, "transform"):
+        utils.export_code(save_dir, model, model.transform, model.task_network)
+    else:
+        utils.export_code(save_dir, model, model.task_network)
+
+    config = json.loads(Path(ckpt.parent.parent, "config.json").read_text())
+
+    if hasattr(model, "tokenizer"):
+        save_tokenizer(save_dir, model.tokenizer)
+
+    Path(save_dir, "config.json").write_text(json.dumps(config, indent=4))
+    save_model(model, save_dir, safe_serialization=True)
     logging.info("Saved model to %s", save_dir)
     utils.create_tar_gz(save_dir)
 

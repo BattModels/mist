@@ -25,8 +25,6 @@ def get_best_ckpt(ckpt_dir: Path) -> Path:
     best = None
     CKPT_REGEX = re.compile(r".*step=(\d+?)-val_loss=([\d\.]+?)\.ckpt")
     for ckpt in Path(ckpt_dir, "checkpoints").iterdir():
-        if not ckpt.is_dir():
-            continue
         if m := CKPT_REGEX.match(ckpt.name):
             step = int(m.group(1))
             loss = float(m.group(2))
