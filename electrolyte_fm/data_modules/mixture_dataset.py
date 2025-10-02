@@ -97,6 +97,7 @@ class ComponentDataModule(LightningDataModule):
         self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
+        self.hparams["vocab_size"] = self.vocab_size
         self.save_hyperparameters(logger=False)
         self.data_collator = DataCollatorWithPadding(
             self.tokenizer, max_length=max_length, padding="max_length"
@@ -171,6 +172,8 @@ class ComponentDataModule(LightningDataModule):
 
     def collator(self, batch):
         output = {}
+        for i in range(self.n_components):
+            output[f"smi{i+1}"] = [x[f"smi{i+1}"] for x in batch]
 
         for i in range(self.n_components):
             output[f"input_ids_{i}"] = torch.stack(
