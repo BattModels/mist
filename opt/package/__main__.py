@@ -15,8 +15,6 @@ import typer
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
-from electrolyte_fm.models.model_utils import DeepSpeedMixin
-from electrolyte_fm.models.prod_finetune import save_model
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 import utils
@@ -86,33 +84,43 @@ def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     utils.create_tar_gz(save_dir)
 
 
+def export_conductivity(ckpt: Path):
+    from electrolyte_fm.models import MISTIonicConductivity
+
+    model = SaveConfigWithCkpts.load(ckpt)
+    model_config = json.loads(ckpt.parent.parent.joinpath("config.json").read_text())
+    tokenizer_name = model_config["data"]["init_args"]["tokenizer"]
+    tokenizer = load_tokenizer(tokenizer_name)
+    return MISTIonicConductivity(
+        model.encoder,
+        model.task_network,
+        tokenizer=tokenizer,
+        n_components=model_config["model"]["init_args"]["n_components"],
+    )
+
+
 @cli.command()
-def mixtures(ckpt: Path, name: Optional[str] = None, safe: bool = True):
-    """Export a mixture model"""
+def conductivity(ckpt: Path, name: Optional[str] = None, safe: bool = True):
+    """Export a mixture conductivity model"""
+
     if Path(ckpt).joinpath("config.json").is_file():
         ckpt = get_best_ckpt(ckpt)
+    model = export_conductivity(ckpt)
 
-    model = DeepSpeedMixin.load(ckpt)
     name = utils.name_model(
         model,
-        template=name or "mist-{model_size}-{ckpt}",
+        template=name or "mist-conductivity-{model_size}-{ckpt}",
         ckpt=ckpt_id(ckpt),
     )
+
     save_dir = create_save_directory(name, ckpt)
-
-    # Some mixture model classes don't have a transform
-    if hasattr(model, "transform"):
-        utils.export_code(save_dir, model, model.transform, model.task_network)
-    else:
-        utils.export_code(save_dir, model, model.task_network)
-
-    config = json.loads(Path(ckpt.parent.parent, "config.json").read_text())
-
+    utils.export_code(save_dir, model, model.task_network)
     if hasattr(model, "tokenizer"):
         save_tokenizer(save_dir, model.tokenizer)
-
-    Path(save_dir, "config.json").write_text(json.dumps(config, indent=4))
-    save_model(model, save_dir, safe_serialization=True)
+    model.save_pretrained(save_dir, safe_serialization=safe)
+    # Validate
+    model.__class__.from_pretrained(save_dir)
+    shutil.move(Path(save_dir, "prod_mixture.py"), Path(save_dir, "model.py"))
     logging.info("Saved model to %s", save_dir)
     utils.create_tar_gz(save_dir)
 
