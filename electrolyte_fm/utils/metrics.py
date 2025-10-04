@@ -443,12 +443,8 @@ class OrthoProcrustes(Metric):
         self.add_state("distance", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
 
-    def __init__(self, *args, threshold: Optional[int] = None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.threshold = threshold
-
     def compute(self):
-       return self.distance / self.total
+        return self.distance / self.total
 
     def update(self, preds: torch.Tensor, targets: torch.Tensor):
         dists = self.procrustes_disparity(preds, targets)

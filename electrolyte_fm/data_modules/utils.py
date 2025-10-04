@@ -126,7 +126,7 @@ def stack_columns(batch, columns: list[str], output: str, dtype=None):
     if dtype is None:
         convert = torch.tensor
     else:
-        convert = lambda x: torch.tensor(x, dtype=dtype)
+        convert = lambda x: torch.tensor(x, dtype=dtype)  # noqa: E731
     return {output: [convert([batch[col][i] for col in columns]) for i in range(n)]}
 
 
