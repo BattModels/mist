@@ -22,7 +22,7 @@ function plot_mae!(f, df, target, units)
         :smi2 => ByRow(Mixtures.label_functional_groups) => :fg2,
     )
     transform!(df, [target, "$(target)_ref"] => ByRow(-) => target)
-    
+
     fg = unique(Iterators.flatten(df.fg1))
     union!(fg, Iterators.flatten(df.fg2))
     pairs = Matrix{Float32}(undef, length(fg), length(fg))
@@ -94,7 +94,7 @@ function plot_mae!(f, df, target, units)
     mask = fill(NaN, length(fg), length(fg))
     triu!(mask, 1)
 
-    
+
 
     cb = Colorbar(f[1, 5];
         colormap=MISTStyle.CONTINUOUS_COLORS,

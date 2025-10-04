@@ -138,9 +138,9 @@ def check_mixture_batch(dm: ComponentDataModule, batch: dict):
 
     comp_sum = batch["composition"].sum(axis=1)
     assert comp_sum.shape == (dm.batch_size,)
-    assert torch.allclose(comp_sum, torch.ones(dm.batch_size).to(comp_sum)), (
-        f"Composition sums to 1: {comp_sum}"
-    )
+    assert torch.allclose(
+        comp_sum, torch.ones(dm.batch_size).to(comp_sum)
+    ), f"Composition sums to 1: {comp_sum}"
 
     if dm.temperature_column is not None:
         assert batch["temperature"].shape == (dm.batch_size,)

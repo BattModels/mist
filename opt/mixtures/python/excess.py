@@ -33,9 +33,9 @@ class MixtureDataset(IterableDataset):
             temperature = mixture.get("temperature", 293.15)
             if n_compounds is None:
                 n_compounds = len(compounds)
-            assert len(compounds) == n_compounds, (
-                "Number of compounds must be consistent"
-            )
+            assert (
+                len(compounds) == n_compounds
+            ), "Number of compounds must be consistent"
             obs = {
                 "compounds": compounds,
                 "temperature": torch.tensor(temperature),
