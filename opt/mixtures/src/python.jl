@@ -1,6 +1,7 @@
 clean_target_name(x::String) = replace((strip∘first∘split)(x, "["), " " => "_")
 
 load_excess_model(ckpt) = pyexcess[].load_excess_model(ckpt)
+load_conductivity_model(ckpt) = pyionic[].load_conductivity_model(ckpt)
 
 function evaluate_mixtures(model::Py, mixtures::Vector{<:Dict}; kwargs...)
     pymixtures = map(mixtures) do mixture
@@ -85,4 +86,41 @@ function label_functional_groups(smi::String)
     pyfg = PythonCall.@pyconst pyimport("electrolyte_fm.interpretibility.functional_groups")
     groups = pyconvert(Vector{String}, pyfg.identify_functional_groups(smi))
     length(groups) == 0 ? ["Other"] : groups
+end
+
+
+function evaluate_conductivity(model::Py, mixtures::Vector{<:Dict}; kwargs...)
+    pymixtures = map(mixtures) do mixture
+        PythonCall.pydict(;
+            solvents=PythonCall.pylist(mixture["solvents"]),
+            salt=mixture["salt"],
+            temperature=mixture["temperature"],
+        )
+    end
+    return evaluate_conductivity(model, pymixtures; kwargs...)
+end
+
+function evaluate_conductivity(model::Py, compounds::String...; temperature::Real=298.15, kwargs...)
+    evaluate_conductivity(model, [Dict("solvents" => solvents, "salt" => salt,  "temperature" => temperature)]; kwargs...)
+end
+
+function evaluate_conductivity(model::Py, mixtures::Union{Py, Vector{Py}}; n = 20)
+    rows = map(pyionic[].evaluate_mixtures(model, mixtures; n)) do row
+        row = pyconvert(Dict{String, Union{Float64, String, Vector}}, row)
+        out = Dict(
+            "components" => row["components"],
+            "composition" => row["composition"],
+            "temperature" => row["temperature"],
+        )
+
+        out["conductivity"] = row["conductivity"]
+        out["ln_A"] = row["ln_A"]
+        out["Ea"] = row["Ea"]
+        out["Tg"] = row["Tg"]
+        out["alpha"] = row["alpha"]
+        out["beta"] = row["beta"]
+        out["lmbda"] = row["lmbda"]
+        return out
+    end
+    return DataFrame(rows)
 end
