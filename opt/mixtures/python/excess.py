@@ -154,7 +154,7 @@ def generate_simplex_grid(n, grid_size):
     """
     grid_values = (i / grid_size for i in range(grid_size + 1))
 
-    # Generate all combinations of grid values for the n-1 dimensions
+    # Generate all combinations of grid values for the n dimensions
     grid_combinations = itertools.product(grid_values, repeat=n - 1)
 
     # For each combination, scale it such that the sum of the coordinates is 1
@@ -272,23 +272,27 @@ def evaluate(model: ExcessPhysicsModel, dataloader, gradients: bool = False):
             yield out
 
 
-if __name__ == "__main__":
-    dataset = "/Users/alexwadell/electrolyte-fm/mixtures/excess_dataset_v5/random"
-    name_or_path = (
-        "~/Downloads/z8ido8hw/checkpoints/epoch=61-step=2232-val_loss=1.232.ckpt"
-    )
-    model = load_excess_model(name_or_path)
-    for out in evaluate_binary_csv(
-        model,
-        "/Users/alexwadell/Documents/repos/excess_density/excess_v5.csv",
-        gradients=True,
-    ):
-        print(out)
+# if __name__ == "__main__":
+#     dataset = "/Users/alexwadell/electrolyte-fm/mixtures/excess_dataset_v5/random"
+#     name_or_path = (
+#         "~/Downloads/z8ido8hw/checkpoints/epoch=61-step=2232-val_loss=1.232.ckpt"
+#     )
+#     model = load_excess_model(name_or_path)
+#     for out in evaluate_binary_csv(
+#         model,
+#         "/Users/alexwadell/Documents/repos/excess_density/excess_v5.csv",
+#         gradients=True,
+#     ):
+#         print(out)
 
-    mixtures = [
-        {"compounds": ["CC#N", "CCCO"], "temperature": 293.15},
-        {"compounds": ["CC#N", "CO"], "temperature": 293.15},
-        {"compounds": ["CC#N", "CCCCCCCCCCO"], "temperature": 293.15},
-    ]
-    for out in evaluate_mixtures(model, mixtures, gradients=True):
-        print(out)
+#     mixtures = [
+#         {"compounds": ["CC#N", "CCCO"], "temperature": 293.15},
+#         {"compounds": ["CC#N", "CO"], "temperature": 293.15},
+#         {"compounds": ["CC#N", "CCCCCCCCCCO"], "temperature": 293.15},
+#     ]
+#     for out in evaluate_mixtures(model, mixtures, gradients=True):
+#         print(out)
+
+if __name__ == "__main__":
+    for comp in generate_simplex_grid(4, 5):
+        print(comp)
