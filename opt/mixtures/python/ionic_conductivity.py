@@ -35,6 +35,19 @@ def generate_simplex_grid(n, grid_size, fixed_last=None):
             raise ValueError(f"fixed_last={fixed_last} maps to k={k}, expected 0..{g}")
 
         target_sum = g - k
+
+        # Degenerate slice: salt = 1.0 -> only one point
+        if target_sum == 0:
+            yield [*(0.0 for _ in range(n - 1)), k / g]
+            return
+
+        # edge vertices first
+        # one solvent takes all remaining fraction, others 0
+        for i in range(n - 1):
+            counts = [0] * (n - 1)
+            counts[i] = target_sum
+            yield [*(c / g for c in counts), k / g]
+
         # Enumerate only solvent counts summing to target_sum
         # (n-1 solvents; last coord is fixed to k/g)
         for counts in itertools.product(range(target_sum + 1), repeat=n - 1):
@@ -166,8 +179,7 @@ def evaluate(model, dataloader):
             out["temperature"] = batch["temperature"][bdx].item()
             for target in targets:
                 out[target] = output[target][bdx].tolist()
-        # print(out)
-        yield out
+            yield out
 
 
 def load_conductivity_model(ckpt):
@@ -235,5 +247,5 @@ if __name__ == "__main__":
         },
     ]
     # print(evaluate_at_composition(model, mixtures[0], [0.9, 0, 0, 0.1]))
-    for out in evaluate_mixtures(model, mixtures, fixed_salt=0.1):
+    for out in evaluate_mixtures(model, mixtures, n=5, fixed_salt=0.1):
         print(out["composition"])

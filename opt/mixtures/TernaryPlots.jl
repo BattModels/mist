@@ -1,4 +1,5 @@
 using DelaunayTriangulation
+DelaunayTriangulation.toggle_warn_on_dupes!()
 using Statistics: mean
 
 """
@@ -16,23 +17,20 @@ visualized with color. Components will be automatically normalized so that a + b
         colorrange = Makie.automatic,
         show_triangle = true,
         triangle_color = :black,
-        triangle_linewidth = 2,
-        show_grid = false,
-        grid_color = (:gray, 0.3),
-        grid_linestyle = :dash,
+        triangle_linewidth = 1,
+        show_grid = true,
+        grid_color = (:black, 0.7),
+        grid_linestyle = :solid,
         grid_steps = 5,
         label_a = "A",
         label_b = "B",
         label_c = "C",
-        label_fontsize = 16,
-        label_offset = 25,
+        label_offset = 0,
         show_axis_labels = true,
-        axis_label_fontsize = 12,
-        axis_label_offset = 15,
+        axis_label_offset = 2,
         axis_ticks = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
         show_ticks = true,
-        tick_fontsize = 10,
-        interpolate = true,  # If true, interpolate colors across triangles
+        interpolate = true,
     )
 end
 
@@ -68,17 +66,12 @@ function Makie.plot!(plt::Ternary)
         tri_points = [points[i], points[j], points[k]]
 
         if plt.interpolate[]
-            # Use vertex colors for interpolation
             tri_colors = [values[i], values[j], values[k]]
-            # Note: Makie's poly doesn't support per-vertex colors directly
-            # Use mean color as approximation
             tri_value = mean(tri_colors)
         else
-            # Use mean value
             tri_value = mean([values[i], values[j], values[k]])
         end
 
-        # Plot filled triangle
         poly!(plt, tri_points,
               color = tri_value,
               colormap = plt.colormap,
@@ -86,7 +79,7 @@ function Makie.plot!(plt::Ternary)
               strokewidth = 0)
     end
 
-    # Plot the triangle boundary if requested
+    # Plot the triangle boundary
     if plt.show_triangle[]
         corners = [Point2(0.0, 0.0), Point2(1.0, 0.0), Point2(0.5, √3/2), Point2(0.0, 0.0)]
         lines!(plt, corners,
@@ -94,14 +87,14 @@ function Makie.plot!(plt::Ternary)
                linewidth = plt.triangle_linewidth)
     end
 
-    # Add grid lines if requested
+    # Add grid lines
     if plt.show_grid[]
         n_steps = plt.grid_steps[]
         for i in 1:(n_steps-1)
             val = i / n_steps
 
             # Lines parallel to bottom edge (constant C)
-            p1 = Point2(0.5 * (2 * (1-val) + 0), (√3/2) * val)
+            p1 = Point2(0.5 * (2 * (1-val) + val), (√3/2) * val)
             p2 = Point2(0.5 * (2 * 0 + val), (√3/2) * val)
             lines!(plt, [p1, p2],
                    color = plt.grid_color,
@@ -115,70 +108,76 @@ function Makie.plot!(plt::Ternary)
                    linestyle = plt.grid_linestyle)
 
             # Lines parallel to right edge (constant A)
-            p1 = Point2(0.5 * (2 * 0 + val), (√3/2) * val)
-            p2 = Point2(0.5 * (2 * (1-val) + val), (√3/2) * val)
+            p1 = Point2(0.5 * (1 - val), (√3/2) * (1 - val))
+            p2 = Point2(1.0 - val,       0.0)
             lines!(plt, [p1, p2],
                    color = plt.grid_color,
                    linestyle = plt.grid_linestyle)
         end
     end
 
-    # Add corner labels
-    text!(plt, 0.0, 0.0,
-          text = plt.label_a[],
-          align = (:center, :top),
-          offset = (0, -plt.label_offset[]),
-          fontsize = plt.label_fontsize[])
-
-    text!(plt, 1.0, 0.0,
-          text = plt.label_b[],
-          align = (:center, :top),
-          offset = (0, -plt.label_offset[]),
-          fontsize = plt.label_fontsize[])
-
-    text!(plt, 0.5, √3/2,
-          text = plt.label_c[],
-          align = (:center, :bottom),
-          offset = (0, plt.label_offset[]),
-          fontsize = plt.label_fontsize[])
-
-    # Add tick labels along each axis if requested
     if plt.show_ticks[]
         ticks = plt.axis_ticks[]
-        tick_fs = plt.tick_fontsize[]
 
-        for t in ticks[2:end-1]  # Skip 0 and 1 (corners)
-            # Bottom edge ticks (A to B, showing B values)
-            x_bottom = t
-            y_bottom = 0.0
-            text!(plt, x_bottom, y_bottom,
-                  text = string(round(t, digits=1)),
-                  align = (:center, :top),
-                  offset = (0, -5),
-                  fontsize = tick_fs)
+        for t in ticks
 
-            # Left edge ticks (A to C, showing C values)
-            x_left, y_left = ternary_to_cartesian(1-t, 0, t)
-            text!(plt, x_left, y_left,
-                  text = string(round(t, digits=1)),
-                  align = (:right, :center),
-                  offset = (-5, 0),
-                  fontsize = tick_fs)
+            x_bottom, y_bottom = ternary_to_cartesian(1 - t, t, 0)
+            text!(plt, x_bottom, y_bottom;
+                    text = string(round(t, digits=1)),
+                    align = (:center, :top),
+                    rotation =  π/3,
+                    fontsize = 6pt,
+                    offset = (0, -4pt))
 
-            # Right edge ticks (B to C, showing A values)
-            x_right, y_right = ternary_to_cartesian(1-t, t, 0)
-            text!(plt, x_right, y_right,
-                  text = string(round(t, digits=1)),
-                  align = (:left, :center),
-                  offset = (5, 0),
-                  fontsize = tick_fs)
+            x_left, y_left = ternary_to_cartesian(1 - t, 0, t)
+            text!(plt, x_left, y_left;
+                    text = string(round(1- t, digits=1)),
+                    rotation = -π/3,
+                    align = (:center, :center),
+                    fontsize = 6pt,
+                    offset = (-6pt, 4pt))
+
+            x_right, y_right = ternary_to_cartesian(0, 1 - t, t)
+            text!(plt, x_right, y_right;
+                    text = string(round(t, digits=1)),
+                    align = (:left, :center),
+                    rotation = 0,
+                    fontsize = 6pt,
+                    offset = (2pt, 2pt))
         end
     end
 
+    if plt.show_axis_labels[]
+        off = plt.axis_label_offset[]
+
+        xb, yb = ternary_to_cartesian(0.5, 0.5, 0.0)
+        text!(plt, xb, yb;
+            text = plt.label_b[],
+            align = (:center, :top),
+            fontsize=7pt,
+            rotation = 0.0,
+            offset = (0, -9pt))
+
+        xl, yl = ternary_to_cartesian(0.5, 0.0, 0.5)
+        text!(plt, xl, yl;
+            text = plt.label_a[],
+            align = (:center, :center),
+            fontsize=7pt,
+            rotation = π/3,
+            offset = (-22pt, 2pt))
+
+        xr, yr = ternary_to_cartesian(0.0, 0.5, 0.5)
+        text!(plt, xr, yr;
+            text = plt.label_c[],
+            align = (:center, :center),
+            fontsize=7pt,
+            rotation = -π/3,
+            offset = (22pt, 2pt)
+        )
+    end
     return plt
 end
 
-# Helper function for coordinate conversion (used for tick placement)
 function ternary_to_cartesian(a, b, c)
     x = 0.5 * (2b + c)
     y = (√3 / 2) * c

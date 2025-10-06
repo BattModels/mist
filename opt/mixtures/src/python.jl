@@ -148,7 +148,7 @@ function evaluate_at_composition(model::Py, mixture::Py, composition::Py)
         temperature=mixture["temperature"],
     )
     pycomposition = PythonCall.pylist(composition)
-    pred = pyionic[].evaluate_at_composition(model, solvents, pycomposition)
+    pred = pyionic[].evaluate_at_composition(model, pymixture, pycomposition)
     pred = pyconvert(Dict{String,Any}, pred)
     out = Dict{String, Any}(
         "components" => pyconvert(Vector, pred["components"]),
