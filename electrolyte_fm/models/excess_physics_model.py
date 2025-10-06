@@ -571,7 +571,7 @@ if __name__ == "__main__":
     from electrolyte_fm.models.excess_physics_model import ExcessPhysicsConfig
     from electrolyte_fm.utils.lr_schedule import RelativeCosineWarmup
 
-    from ..data_modules.mixture_dataset import ComponentDataModule
+    from ..data_modules.mixture_dataset import ComponentDataModuleFast
 
     parser = ArgumentParser()
     parser.add_argument("--config", type=str, default=None, required=False)
@@ -641,7 +641,7 @@ if __name__ == "__main__":
     config["model"] = model.config.to_dict()
 
     config["data"]["target_columns"] = model.config.target_columns
-    dm = ComponentDataModule(**config["data"])
+    dm = ComponentDataModuleFast(**config["data"])
 
     lit = ExcessPhysicsLightningModel(
         model=model,

@@ -6,9 +6,6 @@ from pathlib import Path
 
 from smirk import SmirkTokenizerFast
 
-from electrolyte_fm.data_modules.mixture_dataset import (
-    ComponentDataModule,
-)
 from transformers import DataCollatorWithPadding
 from torch.utils.data import IterableDataset
 from electrolyte_fm.models.prod_mixture import MISTIonicConductivity

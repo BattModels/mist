@@ -11,7 +11,7 @@ from electrolyte_fm.models.excess_physics_model import (
 )
 from electrolyte_fm.data_modules.utils import MolEncoding, collate_target
 from electrolyte_fm.data_modules.mixture_dataset import (
-    ComponentDataModule,
+    ComponentDataModuleFast,
     encode_and_tokenize_mixture,
 )
 from transformers import DataCollatorWithPadding
@@ -187,7 +187,7 @@ def evaluate_binary_csv(model: ExcessPhysicsModel, path: str | Path, **kwargs):
 
 def evaluate_dataset(model: ExcessPhysicsModel, path, **kwargs):
     assert Path(path).exists()
-    dm = ComponentDataModule(
+    dm = ComponentDataModuleFast(
         path,
         batch_size=16,
         target_columns=model.config.target_columns,

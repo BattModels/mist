@@ -10,7 +10,7 @@ from smirk import SmirkTokenizerFast
 from transformers import DataCollatorWithPadding
 
 from electrolyte_fm.data_modules.mixture_dataset import (
-    ComponentDataModule,
+    ComponentDataModuleFast,
     encode_and_tokenize_mixture,
 )
 from electrolyte_fm.data_modules.utils import MolEncoding
@@ -100,7 +100,7 @@ def tmp_dataset(tmp_path_factory):
     ]
 )
 def datamodule(request, tmp_dataset):
-    dm = ComponentDataModule(
+    dm = ComponentDataModuleFast(
         path=str(tmp_dataset),
         target_columns=["propA", "propB"],
         batch_size=8,
@@ -116,7 +116,7 @@ def datamodule(request, tmp_dataset):
     return dm
 
 
-def check_mixture_batch(dm: ComponentDataModule, batch: dict):
+def check_mixture_batch(dm: ComponentDataModuleFast, batch: dict):
     assert batch["target"].shape == (dm.batch_size, len(dm.target_columns))
     assert batch["target"].dtype == torch.float32
     assert batch["target_mask"].shape == (dm.batch_size, len(dm.target_columns))
@@ -239,7 +239,7 @@ def test_dataloader_iteration(datamodule):
                 break
 
 
-def test_sparsity_weights(datamodule: ComponentDataModule):
+def test_sparsity_weights(datamodule: ComponentDataModuleFast):
     columns = ["target_mask"]
     if datamodule.excess_columns is not None:
         columns.append("target_excess_mask")
