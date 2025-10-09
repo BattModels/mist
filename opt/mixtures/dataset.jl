@@ -105,7 +105,7 @@ end
 function mixture_dataset(df)
     prop_columns = ["Density", "Molar Volume", "Molar Enthalpy"]
 
-    f = Figure(; size=(4.5inch, 3inch))
+    f = Figure(; size=(180mm, 100mm))
     plot_mixture_properties!(f[1, 1:2], df, prop_columns)
     Label(f[1, 1, Left()];
         text=L"$\ln$ Examples",
@@ -137,7 +137,7 @@ function mixture_dataset(df)
     return f
 end
 
-function dataset_stats(df, prop_columns)
+function dataset_stats(df)
     compounds = unique(Iterators.flatten([df.smi1, df.smi2]))
     @info "Number of compounds" length(compounds)
 
