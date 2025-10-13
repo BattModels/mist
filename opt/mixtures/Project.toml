@@ -6,6 +6,7 @@ version = "0.1.0"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
+Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DelaunayTriangulation = "927a84f5-c5f4-47a5-9785-b46e178433df"
 FStrings = "1e2663ae-5621-49ef-9c0a-672f85872094"
@@ -25,6 +26,7 @@ MISTStyle = {path = "../MISTStyle"}
 
 [compat]
 ColorSchemes = "3.31.0"
+Combinatorics = "1.0.3"
 DelaunayTriangulation = "1.6.4"
 FStrings = "0.1.2"
 Interpolations = "0.15.1"
