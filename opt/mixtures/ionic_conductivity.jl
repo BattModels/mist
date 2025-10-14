@@ -12,7 +12,7 @@ using Combinatorics
 using CategoricalArrays: categorical, levelcode
 
 const DATA_DIR = realpath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
-const similarity_data = JSON.parsefile("solvent_rematch.json")
+const similarity_data = JSON.parsefile(joinpath(DATA_DIR, "mixtures", "solvent_rematch.json"))
 const solvents = [
     ["CC1COC(=O)O1", "O=C1OCCO1", "O=C1OCC(F)O1"],
     ["CC1COC(=O)O1", "CCOC(=O)OCC", "O=C1OCC(F)O1"],
@@ -36,79 +36,6 @@ function label_smi(smi::AbstractString)
     return get(known, smi, smi)
 end
 
-function get_similarity(smiles1::AbstractString, smiles2::AbstractString)
-
-    key1 = "$(smiles1)_$(smiles2)"
-    key2 = "$(smiles2)_$(smiles1)"
-
-    if haskey(similarity_data, key1)
-        return similarity_data[key1]
-    elseif haskey(similarity_data, key2)
-        return similarity_data[key2]
-    else
-        return nothing
-    end
-end
-
-function weighted_ternary_similarity(solvent_list, compositions)
-    weighted_sum = 0.0
-
-    for i in 1:length(solvent_list)
-        for j in (i+1):length(solvent_list)
-            sim = get_similarity(solvent_list[i], solvent_list[j])
-            weighted_sum += (compositions[i] + compositions[j]) * sim
-        end
-    end
-
-    return weighted_sum
-end
-
-function calculate_excess(model, mixture::Dict, salt_comp::Float64, n::Integer)
-
-    df = Mixtures.evaluate_conductivity(model, [mixture]; n = n, fixed_salt = salt_comp)
-
-    comp_matrix = reduce(hcat, df.composition)'
-    # Update salt composition to account for discretization
-    salt_comp = first(comp_matrix[:, 4])
-    pure_solvent_param = Dict(
-        "Ea" => zeros(Float64, 3),
-        "Tg" => zeros(Float64, 3),
-    )
-    pure_solvent_comp = 1 - salt_comp
-
-    for (idx, solvent) in enumerate(mixture["solvents"])
-        comp = zeros(4)
-        comp[idx] = pure_solvent_comp
-        comp[4] = salt_comp
-        preds = Mixtures.evaluate_at_composition(model, mixture, comp)
-        pure_solvent_param["Ea"][idx] = preds["Ea"]
-        pure_solvent_param["Tg"][idx] = preds["Tg"]
-    end
-
-
-    solvent_comps = comp_matrix[:, 1:3]
-    solvent_fractions = solvent_comps ./ sum(solvent_comps, dims = 2)
-    for parameter in ["Ea", "Tg"]
-        pure_solvent_values = pure_solvent_param[parameter]
-        df[!, "ideal_mixing_$(parameter)"] = solvent_fractions * pure_solvent_values
-        df[!, "excess_$(parameter)"] = df[!, parameter] .- df[!, "ideal_mixing_$(parameter)"]
-        df[!, "relative_excess_$(parameter)"] = abs.(df[!, "excess_$(parameter)"] ./ df[!, parameter])
-        @assert sum(abs.(collect(df[1:4, "excess_$(parameter)"]))) < 1e-3 "Zero excess for expected degenerate case"
-    end
-    return df
-end
-
-function conductivity_composition_curve(model, mixture; n = 50)
-    x1 = 1.0
-    x2 = 0.0
-    x3 = 0.0
-    composition = range(0.02, stop = 0.20, length = n)
-    conductivity = [
-        Mixtures.evaluate_at_composition(model, mixture, [x1 - x, x2, x3, x])["conductivity"] for x in
-                                                                                                  composition
-    ]
-    return composition, conductivity
-end
 
 function plot_composition_curves(model, solvent)
 
@@ -136,7 +63,7 @@ function plot_composition_curves(model, solvent)
             "temperature" => T,
             "salt" => [salt, "[Li+]"],
         )
-        composition, conductivity = conductivity_composition_curve(model, mixture)
+        composition, conductivity = Mixtures.conductivity_composition_curve(model, mixture)
         lines!(
             ax,
             composition,
@@ -158,6 +85,7 @@ function plot_composition_curves(model, solvent)
     axislegend(ax, position = :rt, padding = (1, 1, 1, 1), margin = (1, 1, 1, 1), unique = true)
     return f
 end
+
 
 function plot_composition_curves()
 
@@ -228,7 +156,7 @@ function plot_delta_Ea(model)
     temperatures = [260, 280, 300, 320, 340]
     salt_comps = range(start = 0.05, stop = 0.2, length = 5)
 
-    fig = Figure(size = (95mm, 100mm), figure_padding = (2, 2, 2, 2))
+    fig = Figure(size = (90mm, 120mm), figure_padding = (5, 5, 5, 5))
     cb = Colorbar(fig[length(solvents)+1, 1];
         label = L"$$Temperature [K]",
         colormap = MISTStyle.CONTINUOUS_COLORS, colorrange = extrema(temperatures),
@@ -237,7 +165,7 @@ function plot_delta_Ea(model)
 
     for (idx, solvent) in enumerate(solvents)
         ax = Axis(
-            fig[idx, 1],
+            fig[idx, 1], limits = (nothing, (0.0, nothing)),
             title = "$(label_smi(solvent[1])) | $(label_smi(solvent[2])) |  $(label_smi(solvent[3]))",
             xlabel = idx == length(solvents) ? L"$x_{Li^+}$" : "",
             ylabel = L"$\frac{E_{a,LiPF_6}}{T} - \frac{E_{a,LiTFSI}}{T}$",
@@ -245,7 +173,7 @@ function plot_delta_Ea(model)
             xticklabelsvisible = idx==length(solvents),
             titlesize = 6pt,
             xgridvisible = false,
-            ygridvisible = false,
+            ygridvisible = true,
         )
 
         all_data = calculate_delta_ea(model, solvent, temperatures, salts, salt_comps)
@@ -323,6 +251,7 @@ function plot_ternary_vft_parameter!(
 
 end
 
+
 function plot_ternary_vft_parameter(
     model, mixture::Dict; parameter::String = "Ea", excess::Bool = false, n::Integer = 64,
 )
@@ -334,10 +263,9 @@ function plot_ternary_vft_parameter(
 
     all_dfs = []
     for salt_comp in [0.05, 0.1, 0.15]
+        df = Mixtures.evaluate_conductivity(model, mixtures; n = n, fixed_salt = salt_comp)
         if excess
-            df = calculate_excess(model, mixture, salt_comp, n)
-        else
-            df = Mixtures.evaluate_conductivity(model, mixtures; n = n, fixed_salt = salt_comp)
+            Mixtures.calculate_excess!(df)
         end
         push!(all_dfs, df)
     end
@@ -389,6 +317,7 @@ function plot_ternary_vft_parameter(
     return fig
 end
 
+
 function plot_all_vft_ternaries()
     model_id = "mist-conductivity-27.0M-2mpg8dcd"
     model = Mixtures.load_conductivity_model(joinpath(DATA_DIR, "models", model_id)).to("mps")
@@ -414,6 +343,7 @@ function plot_all_vft_ternaries()
     return
 end
 
+
 function calculate_maximum_relative_excess(model, temperature, solvents)
     dfs = DataFrame[]
     for salt_comp in range(0.02, stop = 0.16, length = 8)
@@ -423,7 +353,8 @@ function calculate_maximum_relative_excess(model, temperature, solvents)
                 "temperature" => temperature,
                 "salt" => [salt, "[Li+]"],
             )
-            df = calculate_excess(model, mixture, salt_comp, 15)
+            df = Mixtures.evaluate_conductivity(model, [mixture]; n = 15, fixed_salt = salt_comp)
+            Mixtures.calculate_excess!(df)
             push!(dfs, df)
         end
     end
@@ -438,12 +369,13 @@ function calculate_maximum_relative_excess(model, temperature, solvents)
     return df_all
 end
 
+
 function plot_soap_similarity_correlation!(f, model, temperature)
 
-    xlabel = "ReMATCH Similarity"
-    ax_Ea = Axis(f[1, 1];
-        xlabel = xlabel, ylabel = L"max \left| \frac{E_a^{excess}}{E_a} \right|",)
-    ax_T0 = Axis(f[1, 2];
+    xlabel = "REMatch Similarity"
+    ax_Ea = Axis(f[1, 1]; limits = (nothing, (0.0, 0.18)),
+        xlabel = xlabel, ylabel = L"max \left| \frac{E_a^{excess}}{E_a} \right|")
+    ax_T0 = Axis(f[2, 1]; limits = (nothing, (0.0, 0.18)),
         xlabel = xlabel, ylabel = L"max \left| \frac{T_0^{excess}}{T_0} \right|",
     )
     axs = Dict(
@@ -462,7 +394,7 @@ function plot_soap_similarity_correlation!(f, model, temperature)
         solvent_nms = label_smi.(solvents)
         transform!(df,
             [:components, :composition] => ByRow((solv, comp) ->
-                weighted_ternary_similarity(collect(solv[1:3]), collect(comp[1:3]))
+                Mixtures.weighted_ternary_similarity(collect(solv[1:3]), collect(comp[1:3]), similarity_data)
             ) => :similarity,
         )
         push!(dfs, df)
@@ -470,43 +402,47 @@ function plot_soap_similarity_correlation!(f, model, temperature)
     df_all = vcat(dfs...)
     unique!(df_all, :components)
 
-    df_all[!, :solvent_label] .= map(row -> join(row[:components][1:3], ", "), eachrow(df_all))
+    df_all[!, :solvent_label] .= map(row -> join(label_smi.(row[:components][1:3]), ", "), eachrow(df_all))
     anion_labels = categorical([comp[4] for comp in df_all.components])
+    single_salt = unique(df_all, :solvent_label)
 
     for (idx, parameter) in enumerate(["Ea", "Tg"])
-        h = scatter!(axs[parameter], df_all.similarity, df_all[!, "maximum_abs_rel_excess_$(parameter)"];
+        h = scatter!(
+            axs[parameter], df_all.similarity, df_all[!, "maximum_abs_rel_excess_$(parameter)"];
             color = levelcode.(anion_labels),
             colormap = MISTStyle.CAT_COLORS,
-            colorrange=(1, 10),
-            marker=:circle,
-            alpha = 0.5,
+            colorrange = (1, 10),
+            marker = :circle,
+            alpha = 0.6,
         )
-        points = collect(zip(df_all.similarity, df_all[!, "maximum_abs_rel_excess_$(parameter)"]))
 
-        annotation!(axs[parameter], points, text = df_all.solvent_label)
+        points = collect(
+            zip(single_salt[idx:2:end, :similarity], single_salt[idx:2:end, "maximum_abs_rel_excess_$(parameter)"]),
+        )
+        annotation!(axs[parameter], points; text = single_salt[idx:2:end, :solvent_label], shrink = (0.0, 0.0))
 
         if idx == 1
             elements = map(enumerate(levels(anion_labels))) do (i, label)
                 MarkerElement(
-                    markersize=4pt,
-                    marker=h.marker,
-                    color=MISTStyle.CAT_COLORS[i],
-                    label=label_smi(label)
+                    markersize = 4pt,
+                    marker = h.marker,
+                    color = MISTStyle.CAT_COLORS[i],
+                    label = label_smi(label),
                 )
             end
 
             Legend(f[1, 1], elements, label.(elements);
-                labelsize=5pt,
-                tellheight=false,
-                tellwidth=false,
-                padding=(1, 1, 1, 1),
-                margin=(1, 1, 1, 1),
-                patchlabelgap=0,
-                rowgap=0,
-                colgap=0,
-                halign=:left,
-                valign=:bottom,
-                alignmode=Outside(),
+                labelsize = 5pt,
+                tellheight = false,
+                tellwidth = false,
+                padding = (1, 1, 1, 1),
+                margin = (1, 1, 1, 1),
+                patchlabelgap = 0,
+                rowgap = 0,
+                colgap = 0,
+                halign = :left,
+                valign = :bottom,
+                alignmode = Outside(),
             )
         end
     end
@@ -514,13 +450,14 @@ function plot_soap_similarity_correlation!(f, model, temperature)
     return f
 end
 
+
 function plot_soap_similarity_correlation()
     model_id = "mist-conductivity-27.0M-2mpg8dcd"
     model = Mixtures.load_conductivity_model(joinpath(DATA_DIR, "models", model_id)).to("mps")
-    fig = Figure(size = (150mm, 40mm), figure_padding = (2, 2, 2, 2))
-    for temperature in [260, 298, 330]
+    fig = Figure(size = (90mm, 120mm), figure_padding = (2, 2, 2, 2))
+    for temperature in [298] # 298, 330]
         fn_name = "soap_corr_T_$(temperature)"
-        with_theme(MISTStyle.theme()) do
+        with_theme(MISTStyle.theme(); fontsize = 1pt) do
             plot_soap_similarity_correlation!(fig, model, temperature)
         end |> MISTStyle.savefig(fn_name)
     end

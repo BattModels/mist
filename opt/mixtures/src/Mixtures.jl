@@ -21,6 +21,8 @@ end
 include("python.jl")
 include("skew.jl")
 include("dataset.jl")
+include("similarity.jl")
+include("vft_conductivity.jl")
 include("TernaryPlots.jl")
 
 end
