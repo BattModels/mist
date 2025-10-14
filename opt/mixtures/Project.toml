@@ -5,7 +5,11 @@ version = "0.1.0"
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
+ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
+Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DelaunayTriangulation = "927a84f5-c5f4-47a5-9785-b46e178433df"
+FStrings = "1e2663ae-5621-49ef-9c0a-672f85872094"
 Format = "1fa38f19-a742-5d3f-a2b9-30dd87b9d5f8"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
@@ -14,12 +18,19 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MISTStyle = "0a43f4a4-3db7-4939-b247-26273f54b603"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [sources]
 MISTStyle = {path = "../MISTStyle"}
 
 [compat]
+ColorSchemes = "3.31.0"
+Combinatorics = "1.0.3"
+DelaunayTriangulation = "1.6.4"
+FStrings = "0.1.2"
 Interpolations = "0.15.1"
 JSON = "0.21"
 LinearAlgebra = "1.11.0"
+Statistics = "1.10"
+StatsBase = "0.34.6"

@@ -1,6 +1,7 @@
 clean_target_name(x::String) = replace((strip∘first∘split)(x, "["), " " => "_")
 
 load_excess_model(ckpt) = pyexcess[].load_excess_model(ckpt)
+load_conductivity_model(ckpt) = pyionic[].load_conductivity_model(ckpt)
 
 function evaluate_mixtures(model::Py, mixtures::Vector{<:Dict}; kwargs...)
     pymixtures = map(mixtures) do mixture
@@ -85,4 +86,81 @@ function label_functional_groups(smi::String)
     pyfg = PythonCall.@pyconst pyimport("electrolyte_fm.interpretibility.functional_groups")
     groups = pyconvert(Vector{String}, pyfg.identify_functional_groups(smi))
     length(groups) == 0 ? ["Other"] : groups
+end
+
+
+function evaluate_conductivity(
+    model::Py,
+    mixtures::Vector{<:Dict};
+    n::Integer=20,
+    fixed_salt::Union{Nothing,Real}=nothing,
+    kwargs...)
+
+    pymixtures = map(mixtures) do mixture
+        PythonCall.pydict(;
+        solvents    = PythonCall.pylist(mixture["solvents"]),
+        salt        = PythonCall.pylist(mixture["salt"]),
+        temperature = mixture["temperature"],
+        )
+    end
+    return evaluate_conductivity(model, pymixtures; n=n, fixed_salt=fixed_salt, kwargs...)
+end
+
+function evaluate_conductivity(
+    model::Py,
+    mixtures::Union{Py, Vector{Py}};
+    n::Integer=20,
+    fixed_salt::Union{Nothing,Real}=nothing,
+    kwargs...)
+    rows = map(pyionic[].evaluate_mixtures(model, mixtures; n, fixed_salt)) do row
+        row_dict = pyconvert(Dict{String,Any}, row)
+        out = Dict{String, Any}(
+            "components" => pyconvert(Vector, row_dict["components"]),
+            "composition" => pyconvert(Vector, row_dict["composition"]),
+            "temperature" => pyconvert(Float64, row_dict["temperature"]),
+            "conductivity" => pyconvert(Float64, row_dict["conductivity"]),
+            "ln_A" => pyconvert(Float64, row_dict["ln_A"]),
+            "Ea" => pyconvert(Float64, row_dict["Ea"]),
+            "Tg" => pyconvert(Float64, row_dict["Tg"]),
+            "alpha" => pyconvert(Float64, row_dict["alpha"]),
+            "beta" => pyconvert(Float64, row_dict["beta"]),
+            "lmbda" => pyconvert(Float64, row_dict["lmbda"])
+        )
+        return out
+    end
+    return DataFrame(rows)
+end
+
+function evaluate_at_composition(model::Py, mixture::Dict, composition::Vector{Float64})
+    pymixture = PythonCall.pydict(;
+        solvents=PythonCall.pylist(mixture["solvents"]),
+        salt=PythonCall.pylist(mixture["salt"]),
+        temperature=mixture["temperature"],
+    )
+    pycomposition = PythonCall.pylist(composition)
+    return evaluate_at_composition(model, pymixture, pycomposition)
+end
+
+function evaluate_at_composition(model::Py, mixture::Py, composition::Py)
+    pymixture = PythonCall.pydict(;
+        solvents=PythonCall.pylist(mixture["solvents"]),
+        salt=PythonCall.pylist(mixture["salt"]),
+        temperature=mixture["temperature"],
+    )
+    pycomposition = PythonCall.pylist(composition)
+    pred = pyionic[].evaluate_at_composition(model, pymixture, pycomposition)
+    pred = pyconvert(Dict{String,Any}, pred)
+    out = Dict{String, Any}(
+        "components" => pyconvert(Vector, pred["components"]),
+        "composition" => pyconvert(Vector, pred["composition"]),
+        "temperature" => pyconvert(Float64, pred["temperature"]),
+        "conductivity" => pyconvert(Float64, pred["conductivity"]),
+        "ln_A" => pyconvert(Float64, pred["ln_A"]),
+        "Ea" => pyconvert(Float64, pred["Ea"]),
+        "Tg" => pyconvert(Float64, pred["Tg"]),
+        "alpha" => pyconvert(Float64, pred["alpha"]),
+        "beta" => pyconvert(Float64, pred["beta"]),
+        "lmbda" => pyconvert(Float64, pred["lmbda"])
+    )
+    return out
 end

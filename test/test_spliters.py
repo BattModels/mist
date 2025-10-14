@@ -115,11 +115,14 @@ def test_target_distribution(synthetic_data):
     train_idx, test_idx = next(splitter.split(X, y, groups))
     train_counts = Counter(y[train_idx])
     test_counts = Counter(y[test_idx])
-    # For each bitstring, the fraction in train/test should be within ±10% of overall
+    # For each bitstring, the fraction in train/test should be within ±20% of overall
+    tolerance = 0.20
     for bitstr, overall_count in overall_counts.items():
         overall_frac = overall_count / len(y)
         test_frac = test_counts.get(bitstr, 0) / len(test_idx)
-        assert abs(test_frac - overall_frac) < 0.5
+        train_frac = train_counts.get(bitstr, 0) / len(train_idx)
+        assert abs(test_frac - overall_frac) < tolerance
+        assert abs(train_frac - overall_frac) < tolerance
 
 
 def test_multiple_splits_randomness(synthetic_data):

@@ -1,3 +1,4 @@
+import asyncio
 from enum import Enum
 import random
 from typing import TypeVar
@@ -82,6 +83,19 @@ class MolEncoding(Enum):
         assert False, "Not Reachable, missing Enum Branch"
 
 
+def filter_invalid_smi(
+    ds: AbstractDataset, input_column: str, max_procs: int = 20, **kwargs
+) -> AbstractDataset:
+    sem = asyncio.Semaphore(max_procs)
+
+    async def is_valid(x: dict):
+        async with sem:
+            mol = Chem.MolFromSmiles(x[input_column])
+            return mol is not None
+
+    return ds.filter(is_valid, batched=False, **kwargs)
+
+
 def encode_molecules(
     ds: AbstractDataset,
     input_column: str,
@@ -112,7 +126,7 @@ def stack_columns(batch, columns: list[str], output: str, dtype=None):
     if dtype is None:
         convert = torch.tensor
     else:
-        convert = lambda x: torch.tensor(x, dtype=dtype)
+        convert = lambda x: torch.tensor(x, dtype=dtype)  # noqa: E731
     return {output: [convert([batch[col][i] for col in columns]) for i in range(n)]}
 
 

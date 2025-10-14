@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, Union
 
 import torch
+from numpy import geomspace
 from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.classification import (
@@ -14,6 +16,9 @@ from torchmetrics.regression import (
     MeanSquaredError,
     PearsonCorrCoef,
     R2Score,
+)
+from torchmetrics.regression.pearson import (
+    _final_aggregation as final_pearson_aggregation,
 )
 from torchmetrics.wrappers import BootStrapper
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper

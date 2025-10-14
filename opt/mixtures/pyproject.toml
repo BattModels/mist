@@ -8,6 +8,7 @@ dependencies = [
     "botorch>=0.15.1",
     "dataset>=1.6.2",
     "difftopk>=0.2.0",
+    "dscribe>=2.1.2",
     "electrolyte_fm",
     "h5py>=3.14.0",
     "matplotlib>=3.10.5",

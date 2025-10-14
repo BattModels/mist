@@ -25,7 +25,7 @@ functional_group_smarts = {
     "azo compound": "N=N",
     "thiol": "[SH]",
     "aqueous": "[OH2]",
-    "salt": "[+1,+2,+3].[-1,-2,-3]"
+    "salt": "[+1,+2,+3].[-1,-2,-3]",
 }
 
 # Compile SMARTS into RDKit molecules

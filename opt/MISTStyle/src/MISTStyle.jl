@@ -3,6 +3,7 @@ module MISTStyle
 using Makie
 using CategoricalArrays: levels
 using CairoMakie: CairoMakie
+using StatsBase: StatsBase, AbstractWeights
 
 # Conversion from units into pixels
 const pt = 1
@@ -51,6 +52,12 @@ function cb_attrs(cb::Colorbar, plt)
     return Base.structdiff(attrs, NamedTuple{(invalid...,)})
 end
 
+function parity_limits(x::AbstractVector, y::AbstractVector; inflate=0.05)
+    l, u = extrema(Iterators.flatten((x, y)))
+    limits = (l - inflate * (u - l), u + inflate * (u - l))
+    return (limits, limits)
+end
+
 
 function sublabel!(f, letter; left=0, kwargs...)
     label_kwargs = (;
@@ -70,6 +77,7 @@ include("tantext.jl")
 include("quadrant.jl")
 include("asinh.jl")
 include("sci_notation.jl")
+include("nbins.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
@@ -102,8 +110,8 @@ const CONTINUOUS_COLORS = :lipari
 
 function theme()
     Theme(
-        rowgap=2,
-        colgap=2,
+        rowgap=3pt,
+        colgap=3pt,
         fonts=(;
             regular="Times New Roman Regular",
             bold="Times New Roman Bold",
@@ -121,6 +129,13 @@ function theme()
         palette=(;
             color=CAT_COLORS,
             linestyle=[:solid, :dot, :dashdot],
+        ),
+        Lines=(;
+            cycle=Cycle([:color, :linestyle], covary=true),
+        ),
+        GridLayout=(;
+            default_rowgap=3pt,
+            default_colgap=3pt,
         ),
         Axis=(;
             spinewidth=0.5,
@@ -176,6 +191,9 @@ function theme()
         Scatter=(;
             markersize=5pt,
             marker=:x,
+        ),
+        BoxPlot=(;
+            markersize=4pt,
         ),
         ErrorLines=(;
             whiskerwidth=3,

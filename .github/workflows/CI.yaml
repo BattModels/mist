@@ -14,11 +14,9 @@ jobs:
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install deploy key for BattModels/smirk
-        uses: webfactory/ssh-agent@dc588b651fe13675774614f8e6a936a468676387 #v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SMIRK_PRIVATE_KEY }}
       - name: install project
         run: uv sync --all-extras --dev
       - name: pytest
-        run: uv run pytest
+        env:
+          WANDB_MODE: disabled
+        run: uv run pytest --durations=0

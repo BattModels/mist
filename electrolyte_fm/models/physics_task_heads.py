@@ -91,7 +91,7 @@ class VFTTaskHead(nn.Module):
         return cond
 
 
-class VFTTaskHeadWithDecay(nn.Module):
+class VFTDecayTaskHead(nn.Module):
     def __init__(self, embed_dim: int) -> None:
         super().__init__()
         self.desc_skip_connection = True
@@ -124,5 +124,13 @@ class VFTTaskHeadWithDecay(nn.Module):
         alpha = self.sigmoid(z[:, 3])
         beta = z[:, 4]
         lmbda = self.sigmoid(z[:, 5])
-
-        return ln_A - Ea / (temperature - Tg), alpha, beta, lmbda
+        params = {
+            "conductivity": ln_A - Ea / (temperature - Tg),
+            "ln_A": ln_A,
+            "Ea": Ea,
+            "Tg": Tg,
+            "alpha": alpha,
+            "beta": beta,
+            "lmbda": lmbda,
+        }
+        return params

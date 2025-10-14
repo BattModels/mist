@@ -27,6 +27,11 @@ from electrolyte_fm.data_modules.pubchem_qc import (
 from electrolyte_fm.models.token_level import distance_matrix_loss
 
 
+@pytest.fixture(autouse=True)
+def set_random_seed():
+    random.seed(42)  # Set a fixed seed for reproducibility
+
+
 def pubchem_qc_dataset_path():
     dir = Path(__file__).parent.parent.joinpath(
         "opt", "pubchem-qc", "pubchemqc_jcim2017-split"
@@ -520,6 +525,7 @@ def test_distance_loss():
 
 
 @pytest.mark.parametrize("N", [32, 1, 2])
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_mds_svd(N):
     coords = torch.rand(N, 3)
     D = torch.cdist(coords, coords)
@@ -532,6 +538,7 @@ def test_mds_svd(N):
 
 
 @pytest.mark.parametrize("B,N", [(8, 32), (1, 1), (1, 8), (8, 1)])
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_masked_mds_svd(B, N):
     mask = torch.rand(B, N) > 0.8
     mask_pw = mask.unsqueeze(2) & mask.unsqueeze(1)

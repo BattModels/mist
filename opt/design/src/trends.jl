@@ -59,7 +59,7 @@ function hydrocarbon_trends(df; qm_model="")
     foreach(groupby(df, :type)) do gdf
         for (col, ax) in pairs(axes)
             y = convert_units(gdf[:, col], col)
-            lines!(ax, gdf.n_carbon, mean.(y);
+            errorlines!(ax, gdf.n_carbon, y;
                 label=string(first(gdf.type)),
                 color=levelcode.(gdf.type),
                 colormap,
@@ -325,20 +325,36 @@ function figure_permutations(name_df::Pair...; name_df_order)
     colsize!(gl_trends, 1, Relative(3 / 4))
     colgap!(gl_trends, 1, 2)
 
+    figure_double_bond_loc!(gl_order, name_df...; name_df_order)
+
+
+    sublabel!(gl_order[2, 1, TopLeft()], "a"; left=15)
+    sublabel!(gl_order[3, 1, TopLeft()], "b"; left=15)
+    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=13)
+
+    resize_to_layout!(f)
+
+
+    return f
+end
+
+function figure_double_bond_loc(name_df::Pair...; name_df_order)
+    f = Figure(; size=(113, 136), figure_padding=(2,4,2,2))
+    return figure_double_bond_loc!(f, name_df...; name_df_order)
+end
+function figure_double_bond_loc!(f, name_df::Pair...; name_df_order)
     # Order Sensitivity
     n_carbon_range = extrema(last(first(name_df_order)).n_carbon)
-    cb = Colorbar(gl_order[1, 1];
+    cb = Colorbar(f[1, 1];
         label="Number of Carbons",
         colorrange=n_carbon_range,
         vertical=false, tellwidth=false,
-        # flipaxis=false,
     )
     axes = Axis[]
-    for (idx, (_, df)) in enumerate(name_df_order)
+    for (idx, (name, df)) in enumerate(name_df_order)
         is_last = idx == length(name_df_order)
-        ax = Axis(gl_order[1+idx, 1];
+        ax = Axis(f[1+idx, 1];
             xlabel=L"Double Bond Location$$",
-            ylabel=L"HOMO [eV]$$",
             limits=((0, 1), nothing),
             xtickformat="{:.0%}",
             xlabelvisible=is_last,
@@ -346,9 +362,13 @@ function figure_permutations(name_df::Pair...; name_df_order)
             xticklabelsvisible=is_last,
             yticks=WilkinsonTicks(5),
         )
+        text!(0.99, 0.0;
+            text=name,
+            align=(:right, :bottom),
+            space=:relative,
+        )
         push!(axes, ax)
         df = subset(df, :n_carbon => ByRow(>(4)))
-        # df = subset(df, :n_carbon => ByRow(n -> n % 2 == 0))
         foreach(groupby(df, :n_carbon)) do gdf
             n_carbon = gdf.n_carbon[1]
             homo = gdf.homo .* HARTREE_TO_EV
@@ -365,15 +385,10 @@ function figure_permutations(name_df::Pair...; name_df_order)
             )
         end
     end
+    Label(f[:, 0]; text=L"HOMO [eV]$$", rotation=pi/2)
+
+
     linkyaxes!(axes...)
-    colgap!(f.layout, 1, 3)
-    colsize!(f.layout, 2, Relative(3 / 4))
-
-
-    sublabel!(gl_order[2, 1, TopLeft()], "a"; left=15)
-    sublabel!(gl_order[3, 1, TopLeft()], "b"; left=15)
-    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=13)
-
     resize_to_layout!(f)
 
 
