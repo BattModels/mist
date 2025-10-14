@@ -1,6 +1,4 @@
 import torch
-
-# Adjust this import if your file structure is different:
 from src.generate import (
     AnyCritic,
     CriticPanel,
