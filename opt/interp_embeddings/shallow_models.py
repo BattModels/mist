@@ -1,10 +1,10 @@
-import glob
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from pathlib import Path
 
 from sklearn.base import ClassifierMixin
 from sklearn.model_selection import (
@@ -27,6 +27,7 @@ from sklearn.exceptions import NotFittedError
 
 
 Array = np.ndarray
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "interp"
 
 
 @dataclass
@@ -394,7 +395,7 @@ def linear_separability_diagnostics(
 
 
 def prepare_aromaticity_paper_example():
-    embedding_files = glob.glob("compas_2/*.csv")
+    embedding_files = list(DATA_DIR.glob("compas_2/*.csv"))
     filepath = embedding_files[3]
     compas = pd.read_csv(filepath)
     antiaromatic = compas.cyclobutadiene.values > 0
@@ -404,7 +405,7 @@ def prepare_aromaticity_paper_example():
 
 
 def prepare_condensation_paper_example():
-    embedding_files = glob.glob("compas/mean_compas_*.csv")
+    embedding_files = list(DATA_DIR.glob("compas/mean_compas_*.csv"))
     filepath = embedding_files[-1]
     compas = pd.read_csv(filepath)
     hidden_size = 768
@@ -433,7 +434,6 @@ if __name__ == "__main__":
     )
 
     for model, eval in evaluations.items():
-        print(evaluations.keys())
         print(
             f"{model} \n {eval.test_confusion_matrix} \n AUROC: {eval.test_average_precision}"
         )
