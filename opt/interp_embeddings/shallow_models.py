@@ -32,7 +32,7 @@ Array = np.ndarray
 @dataclass
 class ModelEvaluation:
     model_name: str  # "svm" or "random_forest"
-    original_label_values: Tuple[Any, Any] 
+    original_label_values: Tuple[Any, Any]
     best_params: Dict[str, Any]
     cv_scores: Dict[str, np.ndarray]
     test_classification_report: Dict[str, Any]
@@ -64,7 +64,7 @@ def encode_binary_label(
             raise ValueError(
                 f"Provided positive_label {positive_label} not in label values {uniques}"
             )
-        neg, pos = (u for u in uniques if u != positive_label), positive_label
+        neg, _ = (u for u in uniques if u != positive_label), positive_label
         neg_label = next(neg)
         pos_label = positive_label
     else:
@@ -152,11 +152,7 @@ def cross_validated_scores(
         return_train_score=False,
         n_jobs=-1,
     )
-    return {
-        metric : res[metric]
-        for metric in res
-        if metric.startswith("test_")
-    }
+    return {metric: res[metric] for metric in res if metric.startswith("test_")}
 
 
 def evaluate_on_test(
@@ -206,7 +202,7 @@ def plot_decision_boundary_2d(
     resolution: int = 300,
 ) -> None:
     """
-    Fit an RBF SVM on 2D embedding for illustration and plot decision boundary.
+    Fit an RBF SVM on 2D embedding and plot decision boundary.
     """
     vis_clf = make_pipeline(
         StandardScaler(),
@@ -235,7 +231,7 @@ def plot_decision_boundary_2d(
         alpha=0.85,
     )
     plt.legend(handles=sc.legend_elements()[0], labels=list(label_names))
-    plt.title(title + " (illustrative on 2D embedding)")
+    plt.title(title)
     plt.xlabel("Embedding dim 1")
     plt.ylabel("Embedding dim 2")
     plt.tight_layout()
@@ -359,7 +355,10 @@ def annotate_with_predictions(
 
     return annotated
 
-def linear_separability_diagnostics(X: np.ndarray, y: np.ndarray, tol: float = 1e-6, margin: int = 1e6):
+
+def linear_separability_diagnostics(
+    X: np.ndarray, y: np.ndarray, tol: float = 1e-6, margin: int = 1e6
+):
     clf = SVC(kernel="linear", C=margin)  # large C ~ hard margin
     clf.fit(X, y)
     w = clf.coef_[0]
@@ -393,26 +392,27 @@ def linear_separability_diagnostics(X: np.ndarray, y: np.ndarray, tol: float = 1
         "n_support_vectors": clf.n_support_.sum(),
     }
 
+
 def prepare_aromaticity_paper_example():
     embedding_files = glob.glob("compas_2/*.csv")
     filepath = embedding_files[3]
     compas = pd.read_csv(filepath)
     antiaromatic = compas.cyclobutadiene.values > 0
-    hidden_size = 768  
+    hidden_size = 768
     X = compas[[str(i) for i in range(hidden_size)]].values
     return X, antiaromatic
+
 
 def prepare_condensation_paper_example():
     embedding_files = glob.glob("compas/mean_compas_*.csv")
     filepath = embedding_files[-1]
     compas = pd.read_csv(filepath)
-    hidden_size = 768 
-    X  =  compas[[str(i) for i in range(hidden_size)]].values
+    hidden_size = 768
+    X = compas[[str(i) for i in range(hidden_size)]].values
     return X, compas["dataset"].values == 1
 
-if __name__ == "__main__":  
-    import pprint
 
+if __name__ == "__main__":
     # X, y = prepare_condensation_paper_example()
     X, y = prepare_aromaticity_paper_example()
     X_embedded = None
@@ -423,7 +423,7 @@ if __name__ == "__main__":
     evaluations = train_compare_binary(
         X=X,
         y_raw=y,
-        positive_label=None, 
+        positive_label=None,
         embedding_2d=X_embedded,
         test_size=0.2,
         random_state=42,
@@ -434,4 +434,6 @@ if __name__ == "__main__":
 
     for model, eval in evaluations.items():
         print(evaluations.keys())
-        print(f"{model} \n {eval.test_confusion_matrix} \n AUROC: {eval.test_average_precision}")
+        print(
+            f"{model} \n {eval.test_confusion_matrix} \n AUROC: {eval.test_average_precision}"
+        )
