@@ -60,5 +60,6 @@ addopts = "--color yes"
 [tool.ruff.lint.extend-per-file-ignores]
 "**/__init__.py" = ["F401"]
 
+
 [tool.uv.sources]
 smirk = { git = "https://github.com/BattModels/smirk", rev = "main" }
