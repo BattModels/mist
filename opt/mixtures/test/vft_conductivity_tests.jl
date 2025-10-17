@@ -1,6 +1,6 @@
 using Test
 using DataFrames
-using Mixtures: calculate_excess!
+using Mixtures: SOLVENT_DATA, calculate_excess!, one_molar_to_mole_fraction
 
 @testset "calculate_excess!" begin
 
@@ -115,4 +115,39 @@ using Mixtures: calculate_excess!
         @test result[4, :relative_excess_Tg] ≈ abs(125.0 - expect_Tg) / 125.0
     end
 
+end
+
+
+@testset "one_molar_to_mole_ratio" begin
+
+    @testset "Valid mole fraction" begin
+        # Mole fraction in expected range for all solvent
+        for solvent in keys(SOLVENT_DATA)
+            result = one_molar_to_mole_fraction(solvent)
+            @test result isa Float64
+            @test 0 < result < 1
+        end
+    end
+
+    @testset "Test PC" begin
+        # PC: density = 1.2 g/cm³, MW = 102 g/mol
+        # 1 L solvent = 1200 g = 1200/102 ≈ 11.765 mol
+        # mole fraction = 1/(11.765+1) ≈ 0.0783
+        result_PC = one_molar_to_mole_fraction("PC")
+        @test result_PC ≈ 1.0 / (1200.0/102.0 + 1.0) atol=1e-6
+        @test result_PC ≈ 0.0783 atol=0.001
+    end
+
+    @testset "Consistent trend" begin
+        result_EC = one_molar_to_mole_fraction("EC")
+        result_DEC = one_molar_to_mole_fraction("DEC")
+
+        # Calculate density/MW ratios
+        ratio_EC = SOLVENT_DATA["EC"].density_g_cm3 / SOLVENT_DATA["EC"].MW_g_mol
+        ratio_DEC = SOLVENT_DATA["DEC"].density_g_cm3 / SOLVENT_DATA["DEC"].MW_g_mol
+
+        if ratio_EC > ratio_DEC
+            @test result_EC < result_DEC
+        end
+    end
 end

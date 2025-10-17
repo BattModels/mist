@@ -1,3 +1,25 @@
+const SOLVENT_DATA = Dict(
+
+    # Source: https://landtinst.com/
+    "PC"  => (density_g_cm3 = 1.2000, mp_C = -48.8, MW_g_mol = 102),
+    "EMC" => (density_g_cm3 = 1.0071, mp_C = -53, MW_g_mol = 104),
+    "DMC" => (density_g_cm3 = 1.06311, mp_C = 4, MW_g_mol = 90),
+    "DEC" => (density_g_cm3 = 0.9730, mp_C = -43, MW_g_mol = 118),
+    "EC"  => (density_g_cm3 = 1.3210, mp_C = 36.4, MW_g_mol = 88),
+    # Density/ MP: https://www.chemicalbook.com/ChemicalProductProperty_EN_CB9420252.htm
+    # MW: https://www.sigmaaldrich.com/US/en/product/aldrich/901686
+    "FEC" => (density_g_cm3 = 1.45, mp_C = 20.5, MW_g_mol = 106.05),
+)
+
+function one_molar_to_mole_fraction(solvent)
+    # 1 M = 1 mole / L
+   data = SOLVENT_DATA[solvent]
+   mass_g = data.density_g_cm3 * 1000  # mass of 1 L solvent in grams
+   n_solvent = mass_g / data.MW_g_mol  # moles of solvent
+   n_solute = 1.0  # 1 M solution = 1 mole solute per L
+   return n_solute/(n_solvent + n_solute)
+end
+
 function calculate_excess!(df::DataFrame)
     comp_matrix = reduce(hcat, df.composition)'
 

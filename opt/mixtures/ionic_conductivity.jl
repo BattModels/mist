@@ -36,6 +36,19 @@ function label_smi(smi::AbstractString)
     return get(known, smi, smi)
 end
 
+function get_acronym(smi::AbstractString)
+    known = Dict(
+        "Fluoroethylene Carbonate" => "FEC",
+        "Propylene Carbonate" => "PC",
+        "Ethyl Methyl Carbonate" => "EMC",
+        "Diethyl Carbonate" => "DEC",
+        "Ethylene Carbonate" => "EC",
+        "Dimethyl Carbonate" => "DMC",
+    )
+    return get(known, smi, smi)
+end
+
+
 
 function plot_composition_curves(model, solvent)
 
@@ -461,5 +474,128 @@ function plot_soap_similarity_correlation()
             plot_soap_similarity_correlation!(fig, model, temperature)
         end |> MISTStyle.savefig(fn_name)
     end
+    return
+end
+
+function plot_non_arr_data!(fig, df)
+
+    ax = Axis(
+        fig[1, 1];
+        xlabel = L"$\frac{1000}{T}$ [$K^{-1}$]", ylabel = L"$\ln\;\sigma$ [mS/cm]")
+
+    count = 0
+    seen_combinations = Set()
+
+    for gdf in groupby(df, [
+        "sub1_name", "x1 (mole fraction)" , "sub2_name" , "x2 (mole fraction)" ,
+        "sub3_name", "x3 (mole fraction)", "salt", "x4 (anion, mole fraction)"
+        ])
+
+        comps = (
+            sub1=first(gdf.sub1_name), sub2=first(gdf.sub2_name),
+            sub3=first(gdf.sub3_name), salt=first(gdf.salt)
+            )
+
+        if comps in seen_combinations
+            continue
+        end
+
+        if nrow(gdf) > 5
+            count += 1
+            push!(seen_combinations, comps)
+            label = "$(get_acronym(comps.sub1)), $(get_acronym(comps.sub2)), $(get_acronym(comps.sub3)), $(comps.salt)"
+            lines!(ax, 1000 ./gdf[!, "temperature (K)"], log.(gdf[!, "ionic conductivity (mS/cm)"]);
+                label = label,
+            )
+            if count > 14
+                break
+            end
+        end
+
+    end
+    Legend(fig[2, 1], ax;
+            nbanks = 3,
+            labelsize = 5pt,
+            tellheight = true,
+            tellwidth = true,
+            padding = (1, 1, 1, 1),
+            margin = (1, 1, 1, 1),
+            patchlabelgap = 1pt,
+            rowgap = 0,
+            colgap = 5pt,
+            halign = :left,
+            valign = :bottom,
+            alignmode = Outside(),
+    )
+    rowgap!(fig.layout, 2)
+    return fig
+end
+
+function plot_non_arr_data()
+    fig = Figure(size = (90mm, 80mm), figure_padding = (2, 2, 2, 2))
+    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "published_AEM_data.csv")))
+    subset!(df, "x5 (cation, mole fraction)" => ByRow(>(0.14)))
+    fn_name = "non_arr_data"
+    with_theme(MISTStyle.theme()) do
+        plot_non_arr_data!(fig, df)
+    end |> MISTStyle.savefig(fn_name)
+
+    return fig
+end
+
+function plot_T0_vs_melting_point!(fig, model)
+    ax = Axis(
+        fig[1, 1];
+        ylabel = L"$T_0$ [K]", xlabel = L"$$Melting Point [K]")
+
+    for solvent in ["O=C1OCC(F)O1", "CC1COC(=O)O1", "CCOC(=O)OC", "O=C1OCCO1", "CCOC(=O)OCC", "COC(=O)OC"]
+        solvent_acr = label_smi(solvent)
+        for (idx, salt) in enumerate(salts)
+            mixture = Dict(
+                "solvents" => [solvent,  "CC1COC(=O)O1", "O=C1OCCO1"],
+                "temperature" => 298.15,
+                "salt" => [ salt, "[Li+]" ]
+            )
+            properties = SOLVENT_DATA[solvent_acr]
+            salt_comp = one_molar_to_mole_fraction(solvent_acr)
+            comp = zeros(4)
+            comp[1] = 1 - salt_comp
+            comp[4] = salt_comp
+            preds =  Mixtures.evaluate_at_composition(model, mixture, comp)
+            scatter!(
+                ax, properties.mp_C + 273.15, preds["Tg"];
+                color = MISTStyle.CAT_COLORS[idx],
+                label = label_smi(salt),
+                marker = :circle
+            )
+            text!(
+                ax, properties.mp_C + 273.15, preds["Tg"];
+                text=solvent_acr,
+                align=(:right, :bottom),
+                space=:relative,
+            )
+        end
+    end
+    Legend(fig[1, 1], ax;
+        unique = true, framevisible = true,
+        tellheight = false,
+        tellwidth = false,
+        padding = (1, 1, 1, 1),
+        margin = (1, 1, 1, 1),
+        halign = :left,
+        valign = :bottom,
+        alignmode = Inside(),
+    )
+    return fig
+end
+
+function plot_T0_vs_melting_point()
+    model_id = "mist-conductivity-27.0M-2mpg8dcd"
+    model = Mixtures.load_conductivity_model(joinpath(DATA_DIR, "models", model_id)).to("mps")
+    fig = Figure(size = (40mm, 60mm), figure_padding = (2, 2, 2, 2))
+    fn_name = "melting_vs_T0_1M"
+    with_theme(MISTStyle.theme(); fontsize = 1pt) do
+        plot_T0_vs_melting_point!(fig, model)
+    end |> MISTStyle.savefig(fn_name)
     return
 end
