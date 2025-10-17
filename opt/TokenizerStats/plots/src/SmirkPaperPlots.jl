@@ -11,7 +11,7 @@ using Colors: distinguishable_colors, weighted_color_mean, RGBA
 using CategoricalArrays: categorical
 using Format: format
 using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
-using PythonCall: Py, pyconvert
+using PythonCall: PythonCall, Py, pyconvert, pyimport
 using JLD2: jldopen
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode

@@ -1,7 +1,7 @@
 module TokenizerStats
 
 using Tracy
-using PythonCall: Py, pyimport, pyconvert, @pyconst
+using PythonCall: Py, pyimport, pyisinstance, pybuiltins, pyconvert, @pyconst
 using ArgParse: ArgParseSettings, parse_args, @add_arg_table!
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
 using LinearAlgebra: normalize
@@ -14,6 +14,7 @@ using Dates: now
 using SparseArrays: sparse
 using LogExpFunctions: logsumexp, log1pexp, xexpy
 using Serialization: serialize, deserialize
+
 
 function find(dir, pattern)
     found = String[]
@@ -31,9 +32,12 @@ end
 
 const __loader = Ref{Py}()
 const __tokenizer = Ref{Py}()
+const pymodel = Ref{Py}()
+
 function __init__()
     __loader[] = pyimport("helper.loader")
     __tokenizer[] = pyimport("helper.tokenizer")
+    pymodel[] = pyimport("helper.model")
     return nothing
 end
 
@@ -78,6 +82,10 @@ include("ngrams.jl")
 include("serialize.jl")
 include("collect.jl")
 include("finetune.jl")
+
+# Attention Maps
+include("attention_maps.jl")
+
 include("cli.jl")
 
 end
