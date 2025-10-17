@@ -2,6 +2,8 @@ using DataFrames
 using Makie
 using JSON
 using CSV: CSV
+using GLM
+using MISTStyle
 using MISTStyle: MISTStyle, label
 using Format: format
 using Statistics: mean
@@ -22,8 +24,8 @@ const solvents = [
 const salts = ["O=S(=O)([N-]S(=O)(=O)C(F)(F)F)C(F)(F)F", "F[P-](F)(F)(F)(F)F"]
 
 
-function label_smi(smi::AbstractString)
-    known = Dict(
+function label_smi(smi::AbstractString; input::AbstractString = "smi")
+    smiles_to_name = Dict(
         "O=S(=O)([N-]S(=O)(=O)C(F)(F)F)C(F)(F)F" => "TFSI",
         "F[P-](F)(F)(F)(F)F" => "PF6",
         "O=C1OCC(F)O1" => "FEC",
@@ -33,7 +35,12 @@ function label_smi(smi::AbstractString)
         "O=C1OCCO1" => "EC",
         "COC(=O)OC" => "DMC",
     )
-    return get(known, smi, smi)
+    name_to_smiles = Dict(v => k for (k, v) in smiles_to_name)
+    if input == "smi"
+        return get(smiles_to_name, smi, smi)
+    else
+        return get(name_to_smiles, smi, smi)
+    end
 end
 
 function get_acronym(smi::AbstractString)
@@ -543,36 +550,46 @@ function plot_non_arr_data()
     return fig
 end
 
-function plot_T0_vs_melting_point!(fig, model)
+function pure_solvent_T0(model, solvent, salt, salt_comp; temperature = 298.15)
+    mixture = Dict(
+        "solvents" => [solvent,  "CC1COC(=O)O1", "O=C1OCCO1"],
+        "temperature" => temperature,
+        "salt" => [ salt, "[Li+]" ]
+    )
+    comp = zeros(4)
+    comp[1] = 1 - salt_comp
+    comp[4] = salt_comp
+    preds =  Mixtures.evaluate_at_composition(model, mixture, comp)
+    return preds["Tg"]
+end
+
+function plot_T0_vs_melting_point!(fig, model; molarity = 1)
     ax = Axis(
         fig[1, 1];
-        ylabel = L"$T_0$ [K]", xlabel = L"$$Melting Point [K]")
+        limits = ((200, 320), nothing),
+        xlabel = L"$$Melting Point [K]", ylabel = L"$T_0$ [K]")
 
     for solvent in ["O=C1OCC(F)O1", "CC1COC(=O)O1", "CCOC(=O)OC", "O=C1OCCO1", "CCOC(=O)OCC", "COC(=O)OC"]
         solvent_acr = label_smi(solvent)
         for (idx, salt) in enumerate(salts)
-            mixture = Dict(
-                "solvents" => [solvent,  "CC1COC(=O)O1", "O=C1OCCO1"],
-                "temperature" => 298.15,
-                "salt" => [ salt, "[Li+]" ]
-            )
-            properties = SOLVENT_DATA[solvent_acr]
-            salt_comp = one_molar_to_mole_fraction(solvent_acr)
-            comp = zeros(4)
-            comp[1] = 1 - salt_comp
-            comp[4] = salt_comp
-            preds =  Mixtures.evaluate_at_composition(model, mixture, comp)
+
+            properties = Mixtures.SOLVENT_DATA[solvent_acr]
+            salt_comp = Mixtures.molarity_to_mole_fraction(solvent_acr; molarity = molarity)
+            @info "Solvent $(solvent_acr) | Molarity $(molarity) | $(round(salt_comp, digits=3))"
+            T0 = pure_solvent_T0(model, solvent, salt, salt_comp; temperature = 298.15)
             scatter!(
-                ax, properties.mp_C + 273.15, preds["Tg"];
+                ax, properties.mp_C + 273.15, T0;
                 color = MISTStyle.CAT_COLORS[idx],
                 label = label_smi(salt),
                 marker = :circle
             )
+            align = salt == salts[1] ? (:right, :top) : (:right, :bottom)
             text!(
-                ax, properties.mp_C + 273.15, preds["Tg"];
+                ax, properties.mp_C + 273.15, T0;
                 text=solvent_acr,
-                align=(:right, :bottom),
-                space=:relative,
+                align=align,
+                offset= (-2, 0.5),
+                fontsize = 4pt
             )
         end
     end
@@ -582,20 +599,111 @@ function plot_T0_vs_melting_point!(fig, model)
         tellwidth = false,
         padding = (1, 1, 1, 1),
         margin = (1, 1, 1, 1),
-        halign = :left,
-        valign = :bottom,
+        halign = :right,
+        valign = :center,
         alignmode = Inside(),
     )
     return fig
 end
 
-function plot_T0_vs_melting_point()
+function plot_T0_vs_melting_point(molarity = 1)
     model_id = "mist-conductivity-27.0M-2mpg8dcd"
     model = Mixtures.load_conductivity_model(joinpath(DATA_DIR, "models", model_id)).to("mps")
-    fig = Figure(size = (40mm, 60mm), figure_padding = (2, 2, 2, 2))
-    fn_name = "melting_vs_T0_1M"
-    with_theme(MISTStyle.theme(); fontsize = 1pt) do
-        plot_T0_vs_melting_point!(fig, model)
+    fig = Figure(size = (55mm, 60mm), figure_padding = (5, 5, 5, 5))
+    fn_name = "melting_vs_T0_$(molarity)M"
+    with_theme(MISTStyle.theme()) do
+        plot_T0_vs_melting_point!(fig, model; molarity = molarity)
+    end |> MISTStyle.savefig(fn_name)
+    return
+end
+
+function fit_T0_dielectric_model(model, salt, molarity; temperature = 298.15)
+    df = calculate_T0_dataframe(model, salt, molarity; temperature = temperature)
+    lm_model = lm(@formula(T0 ~ dielectric + melting_point), df)
+
+    display(lm_model)
+    @info "Model Summary" salt=salt R²=round(r2(lm_model), digits=4) adj_R²=round(adjr2(lm_model), digits=4)
+
+    return lm_model, df
+end
+
+
+function plot_T0_model_fit!(fig, lm_model, df, salt)
+    df.T0_pred = predict(lm_model, df)
+    salt_label = "Li$(label_smi(salt))"
+    showy = salt_label=="LiTFSI"
+    ax = Axis(fig[1, 1];
+            xlabel = L"MIST $T_0$ [K]",
+            ylabel = showy ? L"$T_0$ = f($\epsilon$, $T_m$) [K]" : "",
+            title = salt_label,
+            titlesize = 5pt,
+            yticksvisible = showy, yticklabelsvisible = showy
+    )
+
+    scatter!(ax, df.T0, df.T0_pred; marker = :circle)
+    text!(ax, df.T0, df.T0_pred;
+        text = df.solvent, fontsize = 4pt, align = (:left, :center), offset = (2, 0))
+
+    lims = collect(extrema(vcat(df.T0, df.T0_pred)) .+ (-2, 2))
+    lines!(ax, lims, lims; color = :orange, linewidth = 0.7)
+
+    stats_text = @sprintf("R² = %.3f\nRMSE = %.2f K", r2(lm_model), sqrt(mean((df.T0 .- df.T0_pred).^2)))
+    text!(ax, lims[1] + 2, lims[2] - 2;
+          text = stats_text, fontsize = 4pt, align = (:left, :top)
+    )
+
+    return fig
+end
+
+function compare_T0_models(model, salt, molarity; temperature = 298.15)
+    df = calculate_T0_dataframe(model, salt, molarity; temperature = temperature)
+    lms = [
+        lm(@formula(T0 ~ dielectric), df), lm(@formula(T0 ~ melting_point), df),
+        lm(@formula(T0 ~ dielectric + melting_point), df), lm(@formula(T0 ~ dielectric * melting_point), df)
+    ]
+    for lm_model in lms
+        display(lm_model)
+        @info "Salt" salt "| \nR² = $(round(r2(lm_model), digits=4)) | Adjusted R² = $(round(adjr2(lm_model), digits=4))"
+    end
+    return lms, df
+end
+
+function calculate_T0_dataframe(model, salt, molarity; temperature = 298.15)
+    data = []
+    for (solvent_name, props) in Mixtures.SOLVENT_DATA
+        solvent_smi = label_smi(solvent_name; input = "acr")
+        salt_comp = Mixtures.molarity_to_mole_fraction(solvent_name; molarity = molarity)
+        T0 = pure_solvent_T0(model, solvent_smi, salt, salt_comp; temperature = temperature)
+        push!(data, (
+            solvent = solvent_name,
+            solvent_smiles = solvent_smi,
+            dielectric = props.dielectric,
+            melting_point = props.mp_C + 273.15,
+            T0 = T0
+        ))
+    end
+    return DataFrame(data)
+end
+
+function fit_and_plot_glm!(fig, model; molarity = 1)
+    for (i, salt) in enumerate(salts)
+        lm_model, df = fit_T0_dielectric_model(model, salt, molarity)
+        plot_T0_model_fit!(fig[1, i], lm_model, df, salt)
+    end
+    colgap!(fig.layout, 9)
+    rowgap!(fig.layout, 0)
+    return fig
+end
+
+function fit_and_plot_glm(; molarity = 1)
+    model_id = "mist-conductivity-27.0M-2mpg8dcd"
+    model = Mixtures.load_conductivity_model(joinpath(DATA_DIR, "models", model_id)).to("mps")
+
+    fig = Figure(size = (100mm, 50mm))
+
+    fn_name = "gml_fit_$(molarity)M"
+    with_theme(MISTStyle.theme()) do
+        fit_and_plot_glm!(fig, model; molarity = molarity)
     end |> MISTStyle.savefig(fn_name)
     return
 end
