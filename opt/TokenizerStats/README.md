@@ -2,8 +2,8 @@
 
 ## Installation
 
-1. First, install [Python v3.12](https://www.python.org/downloads/), [uv](https://python-poetry.org), [Rust](https://www.rust-lang.org/tools/install) and [Julia v1.11](https://julialang.org/downloads/).
-2. Instantiate the python environment: `poetry install`
+1. First, install [Python v3.12](https://www.python.org/downloads/), [uv](https://docs.astral.sh/uv/getting-started/installation/), [Rust](https://www.rust-lang.org/tools/install) and [Julia v1.11](https://julialang.org/downloads/).
+2. Instantiate the python environment: `uv sync`
 3. Activate the environment: `source ./activate`
 > You may need to modify `./activate` for your system
 
