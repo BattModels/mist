@@ -113,7 +113,7 @@ function figure_tf_finetune(stats_dir, dff, dft)
         ytickformat="{:.0%}",
         xgridvisible=false,
     )
-    h = _finetune_results!(ax, dfr.dataset, dfr.test_loss, dfr.tokenizer;
+    h = barploterrors!(ax, dfr.dataset, dfr.test_loss, dfr.tokenizer;
         std=dfr.test_loss_std,
         colormap,
         colorrange=(1, length(colormap)),
@@ -130,7 +130,7 @@ function figure_tf_finetune(stats_dir, dff, dft)
         yticks=LinearTicks(5),
         ytickformat="{:.0%}",
     )
-    _finetune_results!(ax, dfc.dataset, dfc.test_loss, dfc.tokenizer;
+    barploterrors!(ax, dfc.dataset, dfc.test_loss, dfc.tokenizer;
         std=dfc.test_loss_std,
         colormap=h.colormap,
         colorrange=h.colorrange
@@ -150,35 +150,6 @@ function figure_tf_finetune(stats_dir, dff, dft)
     resize_to_layout!(f)
     return f, dff_all
 end
-
-function _finetune_results!(ax, x, y, dodge; std=nothing, colormap, colorrange=nothing)
-    if isnothing(colorrange)
-        colorrange = extrema(levelcode.(dodge))
-    end
-
-    h = barplot!(ax, levelcode.(x), y;
-        dodge=levelcode.(dodge),
-        colormap,
-        colorrange,
-        color=levelcode.(dodge),
-    )
-
-    if !isnothing(std)
-        SmirkPaperPlots.dodgederrorbars!(ax, levelcode.(x), y, std;
-            dodge=h.dodge,
-            width=h.width,
-            n_dodge=h.n_dodge,
-            gap=h.gap,
-            dodge_gap=h.dodge_gap,
-            linewidth=1,
-            color=:black,
-        )
-    end
-
-    return h
-end
-
-categorical_ticks(x) = (1:length(levels(x)), levels(x))
 
 function table_finetuned_models(stats_dir, dff, dft)
     dff = select(dff, [:id, :pretrained_id, :tokenizer, :task, :dataset, :encoding])

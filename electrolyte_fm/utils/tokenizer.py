@@ -8,7 +8,7 @@ from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
 def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
     # Locate Tokeniser and dataset
     unk_name = RuntimeError(f"Unknown tokenizer: {name}")
-    if name.startswith("smirk"):
+    if name in ["smirk", "smirk-selfies", "smirk-cls"]:
         from smirk import SmirkTokenizerFast
 
         if name == "smirk":
@@ -24,7 +24,7 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         raise unk_name
 
     elif name == "SmilesPE/SPE_ChEMBL":
-        from ..tokenize.spe import pretrained_spe_tokenizer
+        from .spe import pretrained_spe_tokenizer
 
         return pretrained_spe_tokenizer(cache_generated=True)
 
@@ -318,6 +318,9 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         AutoTokenizer.register(
             "SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast
         )
+
+        if Path(name).exists():
+            name = str(Path(name).resolve())
 
         tok_tf = AutoTokenizer.from_pretrained(
             name,

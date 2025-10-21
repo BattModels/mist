@@ -9,3 +9,7 @@ models
 smirk-gpe-*
 smirk-gpe-*/
 fig/
+*.tar.*
+archive/
+*.slurm
+*.jld2

@@ -22,7 +22,10 @@ function theme()
         Lines=(;
             cycle=Cycle([:color, :linestyle], covary=true),
         ),
+        markersize=4pt,
+        linewidth=1pt,
         Axis=(;
+            titlegap=2pt,
             spinewidth=0.5,
             ylabelpadding=3pt,
             yticksize=3,
@@ -32,7 +35,7 @@ function theme()
             xtickwidth=0.5,
             xticksize=3,
             xminortickwidth=0.5,
-            xminorticksize=2,
+            xminorticksize=1.5,
             xgridwidth=0.5,
             ygridwidth=0.5,
             xminorgridwidth=0.5,
@@ -58,10 +61,23 @@ function theme()
             markersize=8pt,
             marker=:x,
         ),
+        BarPlot=(;
+            whiskerwidth=1pt,
+            markersize=2pt,
+            medianlinewidth=0.5pt,
+        ),
         ErrrorBar=(;
             whiskerwidth=2,
             linewidth=0.5,
-        )
+        ),
+        EffectBars=(;
+            linewidth=1pt,
+            marker=:circle,
+            markersize=3pt,
+            colormap=[:red, :blue],
+            whiskerwidth=8pt,
+            noeffect_linewidth=1pt,
+        ),
     )
 end
 
@@ -75,10 +91,16 @@ Makie.inverse_transform(m::Asinh) = x -> m.a * sinh(x / m.a)
 Makie.defined_interval(::Asinh) = Makie.defined_interval(identity)
 Makie.defaultlimits(m::Asinh) = (0.0, 10 * m.a)
 
+my_sqrt(x) = sqrt(x)
+Makie.inverse_transform(::typeof(my_sqrt)) = x -> x^2
+Makie.defaultlimits(::typeof(my_sqrt)) = (0.0, 10.0)
+Makie.defined_interval(::typeof(my_sqrt)) = Makie.defined_interval(sqrt)
+
 Makie.inverse_transform(::typeof(asinh)) = sinh
 Makie.defined_interval(::typeof(asinh)) = Makie.defined_interval(identity)
 Makie.defaultlimits(::typeof(asinh)) = (0.0, 10.0)
 
+labels(x) = map(e -> e.label[], x)
 
 # Estimate Number of Histogram Bins from data
 hist_nbins(x::AbstractVector, w::AbstractWeights) = hist_nbins(:scott, x)
@@ -118,8 +140,8 @@ function collate_token_usage(ids::AbstractVector{<:Integer}, counts::Dict{<:Abst
     counts = Dict((parse(Int, k) => v for (k, v) in pairs(counts)))
     return collate_token_usage(ids, counts; smoothing)
 end
-collate_token_usage(counts::Dict, vocab_size::Integer; kwargs...) = collate_token_usage(0:vocab_size-1, counts; kwargs...)
-function collate_token_usage(ids::AbstractVector{T}, counts::Dict{T,<:Integer}; smoothing) where {T}
+collate_token_usage(counts::Dict, vocab_size::Integer; kwargs...) = collate_token_usage(collect(0:vocab_size-1), counts; kwargs...)
+function collate_token_usage(ids::AbstractVector{T}, counts::Dict; smoothing) where {T}
     usage = Vector{Int}(undef, length(ids))
     for (idx, token_id) in enumerate(ids)
         usage[idx] = get(counts, token_id, 0) + smoothing
@@ -146,6 +168,7 @@ Makie.@recipe(DodgedErrorBars, x, y, error) do scene
         n_dodge=Makie.inherit(scene, :BarPlot, :n_dodge),
         gap=Makie.inherit(scene, :BarPlot, :gap),
         dodge_gap=Makie.inherit(scene, :BarPlot, :dodge_gap),
+        direction=:y,
     )
 end
 
@@ -154,7 +177,11 @@ function Makie.plot!(plt::DodgedErrorBars)
         first(Makie.compute_x_and_width(x, width, gap, dodge, n_dodge, dodge_gap))
     end
     attr = Makie.shared_attributes(plt, Errorbars)
-    errorbars!(plt, x, plt[:y], plt[:error]; attr...)
+    if plt[:direction][] == :y
+        errorbars!(plt, x, plt[:y], plt[:error]; direction=:y, attr...)
+    else
+        errorbars!(plt, plt[:y], plt[:x], plt[:error]; direction=:x, attr...)
+    end
     return plt
 end
 
@@ -214,4 +241,81 @@ function Makie.plot!(plt::Powerlaw)
     # Plot response, and translate it forward
     lines!(plt, points; Makie.shared_attributes(plt, Lines)...)
     return plt
+end
+
+function siglevel(p::Real; cutoff=[0.05, 0.01, 0.001], symbol="*")
+    l = findlast(sort(cutoff; rev=true) .>= p)
+    return isnothing(l) ? "" : symbol ^ l
+end
+
+function label_tokenizers!(df; include_count=true)
+    tokenizer_classes = OrderedDict(
+        "nlp" => "NLP",
+        "character" => "Character",
+        "unigram" => "Unigram",
+        "bpe" => "BPE",
+        "atomwise" => "Atom-wise",
+        "spe" => "SPE/APE",
+        "smirk-gpe" => "Smirk-GPE",
+        "smirk" => "Smirk",
+    )
+    df.tokenizer_class = map(df.tokenizer_domain, df.tokenizer_class) do domain, tokenizer_class
+        if domain == "chemistry"
+            return tokenizer_class
+        elseif domain in ["nlp", "nlp-science"]
+            return "nlp"
+        else
+            return "$tokenizer_class, $domain"
+        end
+    end
+    ckeys = collect∘keys
+    subset!(df, :tokenizer_class => ByRow(in(ckeys(tokenizer_classes))))
+    transform!(df, :tokenizer_class => ByRow(x -> tokenizer_classes[x]) => :tokenizer_class)
+    df.tokenizer_class = categorical(df.tokenizer_class, levels=(collect∘values)(tokenizer_classes), ordered=true)
+
+    # if include_count
+    #     map(eachrow(combine(groupby(df, :tokenizer_class), :tokenizer => length∘unique => :nclass))) do r
+    #         (; tokenizer_class, nclass) = r
+    #         plt_class = tokenizer_classes[tokenizer_class]
+    #         tokenizer_class => "$plt_class (n=$nclass)"
+    #     end
+    # end
+
+    return df
+end
+
+function label_datasets!(df)
+    df.dataset = map(ds -> ds in ["realspace", "tmQM"] ? ds : "MoleculeNet", df.dataset)
+    df.dataset = map(ds -> ds == "realspace" ? "REALSpace" : ds, df.dataset)
+    df.dataset = categorical(df.dataset, levels=["REALSpace", "tmQM", "MoleculeNet"], ordered=true)
+    return df
+end
+
+categorical_ticks(x) = (1:length(levels(x)), levels(x))
+
+function barploterrors!(ax, x, y, dodge; std=nothing, colormap, colorrange=nothing)
+    if isnothing(colorrange)
+        colorrange = extrema(levelcode.(dodge))
+    end
+
+    h = barplot!(ax, levelcode.(x), y;
+        dodge=levelcode.(dodge),
+        colormap,
+        colorrange,
+        color=levelcode.(dodge),
+    )
+
+    if !isnothing(std)
+        SmirkPaperPlots.dodgederrorbars!(ax, levelcode.(x), y, std;
+            dodge=h.dodge,
+            width=h.width,
+            n_dodge=h.n_dodge,
+            gap=h.gap,
+            dodge_gap=h.dodge_gap,
+            linewidth=1,
+            color=:black,
+        )
+    end
+
+    return h
 end

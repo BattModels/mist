@@ -38,14 +38,14 @@ function NGramModel(tokenizer::Py, ngrams::Union{Tuple,Vector})
 
     # Don't remove in-use special tokens
     unk_token_id = pyconvert(Union{Nothing,Int}, tokenizer.unk_token_id)
-    used_special = pyconvert(Vector{Int}, tokenizer("")["input_ids"])
+    used_special = pyconvert(Vector{UInt32}, tokenizer("")["input_ids"])
     !isnothing(unk_token_id) && setdiff!(special_tokens, unk_token_id)
     setdiff!(special_tokens, used_special)
 
     return NGramModel(ngrams, vocab_size; special_tokens)
 end
 
-function NGramModel(ngrams::Union{Tuple,Vector}, vocab_size::Int; special_tokens::Vector{Int}=Int[])
+function NGramModel(ngrams::Union{Tuple,Vector}, vocab_size::Int; special_tokens::AbstractVector{<:Integer}=Int[])
     total = sum(values(first(ngrams)); init=0)
     ngrams = ntuple(i -> ngram_counts(ngrams[i], vocab_size), length(ngrams))
     N = length(ngrams)
@@ -59,7 +59,8 @@ function load_ngram_model(file::String, split="train")
     jldopen(file, "r") do data
         # Extract tokenizer info
         sha256 = bytes2hex(open(SHA.sha256, file))
-        name = data["tokenizer"][:name]
+        tok_info = data["tokenizer"]
+        name = haskey(tok_info, :name) ? tok_info[:name] : tok_info[:tokenizer_name]
         name = startswith(name, "smirk-gpe") ? "./" * name : name
         tok = load_tokenizer(name)
         vocab_size = pyconvert(Int, length(tok))
@@ -90,11 +91,11 @@ end
 
 
 """ Return the conditional n-gram `(..., x_i-1)` for the given n-gram `(..., x_i)`"""
-condgram(gram::NTuple{N,Int}) where {N} = reverse(Base.tail(reverse(gram)))
+condgram(gram::NTuple{N,<:Integer}) where {N} = reverse(Base.tail(reverse(gram)))
 condgram(code::AbstractVector{<:Integer}, edx::Int, length::Int) = ngram(code, edx - 1, length - 1)
 
 """ Return the backward conditional n-gram `(x_i+1, ...)` for the given n-gram `(x_i, ...)`"""
-condgram_backward(gram::NTuple{N,Int}) where {N} = Base.tail(gram)
+condgram_backward(gram::NTuple{N,<:Integer}) where {N} = Base.tail(gram)
 condgram_backward(code::AbstractVector{<:Integer}, edx::Int, length::Int) = ngram(code, range(; start=edx + 1, length=length - 1))
 
 """ Return the n-gram starting at `edx` of at most `length` """
@@ -108,9 +109,14 @@ struct MaskedCode{T,C<:AbstractVector{T},M<:AbstractVector{Bool}} <: AbstractVec
     code::C
     mask::M
     mask_value::T
+    function MaskedCode{T,C,M}(code, mask, mask_value) where {T,C,M}
+        @assert length(mask) == length(code) "length of code and mask must match"
+        @assert !any(==(mask_value), code[.!mask]) "mask value ($mask_value) occurs in unmasked code"
+        new(code, mask, mask_value)
+    end
 end
-MaskedCode(code::Vector{T}, mask::Union{BitVector,Vector{Bool}}, mask_value::T) where {T} = MaskedCode{T}(code, BitVector(mask), mask_value)
-MaskedCode{T}(code::C, mask::M, mask_value) where {T,C<:AbstractVector{T},M<:AbstractVector{Bool}} = MaskedCode{T,C,M}(code, mask, mask_value)
+MaskedCode(code::AbstractVector{T}, mask::Union{BitVector,AbstractVector{Bool}}, mask_value::Integer=typemax(T)) where {T} = MaskedCode{T}(code, BitVector(mask), mask_value)
+MaskedCode{T}(code::C, mask::M, mask_value) where {T,C<:AbstractVector{T},M<:AbstractVector{Bool}} = MaskedCode{T,C,M}(code, mask, T(mask_value))
 
 Base.getindex(mc::MaskedCode, i::Int) = mc.mask[i] ? mc.mask_value : mc.code[i]
 Base.eltype(::MaskedCode{T}) where {T} = T
@@ -320,7 +326,7 @@ function forward_odds(m::NGramModel, code::AbstractVector; mask::Integer=-100, N
     return counts, marginal, n_masked
 end
 
-function forward_counts!(P::Vector{T}, m::NGramModel, cgram::NTuple{N,Int}; mask::Integer=-100) where {T,N}
+function forward_counts!(P::Vector{T}, m::NGramModel, cgram::NTuple{N,<:Integer}; mask::Integer=-100) where {T,N}
     if isempty(cgram)
         fill_unigram_dist!(P, m)
         return P
@@ -361,7 +367,7 @@ function backward_odds(m::NGramModel, code::AbstractVector; mask::Integer=-100, 
     return counts, marginal, n_masked
 end
 
-function backward_counts!(P::Vector{T}, m::NGramModel, cgram::NTuple{N,Int}; mask::Integer=-100) where {T,N}
+function backward_counts!(P::Vector{T}, m::NGramModel, cgram::NTuple{N,<:Integer}; mask::Integer=-100) where {T,N}
     if isempty(cgram)
         fill_unigram_dist!(P, m)
         return P
@@ -409,14 +415,14 @@ end
 Computes the Information Loss (KL-Divergence) from masking out tokens in an input code for a
 given n-gram model
 """
-@annotate function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
+@tracepoint function information_loss(m::NGramModel, code::Vector{<:Integer}, mask::Union{BitVector,Vector{Bool}}; N=length(m))
     @assert 0 < N <= length(m)
     @assert length(code) == length(mask)
     loss = 0.0
     ctype = valtype(m.ngrams[N]) isa Integer ? UInt64 : Float64
     P = Vector{ctype}(undef, m.vocab_size)
     Q = similar(P)
-    code = MaskedCode(code, mask, -100)
+    code = MaskedCode(code, mask)
     for idx in eachindex(code)
         # If nothing is masked, the information
         # loss is zero
@@ -446,10 +452,11 @@ function fb_log_dist!(Pf::Vector{Float64}, m::NGramModel, code::AbstractVector{<
     fgram = condgram(code, idx, N)
     bgram = condgram_backward(code, idx, N)
     V = nonspecial_vocab_size(m)
+    T = eltype(code)
     for (idx, id) in enumerate(token_ids(m))
-        fc = first(gram_odds(m, (fgram..., id)))
+        fc = first(gram_odds(m, (fgram..., T(id))))
         Pf[idx] = fc
-        bc = first(gram_odds(m, (id, bgram...)))
+        bc = first(gram_odds(m, (T(id), bgram...)))
         Pb[idx] = bc
     end
 
@@ -501,9 +508,9 @@ end
 """
 Compute the information_loss from unknown tokens using a character-tokenizer as a reference
 """
-@annotate function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
+@tracepoint function unk_information_loss(ngram::NGramModel, ref_tok::Py, tok::Py, encoding::Py; N=1:length(ngram), smi_column="smiles")
     unk_token_id = pyconvert(Int, tok.unk_token_id)
-    code = pyconvert(Vector{Int}, encoding["input_ids"])
+    code = pyconvert(Vector{UInt32}, encoding["input_ids"])
     (unk_token_id ∉ code) && return zeros(length(N))
 
     # Mask out unknown tokens
@@ -511,7 +518,7 @@ Compute the information_loss from unknown tokens using a character-tokenizer as 
     !(any(masked)) && return zeros(length(N)) # Unexpected, but possible if unk is from whitespace
 
     # Compute information_loss from unknown tokens
-    ref_code = pyconvert(Vector{Int}, ref_tok(encoding[smi_column])["input_ids"])
+    ref_code = pyconvert(Vector{UInt32}, ref_tok(encoding[smi_column])["input_ids"])
     @assert length(masked) == length(ref_code)
     return map(n -> information_loss(ngram, ref_code, masked; N=n), N)
 end
@@ -562,7 +569,7 @@ function compute_unknown_mask(tok, ref_tok, smi)
     end
 end
 
-function decode_non_special(tok::Py, ids::Vector{Int})
+function decode_non_special(tok::Py, ids::Vector{<:Integer})
     ids = rm_special_tokens(tok, ids)
     tokens = pyconvert(Vector{String}, tok.convert_ids_to_tokens(ids))
     return rm_special_tokens(tok, tokens)
@@ -577,11 +584,11 @@ function _maybe_tokenize_offset(tok, smi)
     end
     if haskey(out, "offset_mapping")
         offsets = pyconvert(Vector{Tuple{Int,Int}}, out["offset_mapping"])
-        ids = pyconvert(Vector{Int}, out["input_ids"])
+        ids = pyconvert(Vector{UInt32}, out["input_ids"])
         return (; ids, offsets)
     else
         @assert haskey(out, "input_ids")
-        ids = pyconvert(Vector{Int}, out["input_ids"])
+        ids = pyconvert(Vector{UInt32}, out["input_ids"])
         return (; ids, offsets=nothing)
     end
 end

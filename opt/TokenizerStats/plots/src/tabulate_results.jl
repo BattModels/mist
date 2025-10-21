@@ -136,7 +136,7 @@ end
 
 function task_metrics(task, metrics; dataset=nothing)
     if task == "regression"
-        metric = "r2"
+        metric = dataset in ["esol", "freesolv", "lipo", "rmse"] ? "rmse" : "mae"
     elseif task == "binary"
         metric = dataset == "muv" ? "avg-precision" : "auroc"
     else
@@ -153,7 +153,7 @@ end
 
 function get_metric(metrics::Vector, name::String; split, tok_group="all", type="best")
     for metric in metrics
-        if metric["metric"] == name && metric["split"] == split && metric["tok_group"] == tok_group && metric["type"] == type
+        if metric["metric"] == name && metric["split"] == split && coalesce(metric["tok_group"] == tok_group, false) && coalesce(metric["type"] == type, false)
             return metric["value"]
         end
     end
@@ -214,31 +214,39 @@ function link_training_runs(runs)
     return linked
 end
 
-function df_ngrams_vs_transformer(stats_dir, loss_stats, dfp)
+function df_ngrams_vs_transformer(stats_dir, loss_stats, dfp, dff, dft)
     tokenizers = tokenizers_info(stats_dir)
-    val_loss = subset(loss_stats,
+    df_ng = subset(loss_stats,
         :split => ByRow(==("val")),
-        :dataset => ByRow(==("realspace")),
+        :ngram => ByRow(==(5)),
         :tokenizer => ByRow(x -> haskey(tokenizers, x)),
     )
-    best_models = combine(groupby(val_loss, :tokenizer)) do gdf
-        sort!(gdf, :avg_model_loss; rev=false)
-        return gdf[1, :]
-    end
-    select!(best_models, :tokenizer, :ngram, :avg_model_loss => :ngram_loss, :avg_model_token_loss => :ngram_token_loss)
-
-    # Merge with pretraining data
-    dfp = leftjoin(dfp, best_models, on=[:tokenizer])
-    sort!(dfp, :val_loss)
-    dfp.tokenizer = categorical(dfp.tokenizer, levels=unique(dfp.tokenizer))
-    replace!(dfp.encoding,
-        "smiles" => "SMILES",
-        "smiles-canonical" => "Canonical SMILES",
-        "selfies" => "SELFIES"
+    transform!(df_ng,
+        :tokenizer => ByRow(x -> tokenizers[x]["tokenizer_class"]) => :tokenizer_class,
+        :tokenizer => ByRow(x -> tokenizers[x]["encoding"]) => :encoding,
     )
-    dfp.encoding = categorical(dfp.encoding, levels=["SMILES", "Canonical SMILES", "SELFIES"])
+    select!(df_ng, :tokenizer, :tokenizer_class, :dataset, :encoding, :finetuned, :samples, :loss_per_token_moments)
 
-    return dfp, best_models
+    # Combine Molecular Foundation Models
+    dfp = select(dfp, :id => :pretrained_id, :id, :tokenizer, :encoding, :tokenizer_class, :val_loss, :train_loss)
+    dfp.task .= "mlm"
+    dfp.metric .= "cross-entropy"
+    dff = subset(dff,
+        :frozen => ByRow(!),
+        [:encoding, :pretrained_encoding] => ByRow(==),
+        :dataset => ByRow(!=("muv")),
+    )
+    select!(dff, Not([:frozen, :train_oov_loss, :val_oov_loss, :train_loss, :val_loss, :step]))
+    select!(dff, Not([:pretrained_encoding]))
+
+    # Get preferred MoleculeNet Metrics
+    dft = subset(dft, :tok_group => ByRow(==("all")), :channel => ByRow(isnothing))
+    select!(dft, :ckpt_id, :metric, :mean, :std)
+    leftjoin!(dff, dft; on=[:id => :ckpt_id, :metric])
+    dropmissing!(dff)
+
+
+    return df_ng, dfp, dff
 end
 
 struct LogLikelihoodRatioTest
@@ -260,47 +268,90 @@ function Base.show(io::IO, mime::MIME"text/plain", lrt::LogLikelihoodRatioTest)
     println(io, "p-value: $(round(pvalue(lrt); sigdigits=3))")
 end
 
-function ngram_vs_transformer_fits(stats_dir, loss_stats, dfp)
-    df, best_models = df_ngrams_vs_transformer(stats_dir, loss_stats, dfp)
+nobs_nonwts(model) = size(model.model.pp.X, 1)
 
+function ngram_vs_transformer_fits(df_ng, df_p, df_f)
     contrasts = Dict(
         :tokenizer_class => EffectsCoding(; base="atomwise"),
-        :encoding => EffectsCoding(; base="SMILES"),
+        :encoding => EffectsCoding(; base="smiles"),
     )
 
-    # Test impact of encoding on pretraining
-    null = lm(@formula(val_loss ~ 1), df)
-    @show tok = lm(
-        @formula(val_loss ~ 1 + tokenizer_class + encoding),
-        df; contrasts
+    # Pretraining models
+    models = []
+    df_ng.val_loss = mean.(df_ng.loss_per_token_moments)
+    df_ng.ng_loss_std = std.(df_ng.loss_per_token_moments)
+    df_ng.wts = inv.(var.(df_ng.loss_per_token_moments))
+    df_ng_pt = subset(df_ng, :dataset => ByRow(==("realspace")))
+    model = lm(@formula(val_loss ~ 1 + tokenizer_class + encoding), df_ng_pt;
+        contrasts,
+        wts=aweights(df_ng_pt.wts),
     )
-    LogLikelihoodRatioTest(tok, null) |> display
+    df_ng_pt.ng_est_loss = predict(model)
 
-    # Test impact of encoding on pretraining
-    tokenizers = tokenizers_info(stats_dir)
-    best_models.tokenizer_class = map(tok -> tokenizers[tok]["tokenizer_class"], best_models.tokenizer)
-    best_models.encoding = map(tok -> tokenizers[tok]["encoding"], best_models.tokenizer)
-    replace!(best_models.encoding,
-        "smiles" => "SMILES",
-        "smiles-canonical" => "Canonical SMILES",
-        "selfies" => "SELFIES"
+    # Dataframe for predictions
+    df_predict = leftjoin(
+        select(df_ng_pt, :tokenizer, :val_loss => :ng_loss_avg, :ng_loss_std, :encoding),
+        select(df_p, :tokenizer, :val_loss => :fm_loss_avg, :encoding);
+        on=[:tokenizer, :encoding],
     )
+    df_predict.fm_loss_std .= missing
+    df_predict.finetuned .= false
+    df_predict.dataset .= "realspace"
 
-    null = lm(@formula(ngram_token_loss ~ 1), best_models)
-    @show tok = lm(
-        @formula(ngram_token_loss ~ 1 + tokenizer_class + encoding),
-        best_models; contrasts
+    push!(models, (; model, dataset="realspace", ngram=true, metric="CE"))
+    model = lm(@formula(val_loss ~ 1 + tokenizer_class + encoding), df_p; contrasts)
+    push!(models, (; model, dataset="realspace", ngram=false, metric="CE"))
+
+    for dataset in unique(df_f.dataset)
+        df_f_fm = subset(df_f, :dataset => ByRow(==(dataset)))
+        task = first(df_f_fm.task)
+
+        # Foundation Model
+        df_f_fm.val_loss = df_f_fm.mean
+        df_f_fm.wts = inv.(df_f_fm.std .^ 2)
+        model = lm(
+            @formula(val_loss ~ 1 + tokenizer_class + encoding), df_f_fm;
+            contrasts,
+            wts=aweights(df_f_fm.wts),
+        )
+        push!(models, (; model, dataset, ngram=false, metric=first(df_f_fm.metric)))
+
+        # NGram
+        for finetuned in [true, false]
+            df_f_ng = subset(df_ng, :dataset => ByRow(==(dataset)), :finetuned => ByRow(==(finetuned)))
+            nrow(df_f_ng) == 0 && continue
+            df_f_ng.val_loss = mean.(df_f_ng.loss_per_token_moments)
+            df_f_ng.wts = inv.(var.(df_f_ng.loss_per_token_moments))
+            model = lm(
+                @formula(val_loss ~ 1 + tokenizer_class + encoding), df_f_ng;
+                contrasts,
+                wts=aweights(df_f_ng.wts),
+            )
+            push!(models, (; model, dataset, ngram=true, finetuned, metric="CE"))
+
+            ds_predict = leftjoin(
+                select(df_f_ng, :tokenizer, :val_loss => :ng_loss_avg, :ng_loss_std, :encoding),
+                select(df_f_fm, :tokenizer, :val_loss => :fm_loss_avg, :std => :fm_loss_std, :encoding);
+                on=[:tokenizer, :encoding],
+            )
+            ds_predict.dataset .= dataset
+            ds_predict.finetuned .= finetuned
+            df_predict = vcat(df_predict, ds_predict)
+        end
+
+    end
+
+    models = map(models) do m
+        m = haskey(m, :finetuned) ? m : (; m..., finetuned=false)
+    end
+
+    df_model = DataFrame(models)
+    transform!(df_model,
+        :model => ByRow(m -> cor(response(m), predict(m))) => :r2,
+        :model => ByRow(m -> corspearman(response(m), predict(m))) => :spearman,
+        :model => ByRow(nobs_nonwts) => :nobs,
     )
-    LogLikelihoodRatioTest(tok, null) |> display
-
-
-    # Predict pretraining loss using n-gram model
-    null = glm(@formula(val_loss ~ 1), df, Normal(), LogLink())
-    @show ngram = glm(@formula(val_loss ~ 1 + log(ngram_token_loss)), df, Normal(), LogLink(); contrasts)
-    LogLikelihoodRatioTest(ngram, null) |> display
-    r2(ngram.model, :devianceratio) |> display
-
-    return df
+    return df_model, df_predict
 end
 
 function tmqm_finetune(stats_dir, dff, dft)

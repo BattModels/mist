@@ -31,7 +31,7 @@ end
 
 function tok_log_prob!(f, cb, file, name, smi, max_vocab=50; direction=:forward)
     ngram, tok, info = TokenizerStats.load_ngram_model(file)
-    code = pyconvert(Vector{Int}, tok(smi)["input_ids"])
+    code = pyconvert(Vector{UInt32}, tok(smi)["input_ids"])
 
     if direction == :forward
         P = TokenizerStats.log_probability(ngram, code)
@@ -86,7 +86,7 @@ function figure_ngram_info_loss(;
     # Load model
     ref_file = joinpath(@__DIR__, "stats", "character", "realspace/usage.jld2")
     ngram, ref_tok, ref_info = TokenizerStats.load_ngram_model(ref_file)
-    ref_code = pyconvert(Vector{Int}, ref_tok(smi)["input_ids"])
+    ref_code = pyconvert(Vector{UInt32}, ref_tok(smi)["input_ids"])
     kwargs = (; ngram, ref_tok, ref_code, token_color)
 
     tok_info_loss!(f[1, 1], cb, "smirk", smi; kwargs...)
@@ -165,7 +165,7 @@ function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_cod
     # Load model
     name = tokenizers_info()[tok]["name"]
     tok = TokenizerStats.load_tokenizer(tok)
-    code = pyconvert(Vector{Int}, tok(smi)["input_ids"])
+    code = pyconvert(Vector{UInt32}, tok(smi)["input_ids"])
 
     # Align both tokenizations
     smi_tokens = pyconvert(Vector{String}, tok.tokenize(smi))
@@ -211,7 +211,6 @@ function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_cod
     )
 
     # Highlight the correct token
-    @info token_color
     for (code_pos, token_id) in enumerate(ref_code)
         color = ismissing(token_color) ? :black : token_color[code_pos]
         box_token!(ax, token_id, code_pos; linewidth=0.5, color)
@@ -221,13 +220,8 @@ function tok_info_loss!(f, cb, tok::String, smi::String; ngram, ref_tok, ref_cod
 end
 
 
-function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; reference="character")
-    tokenizers = tokenizers_info(stats_dir)
+function figure_kl_v_info_loss(tok_info, model_loss, info_loss, df_tf; reference="character")
 
-    model_loss = subset(model_loss,
-        :dataset => ByRow(∉(["realspace"])),
-        :split => ByRow(==("val")),
-    )
     model_loss.dataset = map(d -> d == "tmQM" ? d : "MoleculeNet", model_loss.dataset)
     model_loss = combine(groupby(model_loss, [:tokenizer, :split, :ngram, :dataset])) do gdf
         loss_per_token_moments = reduce(merge, gdf.loss_per_token_moments)
@@ -254,14 +248,13 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
             stderr_info_loss=std(info_loss_moments) / sqrt(nobs(info_loss_moments)),
         )
     end
-    @info info_loss
 
     # Summarize Transformer Model
     df_tf = deepcopy(df_tf)
     df_tf.dataset = map(d -> d == "tmQM" ? d : "MoleculeNet", string.(df_tf.dataset))
     df_tf = combine(groupby(df_tf, [:tokenizer, :dataset])) do gdf
-        i = argmin(gdf.test_loss)
-        return (; test_loss=gdf.test_loss[i], test_loss_std=gdf.test_loss_std[i])
+        i = argmin(gdf.mean)
+        return (; test_loss=gdf.mean[i], test_loss_std=gdf.std[i])
     end
 
     df = innerjoin(model_loss, info_loss, on=[:tokenizer, :ngram, :dataset])
@@ -296,12 +289,13 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
     display(df)
 
 
-    f = Figure(; size=72 .* (4.5, 3), figure_padding=(1, 1, 1, 4))
+    f = Figure(; size=(3.42inch, 2.1inch), figure_padding=(1, 2, 1, 4))
+    gl = GridLayout(f[1, 2])
     ax = Axis(f[1, 1];
-        limits=(nothing, (-0.1, nothing)),
+        limits=(nothing, (-0.1, 2048)),
         xlabel="Cross Entropy Loss [nats/token]",
         ylabel="Information Loss [nats/molecule]",
-        yticks=[0, 0.5, 2, 4, 16, 64, 256, 512],
+        yticks=[0, 0.5, 2, 4, 16, 64, 256, 512, 1024],
         yscale=Asinh(1),
         yminorticksvisible=true,
         yminorticks=IntervalsBetween(4),
@@ -318,12 +312,10 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
         marker=df.marker
     )
 
-    ax_info = Axis(f[1, 2];
-        limits=(nothing, (0, 1)),
-        ylabel="tmQM Test R2",
+    ax_info = Axis(gl[1, 1];
+        ylabel="tmQM Avg. MAE",
         xlabel="Information Loss [nats/molecule]",
         yticks=LinearTicks(5),
-        ytickformat="{:.0%}",
     )
 
     df = subset(df, :dataset => ByRow(==("tmQM")))
@@ -335,9 +327,8 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
     )
 
     # Check correlation
+    @info "info loss vs. test loss spearman" SpearmanTTest(df.avg_info_loss, df.test_loss)
     @show t = HypothesisTests.CorrelationTest(df.avg_info_loss, df.test_loss)
-    @show pvalue(t)
-
 
     Label(f[1, 1, TopLeft()], "a)";
         font=:bold,
@@ -348,7 +339,7 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
     Label(f[1, 2, TopLeft()], "b)";
         font=:bold,
         halign=:right,
-        padding=(0, 25, -3, 0),
+        padding=(0, 10, -3, 0),
         tellwidth=false,
     )
 
@@ -359,26 +350,36 @@ function figure_kl_v_info_loss(stats_dir, model_loss, info_loss, df_tf; referenc
     ngram_elements = map(enumerate(levels(df.dataset))) do (gdx, label)
         PolyElement(; label, color=gdx, colorrange=h.colorrange, colormap=h.colormap)
     end
-    ngram_labels = [x.label[] for x in ngram_elements]
     tokenizer_elements = map(levels(df.tokenizer)) do name
         MarkerElement(; marker=Dict(plt_tokenizers)[name], color=:black)
     end
     tokenizer_labels = map(levels(df.tokenizer)) do name_or_path
-        return tokenizers[name_or_path]["name"]
+        return tok_info[name_or_path]["name"]
     end
-    Legend(f[1, 2],
-        [ngram_elements, tokenizer_elements],
-        [ngram_labels, tokenizer_labels],
-        ["Dataset", "Tokenizer"];
+    Legend(gl[2, 1],
+        [tokenizer_elements],
+        [tokenizer_labels],
+        ["Tokenizer"];
+        nbanks=2,
+        tellheight=true,
+        tellwidth=false,
+        halign=:center,
+        valign=:center,
+        margin=(0, 0, -15, 0),
+    )
+    Legend(f[1, 1],
+        [ngram_elements],
+        [labels(ngram_elements)],
+        ["Datset"];
         nbanks=2,
         tellheight=false,
         tellwidth=false,
-        halign=:right,
-        valign=:bottom,
+        halign=:left,
+        valign=:top,
         margin=(2, 2, 2, 2),
     )
 
-
+    resize_to_layout!(f)
 
     return f
 end
@@ -470,6 +471,110 @@ function figure_info_loss_ref_tokenizer(model_loss)
 
     resize_to_layout!(f)
     display(model_loss)
+
+    return f
+end
+
+function figure_ngram_metrics(tok_info, df_loss, df_info; ngram=5)
+    mergereduce(x) = reduce(merge, x)
+    df_loss = subset(df_loss, :finetuned => ByRow(==(false)), :split=>ByRow(==("val")))
+    df = leftjoin(df_loss, select(df_info, Not(:vocab_size));
+        on=[:tokenizer, :dataset, :ngram],
+        makeunique=true,
+    )
+    transform!(df,
+        :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
+        :tokenizer => ByRow(x -> tok_info[x]["domain"]) => :tokenizer_domain,
+        :dataset => ByRow(x -> x ∈ ["realspace", "tmQM"] ? x : "MoleculeNet") => :dataset,
+    )
+    label_tokenizers!(df)
+    label_datasets!(df)
+
+    df_loss = combine(groupby(df, [:tokenizer_class, :dataset, :ngram]),
+        :loss_per_token_moments => mean∘mergereduce => :ng_loss,
+        :samples => sum => :samples,
+    )
+
+    plt_label = map(eachrow(combine(groupby(df, :tokenizer_class), :tokenizer => length∘unique => :nclass))) do r
+        (; tokenizer_class, nclass) = r
+        tokenizer_class => "$tokenizer_class (n=$nclass)"
+    end |> Dict
+
+    f = Figure(; size=(3.42inch, 2.1inch), figure_padding=(1, 8, 1, 4))
+    yticks = (1:length(plt_label), [plt_label[k] for k in levels(df.tokenizer_class)])
+    ax = Axis(f[1, 1];
+        xlabel="N-Gram Cross Entropy [nats/token]",
+        limits=((0, nothing), nothing),
+        yticks,
+        xminorticks=IntervalsBetween(4),
+        xminorticksvisible=true,
+        yticksvisible=false,
+    )
+    colormap=:Set1_3
+    colorrange=(1, 3)
+
+    barplot!(ax, levelcode.(df_loss.tokenizer_class), df_loss.ng_loss;
+        dodge=levelcode.(df_loss.dataset),
+        color=levelcode.(df_loss.dataset),
+        stack=df_loss.ngram,
+        direction=:x,
+        colormap,
+        colorrange,
+        strokewidth=0.5pt,
+        strokecolor=:white,
+        bar_labels=format.("{:d}", df_loss.ngram),
+        label_position=:center,
+        label_align=(:center, :center),
+        label_color=:white,
+        label_size=6pt,
+        label_font=:bold,
+    )
+    power2ticks(r) = (2.0 .^r, [L"2^{%$p}" for p in r])
+    xticks = power2ticks(-1:2:12)
+    xticks = ([0, xticks[1]...], [L"0", xticks[2]...])
+    ax = Axis(f[1, 2];
+        xscale=Asinh(1),
+        limits=((0, 1024), nothing),
+        xticks=[0, 1, 4, 16, 64, 256, 1024],
+        xlabel="Information Loss [nats/molecule]",
+        xminorticksvisible=true,
+        xminorticks=IntervalsBetween(4),
+        ylabelvisible=false,
+        yticksvisible=false,
+        yticklabelsvisible=false,
+    )
+    df_info = dropmissing(df, :info_loss_moments)
+    df_info = combine(groupby(df_info, [:tokenizer_class, :dataset, :ngram]),
+        :info_loss_moments => mean∘mergereduce => :info_loss,
+        :samples => sum => :samples,
+    )
+    df_info = subset(df_info, :ngram => ByRow(==(ngram)))
+    barplot!(ax, levelcode.(df_info.tokenizer_class), df_info.info_loss;
+        dodge=levelcode.(df_info.dataset),
+        color=levelcode.(df_info.dataset),
+        # stack=df_info.ngram,
+        direction=:x,
+        colormap,
+        colorrange,
+    )
+
+
+    ds_elements = map(enumerate(levels(df.dataset))) do (color, label)
+        PolyElement(; label, color, colorrange, colormap)
+    end
+    Legend(f[1, 1], ds_elements, labels(ds_elements);
+        tellheight=false, tellwidth=false, orientation=:vertical,
+        framevisible=true,
+        margin=(2, 2, 2, 2),
+        fontsize=6pt,
+        patchsize=(6pt, 6pt),
+        padding=2pt,
+        rowgap=1pt,
+        valign=:top,
+        halign=:right,
+    )
+
+    resize_to_layout!(f)
 
     return f
 end

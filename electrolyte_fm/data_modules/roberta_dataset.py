@@ -24,6 +24,7 @@ class RobertaDataSet(LightningDataModule):
         persistent_workers=False,
         canonical: Optional[bool] = None,  # Deprecated: Use encoding instead
         encoding: str | MolEncoding = "smiles",
+        random: bool = False,
     ):
         super().__init__()
 
@@ -48,6 +49,7 @@ class RobertaDataSet(LightningDataModule):
         self.prefetch_factor = prefetch_factor
         self.persistent_workers = persistent_workers
         self.encoding = MolEncoding(encoding)
+        self.random = random
         self.hparams["vocab_size"] = self.vocab_size
         self.save_hyperparameters(logger=False)
 
@@ -85,7 +87,7 @@ class RobertaDataSet(LightningDataModule):
         )
 
         # Transcode
-        ds = encode_molecules(ds, "text", encoding=self.encoding)
+        ds = encode_molecules(ds, "text", encoding=self.encoding, random=self.random)
 
         # Tokenize
         ds = ds.map(

@@ -1,10 +1,10 @@
 function serialize_usage!(f::JLD2.JLDFile, path::AbstractString, x::OnlineStats.Series)
     f[joinpath(path, "samples")] = nobs(x)
     f[joinpath(path, "out_of_vocab")] = value(x[:out_of_vocab])
-    f[joinpath(path, "fertility")] = Dict(value(x[:fertility]))
-    f[joinpath(path, "nunique")] = Dict(value(x[:nunique]))
+    f[joinpath(path, "fertility")] = value(x[:fertility])
+    f[joinpath(path, "nunique")] = value(x[:nunique])
     for n in eachindex(x[:ngrams].stats)
-        f[joinpath(path, "ngrams", string(n))] = Dict(value(x[:ngrams][n]))
+        f[joinpath(path, "ngrams", string(n))] = value(x[:ngrams][n])
     end
     return nothing
 end

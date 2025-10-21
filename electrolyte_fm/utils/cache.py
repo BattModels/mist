@@ -42,17 +42,24 @@ def cached_github_archive(repo, commit, file):
     return cached_path
 
 
-def cached_download(url: str, path: Path) -> Path:
+def cached_download(url: str, path: Path, disable_ssl=False) -> Path:
     path = Path(path)
     cache = Path(__file__).parent.parent.parent.joinpath(".cache")
     cached_file = cache.joinpath(path)
     cached_file.parent.mkdir(exist_ok=True, parents=True)
     if not cached_file.exists():
-        import urllib
+        import ssl
+        import urllib.request
+
+        ctx = (
+            ssl.create_default_context()
+            if not disable_ssl
+            else ssl._create_unverified_context()
+        )
 
         user_agent = "Wget/1.19.5"  # Pretend to be wget
         req = urllib.request.Request(url, headers={"User-Agent": user_agent})
-        with urllib.request.urlopen(req) as fid:
+        with urllib.request.urlopen(req, context=ctx) as fid:
             cached_file.parent.mkdir(parents=True, exist_ok=True)
             with open(cached_file, "wb") as out:
                 out.write(fid.read())

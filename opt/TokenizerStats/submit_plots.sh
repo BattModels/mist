@@ -13,4 +13,4 @@ cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 source ./activate
 env
 
-julia --color=no --startup-file=no --project=plots -e 'using SmirkPaperPlots; SmirkPaperPlots.main()'
+julia --color=no --startup-file=no --project=plots ./plots/plots.jl

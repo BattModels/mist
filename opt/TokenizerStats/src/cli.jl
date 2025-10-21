@@ -18,25 +18,6 @@ function common_args!(s)
     end
 end
 
-
-@annotate function get_dataset(name_or_path, tokenizer, encoding)
-    start = time()
-    if isdir(name_or_path)
-        if "tmQM" in splitpath(name_or_path)
-            dm = TokenizerStats.tmqm(name_or_path; tokenizer, encoding)
-            dataset_name = "tmQM"
-        else
-            dm = TokenizerStats.pretrain(name_or_path; tokenizer, encoding)
-            dataset_name = basename(name_or_path)
-        end
-    else
-        dm = TokenizerStats.molnet(name_or_path; tokenizer, encoding)
-        dataset_name = name_or_path
-    end
-    @info "loaded $dataset_name in $(time() - start) s"
-    return dm, dataset_name
-end
-
 function maybe_parse_env(T::Type, x::String)
     env = get(ENV, x, nothing)
     if !isnothing(env)
@@ -45,7 +26,7 @@ function maybe_parse_env(T::Type, x::String)
     return parse(T, x)
 end
 
-@annotate function main(args::Vector{String})
+@tracepoint function main(args::Vector{String})
     s = ArgParseSettings()
     @add_arg_table! s begin
         "usage"
@@ -92,7 +73,7 @@ end
     end
     @add_arg_table! s["merge"] begin
         "--pattern"
-        default = r"usage.+?_rank_\d+\.jld2"
+        default = r"usage.+?_rank_\d+\.jld2$"
         arg_type = Regex
         "directory"
         help = "Directory to search for files to merge"
@@ -108,17 +89,13 @@ end
 
     # Run command
     if args["%COMMAND%"] == "distortion"
-        tokenizer = args_cmd["tokenizer"]
-        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        dm, dataset = get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"])
-        avg_information_loss(dm, args_cmd["reference"], args_cmd["output"])
+        ds = DatasetConfig(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        avg_information_loss(ds, args_cmd["reference"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "loss"
         # Load the tokenizer
-        tokenizer = args_cmd["tokenizer"]
-        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        dm, dataset = get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"])
-        model_loss(dm, args_cmd["model"], args_cmd["output"])
+        ds = DatasetConfig(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        model_loss(ds, args_cmd["model"], args_cmd["output"])
 
     elseif args["%COMMAND%"] == "merge"
         directory = args_cmd["directory"]
@@ -129,19 +106,17 @@ end
         merge_usage_stats(files; output)
 
     elseif args["%COMMAND%"] == "usage"
-        tokenizer = args_cmd["tokenizer"]
-        tokenizer_name = isdir(tokenizer) ? basename(tokenizer) : tokenizer
-        dm, dataset = get_dataset(args_cmd["dataset"], tokenizer, args_cmd["encoding"])
-        splits = split(args_cmd["splits"], ",")
+        ds = DatasetConfig(args_cmd["dataset"], args_cmd["tokenizer"], args_cmd["encoding"])
+        splits = parse_splits(args_cmd["splits"])
 
         # Distribute computation
         if args_cmd["mode"] == "mpi"
-            tabulate_dataset(dm, args_cmd["output"]; tokenizer_name, splits)
+            tabulate_dataset(ds, args_cmd["output"], splits)
         elseif args_cmd["mode"] == "batch"
-            size = maybe_parse_env(Int, args_cmd["size"])
-            rank = maybe_parse_env(Int, args_cmd["rank"])
-            @info "Using batch mode: $rank of $size (0-indexed)"
-            job_array_usage_stats(dm, args_cmd["output"]; tokenizer_name, splits, size, rank)
+            world_size = maybe_parse_env(Int, args_cmd["size"])
+            global_rank = maybe_parse_env(Int, args_cmd["rank"])
+            @info "Using batch mode: $global_rank of $world_size (0-indexed)"
+            job_array_usage_stats(ds, args_cmd["output"]; splits, world_size, global_rank)
         else
             error("Unknown mode $(args_cmd["mode"])")
         end
@@ -150,44 +125,67 @@ end
     return 0
 end
 
-function merge_usage_stats(files::Vector{String}; output::String="merged.jld2", splits::Vector{String}=["train", "val", "test"])
-    merged = jldopen(output, "w")
-    for file in files
-        jldopen(file, "r") do other
-            @info "Merging $file" other
-            if haskey(other, "tokenizer")
-                if haskey(merged, "tokenizer")
-                    @assert other["tokenizer"] == merged["tokenizer"] "N-gram models must use the same tokenizer"
-                else
-                    merged["tokenizer"] = other["tokenizer"]
-                end
-            end
+parse_splits(x::String) = parse_splits(split(x, ","))
+function parse_splits(x::Vector{<:AbstractString})
+    if length(x) == 1 && first(x) == "all"
+        return ["val", "train", "test"]
+    else
+        return x
+    end
+end
 
-            for split in splits
-                if haskey(merged, split)
-                    merged[split]["out_of_vocab"] += other["out_of_vocab"]
-                    merged[split]["samples"] += other["samples"]
-                    merged[split]["out_of_vocab"] += other["out_of_vocab"]
-                    merged[split]["fertility"] = Dict(mergewith(+, merged[split]["fertility"], other["fertility"]))
-                    merged[split]["nunique"] = Dict(mergewith(+, merged[split]["nunique"], other["nunique"]))
-                    for n in 1:length(merged[split]["ngrams"])
-                        a_ngram = merged[split]["ngrams"]["$n"]
-                        b_ngram = compact_ngrams(other["ngrams"]["$n"])
-                        merged[split]["ngrams"]["$n"] = Dict(mergewith(+, a_ngram, b_ngram))
+function merge_usage_stats(files::Vector{String}; output::String="merged.jld2", splits::Vector{String}=["train", "val", "test"])
+    merged_stats = Dict{String, Int}()
+    rm(output * ".tmp", force=true)
+    for file in files
+        jldopen(output * ".tmp", "a+") do merged
+            jldopen(file, "r") do other
+                @info "Merging $file" other
+                if haskey(other, "tokenizer")
+                    if haskey(merged, "tokenizer")
+                        @assert other["tokenizer"] == merged["tokenizer"] "N-gram models must use the same tokenizer"
+                    else
+                        merged["tokenizer"] = other["tokenizer"]
                     end
-                else
-                    merged[split]["out_of_vocab"] = other[split]["out_of_vocab"]
-                    merged[split]["samples"] = other[split]["samples"]
-                    merged[split]["out_of_vocab"] = other[split]["out_of_vocab"]
-                    merged[split]["fertility"] = other[split]["fertility"]
-                    merged[split]["nunique"] = other[split]["nunique"]
-                    for n in 1:length(other[split]["ngrams"])
-                        merged[split]["ngrams"]["$n"] = compact_ngrams(other[split]["ngrams"]["$n"])
+                end
+
+                for split in splits
+                    if haskey(merged, split)
+                        merged_stats[joinpath(split, "out_of_vocab")] += other[split]["out_of_vocab"]
+                        merged_stats[joinpath(split, "samples")] += other[split]["samples"]
+                        mergewith!(+, merged[split]["fertility"], other[split]["fertility"])
+                        mergewith!(+, merged[split]["nunique"], other[split]["nunique"])
+                        for n in 1:length(merged[split]["ngrams"])
+                            b_ngram = compact_ngrams(other[split]["ngrams"]["$n"])
+                            mergewith!(+, merged[split]["ngrams"]["$n"], b_ngram)
+                        end
+                    else
+                        merged_stats[joinpath(split, "out_of_vocab")] = other[split]["out_of_vocab"]
+                        merged_stats[joinpath(split, "samples")] = other[split]["samples"]
+                        merged[joinpath(split, "fertility")] = other[split]["fertility"]
+                        merged[joinpath(split, "nunique")] = other[split]["nunique"]
+                        for n in 1:length(other[split]["ngrams"])
+                            merged[joinpath(split, "ngrams", string(n))] = compact_ngrams(other[split]["ngrams"]["$n"])
+                        end
                     end
                 end
             end
         end
     end
+    # Write merged single-value stats
+    jldopen(output * ".tmp", "a+") do merged
+        for split in splits
+            for k in ["out_of_vocab", "samples"]
+                merged[joinpath(split, k)] = merged_stats[joinpath(split, k)]
+            end
+        end
+    end
+
+    # Finalize merged file
+    mv(output * ".tmp", output; force=true)
+    @info "saved results to $output" now()
+    chmod(output, 0o444)
+
     return output
 end
 

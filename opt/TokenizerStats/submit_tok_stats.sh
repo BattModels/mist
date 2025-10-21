@@ -13,8 +13,15 @@ cd "$(git rev-parse --show-toplevel)/opt/TokenizerStats"
 source ./activate
 env
 
-# module load cuda/12.2.1
-# nsys profile -o "nsys_multinode_%q{SLURM_JOB_ID}_%q{PMIX_RANK}" --trace=mpi,nvtx \
+# # Start Tracy Profiler
+# module --ignore_cache load spack
+# module --ignore_cache load tracy
+# export TRACY_WORKLOAD="tracy_${SLURM_JOB_ID}.tracy"
+# export TRACY_PORT=$(( 9000 + $SLURM_JOB_ID % 1024 ))
+# export TRACY_ENABLE=1
+# tracy-capture --output-path $TRACY_WORKLOAD --port $TRACY_PORT
+
+# Launch the job
 srun --mpi=pmix \
     julia --project --threads=${SLURM_CPUS_PER_TASK:-1} --color=no --startup-file=no -- \
     ./main.jl $@

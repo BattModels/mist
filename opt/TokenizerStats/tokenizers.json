@@ -1,5 +1,13 @@
 [
   {
+    "name": "Character",
+    "name_or_path": "character",
+    "encoding": "smiles",
+    "tokenizer_class": "character",
+    "domain": "chemistry",
+    "source": "ours"
+  },
+  {
     "name": "Smirk",
     "name_or_path": "smirk",
     "encoding": "smiles",
@@ -28,14 +36,6 @@
     "name_or_path": "smirk-gpe-50k-nmb-ss",
     "encoding": "smiles",
     "tokenizer_class": "smirk-gpe",
-    "domain": "chemistry",
-    "source": "ours"
-  },
-  {
-    "name": "Character",
-    "name_or_path": "character",
-    "encoding": "smiles",
-    "tokenizer_class": "character",
     "domain": "chemistry",
     "source": "ours"
   },
@@ -240,7 +240,7 @@
   {
     "name": "ChemGPT",
     "name_or_path": "ncfrey/ChemGPT-4.7M",
-    "encoding": "smiles",
+    "encoding": "selfies",
     "tokenizer_class": "bpe",
     "domain": "chemistry",
     "source": "huggingface",

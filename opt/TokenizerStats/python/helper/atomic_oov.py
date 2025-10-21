@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 import selfies
-from build_vocab import (
+from .build_vocab import (
     ALIPHATIC_ORGANIC,
     AROMATIC_ORGANIC,
     AROMATIC_SYMBOLS,
@@ -21,7 +21,7 @@ from build_vocab import (
 from datasets import load_dataset
 from mendeleev import element
 
-from electrolyte_fm.utils.tokenizer import PreTrainedTokenizerBase, load_tokenizer
+from .tokenizer import PreTrainedTokenizerBase, load_tokenizer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -347,6 +347,11 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("-d", "--dataset", type=str, default=None, action="append")
     parser.add_argument("--output", type=argparse.FileType("w"), default="-")
+    parser.add_argument(
+        "--tokenizers",
+        type=Path,
+        default=Path(__file__).parent.parent.parent.joinpath("tokenizers.json"),
+    )
     args = parser.parse_args()
 
     # Lookup tokenizer information
@@ -355,7 +360,7 @@ if __name__ == "__main__":
         "name_or_path": args.name_or_path,
         "encoding": args.encoding,
     }
-    tokenizers = Path(__file__).parent.parent.joinpath("tokenizers.json").read_text()
+    tokenizers = args.tokenizers.read_text()
     for tok in json.loads(tokenizers):
         if tok["name_or_path"] == args.name_or_path:
             tokenizer["name"] = args.name or tok["name"]
