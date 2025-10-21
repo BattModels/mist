@@ -1,5 +1,3 @@
-#!/usr/bin/env -S uv run julia +release --color=auto --startup-file=no --project=@script
-#
 # To install run: uv run julia --project -e 'using Pkg; Pkg.instantiate()'
 # Then run the script as usual
 using PythonCall
