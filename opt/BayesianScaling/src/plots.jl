@@ -8,12 +8,17 @@ Plots a prediction band with median line overlayed
     Theme(
         color=Makie.inherit(scene, (:Lines, :linecolor), :black),
         linewidth=Makie.inherit(scene, (:Lines, :linewidth), 2),
+        linestyle=Makie.inherit(scene, (:Lines, :linestyle), :solid),
         band_color=(:blue, 0.1),
     )
 end
 function Makie.plot!(plt::PredictionBand)
     band!(plt, plt.x, plt.lower, plt.upper; color=plt.band_color)
-    lines!(plt, plt.x, plt.center; color=plt.color, linewidth=plt.linewidth)
+    lines!(plt, plt.x, plt.center;
+        color=plt.color,
+        linewidth=plt.linewidth,
+        linestyle=plt.linestyle,
+    )
     return plt
 end
 

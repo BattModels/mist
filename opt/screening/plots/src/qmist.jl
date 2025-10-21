@@ -10,9 +10,9 @@ function load_qmist_results(folder::String)
 end
 
 
-function predict_mist(model::Py, smi::Vector{String}; batch_size=32)
+function predict_mist(model::Py, smi::Vector{String}; batch_size=32, encoding="smiles-kekule")
     model = model.eval()
-    transcode = __data_utils[].MolEncoding("smiles-kekule")
+    transcode = __data_utils[].MolEncoding(encoding)
     smi = map(x -> pyconvert(String, transcode(x)), smi)
     ds = Iterators.partition(smi, batch_size)
     channels = pyconvert(Vector{String}, [chn["name"] for chn in model.channels])
@@ -43,7 +43,7 @@ function merge_qmist_results(qmist::DataFrame, ref::DataFrame)
     return df, cols
 end
 
-figure_parity(args...; kwargs...) = figure_parity!(Figure(; size=(3.42inch, 3inch)), args...; kwargs...)
+figure_parity(args...; kwargs...) = figure_parity!(Figure(; size=(5inch, 4inch)), args...; kwargs...)
 function figure_parity!(f, df::DataFrame, cols::Vector{String}; ref="_qm9", other="_qmist", label::Union{Pair{String,String},Nothing}=nothing)
     nrow = floor(Int, sqrt(length(cols)))
     ncol = ceil(Int, length(cols) / nrow)

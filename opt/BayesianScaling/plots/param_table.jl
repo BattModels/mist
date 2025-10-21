@@ -1,12 +1,19 @@
+#!/usr/bin/env -S julia +release --color=auto --startup-file=no --project=@script
 using PrettyTables
 using DataFrames
 using BayesianScaling: BayesianScaling, find, selectparam
+using JLD2: jldopen
+using MISTStyle
+using Makie
 
 scaling(x) = haskey(x[1,1,:], :scaling) ? selectdim(x, 3, :scaling) : x
+
+include("utils.jl")
 
 function model_summary(files)
     rows = []
     for file in files
+        @info file
         data = jldopen(file, "r")
         score = data["score"]
         summary_params = BayesianScaling.scaling_summary(scaling(data["chains"]))
@@ -32,6 +39,7 @@ function model_summary(files)
                 eta_model_size = nothing,
             )
         else
+            chains = data["chains"]
             eta_0 = selectparam(chains, :lr, :ideal, :a) |> BayesianScaling.credible_interval
             eta_batch_size = selectparam(chains, :lr, :ideal, :b) |> BayesianScaling.credible_interval
             eta_model_size = selectparam(chains, :lr, :ideal, :c) |> BayesianScaling.credible_interval
@@ -65,33 +73,16 @@ function model_name(model, lr_model_size, geometric_penalty, harmonic_shape_pena
 
     named = Dict(
         ("Penalized", :model_size, true, false) => "Penalized, Baseline",
-        ("Penalized", :d_model, true, false) => latex_cell"Penalized, Scaling with $d_{model}$",
-        ("Penalized", :model_size, false, true) => latex_cell"Penalized, Additive",
-        ("Penalized", :model_size, true, true) => latex_cell"Penalized, Harmonic Shape Penalty",
-        ("Chinchilla", nothing, nothing, nothing) => "Chinchilla",
+        ("Penalized", :d_model, true, false) => "Penalized, LR Scales with Hidden Size",
+        ("Penalized", :model_size, false, true) => "Penalized, Additive",
+        ("Penalized", :model_size, true, true) => "Penalized, Harmonic Shape Penalty",
+        ("Chinchilla", nothing, nothing, nothing) => "No Penalties",
     )
     return get(named, (model, lr_model_size, geometric_penalty, harmonic_shape_penalty), nothing)
 end
 
-function sn(x::Real; sigdigits::Int=3)
-    if x == 0
-        return "0.0"
-    end
-
-    str = format(x; precision=sigdigits-1, conversion="e")
-
-    # Split mantissa and exponent
-    m, e = split(str, 'e')
-    e = replace(e, r"^\+?" => "")  # remove optional '+'
-    e = replace(e, r"^0+" => "")   # remove leading zeros
-
-    m = replace(m, r"\.?0+$" => "")  # strip trailing .00
-
-    return "\\sn{$m}{$e}"
-end
-
 function write_scaling_param_table(df::DataFrame; sigdigits=3)
-    df = transform(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(model_name) => :model_name)
+    df = transform(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(LatexCell∘model_name) => :model_name)
     subset!(df, :model_name => ByRow(!isnothing))
     sort!(df, :waic)
     round_sigfigs = ByRow(x -> round(x ; sigdigits))
@@ -156,8 +147,56 @@ function write_scaling_param_table(df::DataFrame; sigdigits=3)
     )
 end
 
+function figure_smoothed_scaling(df)
+    sort!(df, :n_smooth)
+    transform!(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(model_name) => :model_name)
+    df = subset(df, :model_name => ByRow(!isnothing), :file => ByRow(endswith("gamma")))
+
+    f = Figure(; size=(5inch, 3inch))
+    ax_waic = Axis(f[1, 1];
+        limits=(extrema(df.n_smooth), nothing),
+        xlabel="Validation Observation Averaged Over",
+        ylabel="WAIC",
+        xscale=log10,
+    )
+    ax_rho = Axis(f[2, 1];
+        limits=(extrema(df.n_smooth), (0, 1)),
+        xlabel="Validation Observation Averaged Over",
+        ylabel=L"Spearman's $\rho$",
+        xscale=ax_waic.xscale,
+    )
+    ax_mape = Axis(f[3, 1];
+        limits=(extrema(df.n_smooth), (0, nothing)),
+        xlabel="Validation Observation Averaged Over",
+        ylabel="MAPE",
+        ytickformat="{:.0%}",
+        xscale=ax_waic.xscale,
+    )
+    hidexdecorations!(ax_waic; grid=false)
+    hidexdecorations!(ax_rho; grid=false)
+    linkxaxes!(ax_waic, ax_rho, ax_mape)
+    rowgap!(f.layout, 2, 6pt)
+
+    linewidth=1pt
+    for gdf in groupby(df, :model_name)
+        @info first(gdf.model_name)
+        lines!(ax_waic, gdf.n_smooth, gdf.waic; label=first(gdf.model_name), linewidth)
+        lines!(ax_mape, gdf.n_smooth, gdf.mape; label=first(gdf.model_name), linewidth)
+        lines!(ax_rho, gdf.n_smooth, gdf.spearman; label=first(gdf.model_name), linewidth)
+    end
+
+    Legend(f[4, 1], ax_rho;
+        orientation=:horizontal,
+        tellwidth=false,
+        tellheight=true,
+    )
+
+    return f
+end
+
+
 function (@main)(ARGS)
-    df = model_summary(BayesianScaling.find("out", r"chains.jld2"))
+    df = model_summary(BayesianScaling.find("out", r"dec-3-.*chains.jld2"))
     subset!(df, :n_smooth => ByRow(==(1)), :file => ByRow(endswith("gamma")))
     table = write_scaling_param_table(df)
     open(joinpath("fig", "param_table.tex"), "w") do io

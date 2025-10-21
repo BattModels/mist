@@ -58,14 +58,13 @@ function parity_limits(x::AbstractVector, y::AbstractVector; inflate=0.05)
     return (limits, limits)
 end
 
-
-function sublabel!(f, letter; left=0, up=0, kwargs...)
+function sublabel!(f, letter; left=0, up=0, down=0, kwargs...)
     label_kwargs = (;
         fontsize=7pt,
         font=:bold,
         halign=:right,
         tellheight=false,
-        padding=(0, left, up, 0),
+        padding=(0, left, up, down),
     )
     label_kwargs = merge(label_kwargs, kwargs)
     Label(f, "$letter)"; label_kwargs...)
@@ -172,11 +171,13 @@ function theme()
             titlegap=2pt,
         ),
         Legend=(;
-            titlegap=0,
+            titlegap=1pt,
+            titlesize=6pt,
             labelsize=5pt,
             patchsize=(6pt, 6pt),
-            patchlabelgap=2pt,
-            rowgap=0.5pt,
+            markersize=8pt,
+            patchlabelgap=1pt,
+            rowgap=1pt,
             colgap=1pt,
             groupgap=4pt,
             framevisible=true,

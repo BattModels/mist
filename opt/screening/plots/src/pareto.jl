@@ -72,7 +72,7 @@ end
 
 function figure_screening(trace, case, ref, df_speed)
     f = Figure(;
-        size=(3.42inch, 2inch),
+        size=(3.42inch, 2.5inch),
         figure_padding=(2, 2, 2, 5)
     )
     gl_perf = GridLayout(f[1, 1])
@@ -129,19 +129,8 @@ function plot_gen_trace!(f, trace)
     return f
 end
 
-function plot_pareto_front(case, ref)
-    f = Figure(; size=(2inch, 1inch), figure_padding=(1, 3, 1, 2))
-    plot_pareto_front!(f, case, ref)
-end
-function plot_pareto_front!(f, case, ref)
-    mp_limits = extrema(vcat(case.mp, [0]))
-    bp_limits = extrema(vcat(case.bp, [75]))
-    pareto_kwargs = (;
-        linewidth=1.5pt,
-        alpha=0.7,
-    )
-
-    # Net non-dominated
+label_electrolyte_pareto(df) = label_electrolyte_pareto!(deepcopy(df))
+function label_electrolyte_pareto!(case)
     bp = -case[!, :bp]
     gap = -case[!, :gap] .* HARTREE_TO_EV
     homo = case[!, :homo] .* HARTREE_TO_EV
@@ -153,6 +142,24 @@ function plot_pareto_front!(f, case, ref)
     case.dominated .= true
     case.dominated[nidx] .= false
     sort!(case, :dominated; rev=true)
+    return case
+end
+
+function plot_pareto_front(case, ref)
+    f = Figure(; size=(210pt, 100pt), figure_padding=(1, 3, 1, 2))
+    plot_pareto_front!(f, case, ref)
+end
+function plot_pareto_front!(f, case, ref)
+    mp_limits = extrema(vcat(case.mp, [0]))
+    bp_limits = extrema(vcat(case.bp, [75]))
+    pareto_kwargs = (;
+        linewidth=1.5pt,
+        linestyle=:solid,
+        alpha=0.7,
+    )
+
+    # Net non-dominated
+    label_electrolyte_pareto!(case)
     @info "non-dominated" sort(case[nidx, :], :inchi_key)
     front = map(front) do p
         p[1] *= -1
@@ -163,8 +170,8 @@ function plot_pareto_front!(f, case, ref)
 
     ax = Axis(f[1, 1];
         limits=(mp_limits, bp_limits),
-        xlabel=L"Melting Point [$\degree C$]",
-        ylabel=L"Boiling Point [$\degree C$]",
+        xlabel=L"Melt ($\degree C$)",
+        ylabel=L"Boil ($\degree C$)",
     )
     scatter_samples!(ax, case.mp, case.bp, case.dominated)
     stairs!(ax, get_pareto_front(ref.mp, ref.bp; ax);
@@ -178,25 +185,31 @@ function plot_pareto_front!(f, case, ref)
 
     ax = Axis(f[1, 2];
         limits=((-10.5, -7), (5, 13)),
-        xlabel=L"HOMO [eV]$$",
-        ylabel=L"Gap [eV]$$",
+        xlabel=L"HOMO (eV)$$",
+        ylabel=L"Gap (eV)$$",
         xticks=WilkinsonTicks(5; k_max=7),
         yticks=WilkinsonTicks(5; k_max=7),
     )
-    h, _ = scatter_samples!(ax, case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV, case.dominated)
+    h, h_front = scatter_samples!(ax, case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV, case.dominated)
     h.label = "Generated"
-    lines!(ax, get_pareto_front(ref.homo .* HARTREE_TO_EV, ref.gap .* HARTREE_TO_EV; ax);
+    h_front.label = "On Pareto Front, Generated"
+    h_ref_front = lines!(ax, get_pareto_front(ref.homo .* HARTREE_TO_EV, ref.gap .* HARTREE_TO_EV; ax);
         color=MISTStyle.UM_COLORS.maize,
         label="Ref. Pareto Front",
         pareto_kwargs...
     )
-    stairs!(ax, get_pareto_front(case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV; ax)[];
+    h_gen_front = stairs!(ax, get_pareto_front(case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV; ax);
         color=MISTStyle.UM_COLORS.blue,
         label="Generated Pareto Front",
         pareto_kwargs...
     )
-    Legend(f[2, :], ax;
-        tellheight=true, tellwidth=false,
+    # Stairs! leaves linestyle unset...
+    elems = [h, h_front,
+        LineElement(; label=h_ref_front.label, linestyle=:solid, color=h_ref_front.color, linewidth=h_ref_front.linewidth),
+        LineElement(; label=h_gen_front.label, linestyle=:solid, color=h_gen_front.color, linewidth=h_gen_front.linewidth),
+    ]
+    Legend(f[2, :], elems, MISTStyle.label.(elems);
+        tellheight=true, tellwidth=true,
         orientation=:horizontal,
     )
 
@@ -214,4 +227,50 @@ function scatter_samples!(ax, x, y, dominated)
         color=MISTStyle.UM_COLORS.blue,
     )
     return h1, h2
+end
+
+function save_pareto_front(df_mol)
+    df_front = label_electrolyte_pareto(df_mol)
+    subset!(df_front, :dominated => ByRow(!))
+    transform!(df_front, [:bp, :mp] => ByRow(-) => :thermal_window)
+    to_hartree = ByRow(x -> x*HARTREE_TO_EV)
+    transform!(df_front,
+        :homo => to_hartree => :homo,
+        :lumo => to_hartree => :lumo,
+        :gap => to_hartree => :gap,
+    )
+    sort!(df_front, [:gap, :thermal_window]; rev=true)
+
+    df_front.id = 1:nrow(df_front)
+    columns = [
+        "id" => "#",
+        "homo" => "HOMO",
+        "lumo" => "LUMO",
+        "gap" => "Gap",
+        "mp" => LatexCell("Melt"),
+        "bp" => LatexCell("Boil"),
+    ]
+
+    function fmt_lr(v, i, j)
+        col = first(columns[j])
+        if col in ["homo", "lumo", "gap"]
+            return format("{:.1f}", v)
+        elseif col in ["mp", "bp"]
+            return format("{:.0f}", v)
+        else
+            return v
+        end
+    end
+
+    # Latex Table
+    table = pretty_table(String, df_front[!, first.(columns)];
+        tf = LatexTableFormat(),
+        formatters=(fmt_lr,),
+        alignment=[:c for idx in eachindex(columns)],
+        backend=Val(:latex),
+        hlines=[:header],
+        header=last.(columns),
+        table_type=:longtable,
+    )
+    return table, df_front
 end

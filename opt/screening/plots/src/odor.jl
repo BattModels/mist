@@ -215,7 +215,7 @@ function figure_odor_tsne(df::DataFrame, M)
     return f
 end
 
-function figure_odor_counts(df::DataFrame, odor_model::Py)
+function odor_counts(df::DataFrame, odor_model::Py)
     df_sum = combine(groupby(df, :group)) do gdf
         nactive = ScreeningPlots.count_active(gdf, odor_model)
         nactive.active_count ./= nrow(gdf)
@@ -233,8 +233,17 @@ function figure_odor_counts(df::DataFrame, odor_model::Py)
     df_sum  = stack(df_sum, groups; variable_name="group")
     df_sum.group = categorical(df_sum.group; levels=groups)
     df_sum.scent = categorical(df_sum.scent; levels=scents)
+    return df_sum
+end
 
-    f = Figure(; size=(122, 200))
+function figure_odor_counts(df::DataFrame)
+    f = Figure(; size=(2inch, 3.25inch))
+    figure_odor_counts!(f, df)
+    return resize_to_layout!(f)
+end
+
+function figure_odor_counts!(f, df::DataFrame)
+    scents = levels(df.scent)
     ax = Axis(f[1, 1];
         limits=((2e-4, 1), nothing),
         yticks=(1:length(scents), scents),
@@ -244,29 +253,35 @@ function figure_odor_counts(df::DataFrame, odor_model::Py)
         xticklabelsize=7pt,
         yticklabelsize=7pt,
     )
-    h = barplot!(ax, levelcode.(df_sum.scent), df_sum.value;
-        color=levelcode.(df_sum.group),
-        dodge=levelcode.(df_sum.group),
+    h = barplot!(ax, levelcode.(df.scent), df.value;
+        color=levelcode.(df.group),
+        dodge=levelcode.(df.group),
         colormap=MISTStyle.CAT_COLORS,
         colorrange=(1, length(MISTStyle.CAT_COLORS)),
         direction=:x,
         fillto=1e-5,
     )
 
-    elements = map(enumerate(unique(df_sum.group))) do (i, label)
+    elements = map(enumerate(unique(df.group))) do (i, label)
         PolyElement(; color=i, label, colormap=h.colormap, colorrange=h.colorrange)
     end
     Legend(f[1, 1], elements, MISTStyle.label.(elements);
-        tellheight=false, tellwidth=false,
+        orientation=:horizontal,
+        tellheight=false,
+        tellwidth=false,
         halign=:right,
         valign=:top,
     )
-    resize_to_layout!(f)
-
     return f
 end
 
-function plot_pareto_front_scent(df, scent)
+function plot_pareto_front_scent(f, df, scent)
+    f = Figure(; size=(100, 203))
+    f = plot_pareto_front_scent!(f, df, scent)
+    resize_to_layout!(f)
+    return f
+end
+function plot_pareto_front_scent!(f, df, scent)
     df = subset(df, :group => ByRow(in(["Generated", "Electrolytes"])))
     df.group = categorical(df.group; levels=["Generated", "Electrolytes"])
     df = combine(first, groupby(df, [:inchi_key, :group]))
@@ -301,11 +316,10 @@ function plot_pareto_front_scent(df, scent)
         colorrange=(1, length(MISTStyle.CAT_COLORS)),
     )
 
-    f = Figure(; size=(100, 203))
     ax = Axis(f[1, 1];
         limits=((-10.5, -7), (5, 13)),
-        xlabel=L"HOMO [eV]$$",
-        ylabel=L"Gap [eV]$$",
+        xlabel=L"HOMO (eV)$$",
+        ylabel=L"Gap (eV)$$",
         xticks=WilkinsonTicks(5; k_max=7),
         yticks=WilkinsonTicks(5; k_max=7),
     )
@@ -325,8 +339,8 @@ function plot_pareto_front_scent(df, scent)
 
     ax = Axis(f[2, 1];
         limits=((minimum(df.mp), 0), (50, maximum(df.bp))),
-        xlabel=L"Melt [$\degree C$]",
-        ylabel=L"Boil [$\degree C$]",
+        xlabel=L"Melt ($\degree C$)",
+        ylabel=L"Boil ($\degree C$)",
     )
     h_pareto = stairs!(ax, get_pareto_front(gen.mp, gen.bp; ax);
         color=MISTStyle.UM_COLORS.blue,
@@ -369,7 +383,6 @@ function plot_pareto_front_scent(df, scent)
         halign=:left,
         valign=:top,
     )
-    resize_to_layout!(f)
 
     return f
 end

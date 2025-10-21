@@ -14,6 +14,7 @@ using Statistics: cor, mean, std
 using CategoricalArrays: categorical, levelcode
 using LinearAlgebra: norm, dot
 using ManifoldLearning: ManifoldLearning, DiffMap, fit, predict, transform
+using PrettyTables: LatexTableFormat, LatexCell, pretty_table
 using Clustering: hclust
 
 using MISTStyle
@@ -49,11 +50,23 @@ include("creativity.jl")
 include("collate.jl")
 include("sqlite.jl")
 include("pareto.jl")
+include("odor.jl")
+include("xyz.jl")
 
 function canonicalize(smi::String)
     mol = __rdkit_chem[].MolFromSmiles(smi)
     isnothing(mol) && return smi
     return pyconvert(String, __rdkit_chem[].MolToSmiles(mol))
+end
+
+function isomeric_smiles(smi::String)
+    mol = __rdkit_chem[].MolFromSmiles(smi; sanitize=false)
+    isnothing(mol) && return smi
+    for atom in mol.GetAtoms()
+        atom.SetChiralTag(__rdkit_chem[].ChiralType.CHI_UNSPECIFIED)
+    end
+
+    return pyconvert(String, __rdkit_chem[].MolToSmiles(mol, isomericSmiles=true))
 end
 
 function inchi_key(smi::String)

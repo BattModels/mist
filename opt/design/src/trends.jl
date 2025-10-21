@@ -100,7 +100,7 @@ function hydrocarbon_trends(df; qm_model="")
         # errorcross!(ax_mp_bp, gdf.mp, gdf.bp; kwargs...)
     end
     h = ablines!(ax_mp_bp, 0, 1; color=:black, linestyle=:dash)
-    MISTStyle.tantext!(ax_mp_bp, h, 25; text=L"T_m = T_b", align=(:center, :bottom))
+    # MISTStyle.tantext!(ax_mp_bp, h, 25; text=L"T_m = T_b", align=(:center, :bottom))
 
     # Exceptions to BP > MP
     df_except = subset(df, [:mp, :bp] => ByRow((mp, bp) -> mean(mp) > mean(bp)))
