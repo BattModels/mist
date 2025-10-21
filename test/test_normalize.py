@@ -24,7 +24,7 @@ def fitted_normalizer(request):
     return tf
 
 
-def test_standarize_fit():
+def test_standardize_fit():
     n = 4
     mu = 10 * torch.rand(n)
     std = 0.5 * torch.rand(n)

@@ -79,7 +79,7 @@ def test_ckpt(cli):
     assert model_config["lightning_module"] == {
         "_class_path": __name__ + ".MockedModel",
         "_instantiator": "lightning.pytorch.cli.instantiate_module",
-        "vocab_size": None,
+        "vocab_size": cli.datamodule.vocab_size,
     }
     assert model_config["datamodule"] == {
         "_instantiator": "lightning.pytorch.cli.instantiate_module",
