@@ -59,7 +59,7 @@ function hydrocarbon_trends(df; qm_model="")
     foreach(groupby(df, :type)) do gdf
         for (col, ax) in pairs(axes)
             y = convert_units(gdf[:, col], col)
-            lines!(ax, gdf.n_carbon, mean.(y);
+            errorlines!(ax, gdf.n_carbon, y;
                 label=string(first(gdf.type)),
                 color=levelcode.(gdf.type),
                 colormap,

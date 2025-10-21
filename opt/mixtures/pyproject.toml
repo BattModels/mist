@@ -1,0 +1,33 @@
+[project]
+name = "mixtures"
+version = "0.1.0"
+readme = "README.md"
+requires-python = ">=3.10, <3.14"
+dependencies = [
+    "accelerate>=1.8.1",
+    "botorch>=0.15.1",
+    "dataset>=1.6.2",
+    "difftopk>=0.2.0",
+    "dscribe>=2.1.2",
+    "electrolyte_fm",
+    "h5py>=3.14.0",
+    "matplotlib>=3.10.5",
+    "pubchempy>=1.0.4",
+    "rdkit>=2025.3.3",
+    "transformers>=4.53.2",
+    "typer>=0.16.0",
+]
+
+[tool.uv.sources]
+electrolyte_fm = { path = "../../", editable = true }
+optimization = { path = "./optimization/", editable = true }
+
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+
+[tool.setuptools.packages.find]
+where = ["python"]

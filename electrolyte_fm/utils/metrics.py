@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional, Union
 
 import torch
+from numpy import geomspace
 from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
 from torchmetrics.classification import (
@@ -14,6 +16,9 @@ from torchmetrics.regression import (
     MeanSquaredError,
     PearsonCorrCoef,
     R2Score,
+)
+from torchmetrics.regression.pearson import (
+    _final_aggregation as final_pearson_aggregation,
 )
 from torchmetrics.wrappers import BootStrapper
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
@@ -344,11 +349,16 @@ def masked_loss(
     preds: torch.Tensor,
     targets: torch.Tensor,
     mask: torch.FloatTensor,
+    weight: None | torch.Tensor = None,
 ) -> torch.Tensor:
     """Batch Averaged Loss, masking out unknown entries in y"""
     if lossfn.reduction != "none":
         raise RuntimeError("Reduction must be 'none'")
     loss = lossfn(preds, targets.to(preds))
+    if weight:
+        print("Unweighted Loss", loss)
+        loss *= weight
+        print("Weighted Loss", loss)
     return loss.masked_fill(~mask, 0).sum() / mask.count_nonzero().clamp(min=1)
 
 

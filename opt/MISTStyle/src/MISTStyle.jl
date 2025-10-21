@@ -5,16 +5,19 @@ using CategoricalArrays: levels
 using CairoMakie: CairoMakie
 using StatsBase: StatsBase, AbstractWeights
 
-const pt = 3 / 4
-const inch = 96
+# Conversion from units into pixels
+const pt = 1
+const px = (3/4) * pt
+const inch = 72*pt
+const mm = (1/25.4) * inch
 
-export pt, inch, sublabel!
+export pt, inch, mm, sublabel!
 
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
     mkpath(dirname(joinpath(fig_dir, name)))
     save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=CairoMakie)
-    save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1, backend=CairoMakie)
+    save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=pt, backend=CairoMakie)
     return nothing
 end
 
@@ -58,7 +61,7 @@ end
 
 function sublabel!(f, letter; left=0, kwargs...)
     label_kwargs = (;
-        fontsize=8pt,
+        fontsize=7pt,
         font=:bold,
         halign=:right,
         tellheight=false,
@@ -72,6 +75,8 @@ include("errorcross.jl")
 include("powerlaw.jl")
 include("tantext.jl")
 include("quadrant.jl")
+include("asinh.jl")
+include("sci_notation.jl")
 include("nbins.jl")
 
 const CAT_COLORS = cgrad(
@@ -96,6 +101,8 @@ UM_COLORS = (;
     red=colorant"#9A3324",
     orange=colorant"#D86018",
     arboretum=colorant"#2F65A7",
+    ash=colorant"#989C97",
+    black=colorant"#131516",
 )
 
 
@@ -113,7 +120,7 @@ function theme()
         size=(246, 152),
         figure_padding=(2, 2, 2, 2),
         colormap=:lipari,
-        linewidth=0.5,
+        linewidth=1pt,
         CairoMakie=(;
             pt_per_unit=2,
             px_per_unit=300 / inch
@@ -132,10 +139,10 @@ function theme()
         ),
         Axis=(;
             spinewidth=0.5,
-            xlabelsize=8pt,
-            ylabelsize=8pt,
-            yticklabelsize=6pt,
-            xticklabelsize=6pt,
+            xlabelsize=6pt,
+            ylabelsize=6pt,
+            yticklabelsize=5pt,
+            xticklabelsize=5pt,
             ylabelpadding=1pt,
             xlabelpadding=1pt,
             yticklabelpad=2pt,
@@ -156,32 +163,37 @@ function theme()
         ),
         Legend=(;
             titlegap=0,
-            labelsize=8pt,
-            patchsize=(8pt, 8pt),
-            patchlabelgap=3pt,
-            rowgap=1pt,
-            colgap=3pt,
+            labelsize=5pt,
+            patchsize=(6pt, 6pt),
+            patchlabelgap=2pt,
+            rowgap=0.5pt,
+            colgap=1pt,
             groupgap=4pt,
             famevisible=true,
             framewidth=0.5,
             tellheight=false,
             tellwidth=false,
-            padding=(2pt, 2pt, 2pt, 2pt),
-            margin=(2pt, 2pt, 2pt, 2pt),
+            padding=(1pt, 1pt, 1pt, 1pt),
+            margin=(1pt, 1pt, 1pt, 1pt),
         ),
         Colorbar=(;
             spinewidth=0.5,
-            tickwidth=0.5,
-            ticksize=2,
-            labelsize=8pt,
-            ticklabelsize=6pt,
-            labelpadding=0pt,
+            tickwidth=0.5pt,
+            ticksize=2pt,
+            minorticksize=1pt,
+            minortickwidth=0.25pt,
+            labelsize=6pt,
+            ticklabelsize=5pt,
+            labelpadding=1pt,
             ticklabelpad=0pt,
-            size=8pt,
+            size=6pt,
         ),
         Scatter=(;
             markersize=5pt,
             marker=:x,
+        ),
+        BoxPlot=(;
+            markersize=4pt,
         ),
         ErrorLines=(;
             whiskerwidth=3,
