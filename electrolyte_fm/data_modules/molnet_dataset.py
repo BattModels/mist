@@ -80,5 +80,7 @@ class MolNetDataModule(PropertyPredictionDataModule):
             return scaffold_split(ds, self.smi_column)
         elif self.split == "random":
             return train_val_test_split(ds)
+        elif self.split == "all":
+            return ds
         else:
             raise ValueError(f"Unknown split {self.split}")

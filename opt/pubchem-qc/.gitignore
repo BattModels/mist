@@ -1,0 +1,7 @@
+pubchemqc_jcim2017/
+pubchemqc_jcim2017
+pubchemqc_jcim2017-split/
+pubchemqc_jcim2017-split
+*.arrow
+*.jsonl
+uv.lock

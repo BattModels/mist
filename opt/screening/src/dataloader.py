@@ -123,6 +123,8 @@ class DatabaseFragmentDataset(FragmentDataset):
         db_path: Union[str, Path],
         n_fragments: int = 1000,
         ref_frag_file: Optional[Union[str, Path]] = None,
+        limit_db_fragments: Optional[int] = None,
+        limit_ref_fragments: Optional[int] = None,
         **kwargs,
     ):
         super().__init__(fabric, tokenizer, **kwargs)
@@ -131,7 +133,12 @@ class DatabaseFragmentDataset(FragmentDataset):
 
         conn = sqlite3.connect(db_path, timeout=30)
         self.max_id = conn.execute("SELECT MAX(id) FROM fragments").fetchone()[0]
-        logging.info("Found %d fragments in %s", self.max_id, self.db_path)
+        if limit_db_fragments:
+            assert 0 < limit_db_fragments
+            self.max_id = min(self.max_id, limit_db_fragments)
+        logging.info(
+            {"message": "found db fragments", "unique": self.max_id, "path": db_path}
+        )
 
         # Get unique fragments from ref_frag_file, if provided
         ref_frags = set()
@@ -139,9 +146,13 @@ class DatabaseFragmentDataset(FragmentDataset):
             with Path(ref_frag_file).open("r") as frags:
                 for line in frags:
                     ref_frags.add(line.strip())
+        if limit_ref_fragments:
+            random.seed(42)
+            ref_frags = random.sample(list(ref_frags), k=limit_ref_fragments)
         self.ref_fragments = list(ref_frags)
+
         logging.info(
-            "Found %d unique fragments in %s", len(self.ref_fragments), ref_frag_file
+            {"message": "found ref. fragments", "unique": self.max_id, "path": db_path}
         )
 
     def fragments(self) -> Iterator[str]:
@@ -178,10 +189,6 @@ if __name__ == "__main__":
         ref_frag_file="electrolytes.smi.frag",
         epoch_size=5_000,
     )
-
-    # ds = WithReplacementFragmentDataset(
-    #     Fabric(), load_tokenizer("smirk"), ref_frag_file="chembl_100k.smi.frag"
-    # )
 
     hll = HyperLogLogSet()
     for batch in ds.dataloader():

@@ -20,9 +20,11 @@ dependencies = [
     "scikit-learn>=1.5.1",
     "selfies>=2.1.0",
     "rdkit>=2024.3.5",
-    "smirk @ git+ssh://git@github.com/BattModels/smirk.git@dfdd9dc27c066f956b69d1f55c2d4717beb7838d",
+    "smirk",
     "safetensors>=0.5.1",
-    "pytorch-lightning~=2.5"
+    "pytorch-lightning~=2.5",
+    "pandas>=2.2.3",
+    "numpy>=2.2.4",
 ]
 
 [optional-dependencies]
@@ -57,3 +59,7 @@ addopts = "--color yes"
 
 [tool.ruff.lint.extend-per-file-ignores]
 "**/__init__.py" = ["F401"]
+
+
+[tool.uv.sources]
+smirk = { git = "https://github.com/BattModels/smirk", rev = "main" }

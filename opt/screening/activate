@@ -1,0 +1,16 @@
+#!/bin/bash
+# Source this to activate the environment
+
+# Locate Project Root
+GIT_ROOT=$(git rev-parse --show-toplevel)
+ROOT=${GIT_ROOT}/opt/screening
+
+# Activate virtual environment
+source ${ROOT}/.venv/bin/activate
+
+# HuggingFace
+export HF_HOME="$GIT_ROOT/.cache/huggingface"
+
+# Julia
+export JULIA_CONDAPKG_BACKEND=Null
+export JULIA_PYTHONCALL_EXE="${ROOT}/.venv/bin/python"

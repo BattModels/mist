@@ -24,12 +24,13 @@ def load_encoder(
     encoder: str | Path | torch.nn.Module,
     load_weights: bool = True,
     max_position_embeddings: Optional[int] = None,
-):
-    config_path = Path(encoder).parent.parent.joinpath("config.json")
-    hparams_path = Path(encoder).parent.parent.joinpath("model_hparams.json")
+) -> torch.nn.Module:
     if isinstance(encoder, torch.nn.Module):
         return encoder
-    elif Path(encoder).exists() and hparams_path.is_file() and config_path.is_file():
+
+    config_path = Path(encoder).parent.parent.joinpath("config.json")
+    hparams_path = Path(encoder).parent.parent.joinpath("model_hparams.json")
+    if Path(encoder).exists() and hparams_path.is_file() and config_path.is_file():
         if load_weights is False:
             return SaveConfigWithCkpts.instantiate(
                 hparams_path, max_position_embeddings
@@ -44,6 +45,10 @@ def load_encoder(
         return AutoModel.from_pretrained(
             encoder, trust_remote_code=True, add_pooling_layer=False
         )
+
+
+def is_pure_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 class LMFinetuning(LightningModule, DeepSpeedMixin):
@@ -102,7 +107,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         )
 
         if bootstrap:
-            n = bootstrap if isinstance(bootstrap, int) else 50
+            n = bootstrap if is_pure_int(bootstrap) else 50
             metrics = bootstrap_collection(metrics, num_bootstraps=n)
 
         if track_oov:

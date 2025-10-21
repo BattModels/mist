@@ -69,13 +69,11 @@ class ComponentDataModule(LightningDataModule):
         val_batch_size: Optional[int] = None,
         num_workers: int = 0,
         prefetch_factor: Optional[int] = None,
-        encoder_batch_size: Optional[int] = None,
-        include_temperature: bool = True,
+        include_temperature: str | bool = False,
         encoding: Optional[str | MolEncoding] = "smiles",
-        smi_column: str = "smiles",
-        encoder_device: str = "cuda",
         iterable: bool = False,
         randomize: bool = False,
+        max_length: int = 512,
     ):
         super().__init__()
 
@@ -91,19 +89,17 @@ class ComponentDataModule(LightningDataModule):
                 target_col,
             ]
         self.target_col = target_col
-        self.encoder_batch_size = encoder_batch_size
-        self.encoder_device = torch.device(encoder_device)
         assert self.path.is_dir() or self.path.is_file()
 
         self.batch_size = batch_size
         self.n_components = n_components
-        self.temperature = include_temperature
+        self.temperature = bool(include_temperature)
         self.val_batch_size = val_batch_size or batch_size
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.save_hyperparameters(logger=False)
         self.data_collator = DataCollatorWithPadding(
-            self.tokenizer, max_length=128, padding="max_length"
+            self.tokenizer, max_length=max_length, padding="max_length"
         )
 
     def prepare_data(self):

@@ -10,7 +10,7 @@ from lightning.pytorch.loggers import WandbLogger
 from ..utils.metrics import get_metrics, masked_metric_update
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
-from .physics_task_heads import ArrheniusTaskHead
+from .physics_task_heads import VFTTaskHeadWithDecay
 
 
 class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
@@ -58,7 +58,9 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 assert (
                     self.encoder.config.vocab_size == vocab_size
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
-        self.task_network = ArrheniusTaskHead(embed_dim=self.encoder.config.hidden_size)
+        self.task_network = VFTTaskHeadWithDecay(
+            embed_dim=self.encoder.config.hidden_size
+        )
         self.lossfn = torch.nn.MSELoss(reduction="mean")
 
         metrics = get_metrics(
