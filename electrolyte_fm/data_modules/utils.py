@@ -3,7 +3,6 @@ import asyncio
 from enum import Enum
 import random
 from asyncio import Semaphore
-from enum import Enum
 from typing import Optional, TypeVar
 
 from datasets import Dataset, DatasetDict, IterableDatasetDict
