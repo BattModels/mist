@@ -8,7 +8,6 @@ import torch
 from rdkit import Chem
 from datasets import Dataset, DatasetDict, IterableDatasetDict
 from datasets.distributed import split_dataset_by_node
-from rdkit import Chem
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from sklearn.model_selection import GroupShuffleSplit
 
