@@ -120,8 +120,8 @@ class MISTFinetuned(torch.nn.Module):
         return annotate_prediction(out, self.channels)
 
     @classmethod
-    def from_pretrained(cls, save_directory: str):
-        config = json.loads(Path(save_directory, "config.json").read_text())
+    def from_pretrained(cls, name_or_path: str) -> "MISTFinetuned":
+        config = json.loads(Path(name_or_path, "config.json").read_text())
         encoder_config = AutoConfig.for_model(
             config["encoder"]["model_type"]
         ).from_dict(config["encoder"])
@@ -131,11 +131,9 @@ class MISTFinetuned(torch.nn.Module):
             config["transform"]["class"], config["transform"]["num_outputs"]
         )
 
-        tokenizer = AutoTokenizer.from_pretrained(save_directory, use_fast=True)
-        channels = list(maybe_get_annotated_channels(config["channels"]))
-
-        model = cls(encoder, task_network, transform, tokenizer, channels)
-        load_model(model, save_directory)
+        # Instantiate model
+        model = cls(encoder, task_network, transform, config["channels"])
+        load_model(model, name_or_path)
         return model
 
 

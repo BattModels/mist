@@ -18,7 +18,7 @@ from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 import utils
-from utils import get_best_ckpt, create_save_directory, ckpt_id
+from utils import get_best_ckpt, create_save_directory, ckpt_id, save_tokenizer
 
 cli = typer.Typer()
 
@@ -80,6 +80,47 @@ def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     utils.export_code(save_dir, model, model.transform, model.task_network)
     utils.save_model(model, save_dir, safe)
     shutil.move(Path(save_dir, "prod_finetune.py"), Path(save_dir, "model.py"))
+    logging.info("Saved model to %s", save_dir)
+    utils.create_tar_gz(save_dir)
+
+
+def export_conductivity(ckpt: Path):
+    from electrolyte_fm.models import MISTIonicConductivity
+
+    model = SaveConfigWithCkpts.load(ckpt)
+    model_config = json.loads(ckpt.parent.parent.joinpath("config.json").read_text())
+    tokenizer_name = model_config["data"]["init_args"]["tokenizer"]
+    tokenizer = load_tokenizer(tokenizer_name)
+    return MISTIonicConductivity(
+        model.encoder,
+        model.task_network,
+        tokenizer=tokenizer,
+        n_components=model_config["model"]["init_args"]["n_components"],
+    )
+
+
+@cli.command()
+def conductivity(ckpt: Path, name: Optional[str] = None, safe: bool = True):
+    """Export a mixture conductivity model"""
+
+    if Path(ckpt).joinpath("config.json").is_file():
+        ckpt = get_best_ckpt(ckpt)
+    model = export_conductivity(ckpt)
+
+    name = utils.name_model(
+        model,
+        template=name or "mist-conductivity-{model_size}-{ckpt}",
+        ckpt=ckpt_id(ckpt),
+    )
+
+    save_dir = create_save_directory(name, ckpt)
+    utils.export_code(save_dir, model, model.task_network)
+    if hasattr(model, "tokenizer"):
+        save_tokenizer(save_dir, model.tokenizer)
+    model.save_pretrained(save_dir, safe_serialization=safe)
+    # Validate
+    model.__class__.from_pretrained(save_dir)
+    shutil.move(Path(save_dir, "prod_mixture.py"), Path(save_dir, "model.py"))
     logging.info("Saved model to %s", save_dir)
     utils.create_tar_gz(save_dir)
 
