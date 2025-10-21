@@ -1,13 +1,10 @@
-# Scripts for Exploring MIST's token Embeddings
+# Interpretable Embeddings
 
-## Installation
+Scripts for exploring MIST's embeddings and generating relevant figures from the paper
 
-1. Install [julia] and the base environment (See [Project's README](../../README.md))
-2. Instantiate the environment: `julia --project -e 'using Pkg; Pkg.instantiate()`
+## Reproducing Analysis
 
-[julia]: https://julialang.org/downloads/
-
-## Generating Plots
-
-See `plots.jl` for the code used to generate plots from the paper. To run you will need
-to acquire the pretrained & finetuned MIST models and place at the indicated path (see script).
+1. Install [julia](https://julialang.org/downloads/) and the base project (See [Project README](../../README.md))
+2. Instantiate the environment `julia --project -e 'using Pkg; Pkg.instantiate()'`
+3. Obtain model files and place at the appropriate path (see `plots.jl`)
+4. Run the script: `julia --project plots.jl`
