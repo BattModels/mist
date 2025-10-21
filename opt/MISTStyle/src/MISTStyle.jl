@@ -59,13 +59,13 @@ function parity_limits(x::AbstractVector, y::AbstractVector; inflate=0.05)
 end
 
 
-function sublabel!(f, letter; left=0, kwargs...)
+function sublabel!(f, letter; left=0, up=0, kwargs...)
     label_kwargs = (;
         fontsize=7pt,
         font=:bold,
         halign=:right,
         tellheight=false,
-        padding=(0, left, 0, 0),
+        padding=(0, left, up, 0),
     )
     label_kwargs = merge(label_kwargs, kwargs)
     Label(f, "$letter)"; label_kwargs...)
@@ -109,6 +109,16 @@ UM_COLORS = (;
 const CONTINUOUS_COLORS = :lipari
 
 function theme()
+    # Axis Labels Sizes
+    labelsize=8pt
+
+    # Axis Tick Sizes
+    ticklabelsize=6pt
+    tickwidth=0.5pt
+    minortickwidth=0.25pt
+    ticksize=2pt
+    minorticksize=1pt
+
     Theme(
         rowgap=3pt,
         colgap=3pt,
@@ -147,14 +157,14 @@ function theme()
             xlabelpadding=1pt,
             yticklabelpad=2pt,
             xticklabelpad=2pt,
-            yticksize=2pt,
-            ytickwidth=0.5pt,
-            yminortickwidth=0.25pt,
-            yminorticksize=1pt,
-            xtickwidth=0.5pt,
-            xticksize=2pt,
-            xminortickwidth=0.25pt,
-            xminorticksize=1pt,
+            yticksize=ticksize,
+            ytickwidth=tickwidth,
+            yminortickwidth=minortickwidth,
+            yminorticksize=minorticksize,
+            xtickwidth=tickwidth,
+            xticksize=ticksize,
+            xminortickwidth=minortickwidth,
+            xminorticksize=minorticksize,
             xgridwidth=0.5,
             ygridwidth=0.5,
             xminorgridwidth=0.5,
@@ -169,7 +179,7 @@ function theme()
             rowgap=0.5pt,
             colgap=1pt,
             groupgap=4pt,
-            famevisible=true,
+            framevisible=true,
             framewidth=0.5,
             tellheight=false,
             tellwidth=false,

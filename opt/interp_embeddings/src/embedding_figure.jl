@@ -12,6 +12,10 @@ using MISTStyle: MISTStyle, savefig, inch, pt, label
 function figure_embedding()
     df_benzene = DataFrame(CSV.File("interp_benzene.csv"))
     df_condense = DataFrame(CSV.File("interp_condensed.csv"))
+    figure_embedding(df_benzene, df_condense)
+end
+
+function figure_embedding(df_benzene, df_condense)
 
     f = Figure(; size=(3inch, 2inch))
     gl = GridLayout(f[1, 1])
@@ -56,7 +60,6 @@ function figure_embedding()
     )
 
 
-
     h = scatter!(ax_rings, df_benzene[!, "0"], df_benzene[!, "1"];
         color=df_benzene[!, "Number of Benzene"],
         colormap=MISTStyle.CONTINUOUS_COLORS,
@@ -89,8 +92,7 @@ function figure_embedding()
             label=label
         )
     end
-    Legend(f[1, 2], elements, labels.(elements);
-        labelsize=5pt,
+    Legend(f[1, 2], elements, label.(elements);
         tellheight=false,
         tellwidth=false,
         padding=(1, 1, 1, 1),
