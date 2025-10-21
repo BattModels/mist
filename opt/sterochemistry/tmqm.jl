@@ -1,4 +1,3 @@
-#!/usr/bin/env -S uv run julia --project
 using Makie
 using MISTStyle
 using PythonCall: pyimport
