@@ -17,4 +17,6 @@ jobs:
       - name: install project
         run: uv sync --all-extras --dev
       - name: pytest
+        env:
+          WANDB_MODE: disabled
         run: uv run pytest --durations=0

@@ -33,10 +33,16 @@ source ./activate
 module purge
 {%- endif %}
 
-# Set env variables
-{{- export_env( env ) }}
-
 export TMPDIR=${TMPDIR:-/tmp}
+
+# Set env variables
+ENV_FILE="${TMPDIR}/env-${SLURM_JOB_ID}.sh"
+cat > $ENV_FILE<<EOF
+{{- export_env( env ) }}
+EOF
+source $ENV_FILE
+sbcast -fp $ENV_FILE $ENV_FILE
+
 
 {% if deepspeed is defined %}
 # Write out deepspeed config
@@ -78,17 +84,14 @@ if [ -d "$ckpt" ]; then
 fi
 {%- endif %}
 
-srun \
+$(which apptainer) run  \
+--bind /tmp,/projects,/scratch,/work \
+--nv \
+--env-file $ENV_FILE \
+{{ container }} \
 ${PWD}/submit/set_node_rank \
 {%- if nsys is defined %}
 nsys profile \
       {{- cliopts( nsys ) | indent }} \
 {%- endif %}
-{%- if container is defined %}
-apptainer exec --nv --bind /tmp,/projects,/scratch,/work {{ container }} \
-{%- endif %}
-{%- if test is defined %}
-    /mist/.venv/bin/python {{ program or "${PWD}/train.py" }} train.py test
-{%- else %}
-    /mist/.venv/bin/python {{ program or "${PWD}/train.py" }} train.py fit
-{%- endif %}
+    python {{ program or "${PWD}/train.py" }} --config ${PL_CONFIG}

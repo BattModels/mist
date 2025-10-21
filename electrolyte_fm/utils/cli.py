@@ -33,6 +33,24 @@ def mlm_from_pretrained(
     )
 
 
+def recursive_update(original, updates):
+    """
+    Recursively updates a dictionary with another dictionary.
+    """
+    for key, value in updates.items():
+        if (
+            isinstance(value, dict)
+            and key in original
+            and isinstance(original[key], dict)
+        ):
+            # If both original and updates have a dictionary at this key, recurse
+            recursive_update(original[key], value)
+        else:
+            # Otherwise, update the value directly
+            original[key] = value
+    return original
+
+
 class MistLightningCLI(LightningCLI):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("parser_kwargs", {"parser_mode": "jsonnet"})
