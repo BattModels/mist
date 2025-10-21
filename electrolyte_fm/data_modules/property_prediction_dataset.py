@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from lightning import LightningDataModule
 from datasets import Dataset
 from transformers import DataCollatorWithPadding
+from functools import partial
 
 from ..utils.tokenizer import load_tokenizer
 from .utils import (
@@ -28,17 +29,28 @@ class PropertyPredictionDataModule(LightningDataModule):
         target_columns: Optional[List[str]] = None,
         val_batch_size: Optional[int] = None,
         encoding: str = MolEncoding.SMILES.value,
+        additonal_columns: Optional[List[str]] = None,
         include_encoding: bool = False,
         randomize: bool = False,
+        truncation: bool = False,
+        max_seq_length: int = 510,
     ):
         super().__init__()
 
-        self.tokenizer = load_tokenizer(tokenizer)
+        self.tokenizer = (
+            load_tokenizer(tokenizer) if isinstance(tokenizer, str) else tokenizer
+        )
         self.token_collator = DataCollatorWithPadding(self.tokenizer)
         self.vocab_size = len(self.tokenizer)
+        self.truncation = truncation
+        self.max_length = max_seq_length
+        self.tokenize = partial(
+            self.tokenizer, truncation=self.truncation, max_length=self.max_length
+        )
 
         self.smi_column = smi_column
         self.target_columns = target_columns
+        self.additonal_columns = additonal_columns or []
         self.encoding = MolEncoding(encoding)
         self.include_encoding = include_encoding
         self.randomize = randomize
@@ -67,6 +79,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         ds = self.dataset
         ds = maybe_shard_dataset(self.trainer, ds)
         ds = encode_molecules(ds, self.smi_column, encoding=self.encoding)
+        print(ds["train"])
 
         # Remove extraneous columns and tokenize smiles
         if targets := self.target_columns:
@@ -79,13 +92,15 @@ class PropertyPredictionDataModule(LightningDataModule):
 
             # Save training dataset for target transformations
             self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
-            ds = ds.select_columns([self.smi_column, "target", "target_mask"])
+            ds = ds.select_columns(
+                [self.smi_column, "target", "target_mask", *self.additonal_columns]
+            )
         else:
-            ds = ds.select_columns([self.smi_column])
+            ds = ds.select_columns([self.smi_column, *self.additonal_columns])
 
         # Tokenize
         ds = ds.map(
-            self.tokenizer,
+            self.tokenize,
             batched=is_fast(self.tokenizer),
             input_columns=self.smi_column,
         )
@@ -98,7 +113,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def collate_fn(self, batch):
-        tokenizer = self.tokenizer
+        tokenizer = self.tokenize
         encoding = self.encoding
         if self.randomize:
             for idx in range(len(batch)):
@@ -131,6 +146,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         )
 
     def val_dataloader(self):
+        print("has validation dataloader")
         return DataLoader(
             self.val_dataset,
             collate_fn=self.collate_fn,
@@ -162,9 +178,9 @@ def collate_target(x, target_columns):
         v = x[k]
         if v is None:
             target.append(torch.tensor(0))  # Placeholder, should be masked out
-            mask.append(torch.tensor(True))
+            mask.append(torch.tensor(False))
         else:
             target.append(torch.tensor(v))
-            mask.append(torch.tensor(False))
+            mask.append(torch.tensor(True))
 
-    return {"target": torch.stack(target), "target_mask": torch.stack(mask)}
+    return {"target": target, "target_mask": mask}

@@ -2,19 +2,19 @@ module MISTStyle
 
 using Makie
 using CategoricalArrays: levels
-using GLMakie: GLMakie
 using CairoMakie: CairoMakie
+using StatsBase: StatsBase, AbstractWeights
 
 const pt = 3 / 4
 const inch = 96
 
-export pt, inch
+export pt, inch, sublabel!
 
 """ Save duplicate figures for publication and web """
 function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
-    mkpath(fig_dir)
+    mkpath(dirname(joinpath(fig_dir, name)))
+    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=CairoMakie)
     save(joinpath(fig_dir, name * ".pdf"), f; pt_per_unit=1, backend=CairoMakie)
-    save(joinpath(fig_dir, name * ".png"), f; px_per_unit=dpi / inch, backend=GLMakie)
     return nothing
 end
 
@@ -49,6 +49,12 @@ function cb_attrs(cb::Colorbar, plt)
     return Base.structdiff(attrs, NamedTuple{(invalid...,)})
 end
 
+function parity_limits(x::AbstractVector, y::AbstractVector; inflate=0.05)
+    l, u = extrema(Iterators.flatten((x, y)))
+    limits = (l - inflate * (u - l), u + inflate * (u - l))
+    return (limits, limits)
+end
+
 
 function sublabel!(f, letter; left=0, up=0, kwargs...)
     label_kwargs = (;
@@ -66,6 +72,7 @@ include("errorcross.jl")
 include("powerlaw.jl")
 include("tantext.jl")
 include("quadrant.jl")
+include("nbins.jl")
 
 const CAT_COLORS = cgrad(
     map(x -> RGBf(x ./ 255...), [
@@ -86,6 +93,9 @@ const CAT_COLORS = cgrad(
 UM_COLORS = (;
     blue=colorant"#00274C",
     maize=colorant"#FFCB05",
+    red=colorant"#9A3324",
+    orange=colorant"#D86018",
+    arboretum=colorant"#2F65A7",
 )
 
 
@@ -103,8 +113,8 @@ function theme()
     minorticksize=1pt
 
     Theme(
-        rowgap=2,
-        colgap=2,
+        rowgap=3pt,
+        colgap=3pt,
         fonts=(;
             regular="Times New Roman Regular",
             bold="Times New Roman Bold",
@@ -125,6 +135,10 @@ function theme()
         ),
         Lines=(;
             cycle=Cycle([:color, :linestyle], covary=true),
+        ),
+        GridLayout=(;
+            default_rowgap=3pt,
+            default_colgap=3pt,
         ),
         Axis=(;
             spinewidth=0.5,

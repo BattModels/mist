@@ -1,4 +1,4 @@
-from ternary_plots import generate_dataset, run_inference, plot_vector_fields
+from ternary_plots import plot_vector_fields, generate_dataset, run_inference
 import glob
 
 
@@ -20,8 +20,6 @@ if __name__ == "__main__":
                     val_batch_size=165,
                     target=target,
                 )
-    for target in [
-        "transferance",
-        "conductivity",
-    ]:
+
+    for target in ["transferance", "conductivity", "product", "diffusioncoeff"]:
         plot_vector_fields(data_files=glob.glob(f"{target}_*.csv"), target=target)
