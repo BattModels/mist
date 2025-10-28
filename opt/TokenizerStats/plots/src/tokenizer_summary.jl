@@ -61,6 +61,27 @@ function tokenizer_summary(stats_dir; k=5)
     return DataFrame(rows)
 end
 
+function fertility_summary(token_usage; stats_dir="./stats")
+    tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
+    token_usage = transform(token_usage,
+        :dataset => ByRow(x -> x ∉ ["tmQM", "realspace"] ? "MoleculeNet" : x) => :dataset,
+        :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
+    )
+    combine(groupby(token_usage, [:tokenizer_class, :dataset])) do gdf
+        dataset = first(gdf.dataset)
+        fertility = reduce(merge, gdf.fertility)
+        avg_fertility = mean(fertility)
+        std_fertility = std(fertility)
+        return (;
+            dataset=lowercase(dataset) in ("tmqm", "realspace") ? dataset : "MoleculeNet",
+            fertility,
+            avg_fertility,
+            std_fertility,
+            fmt_fertility=format("{}\\pm{}", round(avg_fertility; sigdigits=3), round(std_fertility; sigdigits=3)),
+        )
+    end
+end
+
 function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_stats; k=5)
     fmt(μ, σ) = "\\($(format(round(μ; sigdigits=3))) \\pm $(format(round(σ; sigdigits=3)))\\)"
     tokenizers = JSON.parsefile(abspath(joinpath(stats_dir, "..", "tokenizers.json")))

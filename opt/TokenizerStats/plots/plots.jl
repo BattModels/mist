@@ -42,27 +42,7 @@ df_intrinsic = intrinsic_metrics(token_usage)
 CSV.write(joinpath("stats", "intrinsic_metrics.csv"), df_intrinsic)
 
 # Tokenizer Fertility by Dataset
-function fertility_summary(token_usage)
-    tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
-    token_usage = transform(token_usage,
-        :dataset => ByRow(x -> x ∉ ["tmQM", "realspace"] ? "MoleculeNet" : x) => :dataset,
-        :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
-    )
-    combine(groupby(token_usage, [:tokenizer_class, :dataset])) do gdf
-        dataset = first(gdf.dataset)
-        fertility = reduce(merge, gdf.fertility)
-        avg_fertility = mean(fertility)
-        std_fertility = std(fertility)
-        return (;
-            dataset=lowercase(dataset) in ("tmqm", "realspace") ? dataset : "MoleculeNet",
-            fertility,
-            avg_fertility,
-            std_fertility,
-            fmt_fertility=format("{}\\pm{}", round(avg_fertility; sigdigits=3), round(std_fertility; sigdigits=3)),
-        )
-    end
-end
-fertility_summary(token_usage) |> display
+SmirkPaperPlots.fertility_summary(token_usage; stats_dir) |> display
 
 # Frequency of Unknown Tokens
 function unk_freq(token_usage)
