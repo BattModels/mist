@@ -104,17 +104,16 @@ def print_summary(cache_dir: Path, logs_dir: Path, job_id: int = None):
     
     # Print per-task summary
     completed = sum(1 for s in task_stats if s["completed"])
-    print(f"  Total tasks:     {len(task_stats)}")
-    print(f"  Completed:       {completed}/{len(task_stats)}")
-    print(f"  In progress:     {len(task_stats) - completed}")
-    
-    print(f"  Exported:  {total_exported}")
-    print(f"  Cached:    {total_cached}")
-    print(f"  Failed:    {total_failed}")
+    print(f"total tasks : {len(task_stats)}")
+    print(f"completed : {completed}/{len(task_stats)}")
+    print(f"in progress : {len(task_stats) - completed}")
+    print(f"exported : {total_exported}")
+    print(f"cached : {total_cached}")
+    print(f"failed : {total_failed}")
     
     if total_cached + total_exported > 0:
         progress = (total_cached + total_exported) / (total_cached + total_exported + total_failed) * 100
-        print(f"  Success rate:    {progress:.1f}%")
+        print(f"success rate:    {progress:.1f}%")
     
     # Show tasks with failures
     failed_tasks = [s for s in task_stats if s["failed"] > 0]

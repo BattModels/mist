@@ -8,16 +8,16 @@
 #     "tqdm",
 # ]
 # ///
-import json
+import os
 import re
+import sys
+import json
+import logging
 import traceback
 import subprocess
 from pathlib import Path
 from typing import Optional, Union, Mapping
 from math import nan, isnan
-import logging
-import os
-import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 
@@ -480,14 +480,13 @@ def process_single_run(run_id: str, entity: str, project: str, export_map: dict,
         return {"status": "failed", "run_id": run_id, "error": str(e)}
 
 
-def export_runs_parallel(export_map: dict, cache: Path, runs, n_jobs: int = -1, batch_size: int = None):
+def export_runs(export_map: dict, cache: Path, runs, n_jobs: int = -1, batch_size: int = None):
 
     # Extract run IDs and metadata
     run_info = [(r.id, r.entity, r.project) for r in runs]
     
     logging.info(f"Processing {len(run_info)} runs with {n_jobs} workers")
     
-    # Use joblib for parallel processing
     results = Parallel(n_jobs=n_jobs, backend="multiprocessing", verbose=10)(
         delayed(process_single_run)(run_id, entity, project, export_map, cache)
         for run_id, entity, project in run_info
@@ -571,7 +570,6 @@ if __name__ == "__main__":
         },
     )
     
-    # Convert to list to get length
     runs_list = list(runs)
     logging.info(f"Found {len(runs_list)} runs to process")
     
@@ -587,4 +585,4 @@ if __name__ == "__main__":
         for run in tqdm(runs_list):
             process_single_run(run.id, run.entity, run.project, export_map, cache_path)
     else:
-        export_runs_parallel(export_map, cache_path, runs_list, n_jobs=args.n_jobs)
+        export_runs(export_map, cache_path, runs_list, n_jobs=args.n_jobs)
