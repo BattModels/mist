@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --constraint="scratch"
 #SBATCH --mem=32G
-#SBATCH --array=0-50
+#SBATCH --array=0-25
 
 # Export script for delta
 set -ex
@@ -36,7 +36,7 @@ mkdir -p $WANDB_CACHE_DIR
 python opt/run_logs/sync_wandb.py \
     --slurm-array-id $SLURM_ARRAY_TASK_ID \
     --slurm-array-size $SLURM_ARRAY_TASK_COUNT \
-    --n-jobs 4 \
+    --n-jobs 3 \
     --entity incite-mist \
     --project mist
 
