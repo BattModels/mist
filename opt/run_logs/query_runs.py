@@ -54,8 +54,8 @@ def impute_step(data: Dict[str, Any]) -> Optional[int]:
     if isinstance(t, dict) and isinstance(t.get("_step"), (int, float)):
         return int(t["_step"])
 
-    traces = data.get("metric_traces")
-    mv = _max_num(traces.get("step"))
+    traces = data.get("metric_traces", {})
+    mv = _max_num(traces.get("step", None))
     if isinstance(mv, (int, float)):
         return int(mv)
     return None
@@ -75,7 +75,7 @@ def impute_tokens(data: Dict[str, Any]) -> Optional[float]:
     traces = data.get("metric_traces")
     if isinstance(traces, dict):
         return _max_num(traces.get("total_tokens_step"))
-
+        
     return None
 
 
@@ -142,8 +142,7 @@ def flatten_run(data: Dict[str, Any], run_type: str) -> Dict[str, Any]:
                 "model_size": model.get("model_size"),
                 "step": impute_step(data),
                 "tokens": impute_tokens(data),
-                "val_loss_last": extract_val_loss(data),
-                "val_loss_best": extract_val_loss(data),
+                "val_loss_min": extract_val_loss(data),
                 "train_throughput": system.get("train_throughput"),
             }
         )
@@ -159,7 +158,7 @@ def flatten_run(data: Dict[str, Any], run_type: str) -> Dict[str, Any]:
                 "dataset": data_cfg.get("dataset"),
                 "targets": targets,
                 "step": impute_step(data),
-                "val_loss": extract_val_loss(data),
+                "val_loss_min": extract_val_loss(data),
             }
         )
     return flat
@@ -198,7 +197,7 @@ def get_production_moleculenet(parquet_path: Path) -> pl.DataFrame:
 
     mins = (
         filtered.with_columns(
-            pl.col("val_loss").fill_null(float("inf")).alias("val_loss_filled")
+            pl.col("val_loss_min").fill_null(float("inf")).alias("val_loss_filled")
         )
         .group_by(["dataset", "targets", "encoder_id", "freeze_encoder"])
         .agg(pl.col("val_loss_filled").min().alias("val_loss_min"))
@@ -206,7 +205,7 @@ def get_production_moleculenet(parquet_path: Path) -> pl.DataFrame:
 
     best_rows = (
         filtered.with_columns(
-            pl.col("val_loss").fill_null(float("inf")).alias("val_loss_filled")
+            pl.col("val_loss_min").fill_null(float("inf")).alias("val_loss_filled")
         )
         .join(
             mins, on=["dataset", "targets", "encoder_id", "freeze_encoder"], how="inner"
@@ -252,6 +251,8 @@ def get_production_pretraining(cache_dir: Path) -> pl.DataFrame:
         d = json.loads(jp.read_text(encoding="utf-8"))
         model = d.get("model")
         tokens = impute_tokens(d)
+        if tokens is not None:
+            tokens = tokens / 1e9
         rows.append(
             {
                 "model": model_name,
@@ -260,8 +261,8 @@ def get_production_pretraining(cache_dir: Path) -> pl.DataFrame:
                 "n_layers": model.get("n_layers"),
                 "n_heads": model.get("n_heads"),
                 "step": impute_step(d),
-                "tokens_B": tokens / 1e9,
-                "val_loss_best": extract_val_loss(d),
+                "tokens_B": tokens,
+                "val_loss_min": extract_val_loss(d),
             }
         )
     return pl.DataFrame(rows, infer_schema_length=None)
@@ -322,7 +323,7 @@ def production_pretraining(
         "n_heads",
         "step",
         "tokens_B",
-        "val_loss_best",
+        "val_loss_min",
         "runtime_h",
     ]
     cols = [c for c in cols if c in df.columns]

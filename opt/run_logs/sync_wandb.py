@@ -16,7 +16,7 @@ import logging
 import traceback
 import subprocess
 from pathlib import Path
-from typing import Dict, Mapping, Optional, Union
+from typing import Dict, List, Mapping, Optional, Union
 from math import nan, isnan
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
@@ -146,7 +146,7 @@ def metric_traces(run, x_axis: str, metrics: Dict[str, str]) -> Dict[str, List]:
 
     return out
 
-def has_hotfix(run: Run, commit: str | list[str]) -> bool:
+def has_hotfix(run: Run, commit: str | List[str]) -> bool:
     """Return true if the run has all of the listed commits"""
     try:
         if isinstance(commit, list):
@@ -347,7 +347,9 @@ def finetuning_summary(run: Run):
             "targets": get_entry(config, "cli", "data", "target_columns"),
         }
     )
-
+    row["metric_traces"] = metric_traces(
+        run, "trainer/global_step", {"val/loss_epoch": "val_loss", "total_tokens_step": "total_tokens_step"}
+    )
     row["model"]["encoder_id"] = get_ckpt_id(row["model"]["encoder_ckpt"])
     row["metrics"] = identify_metrics(run)
     return row
