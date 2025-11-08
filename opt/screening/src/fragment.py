@@ -25,7 +25,13 @@ def batched(iterable, n, *, strict=False):
 
 
 @cli.command()
-def fragment_smi(file, frag_file: str | None = None, w: int = 150):
+def fragment_smi(
+    file,
+    frag_file: str | None = None,
+    w: int = 150,
+    smi_column: str = "smi",
+    name_column: str | None = None,
+):
     # Delay import to reduce startup time
     frag_file = frag_file or "fragments.smi"
     with NamedTemporaryFile() as outfile:
@@ -33,13 +39,18 @@ def fragment_smi(file, frag_file: str | None = None, w: int = 150):
             open(file, "r", newline="") as infile,
             open(outfile.name, "w", newline="") as outfile,
         ):
-            fieldnames = None if str(file).endswith(".csv") else ["smi", "name"]
+            name_column = name_column or "name"
+            fieldnames = (
+                None if str(file).endswith(".csv") else [smi_column, name_column]
+            )
             delimiter = "," if str(file).endswith(".csv") else "\t"
             reader = csv.DictReader(infile, fieldnames, delimiter=delimiter)
             writer = csv.writer(outfile, delimiter="\t")
             # Write filtered rows
             for row in reader:
-                writer.writerow([row["smi"], row["name"] or row["smi"]])
+                writer.writerow(
+                    [row[smi_column], row.get(name_column, row[smi_column])]
+                )
 
         subprocess.run(
             [

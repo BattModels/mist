@@ -1,5 +1,6 @@
 {
-  nodes: 5,
+  stage: 'fit',
+  nodes: 2,
   gpus_per_node: 8,
   container: '/lustre/fs0/shared/sqsh-files/mist+pytorch+25.01+v4.sif',
   train: {

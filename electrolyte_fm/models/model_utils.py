@@ -1,7 +1,8 @@
 from pathlib import Path
 
+import torch
 from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
-from pytorch_lightning.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger
 from torchmetrics import MetricCollection
 
 from ..utils.ckpt import SaveConfigWithCkpts
@@ -27,6 +28,7 @@ class DeepSpeedMixin:
 
     def load_state(self, checkpoint_dir):
         print("Loading state for checkpoint:", checkpoint_dir)
+
         state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
         self.load_state_dict(state, strict=False, assign=True)
 
@@ -83,3 +85,33 @@ class CanSkip:
             return True
         else:
             return False
+
+
+def masked_mean_pool(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    mask = mask.unsqueeze(-1)
+    x_masked = x * mask
+    s = x_masked.sum(dim=-2)
+    c = mask.sum(dim=-2).clamp(min=1)
+    return s / c
+
+
+def sparsity_weights(
+    ds, column: list[str], eps=1e-6, max=None
+) -> dict[str, torch.Tensor]:
+    """Compute the relative sparsity of each channel in the target columns"""
+    sparsity = {}
+    for row in ds:
+        for col in column:
+            if col not in sparsity:
+                sparsity[col] = torch.zeros_like(row[col], dtype=torch.float32)
+
+            sparsity[col] += row[col]
+
+    # Normalize
+    for col in sparsity.keys():
+        sparsity[col] = (sparsity[col].max() / (sparsity[col] + eps)).clamp(
+            min=1, max=None
+        )
+        assert sparsity[col].min() >= 1
+
+    return sparsity

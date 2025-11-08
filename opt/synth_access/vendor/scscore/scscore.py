@@ -4,7 +4,7 @@ dependency and is a more attractive option for deployment. The calculations are
 fast enough that there is no real reason to use GPUs (via tf) instead of CPUs (via np)
 
 # Changelog
-- Originally from https://github.com/Connor-Coley/scscore (37090a6aa8220408f572de20224c33c221312d16)
+- Originally from https://github.com/connorcoley/scscore (37090a6aa8220408f572de20224c33c221312d16)
 - Modified by Alexius Wadell to download model if not provided
 """
 

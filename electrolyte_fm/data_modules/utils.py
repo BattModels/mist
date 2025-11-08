@@ -1,12 +1,13 @@
 import logging
+import asyncio
+from enum import Enum
 import random
 from asyncio import Semaphore
-from enum import Enum
-from typing import Optional, TypeVar
-
+from typing import TypeVar
+import torch
+from rdkit import Chem
 from datasets import Dataset, DatasetDict, IterableDatasetDict
 from datasets.distributed import split_dataset_by_node
-from rdkit import Chem
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
 from sklearn.model_selection import GroupShuffleSplit
 
@@ -86,10 +87,23 @@ class MolEncoding(Enum):
         assert False, "Not Reachable, missing Enum Branch"
 
 
+def filter_invalid_smi(
+    ds: AbstractDataset, input_column: str, max_procs: int = 20, **kwargs
+) -> AbstractDataset:
+    sem = asyncio.Semaphore(max_procs)
+
+    async def is_valid(x: dict):
+        async with sem:
+            mol = Chem.MolFromSmiles(x[input_column])
+            return mol is not None
+
+    return ds.filter(is_valid, batched=False, **kwargs)
+
+
 def encode_molecules(
     ds: AbstractDataset,
     input_column: str,
-    output_column: Optional[str] = None,
+    output_column: str | None = None,
     encoding: MolEncoding = MolEncoding.SMILES,
     random: bool = False,
     max_workers: int = 8,
@@ -184,3 +198,32 @@ def strip_unk_tokens(encoding: dict, unk_token_id: int) -> dict:
         out[k] = [x for x, oov in zip(v, is_oov) if not oov]
     out["is_oov"] = any(is_oov)
     return out
+
+
+def stack_columns(batch, columns: list[str], output: str, dtype=None):
+    n = len(batch[columns[0]])
+    if dtype is None:
+        convert = torch.tensor
+    else:
+        convert = lambda x: torch.tensor(x, dtype=dtype)  # noqa: E731
+    return {output: [convert([batch[col][i] for col in columns]) for i in range(n)]}
+
+
+def collate_target(x, target_columns, name: str = "target", dtype=None):
+    """Stack multiple target columns into a single vector,
+    recording unknown elements to be masked out during training
+    """
+    target = []
+    mask = []
+    for k in target_columns:
+        v = x[k]
+        if v is None:
+            target.append(
+                torch.tensor(0, dtype=dtype)
+            )  # Placeholder, should be masked out
+            mask.append(torch.tensor(False))
+        else:
+            target.append(torch.tensor(v, dtype=dtype))
+            mask.append(torch.tensor(True))
+
+    return {name: torch.stack(target), f"{name}_mask": torch.stack(mask)}

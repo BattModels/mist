@@ -1,3 +1,5 @@
+# To install run: uv run julia --project -e 'using Pkg; Pkg.instantiate()'
+# Then run the script as usual
 using PythonCall
 
 # Load the MIST models
@@ -6,16 +8,22 @@ using PythonCall
 MISTFinetuned = pyimport("electrolyte_fm.models.prod_finetune").MISTFinetuned
 MISTMultiTask = pyimport("electrolyte_fm.models.prod_finetune").MISTMultiTask
 
+# Input Files and Path
+# ROOTDIR: opt/screening folder
+# GIT_ROOT: MIST Project Root
+# DATA_DIR: Path to the screening files (to be released in data drop)
+GIT_ROOT = readchomp(`git rev-parse --show-toplevel`)
+DATA_DIR = joinpath(GIT_ROOT, "data")
+
 models = (
-    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-x4i8qzuq-qm9")),
-    "rand" => MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-kkgx0omx-qm9")),
-    "kt" => MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-0vxdbm36-kt/")),
-    "kt" => MISTMultiTask.from_pretrained(joinpath(@__DIR__, "../../models/solvent-properties")) => [:pKa],
-    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-6hk5coof-dn")),
-    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-b302p09x-bp")),
-    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-y3ge5pf9-mp")),
-    MISTFinetuned.from_pretrained(joinpath(@__DIR__, "../../models/mist-26.9M-cyuo2xb6-fp")),
-    "lyte" => MISTMultiTask.from_pretrained(joinpath(@__DIR__, "../../models/electrolyte-solvent/")),
+    MISTFinetuned.from_pretrained(joinpath(DATA_DIR, "models/mist-ti624ev1-moleculenet/qm9")),
+    "rand" => MISTFinetuned.from_pretrained(joinpath(DATA_DIR, "models/mist-26.9M-kkgx0omx-qm9")),
+    "kt" => MISTFinetuned.from_pretrained(joinpath(DATA_DIR, "models/mist-26.9M-0vxdbm36-kt")),
+    "kt" => MISTMultiTask.from_pretrained(joinpath(DATA_DIR, "models/mist-28M-electrolyte-solvent")) => [:pKa],
+    MISTFinetuned.from_pretrained(joinpath(DATA_DIR, "models/mist-26.9M-6hk5coof-dn")),
+    MISTFinetuned.from_pretrained(joinpath(DATA_DIR, "models/mist-26.9M-b302p09x-bp")),
+    MISTFinetuned.from_pretrained(joinpath(DATA_DIR, "models/mist-26.9M-y3ge5pf9-mp")),
+    MISTFinetuned.from_pretrained(joinpath(DATA_DIR, "models/mist-26.9M-cyuo2xb6-fp")),
 )
 
 # Generate Plots
@@ -69,10 +77,10 @@ end |> MISTStyle.savefig("electrolytes")
 # Save predictions
 transform(
     select(df_electrolyte, [:smi, :homo, :gap, :mp, :bp]),
-    :homo => ByRow(mean),
-    :gap => ByRow(mean),
-    :mp => ByRow(mean),
-    :bp => ByRow(mean),
+    :homo => ByRow(mean) => :homo,
+    :gap => ByRow(mean) => :gap,
+    :mp => ByRow(mean) => :mp,
+    :bp => ByRow(mean) => :bp,
 ) |> CSV.write(joinpath(@__DIR__, "electrolytes_predictons.csv"))
 
 # Permutation sensitivity
@@ -91,3 +99,11 @@ with_theme(MISTStyle.theme()) do
         name_df_order=("Baseline" => df_order, "Random" => df_order_rand)
     )
 end |> MISTStyle.savefig("permutations")
+
+
+with_theme(MISTStyle.theme()) do
+    DesignRules.figure_double_bond_loc(
+        "Baseline" => df_perm_ref, "Random" => df_perm_rand;
+        name_df_order=("Baseline" => df_order, "Augmented" => df_order_rand)
+    )
+end |> MISTStyle.savefig("double_bond_loc")

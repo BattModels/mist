@@ -8,6 +8,8 @@ UQReal(x::Vector) = UQReal(mean_and_std(x)..., length(x))
 Statistics.mean(x::UQReal) = x.mean
 Statistics.std(x::UQReal) = x.std
 StatsBase.stderror(x::UQReal) = x.std / sqrt(x.n)
+StatsBase.variation(x::UQReal) = x.std / x.mean
+
 function Base.show(io::IO, x::UQReal)
     μ = mean(x)
     se = stderror(x)

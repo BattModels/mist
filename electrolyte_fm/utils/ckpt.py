@@ -1,9 +1,9 @@
+import logging
 import importlib
 import json
-import logging
 import os
-from pathlib import Path
 from typing import Optional
+from pathlib import Path
 
 import torch
 from jsonargparse import Namespace
@@ -171,6 +171,11 @@ class SaveConfigWithCkpts(Callback):
             model.load_state_dict(state["state_dict"], strict=True, assign=True)
             return model
 
+        if checkpoint_dir.is_file():
+            state = torch.load(checkpoint_dir)
+            model.load_state_dict(state["state_dict"], strict=True, assign=True)
+            return model
+
         # Load model weights from the checkpoint
         try:
             from deepspeed.utils.zero_to_fp32 import (
@@ -178,9 +183,6 @@ class SaveConfigWithCkpts(Callback):
             )
 
             state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
-            if max_position_embeddings is not None:
-                state = adjust_state_position_embeddings(state, max_position_embeddings)
-
             model.load_state_dict(state, strict=False, assign=True)
         except FileNotFoundError:
             logging.error(
@@ -188,11 +190,8 @@ class SaveConfigWithCkpts(Callback):
                 checkpoint_dir,
             )
             file = Path(checkpoint_dir, "checkpoint", "mp_rank_00_model_states.pt")
-            state = torch.load(file, map_location=map_location)
+            state = torch.load(file)
             logging.info("loaded %s", file)
-            if max_position_embeddings is not None:
-                state = adjust_state_position_embeddings(state, max_position_embeddings)
-
             model.load_state_dict(state["module"], strict=True, assign=True)
 
         return model

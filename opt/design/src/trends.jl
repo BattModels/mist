@@ -59,7 +59,7 @@ function hydrocarbon_trends(df; qm_model="")
     foreach(groupby(df, :type)) do gdf
         for (col, ax) in pairs(axes)
             y = convert_units(gdf[:, col], col)
-            lines!(ax, gdf.n_carbon, mean.(y);
+            errorlines!(ax, gdf.n_carbon, y;
                 label=string(first(gdf.type)),
                 color=levelcode.(gdf.type),
                 colormap,
@@ -100,7 +100,7 @@ function hydrocarbon_trends(df; qm_model="")
         # errorcross!(ax_mp_bp, gdf.mp, gdf.bp; kwargs...)
     end
     h = ablines!(ax_mp_bp, 0, 1; color=:black, linestyle=:dash)
-    MISTStyle.tantext!(ax_mp_bp, h, 25; text=L"T_m = T_b", align=(:center, :bottom))
+    # MISTStyle.tantext!(ax_mp_bp, h, 25; text=L"T_m = T_b", align=(:center, :bottom))
 
     # Exceptions to BP > MP
     df_except = subset(df, [:mp, :bp] => ByRow((mp, bp) -> mean(mp) > mean(bp)))
@@ -236,13 +236,16 @@ function figure_permutations(name_df::Pair...; name_df_order)
         :g298 => L"$G\degree$",
     ]
     limits = Dict(
-        :homo => (nothing, (3e-3, 2)),
-        :gap => (nothing, (5e-3, 2)),
-        :zpve => (nothing, (5e-3, 3e-1)),
+        :homo => (nothing, (5e-4, 2e-1)),
+        :lumo => (nothing, (1e-3, 5)),
+        :gap => (nothing, (1e-3, 3e-1)),
+        :zpve => (nothing, (1e-3, 1e-1)),
+        :g298 => (nothing, (3e-4, 1e-1)),
     )
     dfs = []
+    std_isfinite(x...) = all(!isnan∘std, [x...])
     for (name, df) in name_df
-        df = deepcopy(df)
+        df = subset(df, first.(axes) => ByRow(std_isfinite))
         df._plt_name .= name
         push!(dfs, df)
     end
@@ -252,23 +255,29 @@ function figure_permutations(name_df::Pair...; name_df_order)
 
     axes = map(enumerate(axes)) do (idx, (col, ylabel))
         is_last = idx == length(axes)
+        lims = get(limits, col, (nothing, (1e-3, nothing)))
+        yticks = col == :g298 ? LogTicks([-3, -2]) : LogTicks(WilkinsonTicks(3))
         ax_tend = Axis(gl_trends[idx, 1];
+            limits=lims,
             ylabel,
             yscale=log10,
             xticklabelrotation=0.55,
             xticks=MISTStyle.categorical_ticks(df.type),
             xlabelvisible=is_last,
             xticksvisible=is_last,
-            xminorticksvisible=is_last,
             xticklabelsvisible=is_last,
             tellwidth=true,
-            yticks=LogTicks(WilkinsonTicks(3)),
+            yticks,
             yminorticksvisible=true,
-            xminorticks=IntervalsBetween(5),
+            xminorticksvisible=false,
+            yminorticks=IntervalsBetween(5),
         )
         ax_scatter = Axis(gl_trends[idx, 2];
+            limits=(last(lims), last(lims)),
             xscale=ax_tend.yscale,
             yscale=ax_tend.yscale,
+            xticks=ax_tend.yticks,
+            yticks=ax_tend.yticks,
             xlabel="Comparative\nRobustness",
             xlabelvisible=is_last,
             xticksvisible=false,
@@ -280,8 +289,7 @@ function figure_permutations(name_df::Pair...; name_df_order)
     end |> Dict
 
     for (col, (ax, axs)) in axes
-        y = std.(df[:, col])
-        y = convert_units(y, col)
+        y = (abs∘variation).(df[:, col])
         x = df.type
         dodge = levelcode.(df._plt_name)
         idx = @. !isnan(y)
@@ -300,12 +308,8 @@ function figure_permutations(name_df::Pair...; name_df_order)
             alpha=0.2,
             marker=:circle,
         )
-        powerlaw!(axs, 1, 1; color=:black)
-        if haskey(limits, col)
-            ax.limits[] = limits[col]
-            axs.limits[] = (last(limits[col]), last(limits[col]))
-        end
         linkyaxes!(axs, ax)
+        powerlaw!(axs, 1, 1; color=:black)
     end
 
     # Legend
@@ -325,20 +329,36 @@ function figure_permutations(name_df::Pair...; name_df_order)
     colsize!(gl_trends, 1, Relative(3 / 4))
     colgap!(gl_trends, 1, 2)
 
+    figure_double_bond_loc!(gl_order, name_df...; name_df_order)
+
+
+    sublabel!(gl_order[2, 1, TopLeft()], "a"; left=15)
+    sublabel!(gl_order[3, 1, TopLeft()], "b"; left=15)
+    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=13)
+
+    resize_to_layout!(f)
+
+
+    return f
+end
+
+function figure_double_bond_loc(name_df::Pair...; name_df_order)
+    f = Figure(; size=(113, 136), figure_padding=(2,4,2,2))
+    return figure_double_bond_loc!(f, name_df...; name_df_order)
+end
+function figure_double_bond_loc!(f, name_df::Pair...; name_df_order)
     # Order Sensitivity
     n_carbon_range = extrema(last(first(name_df_order)).n_carbon)
-    cb = Colorbar(gl_order[1, 1];
+    cb = Colorbar(f[1, 1];
         label="Number of Carbons",
         colorrange=n_carbon_range,
         vertical=false, tellwidth=false,
-        # flipaxis=false,
     )
     axes = Axis[]
-    for (idx, (_, df)) in enumerate(name_df_order)
+    for (idx, (name, df)) in enumerate(name_df_order)
         is_last = idx == length(name_df_order)
-        ax = Axis(gl_order[1+idx, 1];
+        ax = Axis(f[1+idx, 1];
             xlabel=L"Double Bond Location$$",
-            ylabel=L"HOMO [eV]$$",
             limits=((0, 1), nothing),
             xtickformat="{:.0%}",
             xlabelvisible=is_last,
@@ -346,9 +366,13 @@ function figure_permutations(name_df::Pair...; name_df_order)
             xticklabelsvisible=is_last,
             yticks=WilkinsonTicks(5),
         )
+        text!(0.99, 0.0;
+            text=name,
+            align=(:right, :bottom),
+            space=:relative,
+        )
         push!(axes, ax)
         df = subset(df, :n_carbon => ByRow(>(4)))
-        # df = subset(df, :n_carbon => ByRow(n -> n % 2 == 0))
         foreach(groupby(df, :n_carbon)) do gdf
             n_carbon = gdf.n_carbon[1]
             homo = gdf.homo .* HARTREE_TO_EV
@@ -365,14 +389,15 @@ function figure_permutations(name_df::Pair...; name_df_order)
             )
         end
     end
+
     linkyaxes!(axes...)
     colgap!(f.layout, 1, 3)
     colsize!(f.layout, 2, Relative(3 / 4))
 
-
     sublabel!(gl_order[2, 1, TopLeft()], "a"; left=15)
     sublabel!(gl_order[3, 1, TopLeft()], "b"; left=15)
-    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=13)
+    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=10, up=5)
+    sublabel!(gl_trends[1, 2, TopLeft()], "d"; up=10, left=-5, tellwidth=false)
 
     resize_to_layout!(f)
 

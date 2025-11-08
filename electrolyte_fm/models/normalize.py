@@ -1,8 +1,9 @@
+import logging
+from typing import Any, Callable, Optional, Union
+
 import torch
 from datasets import IterableDataset
-from typing import Any, Dict, Optional, List, Union
-from sklearn.preprocessing import PowerTransformer as _PowerTransformer
-from torch.masked import MaskedTensor
+from torch.masked import MaskedTensor, masked_tensor
 
 
 class AbstractNormalizer(torch.nn.Module):
@@ -25,31 +26,38 @@ class AbstractNormalizer(torch.nn.Module):
     def to_config(self) -> dict:
         return {"class": self.__class__.__name__, "num_outputs": self.num_outputs}
 
-    def fit(self, ds) -> dict:
+    def leader_fit(self, ds, rank: int, broadcast: Callable):
+        state = None
+        if rank == 0:
+            state = self.fit(ds)
+        state = broadcast(state)
+        self.load_state_dict(state)
+
+    def fit(self, ds, name: str = "target") -> dict:
         """Fit the normalization parameters on dataset"""
         if isinstance(ds, IterableDataset):
             target = []
             mask = []
             for x in ds:
-                target.append(x["target"])
-                mask.append(x["target_mask"])
+                target.append(x[name])
+                mask.append(x[f"{name}_mask"])
 
             target = torch.stack(target)
             mask = torch.stack(mask)
 
         else:
-            target = torch.stack([torch.tensor(x) for x in ds["target"]])
-            mask = torch.stack([torch.tensor(x) for x in ds["target_mask"]])
+            target = torch.stack([torch.tensor(x) for x in ds[name]])
+            mask = torch.stack([torch.tensor(x) for x in ds[f"{name}_mask"]])
 
         # Use masked tensor to compute normalization parameters
-        target = MaskedTensor(target, ~mask)
+        target = masked_tensor(target, mask)
 
         state = self._fit(target)
         return state
 
     @classmethod
     def get(
-        cls, transform: Optional[Union[List[str], str]], num_outputs: int
+        cls, transform: Optional[Union[list[str], str]], num_outputs: int
     ) -> "AbstractNormalizer":
         if isinstance(transform, list):
             assert len(transform) == num_outputs
@@ -115,12 +123,37 @@ class Standardize(AbstractNormalizer):
     def inverse(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.mean) / self.std
 
+    def fit(self, ds, name: str = "target") -> dict:
+        num_outputs = self.num_outputs
+        assert num_outputs is not None
+        mean = torch.zeros(num_outputs)
+        m2 = torch.zeros(num_outputs)
+        n = torch.zeros(num_outputs, dtype=torch.int)
+        for row in ds:
+            target = torch.tensor(row[name])
+            mask = torch.tensor(row[f"{name}_mask"])
+            x = masked_tensor(target, mask)
+            n += mask.view(-1, num_outputs).sum(0)
+            xs = x.view(-1, num_outputs).sum(0)
+            delta = xs - mean
+            # Only update masked values
+            mean += (delta / n).get_data().masked_fill(~delta.get_mask(), 0)
+            delta2 = xs - mean
+            m2 += (delta * delta2).get_data().masked_fill(~delta.get_mask(), 0)
+
+        self.mean = mean.to(self.mean)
+        self.std = (m2 / n).sqrt().to(self.std) + self.eps
+        self.mean[self.mean.isnan()] = 0
+        self.std[self.std.isnan()] = 1
+        logging.debug("Fitted %s", self.state_dict())
+        return self.state_dict()
+
     def _fit(self, target: MaskedTensor) -> dict:
         self.mean = target.mean(0).get_data().to(self.mean)
         self.std = target.std(0).get_data().to(self.std) + self.eps
         return self.state_dict()
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         if "transform.mean" in state_dict.keys():
             state_dict["transform.mean"] = state_dict["transform.mean"].view(1)
             state_dict["transform.std"] = state_dict["transform.std"].view(1)
@@ -220,6 +253,10 @@ class PowerTransform(AbstractNormalizer):
 
     def _fit(self, target: MaskedTensor) -> dict:
         # Fit Yeo-Johnson lambdas
+        from sklearn.preprocessing import (
+            PowerTransformer as _PowerTransformer,  # noqa: F811
+        )
+
         transformer = _PowerTransformer(method="yeo-johnson", standardize=False)
         target = torch.tensor(transformer.fit_transform(target.get_data().numpy()))
         self.lmbdas = torch.tensor(transformer.lambdas_)

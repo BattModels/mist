@@ -16,13 +16,15 @@ dependencies = [
     "datasets>=2.20",
     "rich>=13",
     "pydoe2>=1.3",
-    "jsonnet>=0.20.0",
+    "jsonnet>=0.21.0",
     "scikit-learn>=1.5.1",
     "selfies>=2.1.0",
     "rdkit>=2024.3.5",
-    "smirk @ git+ssh://git@github.com/BattModels/smirk.git@dfdd9dc27c066f956b69d1f55c2d4717beb7838d",
+    "smirk",
     "safetensors>=0.5.1",
-    "pytorch-lightning~=2.5"
+    "pytorch-lightning~=2.5",
+    "pandas>=2.2.3",
+    "numpy>=2.2.4",
 ]
 
 [optional-dependencies]
@@ -55,5 +57,16 @@ testpaths = ["test"]
 pythonpath = [".", "test"]
 addopts = "--color yes"
 
+[tool.pytest.ini_options.markers]
+gpu = "tests that require a GPU to run"
+
+[tool.ruff.lint]
+ignore = ["F401"]
+
 [tool.ruff.lint.extend-per-file-ignores]
+"test_*.py" = ["F811"]
 "**/__init__.py" = ["F401"]
+
+
+[tool.uv.sources]
+smirk = { git = "https://github.com/BattModels/smirk", rev = "main" }

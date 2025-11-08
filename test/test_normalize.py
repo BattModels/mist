@@ -1,15 +1,48 @@
 import torch
+import logging
 from torch.masked import MaskedTensor
 import pytest
 from electrolyte_fm.models.normalize import AbstractNormalizer
+from datasets import IterableDataset
+
+N_TARGETS = 4
 
 
-@pytest.fixture(params=["standardize", "power_transform", "log_transform", "identity"])
+@pytest.fixture(
+    scope="session",
+    params=["standardize", "power_transform", "log_transform", "identity"],
+)
 def fitted_normalizer(request):
-    tf = AbstractNormalizer.get(request.param, 1)
-    x = MaskedTensor(torch.rand(100, 1), torch.ones(100, 1) == 1)
-    tf._fit(x)
+    tf = AbstractNormalizer.get(request.param, N_TARGETS)
+    ds = IterableDataset.from_generator(
+        lambda: (
+            {"target": torch.rand(N_TARGETS), "target_mask": torch.ones(N_TARGETS) == 1}
+            for _ in range(100)
+        )
+    )
+    tf.fit(ds)
     return tf
+
+
+def test_standardize_fit():
+    n = 4
+    mu = 10 * torch.rand(n)
+    std = 0.5 * torch.rand(n)
+
+    def gen():
+        for _ in range(1000):
+            yield {
+                "target": std * torch.randn(n) + mu,
+                "target_mask": torch.rand(n) > 0.2,
+            }
+
+    ds = IterableDataset.from_generator(gen)
+    tf = AbstractNormalizer.get("standardize", n)
+    state = tf.fit(ds)
+    logging.info({"state": state, "mu": mu, "std": std})
+    assert "mean" in state and "std" in state
+    assert state["mean"].isclose(mu, atol=1e-1).all()
+    assert state["std"].isclose(std, atol=1e-1).all()
 
 
 def test_serialization(fitted_normalizer: AbstractNormalizer):
@@ -21,7 +54,7 @@ def test_serialization(fitted_normalizer: AbstractNormalizer):
 
 
 def test_normalization(fitted_normalizer: AbstractNormalizer):
-    x = torch.rand(5, 1)
+    x = torch.rand(5, N_TARGETS)
     y = fitted_normalizer.inverse(x)
     assert y.isfinite().all() and not y.isnan().any()
     z = fitted_normalizer.forward(y)

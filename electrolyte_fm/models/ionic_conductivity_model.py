@@ -7,10 +7,10 @@ from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
 
-from ..utils.metrics import get_metrics, masked_metric_update
+from ..utils.metrics import get_metrics
 from ..utils.tokenizer import load_tokenizer
 from .model_utils import DeepSpeedMixin, LoggingMixin
-from .physics_task_heads import ArrheniusTaskHead
+from .physics_task_heads import VFTDecayTaskHead
 
 
 class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
@@ -58,7 +58,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 assert (
                     self.encoder.config.vocab_size == vocab_size
                 ), f"Expected vocab size to match. got {self.encoder.config.vocab_size} and {vocab_size}"
-        self.task_network = ArrheniusTaskHead(embed_dim=self.encoder.config.hidden_size)
+        self.task_network = VFTDecayTaskHead(embed_dim=self.encoder.config.hidden_size)
         self.lossfn = torch.nn.MSELoss(reduction="mean")
 
         metrics = get_metrics(
@@ -71,7 +71,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         self.val_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
 
-    def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
+    def forward(self, batch, return_all=False, **kwargs):  # type: ignore[override]
         mix_embedding = None
         for i in range(self.n_components):
             embedding = self.encoder(
@@ -79,7 +79,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 attention_mask=batch[f"attention_mask_{i}"],
                 return_dict=True,
                 output_hidden_states=True,
-            ).last_hidden_state.mean(axis=1)
+            ).last_hidden_state[:, 0, :]
 
             embedding = torch.stack(
                 [
@@ -92,9 +92,12 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             else:
                 mix_embedding += embedding
 
-        pred_unscaled, alpha, beta, lmbda = self.task_network(
-            mix_embedding, batch["temperature"]
-        )
+        params = self.task_network(mix_embedding, batch["temperature"])
+
+        pred_unscaled = params["conductivity"]
+        alpha = params["alpha"]
+        beta = params["beta"]
+        lmbda = params["beta"]
 
         exponent = torch.div(-1 * alpha + batch["composition_4"], lmbda)
         pred_decay = torch.mul((1 - beta), torch.exp(exponent)) + beta
@@ -104,7 +107,9 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
         # else predicted conductivity
         pred = torch.where(batch["composition_4"] > alpha, pred, pred_unscaled)
 
-        return pred.view(-1, 1), alpha, beta
+        if return_all:
+            return pred.view(-1, 1), params
+        return pred.view(-1, 1), alpha
 
     def setup(self, stage: str) -> None:
         if isinstance(self.logger, WandbLogger):
@@ -114,7 +119,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
 
     def _scaled_pred_loss(self, batch):
         """Compute loss before transforming the model's predictions"""
-        preds, alpha, beta = self.forward(batch, transform=False)
+        preds, alpha = self.forward(batch, return_all=False)
         target = batch["target"]
         loss = self.lossfn(preds, target) + alpha.abs().mean()
         return preds, loss
@@ -130,12 +135,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             sync_dist=True,
         )
 
-        masked_metric_update(
-            self.train_metrics,
-            preds,
-            batch["target"],
-            batch["target_mask"],
-        )
+        self.train_metrics.update(preds, batch["target"])
         return loss
 
     def on_train_epoch_end(self):
@@ -155,13 +155,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             on_epoch=True,
             sync_dist=True,
         )
-
-        masked_metric_update(
-            self.val_metrics,
-            preds,
-            batch["target"],
-            batch["target_mask"],
-        )
+        self.val_metrics.update(preds, batch["target"])
         return loss
 
     def on_validation_epoch_end(self):
@@ -181,12 +175,7 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
             on_epoch=True,
             sync_dist=True,
         )
-        masked_metric_update(
-            self.test_metrics,
-            preds.to(dtype=torch.float32),
-            batch["target"].to(dtype=torch.float32),
-            batch["target_mask"],
-        )
+        self.test_metrics.update(preds, batch["target"])
         return loss
 
     def on_test_epoch_end(self):

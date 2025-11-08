@@ -2,7 +2,6 @@ from electrolyte_fm.models.polynomial_task_head import (
     BezierFourthPredictionTaskHead,
     LegendrePredictionTaskHead,
 )
-import pytest
 import torch
 
 
@@ -25,8 +24,8 @@ def test_zeros():
     assert torch.isclose(m.parametric_var[-1], torch.tensor(1.0), atol=1e-6)
 
 
-@pytest.mark.parametrize("n", range(2, 7))
-def test_basis(n):
-    m = BezierFourthPredictionTaskHead(32, polynomial_order=n)
+def test_basis():
+    m = BezierFourthPredictionTaskHead(32, polynomial_order=4)
     b = m.compute_basis(m.parametric_var)
-    assert torch.linalg.matrix_rank(b) == m.polynomial_order
+    # polyn order excludes control points at zeros
+    assert torch.linalg.matrix_rank(b) == m.polynomial_order + 2

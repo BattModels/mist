@@ -6,7 +6,7 @@ using Makie
 using MISTStyle
 using MISTStyle: label, sublabel!
 using Statistics: Statistics, mean, std
-using StatsBase: StatsBase, stderror, mean_and_std, mean, range
+using StatsBase: StatsBase, stderror, mean_and_std, mean, range, variation
 using CategoricalArrays: levelcode, categorical
 using JSON: JSON
 

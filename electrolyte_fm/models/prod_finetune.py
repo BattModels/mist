@@ -7,8 +7,8 @@ import torch
 from smirk import SmirkTokenizerFast
 from transformers import AutoConfig, AutoModel, AutoTokenizer, DataCollatorWithPadding
 
-from electrolyte_fm.models.normalize import AbstractNormalizer
-from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
+from .prediction_task_head import PredictionTaskHead
+from .normalize import AbstractNormalizer
 
 AutoTokenizer.register("SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast)
 
@@ -103,7 +103,7 @@ class MISTFinetuned(torch.nn.Module):
 
         return hs.to("cpu")
 
-    def predict(self, smi: list[str]):
+    def predict(self, smi: list[str], return_dict=True):
         batch = self.tokenizer(smi)
         collate_fn = DataCollatorWithPadding(self.tokenizer)
         batch = collate_fn(batch)
@@ -114,14 +114,14 @@ class MISTFinetuned(torch.nn.Module):
         with torch.inference_mode():
             out = self(**batch).cpu()
 
-        if self.channels is None:
+        if self.channels is None or not return_dict:
             return out
 
         return annotate_prediction(out, self.channels)
 
     @classmethod
-    def from_pretrained(cls, save_directory: str):
-        config = json.loads(Path(save_directory, "config.json").read_text())
+    def from_pretrained(cls, name_or_path: str) -> "MISTFinetuned":
+        config = json.loads(Path(name_or_path, "config.json").read_text())
         encoder_config = AutoConfig.for_model(
             config["encoder"]["model_type"]
         ).from_dict(config["encoder"])
@@ -131,11 +131,9 @@ class MISTFinetuned(torch.nn.Module):
             config["transform"]["class"], config["transform"]["num_outputs"]
         )
 
-        tokenizer = AutoTokenizer.from_pretrained(save_directory, use_fast=True)
-        channels = list(maybe_get_annotated_channels(config["channels"]))
-
-        model = cls(encoder, task_network, transform, tokenizer, channels)
-        load_model(model, save_directory)
+        # Instantiate model
+        model = cls(encoder, task_network, transform, config["channels"])
+        load_model(model, name_or_path)
         return model
 
 
