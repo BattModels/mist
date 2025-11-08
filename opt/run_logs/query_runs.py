@@ -273,6 +273,7 @@ def build(
     cache_dir: Path = typer.Option(DEFAULT_CACHE, "--cache-dir", "-c"),
     output_dir: Path = typer.Option(DEFAULT_OUT, "--output-dir", "-o"),
 ) -> None:
+    """Build a Parquet database from run logs."""
     create_database(cache_dir, output_dir)
 
 
@@ -280,6 +281,7 @@ def build(
 def summary(
     output_dir: Path = typer.Option(DEFAULT_OUT, "--output-dir", "-o"),
 ) -> None:
+    """Summarize the number of pretraining, finetuning and test logs in database."""
     for name in ("pretraining", "finetuning", "test"):
         p = output_dir / f"{name}.parquet"
         if p.exists():
@@ -296,6 +298,7 @@ def production_finetuning(
     csv: Optional[Path] = typer.Option(None, "--csv"),
     limit: Optional[int] = typer.Option(None, "--limit"),
 ) -> None:
+    """View hyperparameters for production finetuning runs reported in manuscript."""
     parquet_file = parquet or (output_dir / "finetuning.parquet")
     if not parquet_file.exists():
         logging.error("%s not found; run build first or pass --parquet", parquet_file)
@@ -314,6 +317,7 @@ def production_pretraining(
     csv: Optional[Path] = typer.Option(None, "--csv"),
     limit: Optional[int] = typer.Option(None, "--limit"),
 ) -> None:
+    """View hyperparameters for production pretraining runs reported in manuscript."""
     df = get_production_pretraining(cache_dir)
     cols = [
         "model",
