@@ -41,7 +41,7 @@ sbcast -fp $ENV_FILE $ENV_FILE
 # Write out  lightning config
 export PL_CONFIG=$TMPDIR/lightning-${SLURM_JOB_ID}.json
 cat > ${PL_CONFIG}<<EOF
-{%- if stage is not none %}
+{%- if stage is defined and stage is not none %}
 {{ {stage: train } | tojson }}
 {%- else %}
 {{ train | tojson }}
