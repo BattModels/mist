@@ -9,7 +9,7 @@
 # ]
 # ///
 """
-Query W&B runs from exported JSON cache.
+Query WandB runs from export.
 """
 from pathlib import Path
 import json
@@ -23,8 +23,8 @@ from rich.table import Table
 
 app = typer.Typer(add_completion=True, no_args_is_help=True)
 
-DEFAULT_CACHE = Path(".cache/wandb-export")
-DEFAULT_OUT = Path("wandb_data")
+DEFAULT_CACHE = Path("run-logs")
+DEFAULT_OUT = Path(".")
 PRODUCTION_MODELS: Dict[str, str] = {"MIST-1.8B": "dh61satt", "MIST-28M": "ti624ev1"}
 
 console = Console()
@@ -34,6 +34,13 @@ def _max_num(seq: Any) -> Optional[float]:
     if isinstance(seq, (list, tuple)):
         nums = [x for x in seq if isinstance(x, (int, float))]
         return max(nums) if nums else None
+    return float(seq) if isinstance(seq, (int, float)) else None
+
+
+def _min_num(seq: Any) -> Optional[float]:
+    if isinstance(seq, (list, tuple)):
+        nums = [x for x in seq if isinstance(x, (int, float))]
+        return min(nums) if nums else None
     return float(seq) if isinstance(seq, (int, float)) else None
 
 
@@ -57,14 +64,14 @@ def impute_step(data: Dict[str, Any]) -> Optional[int]:
 def impute_tokens(data: Dict[str, Any]) -> Optional[float]:
 
     t = data.get("trainer")
-    
+
     if isinstance(t, dict) and isinstance(t.get("tokens", None), int):
         return t.get("tokens")
 
     s = data.get("summary_metrics")
     if isinstance(s, dict) and isinstance(s.get("total_tokens_step", None), int):
         return s.get("total_tokens_step")
-    
+
     traces = data.get("metric_traces")
     if isinstance(traces, dict):
         return _max_num(traces.get("total_tokens_step"))
@@ -74,20 +81,25 @@ def impute_tokens(data: Dict[str, Any]) -> Optional[float]:
 
 def extract_val_loss(data: Dict[str, Any]) -> Optional[float]:
     s = data.get("summary_metrics")
+
     if isinstance(s, dict):
-        val_loss_mn = s.get("val/loss_step", {}).get("min", None)
-        if isinstance(val_loss_mn, float):
-            return val_loss_mn
-        val_loss_mn = s.get("val/loss_epoch", {}).get("min", None)
-        if isinstance(val_loss_mn, float):
-            return val_loss_mn
+        val_loss_mn = s.get("val/loss_step", {})
+        if isinstance(val_loss_mn, dict):
+            val_loss_mn = val_loss_mn.get("min", None)
+            if isinstance(val_loss_mn, float):
+                return val_loss_mn
 
-    traces = data.get("metric_traces")
+    traces = data.get("metric_traces", {})
     if isinstance(traces.get("val_loss"), list):
-        return min(traces["val_loss"])
+        return _min_num(traces["val_loss"])
+    return None
 
 
-def rich_table(df: pl.DataFrame, columns: Optional[Sequence[str]] = None, limit: Optional[int] = None) -> None:
+def rich_table(
+    df: pl.DataFrame,
+    columns: Optional[Sequence[str]] = None,
+    limit: Optional[int] = None,
+) -> None:
 
     if limit is not None:
         df = df.head(limit)
@@ -96,7 +108,12 @@ def rich_table(df: pl.DataFrame, columns: Optional[Sequence[str]] = None, limit:
     for col in cols:
         table.add_column(col, max_width=22, no_wrap=True, overflow="ellipsis")
     for row in df.select(cols).iter_rows():
-        table.add_row(*["" if v is None else (f"{v:.5g}" if isinstance(v, float) else str(v)) for v in row])
+        table.add_row(
+            *[
+                "" if v is None else (f"{v:.5g}" if isinstance(v, float) else str(v))
+                for v in row
+            ]
+        )
     console.print(table)
 
 
@@ -138,7 +155,7 @@ def flatten_run(data: Dict[str, Any], run_type: str) -> Dict[str, Any]:
             {
                 "encoder_id": model.get("encoder_id"),
                 "task": model.get("task"),
-                "freeze_encoder": model.get("freeze_encoder"),
+                "freeze_encoder": bool(model.get("freeze_encoder")),
                 "dataset": data_cfg.get("dataset"),
                 "targets": targets,
                 "step": impute_step(data),
@@ -156,7 +173,7 @@ def load_runs(cache_dir: Path, run_type: str) -> pl.DataFrame:
     for jf in sorted(p.glob("*.json")):
         d = json.loads(jf.read_text(encoding="utf-8"))
         rows.append(flatten_run(d, run_type))
-    return pl.DataFrame(rows) if rows else pl.DataFrame()
+    return pl.DataFrame(rows, infer_schema_length=None) if rows else pl.DataFrame()
 
 
 def create_database(cache_dir: Path, output_dir: Path) -> None:
@@ -174,27 +191,28 @@ def create_database(cache_dir: Path, output_dir: Path) -> None:
 def get_production_moleculenet(parquet_path: Path) -> pl.DataFrame:
     df = pl.read_parquet(parquet_path)
 
-    filtered = (
-        df.with_columns(pl.col("tags").fill_null(""))
-        .filter(
-            pl.col("tags").str.contains("finetuning")
-            & pl.col("encoder_id").is_in(list(PRODUCTION_MODELS.values()))
-        )
+    filtered = df.with_columns(pl.col("tags").fill_null("")).filter(
+        pl.col("tags").str.contains("finetuning")
+        & pl.col("encoder_id").is_in(list(PRODUCTION_MODELS.values()))
     )
 
     mins = (
-        filtered
-        .with_columns(pl.col("val_loss").fill_null(float("inf")).alias("val_loss_filled"))
+        filtered.with_columns(
+            pl.col("val_loss").fill_null(float("inf")).alias("val_loss_filled")
+        )
         .group_by(["dataset", "targets", "encoder_id", "freeze_encoder"])
         .agg(pl.col("val_loss_filled").min().alias("val_loss_min"))
     )
 
     best_rows = (
-        filtered
-        .with_columns(pl.col("val_loss").fill_null(float("inf")).alias("val_loss_filled"))
-        .join(mins, on=["dataset", "targets", "encoder_id",  "freeze_encoder"], how="inner")
+        filtered.with_columns(
+            pl.col("val_loss").fill_null(float("inf")).alias("val_loss_filled")
+        )
+        .join(
+            mins, on=["dataset", "targets", "encoder_id", "freeze_encoder"], how="inner"
+        )
         .filter(pl.col("val_loss_filled") == pl.col("val_loss_min"))
-        .group_by(["dataset", "targets", "encoder_id"])
+        .group_by(["dataset", "targets", "encoder_id", "freeze_encoder"])
         .head(1)
     )
 
@@ -202,15 +220,15 @@ def get_production_moleculenet(parquet_path: Path) -> pl.DataFrame:
     for r in best_rows.iter_rows(named=True):
         full = json.loads(r["full_data"])
         model = full.get("model")
-        optim = full.get("optimizer") 
-        data_cfg = full.get("data") 
+        optim = full.get("optimizer")
+        data_cfg = full.get("data")
 
         rows.append(
             {
                 "dataset": r["dataset"],
                 "targets": r["targets"],
                 "encoder_id": r["encoder_id"],
-                "freeze_encoder": model.get("freeze_encoder"),
+                "freeze_encoder": bool(model.get("freeze_encoder")),
                 "task": model.get("task"),
                 "lr": optim.get("lr"),
                 "batch_size": data_cfg.get("batch_size"),
@@ -218,8 +236,9 @@ def get_production_moleculenet(parquet_path: Path) -> pl.DataFrame:
             }
         )
 
-    return pl.DataFrame(rows).sort(["dataset", "encoder_id"])
-
+    return pl.DataFrame(rows, infer_schema_length=None).sort(
+        ["dataset", "targets", "encoder_id", "freeze_encoder"]
+    )
 
 
 def get_production_pretraining(cache_dir: Path) -> pl.DataFrame:
@@ -245,7 +264,7 @@ def get_production_pretraining(cache_dir: Path) -> pl.DataFrame:
                 "val_loss_best": extract_val_loss(d),
             }
         )
-    return pl.DataFrame(rows)
+    return pl.DataFrame(rows, infer_schema_length=None)
 
 
 @app.command()
@@ -270,7 +289,7 @@ def summary(
 
 
 @app.command()
-def moleculenet(
+def production_finetuning(
     parquet: Optional[Path] = typer.Option(None, "--parquet"),
     output_dir: Path = typer.Option(DEFAULT_OUT, "--output-dir", "-o"),
     csv: Optional[Path] = typer.Option(None, "--csv"),

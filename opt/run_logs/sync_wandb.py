@@ -110,19 +110,41 @@ def system_metrics(run: Run):
         return {}
 
 
-def metric_traces(run: Run, x_axis: str, metrics: dict[str, str]) -> dict[str, list]:
-    try:
-        records = run.scan_history(keys=[x_axis, *metrics.keys()])
-        out = {k: [] for k in ["step", *metrics.values()]}
-        for sample in records:
-            out["step"].append(sample.get(x_axis))
-            for k, v in metrics.items():
-                out[v].append(sample.get(k))
-        return out
-    except Exception as e:
-        logging.warning(f"Failed to get metric traces: {e}")
-        return {k: [] for k in ["step", *metrics.values()]}
+def metric_traces(run, x_axis: str, metrics: Dict[str, str]) -> Dict[str, List]:
+    """
+    Extract metric traces from a WandB run.
+    Allow sparse metrics (not handled by `scan_history` method).
+    """
+    step_records = run.scan_history(keys=[x_axis])
+    steps = []
+    for sample in step_records:
+        step_val = sample.get(x_axis)
+        if step_val is not None:
+            steps.append(step_val)
 
+    if not steps:
+        logging.warning(f"No {x_axis} values found")
+        return {k: [] for k in ["step", *metrics.values()]}
+    
+    out = {"step": steps}
+    
+    for wandb_key, output_key in metrics.items():
+        try:
+            records = run.scan_history(keys=[x_axis, wandb_key])
+            metric_dict = {}
+            for sample in records:
+                step_val = sample.get(x_axis)
+                metric_val = sample.get(wandb_key)
+                if step_val is not None:
+                    metric_dict[step_val] = metric_val
+            
+            out[output_key] = [metric_dict.get(s) for s in steps]
+            
+        except Exception as e:
+            logging.warning(f"Failed to get metric '{wandb_key}': {e}")
+            out[output_key] = [None] * len(steps)
+            
+    return out
 
 def has_hotfix(run: Run, commit: str | list[str]) -> bool:
     """Return true if the run has all of the listed commits"""
