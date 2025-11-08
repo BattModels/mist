@@ -16,7 +16,7 @@ import logging
 import traceback
 import subprocess
 from pathlib import Path
-from typing import Optional, Union, Mapping
+from typing import Dict, Mapping, Optional, Union
 from math import nan, isnan
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
@@ -42,7 +42,7 @@ def model_size(d_model: int, d_ff: int, n_layers: int) -> int:
     return attention_qkv + project + ff
 
 
-def get_entry(config: dict | str | None, *entry_path: str):
+def get_entry(config: Dict | str | None, *entry_path: str):
     if isinstance(config, Mapping):
         if len(entry_path) >= 1:
             if (path := entry_path[0]) in config:
@@ -143,7 +143,7 @@ def metric_traces(run, x_axis: str, metrics: Dict[str, str]) -> Dict[str, List]:
         except Exception as e:
             logging.warning(f"Failed to get metric '{wandb_key}': {e}")
             out[output_key] = [None] * len(steps)
-            
+
     return out
 
 def has_hotfix(run: Run, commit: str | list[str]) -> bool:
@@ -442,7 +442,7 @@ def identify_metrics(run):
     return out
 
 
-def process_single_run(run_id: str, entity: str, project: str, export_map: dict, cache_base: Path):
+def process_single_run(run_id: str, entity: str, project: str, export_map: Dict, cache_base: Path):
     try:
         api = wandb.Api(timeout=120)
         run = api.run(f"{entity}/{project}/{run_id}")
@@ -502,7 +502,7 @@ def process_single_run(run_id: str, entity: str, project: str, export_map: dict,
         return {"status": "failed", "run_id": run_id, "error": str(e)}
 
 
-def export_runs(export_map: dict, cache: Path, runs, n_jobs: int = -1, batch_size: int = None):
+def export_runs(export_map: Dict, cache: Path, runs, n_jobs: int = -1, batch_size: int = None):
 
     # Extract run IDs and metadata
     run_info = [(r.id, r.entity, r.project) for r in runs]
