@@ -141,44 +141,6 @@ def process_smiles(
     typer.echo(f"Results written incrementally to: {output_file}")
 
 
-@app.command("merge")
-def merge_ambiguous_files(
-    output_file: str,
-    input_files: list[str] = typer.Argument(
-        ..., help="List of ambiguous.csv files to merge."
-    ),
-):
-    """
-    Merge multiple ambiguous.csv files and deduplicate using InChIKey.
-    """
-    combined_df = pd.DataFrame()
-    for file in input_files:
-        input_path = Path(file)
-        if not input_path.exists():
-            typer.echo(f"File {file} does not exist.")
-            raise typer.Exit()
-
-        typer.echo(f"Reading file: {file}")
-        df = pd.read_csv(file)
-
-        if "InChI" not in df or "smiles" not in df:
-            typer.echo(f"File {file} must contain 'InChI' and 'smiles' columns.")
-            raise typer.Exit()
-
-        combined_df = pd.concat([combined_df, df], ignore_index=True)
-
-    # Deduplicate using InChIKey
-    if "InChI" in combined_df.columns:
-        combined_df = combined_df.drop_duplicates(subset=["InChI"])
-
-    typer.echo(f"Merged and deduplicated {len(combined_df)} rows based on InChIKey.")
-
-    # Write to output file
-    output_path = Path(output_file)
-    combined_df.to_csv(output_path, index=False)
-    typer.echo(f"Final merged file written to: {output_path}")
-
-
 @app.command("stats")
 def tabulate_ambiguities(
     output_file: str,
