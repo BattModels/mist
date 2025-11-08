@@ -65,8 +65,9 @@ cat > ${PL_CONFIG}<<EOF
 {{ {stage: train } | tojson }}
 {%- else %}
 {{ train | tojson }}
-EOF
 {% endif %}
+EOF
+
 sbcast -fp ${PL_CONFIG} ${PL_CONFIG}
 cat ${PL_CONFIG}
 cat ${PL_CONFIG}
