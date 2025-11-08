@@ -30,7 +30,7 @@ function fit_pretrained_time_models(file)
     @info df
     df.training_time ./= 60 * 60 # Secs to Hours
     @info df
-    
+
     contrasts = Dict(
         :tokenizer => EffectsCoding(; base="smirk"),
         :tokenizer_class => EffectsCoding(; base="atomwise"),
@@ -66,7 +66,7 @@ function flops_ratios(; l=8, h=512)
         h5["token_usage"]
     end
     df_fertility = avg_fertility(token_usage)
-    
+
 
     tokenizers = unique(token_usage.tokenizer)
     vocab_size = map(tokenizers) do tok
@@ -127,7 +127,7 @@ function write_training_table(file; fig_dir="./fig")
     open(joinpath(fig_dir, "training_times.tex"), "w") do fid
         header = """
             \\begin{tabular}{lcc|c}
-                \\toprule 
+                \\toprule
                 Tokenizer &
                 Class &
                 Encoding &
@@ -168,7 +168,7 @@ function write_flops_ratio_table(df, fig_dir="./fig")
     open(joinpath(fig_dir, "flops_ratio.tex"), "w") do fid
         header = """
             \\begin{tabular}{ll|ccc|}
-                \\toprule 
+                \\toprule
                 Tokenizer &
                 Class &
                 REALSpace &
