@@ -29,7 +29,7 @@ from tqdm import tqdm
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(processName)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(processName)s - %(levelname)s - %(message)s",
 )
 
 
@@ -125,9 +125,9 @@ def metric_traces(run, x_axis: str, metrics: Dict[str, str]) -> Dict[str, List]:
     if not steps:
         logging.warning(f"No {x_axis} values found")
         return {k: [] for k in ["step", *metrics.values()]}
-    
+
     out = {"step": steps}
-    
+
     for wandb_key, output_key in metrics.items():
         try:
             records = run.scan_history(keys=[x_axis, wandb_key])
@@ -137,14 +137,15 @@ def metric_traces(run, x_axis: str, metrics: Dict[str, str]) -> Dict[str, List]:
                 metric_val = sample.get(wandb_key)
                 if step_val is not None:
                     metric_dict[step_val] = metric_val
-            
+
             out[output_key] = [metric_dict.get(s) for s in steps]
-            
+
         except Exception as e:
             logging.warning(f"Failed to get metric '{wandb_key}': {e}")
             out[output_key] = [None] * len(steps)
 
     return out
+
 
 def has_hotfix(run: Run, commit: str | List[str]) -> bool:
     """Return true if the run has all of the listed commits"""
@@ -168,12 +169,12 @@ def has_hotfix(run: Run, commit: str | List[str]) -> bool:
 
 def run_summary(run: Run):
     config = run.config
-    
+
     try:
         metadata = run.metadata if isinstance(run.metadata, dict) else {}
         git_info = metadata.get("git", {})
         summary = run.summary if isinstance(run.summary, dict) else {}
-        
+
         stats = {
             "id": run.id,
             "name": run.name,
@@ -188,7 +189,9 @@ def run_summary(run: Run):
             "commit": git_info.get("commit") if isinstance(git_info, dict) else None,
             "runtime": summary.get("_runtime"),
             "optimizer": {
-                "class_path": get_entry(config, "cli", "model", "optimizer", "class_path"),
+                "class_path": get_entry(
+                    config, "cli", "model", "optimizer", "class_path"
+                ),
                 "lr": get_entry(config, "cli", "model", "optimizer", "lr"),
                 "betas": get_entry(config, "cli", "model", "optimizer", "betas"),
             },
@@ -205,7 +208,8 @@ def run_summary(run: Run):
                 "num_training_steps": get_entry(
                     config, "cli", "model", "lr_schedule", "num_training_steps"
                 ),
-                "gas": get_entry(config, "cli", "trainer", "accumulate_grad_batches") or 1,
+                "gas": get_entry(config, "cli", "trainer", "accumulate_grad_batches")
+                or 1,
                 "macro_batch_size": get_entry(config, "stats/train_macro_batch_size"),
                 "step": summary.get("trainer/global_step"),
                 "tokens": summary.get("total_tokens_step"),
@@ -223,18 +227,26 @@ def run_summary(run: Run):
             "metrics": {
                 "train_loss_last": summary_metric(run, "train/loss_step", "last"),
                 "val_loss_last": summary_metric(run, "val/loss_epoch", "last"),
-                "val_loss_best": summary_metric(run, "val/loss_epoch", "best", best="min"),
-                "train_loss_best": summary_metric(run, "val/loss_step", "best", best="min"),
+                "val_loss_best": summary_metric(
+                    run, "val/loss_epoch", "best", best="min"
+                ),
+                "train_loss_best": summary_metric(
+                    run, "val/loss_step", "best", best="min"
+                ),
             },
             "system": {
                 "train_throughput": summary_metric(
                     run, "stats/train_batch_throughput_epoch"
                 ),
-                "val_throughput": summary_metric(run, "stats/val_batch_throughput", "mean"),
+                "val_throughput": summary_metric(
+                    run, "stats/val_batch_throughput", "mean"
+                ),
                 "train_batch_time": summary_metric(run, "stats/train_batch_time_epoch"),
                 **system_metrics(run),
             },
-            "summary_metrics": dict(run.summary_metrics) if hasattr(run, 'summary_metrics') and run.summary_metrics else {}
+            "summary_metrics": dict(run.summary_metrics)
+            if hasattr(run, "summary_metrics") and run.summary_metrics
+            else {},
         }
 
         # Record world_size
@@ -283,7 +295,9 @@ def pretraining_summary(run: Run):
         row["model"]["d_model"], row["model"]["d_ff"], row["model"]["n_layers"]
     )
     row["metric_traces"] = metric_traces(
-        run, "trainer/global_step", {"val/loss_epoch": "val_loss", "total_tokens_step": "total_tokens_step"}
+        run,
+        "trainer/global_step",
+        {"val/loss_epoch": "val_loss", "total_tokens_step": "total_tokens_step"},
     )
     row["metrics"] = identify_metrics(run)
     return row
@@ -348,7 +362,9 @@ def finetuning_summary(run: Run):
         }
     )
     row["metric_traces"] = metric_traces(
-        run, "trainer/global_step", {"val/loss_epoch": "val_loss", "total_tokens_step": "total_tokens_step"}
+        run,
+        "trainer/global_step",
+        {"val/loss_epoch": "val_loss", "total_tokens_step": "total_tokens_step"},
     )
     row["model"]["encoder_id"] = get_ckpt_id(row["model"]["encoder_ckpt"])
     row["metrics"] = identify_metrics(run)
@@ -396,7 +412,7 @@ def identify_metrics(run):
         summary_metrics = run.summary_metrics
         metrics = get_entry(run.config, "cli", "model", "metrics")
         target_columns = get_entry(run.config, "cli", "model", "target_columns")
-        
+
         for k, v in summary_metrics.items():
             m = METRIC_REGEX.match(k)
             if m is None:
@@ -406,12 +422,18 @@ def identify_metrics(run):
 
             if metrics is not None and target_columns is not None and "mae" in metrics:
                 metric = entry["metric"]
-                if metric.startswith("mae") and "_" in metric and "channel" not in metric:
+                if (
+                    metric.startswith("mae")
+                    and "_" in metric
+                    and "channel" not in metric
+                ):
                     entry["channel"] = entry["metric"].split("_", maxsplit=1)[1]
                     if entry["channel"] in ["mean", *target_columns]:
                         entry["metric"] = "mae"
                     else:
-                        logging.warning("Unable to parse metric %s for %s", metric, run.id)
+                        logging.warning(
+                            "Unable to parse metric %s for %s", metric, run.id
+                        )
                         continue
 
                 elif not any([metric.startswith(c) for c in metrics]):
@@ -440,15 +462,17 @@ def identify_metrics(run):
                     out.append({"type": sk, "value": sv, **entry})
     except Exception as e:
         logging.warning(f"Failed to identify metrics for run {run.id}: {e}")
-    
+
     return out
 
 
-def process_single_run(run_id: str, entity: str, project: str, export_map: Dict, cache_base: Path):
+def process_single_run(
+    run_id: str, entity: str, project: str, export_map: Dict, cache_base: Path
+):
     try:
         api = wandb.Api(timeout=120)
         run = api.run(f"{entity}/{project}/{run_id}")
-        
+
         # Clean up tags if needed
         if "pretraining" in run.tags and "finetuning" in run.tags:
             run.tags.remove("pretraining")
@@ -490,12 +514,12 @@ def process_single_run(run_id: str, entity: str, project: str, export_map: Dict,
         # Export the run
         stats = exportfun(run)
         stats["fingerprint"] = fp
-        
+
         with open(run_cache, "w") as fid:
             json.dump(stats, fid)
-        
+
         return {"status": "exported", "run_id": run.id, "name": name}
-        
+
     except KeyboardInterrupt:
         raise
     except Exception as e:
@@ -504,34 +528,35 @@ def process_single_run(run_id: str, entity: str, project: str, export_map: Dict,
         return {"status": "failed", "run_id": run_id, "error": str(e)}
 
 
-def export_runs(export_map: Dict, cache: Path, runs, n_jobs: int = -1, batch_size: int = None):
-
+def export_runs(
+    export_map: Dict, cache: Path, runs, n_jobs: int = -1, batch_size: int = None
+):
     # Extract run IDs and metadata
     run_info = [(r.id, r.entity, r.project) for r in runs]
-    
+
     logging.info(f"Processing {len(run_info)} runs with {n_jobs} workers")
-    
+
     results = Parallel(n_jobs=n_jobs, backend="multiprocessing", verbose=10)(
         delayed(process_single_run)(run_id, entity, project, export_map, cache)
         for run_id, entity, project in run_info
     )
-    
+
     # Summarize results
     summary = {"exported": 0, "cached": 0, "failed": 0}
     failed_runs = []
-    
+
     for result in results:
         status = result["status"]
         summary[status] += 1
         if status == "failed":
             failed_runs.append((result["run_id"], result.get("error", "Unknown")))
-    
+
     logging.info(f"Summary: {summary}")
     if failed_runs:
         logging.warning(f"Failed runs ({len(failed_runs)}):")
         for run_id, error in failed_runs[:10]:  # Show first 10
             logging.warning(f"  {run_id}: {error}")
-    
+
     return summary
 
 
@@ -545,23 +570,34 @@ def chunk_runs_slurm_array(runs, array_id: int, array_size: int):
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Export WandB runs in parallel")
-    parser.add_argument("--n-jobs", type=int, default=-1, 
-                       help="Number of parallel workers (-1 for all CPUs)")
-    parser.add_argument("--slurm-array-id", type=int, default=None,
-                       help="SLURM array task ID (for array job mode)")
-    parser.add_argument("--slurm-array-size", type=int, default=None,
-                       help="Total number of SLURM array tasks")
-    parser.add_argument("--sequential", action="store_true",
-                       help="Run sequentially")
-    parser.add_argument("--entity", type=str, default="incite-mist",
-                       help="WandB entity")
-    parser.add_argument("--project", type=str, default="mist",
-                       help="WandB project")
-    
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=-1,
+        help="Number of parallel workers (-1 for all CPUs)",
+    )
+    parser.add_argument(
+        "--slurm-array-id",
+        type=int,
+        default=None,
+        help="SLURM array task ID (for array job mode)",
+    )
+    parser.add_argument(
+        "--slurm-array-size",
+        type=int,
+        default=None,
+        help="Total number of SLURM array tasks",
+    )
+    parser.add_argument("--sequential", action="store_true", help="Run sequentially")
+    parser.add_argument(
+        "--entity", type=str, default="incite-mist", help="WandB entity"
+    )
+    parser.add_argument("--project", type=str, default="mist", help="WandB project")
+
     args = parser.parse_args()
-    
+
     # Initialize API
     api = wandb.Api(timeout=120)
 
@@ -572,9 +608,7 @@ if __name__ == "__main__":
         logging.warning(f"Failed to fetch git history: {e}")
 
     # Create cache
-    cache_path = Path(__file__).parent.parent.parent.joinpath(
-        ".cache", "wandb-export"
-    )
+    cache_path = Path(__file__).parent.parent.parent.joinpath(".cache", "wandb-export")
     cache_path.mkdir(exist_ok=True, parents=True)
 
     export_map = {
@@ -593,16 +627,20 @@ if __name__ == "__main__":
             "summary_metrics.trainer/global_step": {"$exists": True},
         },
     )
-    
+
     runs_list = list(runs)
     logging.info(f"Found {len(runs_list)} runs to process")
-    
+
     # Handle SLURM array mode
     if args.slurm_array_id is not None and args.slurm_array_size is not None:
-        logging.info(f"Running in SLURM array mode: task {args.slurm_array_id}/{args.slurm_array_size}")
-        runs_list = chunk_runs_slurm_array(runs_list, args.slurm_array_id, args.slurm_array_size)
+        logging.info(
+            f"Running in SLURM array mode: task {args.slurm_array_id}/{args.slurm_array_size}"
+        )
+        runs_list = chunk_runs_slurm_array(
+            runs_list, args.slurm_array_id, args.slurm_array_size
+        )
         logging.info(f"Processing {len(runs_list)} runs in this task")
-    
+
     # Export runs
     if args.sequential:
         logging.info("Running in sequential mode")

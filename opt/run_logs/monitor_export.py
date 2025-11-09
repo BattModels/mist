@@ -74,7 +74,6 @@ def parse_log_file(log_path: Path):
 
 
 def print_summary(cache_dir: Path, logs_dir: Path, job_id: int = None):
-
     print("Exported Runs:")
     counts = count_exported_runs(cache_dir)
     for category, count in counts.items():

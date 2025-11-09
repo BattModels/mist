@@ -11,6 +11,7 @@
 """
 Query WandB runs from export.
 """
+
 from pathlib import Path
 import json
 import logging
@@ -45,7 +46,6 @@ def _min_num(seq: Any) -> Optional[float]:
 
 
 def impute_step(data: Dict[str, Any]) -> Optional[int]:
-
     t = data.get("trainer")
     if isinstance(t, dict) and isinstance(t.get("step"), (int, float)):
         return int(t["step"])
@@ -62,7 +62,6 @@ def impute_step(data: Dict[str, Any]) -> Optional[int]:
 
 
 def impute_tokens(data: Dict[str, Any]) -> Optional[float]:
-
     t = data.get("trainer")
 
     if isinstance(t, dict) and isinstance(t.get("tokens", None), int):
@@ -75,7 +74,7 @@ def impute_tokens(data: Dict[str, Any]) -> Optional[float]:
     traces = data.get("metric_traces")
     if isinstance(traces, dict):
         return _max_num(traces.get("total_tokens_step"))
-        
+
     return None
 
 
@@ -100,7 +99,6 @@ def rich_table(
     columns: Optional[Sequence[str]] = None,
     limit: Optional[int] = None,
 ) -> None:
-
     if limit is not None:
         df = df.head(limit)
     cols = [c for c in (columns or df.columns) if c in df.columns]
