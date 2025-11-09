@@ -4,7 +4,7 @@ from pathlib import Path
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 from transformers.data.data_collator import DataCollatorWithPadding
 from .prod_finetune import load_model
-
+from .normalize import AbstractNormalizer
 
 class MISTIonicConductivity(torch.nn.Module):
     def __init__(self, encoder, task_network, tokenizer, n_components=38):
@@ -524,12 +524,7 @@ class MISTExcessPhysics(torch.nn.Module):
         }
 
         # Instantiate the appropriate polynomial head
-        # This assumes you have a way to get the class from the basis name
-        # Adjust based on your actual implementation
         task_network = PolynomialHead.get_class(basis_name)(**task_network_config)
-
-        # Load transform
-        from your_module.normalize import AbstractNormalizer  # Update this import
 
         transform = AbstractNormalizer.get(
             config["transform"]["class"], config["transform"]["num_outputs"]
