@@ -6,6 +6,7 @@ from transformers.data.data_collator import DataCollatorWithPadding
 from .prod_finetune import load_model
 from .normalize import AbstractNormalizer
 
+
 class MISTIonicConductivity(torch.nn.Module):
     def __init__(self, encoder, task_network, tokenizer, n_components=38):
         super().__init__()
