@@ -6,6 +6,7 @@
 #     "pyarrow",
 #     "typer",
 #     "rich",
+#     "tqdm"
 # ]
 # ///
 """
@@ -16,8 +17,10 @@ from pathlib import Path
 import json
 import logging
 from typing import Any, Dict, List, Optional, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import polars as pl
+from tqdm import tqdm
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -163,27 +166,32 @@ def flatten_run(data: Dict[str, Any], run_type: str) -> Dict[str, Any]:
 
 
 def load_runs(cache_dir: Path, run_type: str) -> pl.DataFrame:
+    load_file = lambda jf : flatten_run(json.loads(jf.read_text(encoding="utf-8")), run_type)
     p = cache_dir / run_type
     if not p.exists():
         return pl.DataFrame()
     rows: List[Dict[str, Any]] = []
-    for jf in sorted(p.glob("*.json")):
-        d = json.loads(jf.read_text(encoding="utf-8"))
-        rows.append(flatten_run(d, run_type))
-    return pl.DataFrame(rows, infer_schema_length=None) if rows else pl.DataFrame()
+    json_files = list(p.glob("*.json"))
+    max_workers = min(8, len(json_files))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        rows = list(tqdm(executor.map(load_file, json_files), total=len(json_files), desc=f"{run_type}"))
+    return pl.DataFrame(rows, infer_schema_length=None)
 
+def process_run_type(run_type: str, cache_dir: Path, output_dir: Path):
+    df = load_runs(cache_dir, run_type)
+    if df.height > 0:
+        out = output_dir / f"{run_type}.parquet"
+        df.write_parquet(out, compression="snappy")
+        return run_type, df.height, out
+    return run_type, 0, None
 
 def create_database(cache_dir: Path, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    for run_type in ("pretraining", "finetuning", "test"):
-        df = load_runs(cache_dir, run_type)
-        if not df.is_empty():
-            out = output_dir / f"{run_type}.parquet"
-            df.write_parquet(out, compression="snappy")
-            logging.info("%s: %d → %s", run_type, df.height, out)
-        else:
-            logging.info("%s: 0", run_type)
-
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(process_run_type, rt, cache_dir, output_dir) 
+                   for rt in ("pretraining", "finetuning", "test")]
+        for future in as_completed(futures):
+            run_type, count, out = future.result()
 
 def get_production_moleculenet(parquet_path: Path) -> pl.DataFrame:
     df = pl.read_parquet(parquet_path)
