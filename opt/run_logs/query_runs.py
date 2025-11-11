@@ -16,14 +16,15 @@ Query WandB runs from export.
 from pathlib import Path
 import json
 import logging
+from functools import partial
 from typing import Any, Dict, List, Optional, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 import polars as pl
-from tqdm import tqdm
-import typer
 from rich.console import Console
 from rich.table import Table
+import typer
+from tqdm import tqdm
 
 app = typer.Typer(add_completion=True, no_args_is_help=True)
 
@@ -165,33 +166,65 @@ def flatten_run(data: Dict[str, Any], run_type: str) -> Dict[str, Any]:
     return flat
 
 
+def _load_and_flatten(json_file: Path, run_type: str) -> Dict[str, Any]:
+    return flatten_run(json.loads(json_file.read_text(encoding="utf-8")), run_type)
+
+
 def load_runs(cache_dir: Path, run_type: str) -> pl.DataFrame:
-    load_file = lambda jf : flatten_run(json.loads(jf.read_text(encoding="utf-8")), run_type)
     p = cache_dir / run_type
     if not p.exists():
         return pl.DataFrame()
     rows: List[Dict[str, Any]] = []
     json_files = list(p.glob("*.json"))
     max_workers = min(8, len(json_files))
+    load_file = partial(_load_and_flatten, run_type=run_type)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        rows = list(tqdm(executor.map(load_file, json_files), total=len(json_files), desc=f"{run_type}"))
+        rows = list(
+            tqdm(
+                executor.map(load_file, json_files),
+                total=len(json_files),
+                desc=f"{run_type}",
+            )
+        )
     return pl.DataFrame(rows, infer_schema_length=None)
+
 
 def process_run_type(run_type: str, cache_dir: Path, output_dir: Path):
     df = load_runs(cache_dir, run_type)
     if df.height > 0:
         out = output_dir / f"{run_type}.parquet"
-        df.write_parquet(out, compression="snappy")
+        temp_out = output_dir / f"{run_type}.parquet.tmp"
+
+        # Write to temporary file first to avoid corruption
+        try:
+            logging.info(
+                f"Writing {run_type}.parquet ({df.height} rows, {df.estimated_size('mb'):.1f} MB)..."
+            )
+            df.write_parquet(
+                temp_out, compression="snappy", statistics=True, use_pyarrow=True
+            )
+            # Verify the file is complete before replacing
+            pl.read_parquet(temp_out, n_rows=1)
+            temp_out.replace(out)
+            logging.info(f"Successfully wrote {run_type}.parquet")
+        except Exception as e:
+            logging.error(f"Failed to write {run_type}.parquet: {e}")
+            if temp_out.exists():
+                temp_out.unlink()
+            raise
+
         return run_type, df.height, out
     return run_type, 0, None
+
 
 def create_database(cache_dir: Path, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [executor.submit(process_run_type, rt, cache_dir, output_dir) 
-                   for rt in ("pretraining", "finetuning", "test")]
-        for future in as_completed(futures):
-            run_type, count, out = future.result()
+        _ = [
+            executor.submit(process_run_type, rt, cache_dir, output_dir)
+            for rt in ("pretraining", "finetuning", "test")
+        ]
+
 
 def get_production_moleculenet(parquet_path: Path) -> pl.DataFrame:
     df = pl.read_parquet(parquet_path)

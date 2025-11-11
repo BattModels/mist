@@ -110,7 +110,7 @@ def system_metrics(run: Run):
         return {}
 
 
-def metric_traces(run, x_axis: str, metrics: Dict[str, str]) -> Dict[str, List]:
+def metric_traces(run: Run, x_axis: str, metrics: Dict[str, str]) -> Dict[str, List]:
     """
     Extract metric traces from a WandB run.
     Allow sparse metrics (not handled by `scan_history` method).
@@ -598,7 +598,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Initialize API
     api = wandb.Api(timeout=120)
 
     # Fetch git history
