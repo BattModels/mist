@@ -8,9 +8,9 @@ from torchmetrics import MetricCollection
 from ..utils.ckpt import SaveConfigWithCkpts
 
 
-def load_encoder(name_or_path: str):
+def load_encoder(name_or_path: str, strict: bool = False):
     if Path(name_or_path).exists():
-        return DeepSpeedMixin.load(name_or_path).get_encoder()
+        return DeepSpeedMixin.load(name_or_path, strict=strict).get_encoder()
     else:
         from transformers import AutoModel
 
