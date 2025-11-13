@@ -70,21 +70,21 @@ Below is a full list of finetuned variants hosted on HuggingFace:
 | mist-1.8B-m50jgolp-bace      | MIST-1.8B| MoleculeNet BACE                     |
 | mist-1.8B-uop1z0dc-tox21     | MIST-1.8B| MoleculeNet Tox21                    |
 | mist-1.8B-lu1l5ieh-clintox   | MIST-1.8B| MoleculeNet ClinTox                  |
-| mist-1.8B-l1wfo7oa-sider     | MIST-1.8B| MoleculeNet SIDER                                    |
-| mist-1.8B-hxiygjsm-esol      | MIST-1.8B| MoleculeNet ESOL                                         |
-| mist-1.8B-iwqj2cld-freesolv  | MIST-1.8B| MoleculeNet FreeSolv                             |
-| mist-1.8B-jvt4azpz-lipo      | MIST-1.8B| MoleculeNet Lipophilicity                  |
-| mist-1.8B-8nd1ot5j-qm8       | MIST-1.8B| MoleculeNet QM8                                          |
-| mist-28M-8loj3bab-bace       | MIST-28M | MoleculeNet BBBP                     |
+| mist-1.8B-l1wfo7oa-sider     | MIST-1.8B| MoleculeNet SIDER.                   |
+| mist-1.8B-hxiygjsm-esol      | MIST-1.8B| MoleculeNet ESOL                     |
+| mist-1.8B-iwqj2cld-freesolv  | MIST-1.8B| MoleculeNet FreeSolv                 |
+| mist-1.8B-jvt4azpz-lipo      | MIST-1.8B| MoleculeNet Lipophilicity            |
+| mist-1.8B-8nd1ot5j-qm8       | MIST-1.8B| MoleculeNet QM8                      |
+| mist-28M-3xpfhv48-bbbp       | MIST-28M | MoleculeNet BBBP                     |
 | mist-28M-8fh43gke-hiv        | MIST-28M | MoleculeNet HIV                      |
 | mist-28M-8loj3bab-bace       | MIST-28M | MoleculeNet BACE                     |
 | mist-28M-kw4ks27p-tox21      | MIST-28M | MoleculeNet Tox21                    |
 | mist-28M-97vfcykk-clintox    | MIST-28M | MoleculeNet ClinTox                  |
-| mist-28M-z8qo16uy-sider      | MIST-28M | MoleculeNet SIDER                                    |
-| mist-28M-kcwb9le5-esol       | MIST-28M | MoleculeNet ESOL                                         |
-| mist-28M-0uiq7o7m-freesolv   | MIST-28M | MoleculeNet FreeSolv                             |
-| mist-28M-xzr5ulva-lipo       | MIST-28M | MoleculeNet Lipophilicity                  |
-| mist-28M-gzwqzpcr-qm8        | MIST-28M | MoleculeNet QM8                                          |
+| mist-28M-z8qo16uy-sider      | MIST-28M | MoleculeNet SIDER                    |
+| mist-28M-kcwb9le5-esol       | MIST-28M | MoleculeNet ESOL                     |
+| mist-28M-0uiq7o7m-freesolv   | MIST-28M | MoleculeNet FreeSolv                 |
+| mist-28M-xzr5ulva-lipo       | MIST-28M | MoleculeNet Lipophilicity            |
+| mist-28M-gzwqzpcr-qm8        | MIST-28M | MoleculeNet QM8                      |
 
 
 #### QM9 Benchmark Models
@@ -115,12 +115,19 @@ These models consist of a MIST-encoder and task network finetuned on a single da
 | Folder                    | Encoder  | Dataset                                                     |
 | ------------------------- | :------: | ----------------------------------------------------------- |
 | mist-26.9M-48kpooqf-odour | MIST-28M | Olfaction                                                   |
-| mist-26.9M-kkgx0omx-qm9   | MIST-28M | QM9 Dataset with SMILES randomization                       |
 | mist-26.9M-6hk5coof-dn    | MIST-28M | Donor Number                                                |
 | mist-26.9M-0vxdbm36-kt    | MIST-28M | Kamlet-Taft Solvochromatic Parameters                       |
 | mist-26.9M-b302p09x-bp    | MIST-28M | Boiling Point (Part of Characteristic Temperatures Dataset) |
 | mist-26.9M-cyuo2xb6-fp    | MIST-28M | Flash Point (Part of Characteristic Temperatures Dataset)   |
 | mist-26.9M-y3ge5pf9-mp    | MIST-28M | Melting Point (Part of Characteristic Temperatures Dataset) |
+
+### Finetuned Multi-Task Models
+These are additional multi-target finetuned models consisting of a MIST encoder and task network.
+| Folder                     | Encoder  | Dataset                                                     |
+| -------------------------- | :------: | ----------------------------------------------------------- |
+| mist-26.9M-kkgx0omx-qm9    | MIST-28M | QM9 Dataset with SMILES randomization                       |
+| mist-28M-ttqcvt6fs-toxcast | MIST-28M | ToxCast                                                     |
+| mist-28M-yr1urd2c-muv      | MIST-28M | Maximum Unbiased Validation (MUV)                           |
 
 ### Finetuned Mixture Models
 

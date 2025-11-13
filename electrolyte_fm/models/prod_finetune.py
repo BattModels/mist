@@ -169,7 +169,7 @@ class MISTFinetuned(PreTrainedModel):
             out = self(**inputs).cpu()
         if self.channels is None or not return_dict:
             return out
-        return annotate_prediction(out, self.channels)
+        return annotate_prediction(out, maybe_get_annotated_channels(self.channels))
 
     def save_pretrained(self, save_directory, **kwargs):
         super().save_pretrained(save_directory, **kwargs)

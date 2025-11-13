@@ -178,7 +178,7 @@ class MISTIonicConductivity(PreTrainedModel):
         smiles_list: List[List[str]],
         compositions: List[List[float]],
         temperatures: List[float],
-        salt_molarities: List[float],
+        salt_mole_fraction: List[float],
         return_dict: bool = True,
         tokenizer=None,
     ):
@@ -189,7 +189,7 @@ class MISTIonicConductivity(PreTrainedModel):
                 temperatures, dtype=torch.float32, device=self.device
             ),
             "composition_4": torch.tensor(
-                salt_molarities, dtype=torch.float32, device=self.device
+                salt_mole_fraction, dtype=torch.float32, device=self.device
             ),
         }
 
