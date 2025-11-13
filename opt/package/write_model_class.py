@@ -390,7 +390,6 @@ def assemble_dependency_sources(
     additional: List[str], dep_classes: List[Type], dep_functions: List[str]
 ) -> str:
     parts: List[str] = []
-    # Strip hints from everything we export below
     parts.extend(strip_type_hints_src(s) for s in additional)
     parts.extend(strip_type_hints_src(get_source_code(c)) for c in dep_classes)
     parts.extend(strip_type_hints_src(s) for s in dep_functions)

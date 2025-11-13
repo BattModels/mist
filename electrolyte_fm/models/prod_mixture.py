@@ -22,7 +22,7 @@ from .physics_task_heads import (
     LinearExogenousEffect,
 )
 from .polynomials import LagrangePolynomial
-from .excess_physics_model import pairwise_fusion
+from .pairwise_fusion import pairwise_fusion
 from .prod_finetune import build_encoder_from_dict
 from .model_utils import masked_mean_pool
 
