@@ -85,7 +85,6 @@ def patch_auto_map(
 
 
 def maybe_best_ckpt(path: Path) -> Path:
-    """If given a run directory, pick the best checkpoint inside it."""
     return get_best_ckpt(path) if path.joinpath("config.json").is_file() else path
 
 
@@ -109,15 +108,15 @@ def save_with_tokenizer(model, save_dir: Path, safe: bool = True, tokenizer=None
             pass
 
 
-def load_model(ckpt: Path):
+def load_model(ckpt: Path, model_class: Optional = None):
     try:
         ckpt = maybe_best_ckpt(ckpt)
-        obj = SaveConfigWithCkpts.load(ckpt, strict=False)
-        model = obj.model
+        model = SaveConfigWithCkpts.load(ckpt, strict=False)
     except FileNotFoundError:
-        L.warn("Attempting load from safetensors export")
-        model = load_legacy_packaged_checkpoint(ckpt)
-    return model
+        L.warning("Attempting load from safetensors export")
+        model = load_legacy_packaged_checkpoint(ckpt, model_class)
+    # update ckpt path if maybe_best_ckpt
+    return model, ckpt
 
 
 @cli.command()
@@ -125,22 +124,30 @@ def pretrained(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     """
     Export a pretrained encoder.
     """
-    model = load_model(ckpt)
+    model, best_ckpt = load_model(ckpt)
 
     tag = name_model(
         model,
         template=name or "mist-{model_size}-{ckpt}",
         ckpt=ckpt_id(ckpt),
     )
-    save_dir = create_save_directory(tag, ckpt)
-    save_with_tokenizer(model, save_dir, safe=safe, tokenizer=get_ckpt_tokenizer(ckpt))
-    type(model).from_pretrained(save_dir)  # sanity
+    save_dir = create_save_directory(tag, best_ckpt)
+    train_cfg = read_training_config(ckpt)
+    tokenizer = train_cfg.get("data")
+    if tokenizer:
+        tokenizer = load_tokenizer(tokenizer["init_args"]["tokenizer"])
+    else:
+        tokenizer = load_tokenizer("smirk")
+    if hasattr(model, "model"):
+        save_with_tokenizer(model.model, save_dir, safe=safe, tokenizer=tokenizer)
+    else:
+        save_with_tokenizer(model, save_dir, safe=safe, tokenizer=tokenizer)
     L.info("Saved pretrained model to %s", save_dir)
     create_tar_gz(save_dir)
 
 
 def export_finetuned(ckpt: Path) -> MISTFinetuned:
-    bundle = load_model(ckpt)
+    bundle, best_ckpt = load_model(ckpt, model_class="MISTFinetuned")
     train_cfg = read_training_config(ckpt)
     tokenizer = train_cfg.get("data")
     if tokenizer:
@@ -151,13 +158,14 @@ def export_finetuned(ckpt: Path) -> MISTFinetuned:
         channels = train_cfg["data"]["init_args"].get("target_columns")
     except KeyError:
         channels = None
-    return MISTFinetuned.from_components(
+    model = MISTFinetuned.from_components(
         encoder=bundle.encoder,
         task_network=bundle.task_network,
         transform=bundle.transform,
         tokenizer=tokenizer,
         channels=channels,
     )
+    return model, best_ckpt
 
 
 @cli.command()
@@ -165,14 +173,14 @@ def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     """
     Export a finetuned model with embedded remote code.
     """
-    model = export_finetuned(ckpt)
+    model, best_ckpt = export_finetuned(ckpt)
 
     tag = name_model(
         model,
-        template=name or "{ckpt}",
-        ckpt=ckpt_id(ckpt),
+        template=name or "mist-{model_size}-{ckpt}",
+        ckpt=ckpt_id(best_ckpt),
     )
-    save_dir = create_save_directory(tag, ckpt)
+    save_dir = create_save_directory(tag, best_ckpt)
 
     save_with_tokenizer(model, save_dir, safe=safe)
     write_modeling_module(
@@ -198,16 +206,24 @@ def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
 
 
 def export_conductivity(ckpt: Path) -> MISTIonicConductivity:
-    bundle = load_model(ckpt)
+    bundle, best_ckpt = load_model(ckpt, model_class="MISTIonicConductivity")
+
+    # Handle legacy packaged checkpoints vs training checkpoints
+    if isinstance(bundle, MISTIonicConductivity):
+        # Already a packaged model, just return it
+        L.info("Loaded from legacy packaged checkpoint")
+        return bundle, best_ckpt
+
     train_cfg = read_training_config(ckpt)
     tokenizer = load_tokenizer(train_cfg["data"]["init_args"]["tokenizer"])
     n_components = train_cfg["model"]["init_args"].get("n_components", 38)
-    return MISTIonicConductivity.from_components(
+    model = MISTIonicConductivity.from_components(
         encoder=bundle.encoder,
         task_network=bundle.task_network,
         tokenizer=tokenizer,
         n_components=n_components,
     )
+    return model, best_ckpt
 
 
 @cli.command()
@@ -215,14 +231,14 @@ def conductivity(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     """
     Export a mixture ionic-conductivity model.
     """
-    model = export_conductivity(ckpt)
+    model, best_ckpt = export_conductivity(ckpt)
 
     tag = name_model(
         model,
         template=name or "mist-coductivity-{model_size}-{ckpt}",
-        ckpt=ckpt_id(ckpt),
+        ckpt=ckpt_id(best_ckpt),
     )
-    save_dir = create_save_directory(tag, ckpt)
+    save_dir = create_save_directory(tag, best_ckpt)
 
     save_with_tokenizer(model, save_dir, safe=safe)
     write_modeling_module(
@@ -246,12 +262,20 @@ def conductivity(ckpt: Path, name: Optional[str] = None, safe: bool = True):
 
 
 def export_excess_physics(ckpt: Path) -> MISTExcessPhysics:
-    bundle = load_model(ckpt)
+    bundle, best_ckpt = load_model(ckpt, model_class="MISTExcessPhysics")
+
+    # Handle legacy packaged checkpoints vs training checkpoints
+    if isinstance(bundle, MISTExcessPhysics):
+        # Already a packaged model, just return it
+        L.info("Loaded from legacy packaged checkpoint")
+        return bundle, best_ckpt
+
+    # Training checkpoint - need to construct from components
     train_cfg = read_training_config(ckpt)
     tokenizer = load_tokenizer(train_cfg["data"]["init_args"]["tokenizer"])
 
     model_cfg = train_cfg["model"]["init_args"]
-    return MISTExcessPhysics.from_components(
+    model = MISTExcessPhysics.from_components(
         encoder=bundle.encoder,
         pairwise_interaction=bundle.model.pairwise_interaction,
         component_properties=bundle.model.component_properties,
@@ -268,6 +292,7 @@ def export_excess_physics(ckpt: Path) -> MISTExcessPhysics:
         relative_excess=model_cfg.get("config", {}).get("relative_excess", False),
         dropout=model_cfg.get("config", {}).get("dropout", 0.1),
     )
+    return model, best_ckpt
 
 
 @cli.command()
@@ -275,14 +300,14 @@ def excess_physics(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     """
     Export an excess physics mixture model.
     """
-    model = export_excess_physics(ckpt)
+    model, best_ckpt = export_excess_physics(ckpt)
 
     tag = name_model(
         model,
         template=name or "mist-excess-{model_size}-{ckpt}",
-        ckpt=ckpt_id(ckpt),
+        ckpt=ckpt_id(best_ckpt),
     )
-    save_dir = create_save_directory(tag, ckpt)
+    save_dir = create_save_directory(tag, best_ckpt)
 
     save_with_tokenizer(model, save_dir, safe=safe)
 
@@ -348,12 +373,10 @@ def export_multitask(encoder_ckpt: Path, task_ckpt: List[Path]) -> MISTMultiTask
             channels=channels,
         )
     except (FileNotFoundError, KeyError):
-        # Fallback: try loading from already-packaged models
-        L.warn("Could not load from training checkpoints, trying packaged models")
+        L.warning("Could not load from training checkpoints, trying packaged models")
 
-        # Load encoder from packaged model or training checkpoint
         try:
-            encoder_model = load_model(encoder_ckpt)
+            encoder_model, _ = load_model(encoder_ckpt)
             encoder = (
                 encoder_model.encoder
                 if hasattr(encoder_model, "encoder")
@@ -368,7 +391,7 @@ def export_multitask(encoder_ckpt: Path, task_ckpt: List[Path]) -> MISTMultiTask
         task_networks, transforms, channels = [], [], []
         for ckpt in task_ckpt:
             ckpt = maybe_best_ckpt(ckpt)
-            task_model = load_model(ckpt)
+            task_model, _ = load_model(ckpt)
 
             if isinstance(task_model, MISTFinetuned):
                 task_networks.append(task_model.task_network)

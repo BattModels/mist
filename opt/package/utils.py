@@ -16,8 +16,8 @@ from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 
 def get_best_ckpt(ckpt_dir: Path) -> Path:
-    """Return the path for the best checkpoint in a checkpoint directory
-
+    """
+    Return the path for the best checkpoint in a checkpoint directory
     Ties in loss, defers to the checkpoint with more steps
     """
     best_step = 0
@@ -49,7 +49,7 @@ def get_best_ckpt(ckpt_dir: Path) -> Path:
 def create_save_directory(
     name: str, ckpt: Path, model_class: Optional[str] = None
 ) -> Path:
-    save_dir = Path(name)
+    save_dir = Path("hf-models").joinpath(name)
     save_dir.mkdir(exist_ok=True, parents=True)
     write_requirements(save_dir, extra_deps=extra_deps(ckpt))
 
@@ -83,7 +83,18 @@ def write_requirements(save_directory: Path, extra_deps: list[str] = []):
 
 
 def extra_deps(ckpt: Path) -> list[str]:
-    tokenizer = load_tokenizer(get_ckpt_tokenizer(ckpt))
+    """Determine extra dependencies based on tokenizer type."""
+    try:
+        tokenizer = load_tokenizer(get_ckpt_tokenizer(ckpt))
+    except (ValueError, RuntimeError, FileNotFoundError):
+        try:
+            from transformers import AutoTokenizer
+
+            tokenizer = AutoTokenizer.from_pretrained(str(ckpt), trust_remote_code=True)
+        except Exception:
+            # Default to smirk if we can't determine
+            return ["smirk"]
+
     if isinstance(tokenizer, SmirkTokenizerFast):
         return ["smirk"]
     return []

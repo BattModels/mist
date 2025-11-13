@@ -1,52 +1,30 @@
 import ast
 import inspect
+from isort import code as isort_code
 from pathlib import Path
-from typing import Iterable, Type, Optional, List, Tuple, Set
+from typing import Iterable, Type, Optional, List, Tuple, Set, Dict
 from types import ModuleType
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 
 def get_source_code(obj) -> str:
-    """Get the source code of a Python object (class or function)."""
     return inspect.getsource(obj).strip()
 
 
-def get_module_for_object(obj) -> Optional[ModuleType]:
-    """Get the module that contains the given object."""
-    return inspect.getmodule(obj)
-
-
-def read_module_source_from_file(module: ModuleType) -> Optional[str]:
-    """Fallback: read module source from its file path."""
-    path = getattr(module, "__file__", None)
-    if path and path.endswith(".py"):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
-        except (OSError, IOError):
-            return None
-    return None
-
-
-def read_module_source_code(module: ModuleType) -> Optional[str]:
-    """Read the source code of a module from inspect or file system."""
-    try:
-        return inspect.getsource(module)
-    except OSError:
-        return read_module_source_from_file(module)
-
-
 def get_module_and_source(obj) -> Tuple[Optional[ModuleType], Optional[str]]:
-    """Return (module, source_text) for the module containing `obj`."""
-    module = get_module_for_object(obj)
-    if not module:
+    m = inspect.getmodule(obj)
+    if not m:
         return None, None
-    source = read_module_source_code(module)
-    return module, source
+    try:
+        return m, inspect.getsource(m)
+    except OSError:
+        path = getattr(m, "__file__", None)
+        if path and path.endswith(".py"):
+            return m, Path(path).read_text(encoding="utf-8")
+        return m, None
 
 
 def render_template(template_path: Path, **ctx) -> str:
-    """Render a Jinja2 template with the given context."""
     env = Environment(
         loader=FileSystemLoader(str(template_path.parent)),
         undefined=StrictUndefined,
@@ -57,406 +35,368 @@ def render_template(template_path: Path, **ctx) -> str:
     return env.get_template(template_path.name).render(**ctx)
 
 
-def parse_ast_tree(source_code: str) -> ast.Module:
-    """Parse source code into an AST tree."""
-    return ast.parse(source_code)
+def is_top_level_def(n: ast.AST) -> bool:
+    return isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
 
 
-def is_top_level_definition(node: ast.AST) -> bool:
-    """Check if an AST node is a top-level function or class definition."""
-    return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+def is_import(n: ast.AST) -> bool:
+    return isinstance(n, (ast.Import, ast.ImportFrom))
 
 
-def is_import_statement(node: ast.AST) -> bool:
-    """Check if an AST node is an import statement."""
-    return isinstance(node, (ast.Import, ast.ImportFrom))
+def is_relative_import(n: ast.ImportFrom) -> bool:
+    return isinstance(n, ast.ImportFrom) and (n.level or 0) > 0
 
 
-def is_relative_import(node: ast.ImportFrom) -> bool:
-    """Check if an ImportFrom node is a relative import."""
-    return isinstance(node, ast.ImportFrom) and (node.level or 0) > 0
+def top_level_names(src: str) -> List[str]:
+    t = ast.parse(src)
+    return [n.name for n in t.body if is_top_level_def(n)]
 
 
-def get_top_level_definition_names(source_code: str) -> List[str]:
-    """Return names of top-level definitions (class/function) in file order."""
-    tree = parse_ast_tree(source_code)
-    names: List[str] = []
-    for node in tree.body:
-        if is_top_level_definition(node):
-            names.append(node.name)
-    return names
-
-
-def find_definition_node_by_name(source_code: str, name: str) -> Optional[ast.AST]:
-    """Find a top-level definition node by name in the AST."""
-    tree = parse_ast_tree(source_code)
-    for node in tree.body:
-        if is_top_level_definition(node) and node.name == name:
-            return node
+def find_def_node(src: str, name: str) -> Optional[ast.AST]:
+    t = ast.parse(src)
+    for n in t.body:
+        if is_top_level_def(n) and n.name == name:
+            return n
     return None
 
 
-def format_import_alias(alias: ast.alias) -> str:
-    """Format an import alias as a string (e.g., 'foo as bar' or 'foo')."""
-    return f"{alias.name}{' as ' + alias.asname if alias.asname else ''}"
+def _alias(a: ast.alias) -> str:
+    return f"{a.name}{' as ' + a.asname if a.asname else ''}"
 
 
-def reconstruct_import_statement(node: ast.Import) -> str:
-    """Reconstruct an Import statement as source code."""
-    specs = [format_import_alias(a) for a in node.names]
-    return "import " + ", ".join(specs)
+def _reconstruct_import(n: ast.Import) -> str:
+    return "import " + ", ".join(_alias(a) for a in n.names)
 
 
-def reconstruct_import_from_statement(node: ast.ImportFrom) -> str:
-    """Reconstruct an ImportFrom statement as source code."""
-    specs = [format_import_alias(a) for a in node.names]
-    return f"from {node.module or ''} import " + ", ".join(specs)
+def _reconstruct_from(n: ast.ImportFrom) -> str:
+    return f"from {n.module or ''} import " + ", ".join(_alias(a) for a in n.names)
 
 
-def extract_import_statement_text(source_code: str, node: ast.AST) -> str:
-    """Extract the source text for an import statement, with fallback reconstruction."""
-    text = ast.get_source_segment(source_code, node)
-    if text:
-        return text.strip()
-
-    # Fallback: reconstruct the import statement
-    if isinstance(node, ast.Import):
-        return reconstruct_import_statement(node)
-    elif isinstance(node, ast.ImportFrom):
-        return reconstruct_import_from_statement(node)
-    return ""
-
-
-def extract_absolute_imports_from_source(source_code: str) -> Set[str]:
-    """Extract absolute (non-relative) import statements from source code."""
-    tree = parse_ast_tree(source_code)
-    imports: List[str] = []
-
-    for node in tree.body:
-        if is_import_statement(node):
-            # Skip relative imports
-            if is_relative_import(node):
+def extract_abs_imports(src: str) -> Set[str]:
+    t = ast.parse(src)
+    out: List[str] = []
+    for n in t.body:
+        if is_import(n):
+            if is_relative_import(n):  # skip relatives
                 continue
-
-            text = extract_import_statement_text(source_code, node)
-            if text:
-                imports.append(text)
-        elif is_top_level_definition(node):
-            # Stop at first definition (only process import block at top)
+            seg = ast.get_source_segment(src, n)
+            out.append(
+                seg.strip()
+                if seg
+                else (
+                    _reconstruct_import(n)
+                    if isinstance(n, ast.Import)
+                    else _reconstruct_from(n)
+                )
+            )
+        elif is_top_level_def(n):
             break
-
-    return set(imports)
+    return set(out)
 
 
 def extract_imports_from_class(cls: Type) -> Set[str]:
-    """Extract absolute import statements from the module containing a class."""
-    module, source = get_module_and_source(cls)
-    if not source:
-        return set()
-    return extract_absolute_imports_from_source(source)
+    m, src = get_module_and_source(cls)
+    return extract_abs_imports(src or "") if src else set()
 
 
-def extract_source_for_definition(
-    source_code: str, module: ModuleType, name: str
-) -> Optional[str]:
-    """
-    Extract source code for a definition by name, with fallback to inspect.
+def sort_dedupe_imports(imports: Set[str]) -> str:
+    return isort_code("\n".join(sorted(imports))).strip()
 
-    First tries AST source segment extraction, then falls back to
-    inspect.getsource on the live object.
-    """
-    # Try AST-based extraction
-    node = find_definition_node_by_name(source_code, name)
-    if node:
-        segment = ast.get_source_segment(source_code, node)
-        if segment and segment.strip():
-            return segment.strip()
 
-    # Fallback to inspect
+def extract_def_source(src: str, module: ModuleType, name: str) -> Optional[str]:
+    n = find_def_node(src, name)
+    if n:
+        seg = ast.get_source_segment(src, n)
+        if seg:
+            return seg.strip()
     obj = getattr(module, name, None)
-    if obj and (inspect.isclass(obj) or inspect.isfunction(obj)):
-        try:
-            return inspect.getsource(obj).strip()
-        except OSError:
-            pass
-
+    if inspect.isclass(obj) or inspect.isfunction(obj):
+        return get_source_code(obj)
     return None
 
 
-def extract_additional_definitions_from_module(
-    model_class: Type, exclude_names: Set[str]
-) -> List[str]:
-    """
-    Extract all top-level definitions from model's module except excluded names.
-
-    Preserves file order and handles AST extraction failures gracefully.
-    """
-    module, source_code = get_module_and_source(model_class)
-    if not module or not source_code:
+def extract_additional_defs(model_class: Type, exclude: Set[str]) -> List[str]:
+    m, src = get_module_and_source(model_class)
+    if not (m and src):
         return []
-
-    extracted_sources: List[str] = []
-    for name in get_top_level_definition_names(source_code):
-        if name in exclude_names:
+    out: List[str] = []
+    for name in top_level_names(src):
+        if name in exclude:
             continue
-
-        source = extract_source_for_definition(source_code, module, name)
-        if source:
-            extracted_sources.append(source)
-
-    return extracted_sources
+        s = extract_def_source(src, m, name)
+        if s:
+            out.append(s)
+    return out
 
 
-def resolve_relative_import_module_name(
-    base_module: ModuleType, import_node: ast.ImportFrom
+def resolve_relative_module_name(
+    base_mod: ModuleType, node: ast.ImportFrom
 ) -> Optional[str]:
-    """Resolve the full module name for a relative import."""
-    package = base_module.__package__ or ""
-    level = import_node.level or 0
-
+    pkg = base_mod.__package__ or ""
+    level = node.level or 0
     if level > 1:
-        parts = package.split(".")
+        parts = pkg.split(".")
         if len(parts) >= level:
-            package = ".".join(parts[: -(level - 1)])
+            pkg = ".".join(parts[: -(level - 1)])
         else:
             return None
-
-    if import_node.module and package:
-        return f"{package}.{import_node.module}"
-    return import_node.module or package
-
-
-def import_object_from_module(module_name: str, object_name: str) -> Optional[object]:
-    """Import and return an object from a module by name."""
-    try:
-        imported_module = __import__(module_name, fromlist=[object_name])
-        return getattr(imported_module, object_name)
-    except (ImportError, AttributeError, ValueError):
-        return None
+    if node.module and pkg:
+        return f"{pkg}.{node.module}"
+    return node.module or pkg
 
 
-def extract_relative_import_nodes(source_code: str) -> List[ast.ImportFrom]:
-    """Extract all relative import nodes from source code."""
-    tree = parse_ast_tree(source_code)
-    return [node for node in tree.body if is_relative_import(node)]
+def relative_import_nodes(src: str) -> List[ast.ImportFrom]:
+    t = ast.parse(src)
+    return [n for n in t.body if is_relative_import(n)]
 
 
-def get_all_definitions_from_dependency_module(
-    module: ModuleType, visited_modules: Set[str]
+def defs_from_dependency_module(
+    mod: ModuleType, visited: Set[str]
 ) -> Tuple[List[Type], List[str]]:
-    """
-    Extract ALL classes and functions from a dependency module.
-
-    This ensures we don't miss any helper functions or classes that
-    might be needed by the imported definitions.
-    """
-    module_name = module.__name__
-    if module_name in visited_modules:
+    name = mod.__name__
+    if name in visited:
         return [], []
-    visited_modules.add(module_name)
+    visited.add(name)
 
-    _, source_code = get_module_and_source(module)
-    if not source_code:
+    _, src = get_module_and_source(mod)
+    if not src:
         return [], []
 
     classes: List[Type] = []
     functions: List[str] = []
-
-    for name in get_top_level_definition_names(source_code):
-        obj = getattr(module, name, None)
-        if not obj:
-            continue
-
-        if inspect.isclass(obj):
-            # Only add if it's defined in this module (not imported)
-            if obj.__module__ == module_name:
-                classes.append(obj)
-        elif inspect.isfunction(obj):
-            # Only add if it's defined in this module (not imported)
-            if obj.__module__ == module_name:
-                try:
-                    functions.append(get_source_code(obj))
-                except OSError:
-                    pass
-
+    for n in top_level_names(src):
+        obj = getattr(mod, n, None)
+        if inspect.isclass(obj) and obj.__module__ == name:
+            classes.append(obj)
+        elif inspect.isfunction(obj) and obj.__module__ == name:
+            functions.append(get_source_code(obj))
     return classes, functions
 
 
-def collect_dependencies_from_relative_imports(
-    cls: Type, visited: Set[str], visited_modules: Set[str]
+def collect_relative_dependencies(
+    cls: Type, seen: Set[str], seen_mods: Set[str]
 ) -> Tuple[List[Type], List[str]]:
-    """
-    Collect ALL classes and functions from modules with relative imports.
-
-    Recursively follows relative imports and gathers all definitions
-    from each dependency module (not just explicitly imported items).
-    Returns (list of classes, list of function source codes).
-    """
-    cls_key = f"{cls.__module__}.{cls.__name__}"
-    if cls_key in visited:
+    key = f"{cls.__module__}.{cls.__name__}"
+    if key in seen:
         return [], []
-    visited.add(cls_key)
+    seen.add(key)
 
-    module, source_code = get_module_and_source(cls)
-    if not module or not source_code:
+    m, src = get_module_and_source(cls)
+    if not (m and src):
         return [], []
 
     dep_classes: List[Type] = []
     dep_functions: List[str] = []
-
-    for import_node in extract_relative_import_nodes(source_code):
-        module_name = resolve_relative_import_module_name(module, import_node)
-        if not module_name:
+    for node in relative_import_nodes(src):
+        mod_name = resolve_relative_module_name(m, node)
+        if not mod_name:
             continue
-
-        # Import the dependency module
-        try:
-            dep_module = __import__(module_name, fromlist=[""])
-        except (ImportError, ValueError):
-            continue
-
-        # Get ALL definitions from this dependency module
-        module_classes, module_functions = get_all_definitions_from_dependency_module(
-            dep_module, visited_modules
-        )
-        dep_classes.extend(module_classes)
-        dep_functions.extend(module_functions)
-
-        # Recursively process each class from the dependency module
-        for dep_class in module_classes:
-            nested_classes, nested_functions = (
-                collect_dependencies_from_relative_imports(
-                    dep_class, visited, visited_modules
-                )
-            )
-            dep_classes.extend(nested_classes)
-            dep_functions.extend(nested_functions)
-
+        dep_mod = __import__(mod_name, fromlist=[""])
+        cls_list, fn_list = defs_from_dependency_module(dep_mod, seen_mods)
+        dep_classes.extend(cls_list)
+        dep_functions.extend(fn_list)
+        for dc in cls_list:
+            c2, f2 = collect_relative_dependencies(dc, seen, seen_mods)
+            dep_classes.extend(c2)
+            dep_functions.extend(f2)
     return dep_classes, dep_functions
-
-
-def collect_all_dependencies_from_module(
-    module_path: str,
-) -> Tuple[List[Type], List[str]]:
-    """
-    Collect ALL classes and functions from a module file.
-
-    This ensures that when we import from a dependency module, we get
-    all its definitions, not just the ones explicitly imported.
-    """
-    try:
-        # Read the module source
-        with open(module_path, "r", encoding="utf-8") as f:
-            source_code = f.read()
-    except (OSError, IOError):
-        return [], []
-
-    # Import the module to get live objects
-    try:
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location("_temp_module", module_path)
-        if not spec or not spec.loader:
-            return [], []
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-    except Exception:
-        return [], []
-
-    classes: List[Type] = []
-    functions: List[str] = []
-
-    for name in get_top_level_definition_names(source_code):
-        obj = getattr(module, name, None)
-        if inspect.isclass(obj):
-            classes.append(obj)
-        elif inspect.isfunction(obj):
-            try:
-                functions.append(get_source_code(obj))
-            except OSError:
-                pass
-
-    return classes, functions
-
-
-def deduplicate_classes_by_name(classes: List[Type]) -> List[Type]:
-    """Remove duplicate classes, keeping first occurrence of each name."""
-    seen_names: Set[str] = set()
-    unique_classes: List[Type] = []
-
-    for cls in classes:
-        if cls.__name__ not in seen_names:
-            seen_names.add(cls.__name__)
-            unique_classes.append(cls)
-
-    return unique_classes
-
-
-def filter_duplicate_class_definitions(
-    source_segments: List[str], existing_class_names: Set[str]
-) -> List[str]:
-    """
-    Filter out class definitions that duplicate existing classes.
-
-    Keeps function definitions and non-duplicate classes.
-    """
-    filtered: List[str] = []
-
-    for segment in source_segments:
-        try:
-            node = parse_ast_tree(segment).body[0]
-            if isinstance(node, ast.ClassDef) and node.name in existing_class_names:
-                continue  # Skip duplicate class
-        except Exception:
-            pass  # Keep segment if we can't parse it
-
-        filtered.append(segment)
-
-    return filtered
-
-
-def collect_all_imports(classes: List[Type]) -> Set[str]:
-    """Collect all absolute imports from a list of classes."""
-    all_imports: Set[str] = set()
-    for cls in classes:
-        all_imports.update(extract_imports_from_class(cls))
-    return all_imports
 
 
 def collect_all_relative_dependencies(
     classes: List[Type],
 ) -> Tuple[List[Type], List[str]]:
-    """
-    Collect all classes and functions from relative imports of given classes.
+    seen: Set[str] = set()
+    seen_mods: Set[str] = set()
+    all_c: List[Type] = []
+    all_f: List[str] = []
+    for c in classes:
+        cc, ff = collect_relative_dependencies(c, seen, seen_mods)
+        all_c.extend(cc)
+        all_f.extend(ff)
+    return all_c, all_f
 
-    Returns (all dependency classes, all dependency function sources).
-    """
-    visited: Set[str] = set()
-    visited_modules: Set[str] = set()
-    all_dep_classes: List[Type] = []
-    all_dep_functions: List[str] = []
 
-    for cls in classes:
-        dep_classes, dep_functions = collect_dependencies_from_relative_imports(
-            cls, visited, visited_modules
-        )
-        all_dep_classes.extend(dep_classes)
-        all_dep_functions.extend(dep_functions)
+def def_name_and_kind(src: str) -> Optional[Tuple[str, str]]:
+    t = ast.parse(src)
+    if not t.body:
+        return None
+    n = t.body[0]
+    if isinstance(n, ast.ClassDef):
+        return n.name, "class"
+    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return n.name, "function"
+    return None
 
-    return all_dep_classes, all_dep_functions
+
+def dedupe_defs_by_name(segs: List[str]) -> List[str]:
+    seen: Set[str] = set()
+    out: List[str] = []
+    for s in segs:
+        nk = def_name_and_kind(s)
+        if nk:
+            name, _ = nk
+            if name in seen:
+                continue
+            seen.add(name)
+        out.append(s)
+    return out
+
+
+def deps_used_names(src: str, avail: Set[str]) -> Set[str]:
+    """Find structural dependencies (base classes, decorators, class-level attrs)."""
+    t = ast.parse(src)
+    used: Set[str] = set()
+
+    # Only look at top-level nodes
+    for node in t.body:
+        if isinstance(node, ast.ClassDef):
+            # Check base classes (inheritance)
+            for b in node.bases:
+                if isinstance(b, ast.Name) and b.id in avail:
+                    used.add(b.id)
+
+            # Check decorators
+            for d in node.decorator_list:
+                if isinstance(d, ast.Name) and d.id in avail:
+                    used.add(d.id)
+
+            # Check class-level attributes
+            for item in node.body:
+                # Only check direct assignments, not function defs
+                if isinstance(item, ast.Assign):
+                    for name_node in ast.walk(item):
+                        if isinstance(name_node, ast.Name) and name_node.id in avail:
+                            used.add(name_node.id)
+                elif isinstance(item, ast.AnnAssign):
+                    # Type-annotated assignments
+                    if item.value:
+                        for name_node in ast.walk(item.value):
+                            if (
+                                isinstance(name_node, ast.Name)
+                                and name_node.id in avail
+                            ):
+                                used.add(name_node.id)
+
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Check function decorators
+            for d in node.decorator_list:
+                if isinstance(d, ast.Name) and d.id in avail:
+                    used.add(d.id)
+
+    return used
+
+
+def topo_sort_sources(sources: List[str]) -> List[str]:
+    name_to_src: Dict[str, str] = {}
+    for s in sources:
+        nk = def_name_and_kind(s)
+        if nk:
+            n, _ = nk
+            if n not in name_to_src:
+                name_to_src[n] = s
+
+    avail = set(name_to_src.keys())
+    deps: Dict[str, Set[str]] = {
+        n: deps_used_names(src, avail) - {n} for n, src in name_to_src.items()
+    }
+    indeg = {n: len(d) for n, d in deps.items()}
+    Q = sorted([n for n, d in indeg.items() if d == 0])
+    order: List[str] = []
+
+    while Q:
+        n = Q.pop(0)
+        order.append(n)
+        for m in list(deps.keys()):
+            if n in deps[m]:
+                deps[m].discard(n)
+                indeg[m] -= 1
+                if indeg[m] == 0 and m not in order and m not in Q:
+                    Q.append(m)
+        Q.sort()
+
+    if len(order) != len(avail):
+        return list(name_to_src.values()) + [
+            s for s in sources if def_name_and_kind(s) is None
+        ]
+
+    sorted_srcs = [name_to_src[n] for n in order]
+    unnamed = [s for s in sources if def_name_and_kind(s) is None]
+    return sorted_srcs + unnamed
+
+
+# === Type-hint stripping (applied ONLY to exported code) ===
+
+
+class _TypeHintStripper(ast.NodeTransformer):
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
+        node.returns = None
+        node.args = self._strip_args(node.args)
+        self.generic_visit(node)
+        return node
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
+        node.returns = None
+        node.args = self._strip_args(node.args)
+        self.generic_visit(node)
+        return node
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> ast.AST:
+        # If there's a value, turn into a plain Assign; if not, remove the statement.
+        if node.value is None:
+            return None
+        return ast.Assign(targets=[node.target], value=node.value, type_comment=None)
+
+    def visit_arg(self, node: ast.arg) -> ast.AST:
+        node.annotation = None
+        return node
+
+    def visit_Assign(self, node: ast.Assign) -> ast.AST:
+        node.type_comment = None
+        return self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> ast.AST:
+        node.type_comment = None
+        return self.generic_visit(node)
+
+    def visit_While(self, node: ast.While) -> ast.AST:
+        node.type_comment = None
+        return self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> ast.AST:
+        node.type_comment = None
+        return self.generic_visit(node)
+
+    @staticmethod
+    def _strip_args(a: ast.arguments) -> ast.arguments:
+        for arg in a.posonlyargs + a.args + a.kwonlyargs:
+            arg.annotation = None
+        if a.vararg:
+            a.vararg.annotation = None
+        if a.kwarg:
+            a.kwarg.annotation = None
+        return a
+
+
+def strip_type_hints_src(src: str) -> str:
+    if not src.strip():
+        return src
+    tree = ast.parse(src, type_comments=True)
+    tree = _TypeHintStripper().visit(tree)
+    ast.fix_missing_locations(tree)
+    return ast.unparse(tree)
 
 
 def assemble_dependency_sources(
-    additional_definitions: List[str],
-    dependency_classes: List[Type],
-    dependency_functions: List[str],
+    additional: List[str], dep_classes: List[Type], dep_functions: List[str]
 ) -> str:
-    """Assemble all dependency sources into a single string."""
-    sources: List[str] = []
-    sources.extend(additional_definitions)
-    sources.extend(get_source_code(cls) for cls in dependency_classes)
-    sources.extend(dependency_functions)
-    return "\n\n".join(sources)
+    parts: List[str] = []
+    # Strip hints from everything we export below
+    parts.extend(strip_type_hints_src(s) for s in additional)
+    parts.extend(strip_type_hints_src(get_source_code(c)) for c in dep_classes)
+    parts.extend(strip_type_hints_src(s) for s in dep_functions)
+    parts = dedupe_defs_by_name(parts)
+    parts = topo_sort_sources(parts)
+    return "\n\n".join(parts)
 
 
 def write_modeling_module(
@@ -469,44 +409,33 @@ def write_modeling_module(
     model_type_aliases: dict | None = None,
     module_basename: str,
 ) -> Path:
-    """
-    Write a complete modeling module with all dependencies.
-    """
     all_classes = [config_class, model_class, *dep_classes]
+    imports = set().union(*(extract_imports_from_class(c) for c in all_classes))
 
-    all_imports = collect_all_imports(all_classes)
-
-    initial_dep_classes = list(dep_classes)
     rel_dep_classes, rel_dep_functions = collect_all_relative_dependencies(all_classes)
-    combined_dep_classes = initial_dep_classes + rel_dep_classes
+    dep_classes_all = list(dep_classes) + rel_dep_classes
+    for c in rel_dep_classes:
+        imports.update(extract_imports_from_class(c))
 
-    # Add imports from relative dependencies
-    for cls in rel_dep_classes:
-        all_imports.update(extract_imports_from_class(cls))
-
-    unique_dep_classes = deduplicate_classes_by_name(combined_dep_classes)
-    seen_class_names = {cls.__name__ for cls in unique_dep_classes}
-
-    additional_definitions = extract_additional_definitions_from_module(
-        model_class, exclude_names={model_class.__name__, config_class.__name__}
+    additional = extract_additional_defs(
+        model_class, exclude={config_class.__name__, model_class.__name__}
     )
-    filtered_additional = filter_duplicate_class_definitions(
-        additional_definitions, seen_class_names
-    )
-    imports_src = "\n".join(sorted(all_imports)) if all_imports else ""
+    imports_src = sort_dedupe_imports(imports)
     deps_src = assemble_dependency_sources(
-        filtered_additional, unique_dep_classes, rel_dep_functions
+        additional, dep_classes_all, rel_dep_functions
     )
+
+    config_src = strip_type_hints_src(get_source_code(config_class))
+    model_src = strip_type_hints_src(get_source_code(model_class))
 
     text = render_template(
         template_path,
         model_type_aliases=model_type_aliases or {},
         imports_src=imports_src,
-        config_src=get_source_code(config_class),
-        model_src=get_source_code(model_class),
         deps_src=deps_src,
+        config_src=config_src,
+        model_src=model_src,
     )
-
-    output_path = save_dir / f"{module_basename}.py"
-    output_path.write_text(text)
-    return output_path
+    out = save_dir / f"{module_basename}.py"
+    out.write_text(text)
+    return out
