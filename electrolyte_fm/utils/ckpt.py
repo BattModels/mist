@@ -228,8 +228,7 @@ def adjust_state_position_embeddings(state, max_position_embeddings):
 
 
 def get_ckpt_tokenizer(path: str | Path) -> str:
-    path = Path(path)
-    config_path = path.parent.parent.joinpath("config.json")
+    config_path = Path(path).parent.parent.joinpath("config.json")
     if not config_path.is_file():
         return str(path)
     with open(config_path, "r") as fid:
