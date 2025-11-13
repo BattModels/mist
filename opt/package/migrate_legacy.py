@@ -1,6 +1,12 @@
 import json
 from pathlib import Path
-from transformers import AutoConfig, AutoModel
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    RobertaPreLayerNormConfig,
+    RobertaPreLayerNormForMaskedLM,
+)
+from typing import Optional
 from safetensors.torch import load_file
 
 from electrolyte_fm.models import (
@@ -25,11 +31,14 @@ from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
 from electrolyte_fm.models.normalize import AbstractNormalizer
 
 
-def load_legacy_packaged_checkpoint(path: Path):
+def load_legacy_packaged_checkpoint(path: Path, model_class: Optional = None):
     """Load packaged checkpoint, handling both HF-compatible and legacy formats."""
 
     cfg = json.loads((path / "config.json").read_text())
-    model_class = globals()[cfg["architectures"][0]]
+
+    if model_class is None:
+        model_class = cfg["architectures"][0]
+    model_class = globals()[model_class]
 
     # Try HF from_pretrained first
     try:
