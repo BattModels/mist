@@ -22,9 +22,12 @@ model = AutoModel.from_pretrained(
 )
 
 # Make predictions
-smiles = ["CCO", "c1ccccc1", "CC(=O)O"]
-predictions = model.predict(smiles)
-print(predictions)
+smiles_batch = [
+    "CCO",           # Ethanol
+    "CC(=O)O",       # Acetic acid
+    "c1ccccc1"       # Benzene
+]
+results = model.predict(smiles_batch)
 ```
 
 ### Setting Up Your Environment
@@ -50,28 +53,42 @@ pip install -r requirements.txt
 - **Predictions**: Task-specific numerical or categorical predictions
 - **Format**: Dictionary with channel names and predicted values (if channels are configured), or raw tensor output
 
-### Example
-
-```python
-# Single molecule
-result = model.predict(["CN1C=NC2=C1C(=O)N(C(=O)N2C)C"])  # Caffeine
-
-# Multiple molecules
-smiles_batch = [
-    "CCO",           # Ethanol
-    "CC(=O)O",       # Acetic acid
-    "c1ccccc1"       # Benzene
-]
-results = model.predict(smiles_batch)
-```
 
 ## Provided Models
+
+### Pre-trained
 - `mist-1.8B-dh61satt`: Flagship MIST model (MIST-1.8B)
 - `mist-28M-ti624ev1`: Smaller MIST model (MIST-28M).
 
 Below is a full list of finetuned variants hosted on HuggingFace:
+### MoleculeNet Benchmark Models
+
+| Folder                       | Encoder  | Dataset                              |
+| ---------------------------- | :------: | ------------------------------------ |
+| mist-1.8B-fbdn8e35-bbbp      | MIST-1.8B| MoleculeNet BBBP                     |
+| mist-1.8B-1a4puhg2-hiv       | MIST-1.8B| MoleculeNet HIV                      |
+| mist-1.8B-m50jgolp-bace      | MIST-1.8B| MoleculeNet BACE                     |
+| mist-1.8B-uop1z0dc-tox21     | MIST-1.8B| MoleculeNet Tox21                    |
+| mist-1.8B-lu1l5ieh-clintox   | MIST-1.8B| MoleculeNet ClinTox                  |
+| mist-1.8B-l1wfo7oa-sider     | MIST-1.8B| MoleculeNet SIDER                                    |
+| mist-1.8B-hxiygjsm-esol      | MIST-1.8B| MoleculeNet ESOL                                         |
+| mist-1.8B-iwqj2cld-freesolv  | MIST-1.8B| MoleculeNet FreeSolv                             |
+| mist-1.8B-jvt4azpz-lipo      | MIST-1.8B| MoleculeNet Lipophilicity                  |
+| mist-1.8B-8nd1ot5j-qm8       | MIST-1.8B| MoleculeNet QM8                                          |
+| mist-28M-8loj3bab-bace       | MIST-28M | MoleculeNet BBBP                     |
+| mist-28M-8fh43gke-hiv        | MIST-28M | MoleculeNet HIV                      |
+| mist-28M-8loj3bab-bace       | MIST-28M | MoleculeNet BACE                     |
+| mist-28M-kw4ks27p-tox21      | MIST-28M | MoleculeNet Tox21                    |
+| mist-28M-97vfcykk-clintox    | MIST-28M | MoleculeNet ClinTox                  |
+| mist-28M-z8qo16uy-sider      | MIST-28M | MoleculeNet SIDER                                    |
+| mist-28M-kcwb9le5-esol       | MIST-28M | MoleculeNet ESOL                                         |
+| mist-28M-0uiq7o7m-freesolv   | MIST-28M | MoleculeNet FreeSolv                             |
+| mist-28M-xzr5ulva-lipo       | MIST-28M | MoleculeNet Lipophilicity                  |
+| mist-28M-gzwqzpcr-qm8        | MIST-28M | MoleculeNet QM8                                          |
+
+
 #### QM9 Benchmark Models
-The single target models for properties in QM9 are available.
+The single target (MIST-1.8B encoder) models for properties in QM9 are available.
 
 | Folder                       | Encoder  | Target                                                            |
 | ---------------------------- | :------: | ----------------------------------------------------------------- |
@@ -110,7 +127,7 @@ These models consist of a MIST-encoder and task network finetuned on a single da
 These models consist of a MIST-encoder and physics informed task network for mixture property prediction.
 | Folder                    | Encoder  | Dataset                                                     |
 | ------------------------- | :------: | ----------------------------------------------------------- |
-| mist-27M-2mpg8dcd         | MIST-28M | Ionic Conductivity                                          |
+| mist-conductivity-28M-2mpg8dcd         | MIST-28M | Ionic Conductivity                                          |
 | mist-mixtures-zffffbex    | MIST-28M | Excess Density, Molar Volume and Molar Enthalpy             |
 
 ## Citation
