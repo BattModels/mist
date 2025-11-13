@@ -3,6 +3,8 @@
 
 MODEL_TYPE_ALIASES = {{ model_type_aliases|tojson }}
 
+IGNORE_INDEX = -100
+
 def build_encoder(enc_dict: Dict[str, Any]):
     mtype = enc_dict.get("model_type")
     if mtype:
@@ -17,10 +19,8 @@ def build_encoder(enc_dict: Dict[str, Any]):
         enc_cfg.add_pooling_layer = False
     return AutoModel.from_config(enc_cfg)
 
+{{ deps_src }}
 
 {{ config_src }}
 
 {{ model_src }}
-
-{# A concatenated block of additional classes/functions needed by the model #}
-{{ deps_src }}
