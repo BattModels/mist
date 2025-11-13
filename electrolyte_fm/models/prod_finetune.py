@@ -127,6 +127,7 @@ class MISTFinetuned(PreTrainedModel):
         # load component weights
         model.encoder.load_state_dict(encoder.state_dict(), strict=False)
         model.task_network.load_state_dict(task_network.state_dict())
+        model.transform.load_state_dict(transform.state_dict())
         model.tokenizer = tokenizer
         return model
 
@@ -259,6 +260,8 @@ class MISTMultiTask(PreTrainedModel):
         model = cls(cfg)
         model.encoder.load_state_dict(encoder.state_dict(), strict=False)
         for dst, src in zip(model.task_networks, task_networks):
+            dst.load_state_dict(src.state_dict())
+        for dst, src in zip(model.transforms, transforms):
             dst.load_state_dict(src.state_dict())
         model.tokenizer = tokenizer
         return model

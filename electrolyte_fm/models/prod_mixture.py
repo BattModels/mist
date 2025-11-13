@@ -31,7 +31,7 @@ from smirk import SmirkTokenizerFast
 AutoTokenizer.register("SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast)
 
 
-def _resolve_tokenizer(self, tokenizer=None):
+def resolve_tokenizer(self, tokenizer=None):
     if tokenizer is not None:
         return tokenizer
     if getattr(self, "tokenizer", None) is not None:
@@ -147,7 +147,7 @@ class MISTIonicConductivity(PreTrainedModel):
     def embed_mixture(
         self, smiles_list: List[List[str]], compositions: List[List[float]]
     ):
-        tok = _resolve_tokenizer(self)
+        tok = resolve_tokenizer(self)
         batch_size = len(smiles_list)
         mixes = []
         with torch.inference_mode():
@@ -182,7 +182,7 @@ class MISTIonicConductivity(PreTrainedModel):
         return_dict: bool = True,
         tokenizer=None,
     ):
-        tok = _resolve_tokenizer(self, tokenizer)
+        tok = resolve_tokenizer(self, tokenizer)
         B = len(smiles_list)
         batch: Dict[str, torch.Tensor] = {
             "temperature": torch.tensor(
