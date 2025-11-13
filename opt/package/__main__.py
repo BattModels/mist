@@ -11,9 +11,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Iterable, Type, Optional, List, Tuple, Set
-from types import ModuleType
 import typer
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from safetensors.torch import load_file
 from transformers import AutoConfig, AutoModel
 
@@ -55,107 +53,12 @@ from .utils import (
     create_tar_gz,
 )
 from .migrate_legacy import load_legacy_packaged_checkpoint
+from .write_model_class import write_modeling_module
 
-template = Path(__file__).parent / "modeling_mist.py.j2"
 cli = typer.Typer()
 logging.basicConfig(level=logging.INFO)
 L = logging.getLogger("package")
-
-
-def get_source(obj) -> str:
-    return inspect.getsource(obj).strip()
-
-
-def render_template(template_path: Path, **ctx) -> str:
-    env = Environment(
-        loader=FileSystemLoader(str(template_path.parent)),
-        undefined=StrictUndefined,
-        autoescape=False,
-        trim_blocks=True,
-        lstrip_blocks=True,
-    )
-    return env.get_template(template_path.name).render(**ctx)
-
-
-def extract_imports_from_module(cls: Type) -> Set[str]:
-    """Extract import statements from the top-of-file import block of the module containing `cls`."""
-
-    module: ModuleType | None = inspect.getmodule(cls)
-    try:
-        src = inspect.getsource(module)
-    except OSError:
-        path = getattr(module, "__file__", None)
-        if path and path.endswith(".py"):
-            with open(path, "r", encoding="utf-8") as f:
-                src = f.read()
-
-    tree = ast.parse(src)
-    imports: list[str] = []
-
-    for node in tree.body:
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            # Skip relative imports (from . / from ..)
-            if isinstance(node, ast.ImportFrom) and (node.level or 0) > 0:
-                continue
-            text = ast.get_source_segment(src, node)
-            if not text:
-                # Fallback: reconstruct a normalized statement
-                if isinstance(node, ast.Import):
-                    parts = []
-                    for alias in node.names:
-                        s = alias.name
-                        if alias.asname:
-                            s += f" as {alias.asname}"
-                        parts.append(s)
-                    text = "import " + ", ".join(parts)
-                else:
-                    names = []
-                    for alias in node.names:
-                        s = alias.name
-                        if alias.asname:
-                            s += f" as {alias.asname}"
-                        names.append(s)
-                    modname = node.module or ""
-                    text = f"from {modname} import " + ", ".join(names)
-
-            imports.append(text.strip())
-        else:
-            # Stop at the first non-import top-level statement to emulate an "import block"
-            break
-    return set(imports)
-
-
-def write_modeling_module(
-    save_dir: Path,
-    template_path: Path,
-    *,
-    config_class: Type,
-    model_class: Type,
-    dep_classes: Iterable[Type],
-    model_type_aliases: dict | None = None,
-    module_basename: str,
-) -> Path:
-    # Collect all imports from dependency classes
-    all_imports = set()
-    for cls in [config_class, model_class, *dep_classes]:
-        all_imports.update(extract_imports_from_module(cls))
-
-    # Sort and join imports
-    imports_src = "\n".join(sorted(all_imports)) if all_imports else ""
-
-    deps_src = "\n\n".join(get_source(c) for c in dep_classes)
-    text = render_template(
-        template_path,
-        model_type_aliases=model_type_aliases or {},
-        imports_src=imports_src,
-        config_src=get_source(config_class),
-        model_src=get_source(model_class),
-        deps_src=deps_src,
-    )
-    out = save_dir / f"{module_basename}.py"
-    out.write_text(text)
-    L.info("Wrote %s", out)
-    return out
+template = Path(__file__).parent / "modeling_mist.py.j2"
 
 
 def patch_auto_map(
@@ -206,11 +109,6 @@ def save_with_tokenizer(model, save_dir: Path, safe: bool = True, tokenizer=None
             pass
 
 
-def class_source(cls) -> str:
-    src = inspect.getsource(cls)
-    return src
-
-
 def load_model(ckpt: Path):
     try:
         ckpt = maybe_best_ckpt(ckpt)
@@ -252,7 +150,7 @@ def export_finetuned(ckpt: Path) -> MISTFinetuned:
     try:
         channels = train_cfg["data"]["init_args"].get("target_columns")
     except KeyError:
-        channels = []
+        channels = None
     return MISTFinetuned.from_components(
         encoder=bundle.encoder,
         task_network=bundle.task_network,
