@@ -324,10 +324,43 @@ def topo_sort_sources(sources: List[str]) -> List[str]:
     return sorted_srcs + unnamed
 
 
-# === Type-hint stripping (applied ONLY to exported code) ===
-
-
 class _TypeHintStripper(ast.NodeTransformer):
+    """
+    Remove type hints from functions and non-dataclass class bodies.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._dataclass_depth = 0
+
+    @staticmethod
+    def _is_dataclass_classdef(node: ast.ClassDef) -> bool:
+        for d in node.decorator_list:
+            if isinstance(d, ast.Name) and d.id == "dataclass":
+                return True
+            if isinstance(d, ast.Attribute) and d.attr == "dataclass":
+                return True
+        return False
+
+    @staticmethod
+    def _strip_args(a: ast.arguments) -> ast.arguments:
+        for arg in a.posonlyargs + a.args + a.kwonlyargs:
+            arg.annotation = None
+        if a.vararg:
+            a.vararg.annotation = None
+        if a.kwarg:
+            a.kwarg.annotation = None
+        return a
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
+        is_dc = self._is_dataclass_classdef(node)
+        if is_dc:
+            self._dataclass_depth += 1
+        self.generic_visit(node)
+        if is_dc:
+            self._dataclass_depth -= 1
+        return node
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
         node.returns = None
         node.args = self._strip_args(node.args)
@@ -341,7 +374,8 @@ class _TypeHintStripper(ast.NodeTransformer):
         return node
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> ast.AST:
-        # If there's a value, turn into a plain Assign; if not, remove the statement.
+        if self._dataclass_depth > 0:
+            return self.generic_visit(node)
         if node.value is None:
             return None
         return ast.Assign(targets=[node.target], value=node.value, type_comment=None)
@@ -365,16 +399,6 @@ class _TypeHintStripper(ast.NodeTransformer):
     def visit_With(self, node: ast.With) -> ast.AST:
         node.type_comment = None
         return self.generic_visit(node)
-
-    @staticmethod
-    def _strip_args(a: ast.arguments) -> ast.arguments:
-        for arg in a.posonlyargs + a.args + a.kwonlyargs:
-            arg.annotation = None
-        if a.vararg:
-            a.vararg.annotation = None
-        if a.kwarg:
-            a.kwarg.annotation = None
-        return a
 
 
 def strip_type_hints_src(src: str) -> str:
