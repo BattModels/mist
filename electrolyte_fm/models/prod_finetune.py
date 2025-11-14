@@ -142,10 +142,12 @@ class MISTFinetuned(PreTrainedModel):
         if getattr(self, "tokenizer", None) is not None:
             return self.tokenizer
         try:
-            return AutoTokenizer.from_pretrained(self.name_or_path, use_fast=True)
+            return AutoTokenizer.from_pretrained(
+                self.name_or_path, use_fast=True, trust_remote_code=True
+            )
         except Exception:
             return AutoTokenizer.from_pretrained(
-                self.config._name_or_path, use_fast=True
+                self.config._name_or_path, use_fast=True, trust_remote_code=True
             )
 
     def embed(self, smi: List[str], tokenizer=None):
@@ -279,10 +281,12 @@ class MISTMultiTask(PreTrainedModel):
         if getattr(self, "tokenizer", None) is not None:
             return self.tokenizer
         try:
-            return AutoTokenizer.from_pretrained(self.name_or_path, use_fast=True)
+            return AutoTokenizer.from_pretrained(
+                self.name_or_path, use_fast=True, trust_remote_code=True
+            )
         except Exception:
             return AutoTokenizer.from_pretrained(
-                self.config._name_or_path, use_fast=True
+                self.config._name_or_path, use_fast=True, trust_remote_code=True
             )
 
     def predict(self, smi: List[str], tokenizer=None):

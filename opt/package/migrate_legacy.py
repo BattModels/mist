@@ -63,27 +63,68 @@ def load_legacy_packaged_checkpoint(path: Path, model_class: Optional = None):
             encoder, VFTDecayTaskHead(**tn_kwargs), None, cfg.get("n_components", 38)
         )
     elif model_class == MISTExcessPhysics:
-        # Load state dict to get the actual module instances
         state = load_file(str(path / "model.safetensors"))
         model = model_class(
             MISTExcessPhysicsConfig(
                 encoder=cfg["encoder"],
                 interactions=cfg.get("interactions", "difference"),
-                num_control=cfg.get("num_control", 3),
-                num_targets=cfg.get("num_targets", 1),
+                num_control=cfg.get("num_control"),
+                num_targets=cfg.get("num_targets", len(cfg.get("target_columns"))),
                 temperature_dependence=cfg.get("temperature_dependence"),
                 relative_excess=cfg.get("relative_excess", False),
                 dropout=cfg.get("dropout", 0.1),
             )
         )
-        model.encoder.load_state_dict(
+
+        model.encoder.encoder.load_state_dict(
             {
-                k.replace("encoder.", ""): v
+                k.replace("encoder.encoder.", ""): v
                 for k, v in state.items()
-                if k.startswith("encoder.")
+                if k.startswith("encoder.encoder.")
             },
-            strict=False,
+            strict=True,
         )
+        model.pairwise_interaction.load_state_dict(
+            {
+                k.replace("pairwise_interaction.", ""): v
+                for k, v in state.items()
+                if k.startswith("pairwise_interaction.")
+            },
+            strict=True,
+        )
+        model.component_properties.load_state_dict(
+            {
+                k.replace("component_properties.", ""): v
+                for k, v in state.items()
+                if k.startswith("component_properties.")
+            },
+            strict=True,
+        )
+        model.excess_polynomial.load_state_dict(
+            {
+                k.replace("excess_polynomial.", ""): v
+                for k, v in state.items()
+                if k.startswith("excess_polynomial.")
+            },
+            strict=True,
+        )
+        model.transform.load_state_dict(
+            {
+                k.replace("transform.", ""): v
+                for k, v in state.items()
+                if k.startswith("transform.") and not k.startswith("excess_transform.")
+            },
+            strict=True,
+        )
+        model.excess_transform.load_state_dict(
+            {
+                k.replace("excess_transform.", ""): v
+                for k, v in state.items()
+                if k.startswith("excess_transform.")
+            },
+            strict=True,
+        )
+
         return model
     elif model_class == MISTMultiTask:
         model = model_class.from_components(

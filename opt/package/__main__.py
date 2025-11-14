@@ -43,7 +43,7 @@ from electrolyte_fm.models.physics_task_heads import (
     LinearExogenousEffect,
 )
 from electrolyte_fm.models.polynomials import LagrangePolynomial
-from electrolyte_fm.models.excess_physics_model import pairwise_fusion
+from electrolyte_fm.models.pairwise_fusion import pairwise_fusion
 from .utils import (
     name_model,
     get_best_ckpt,
@@ -208,12 +208,6 @@ def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
 def export_conductivity(ckpt: Path) -> MISTIonicConductivity:
     bundle, best_ckpt = load_model(ckpt, model_class="MISTIonicConductivity")
 
-    # Handle legacy packaged checkpoints vs training checkpoints
-    if isinstance(bundle, MISTIonicConductivity):
-        # Already a packaged model, just return it
-        L.info("Loaded from legacy packaged checkpoint")
-        return bundle, best_ckpt
-
     train_cfg = read_training_config(ckpt)
     tokenizer = load_tokenizer(train_cfg["data"]["init_args"]["tokenizer"])
     n_components = train_cfg["model"]["init_args"].get("n_components", 38)
@@ -264,33 +258,26 @@ def conductivity(ckpt: Path, name: Optional[str] = None, safe: bool = True):
 def export_excess_physics(ckpt: Path) -> MISTExcessPhysics:
     bundle, best_ckpt = load_model(ckpt, model_class="MISTExcessPhysics")
 
-    # Handle legacy packaged checkpoints vs training checkpoints
-    if isinstance(bundle, MISTExcessPhysics):
-        # Already a packaged model, just return it
-        L.info("Loaded from legacy packaged checkpoint")
-        return bundle, best_ckpt
-
     # Training checkpoint - need to construct from components
     train_cfg = read_training_config(ckpt)
-    tokenizer = load_tokenizer(train_cfg["data"]["init_args"]["tokenizer"])
-
-    model_cfg = train_cfg["model"]["init_args"]
+    try:
+        tokenizer = load_tokenizer(train_cfg["data"]["init_args"]["tokenizer"])
+    except KeyError:
+        tokenizer = None
     model = MISTExcessPhysics.from_components(
         encoder=bundle.encoder,
-        pairwise_interaction=bundle.model.pairwise_interaction,
-        component_properties=bundle.model.component_properties,
-        excess_polynomial=bundle.model.excess_polynomial,
-        transform=bundle.model.transform,
-        excess_transform=bundle.model.excess_transform,
+        pairwise_interaction=bundle.pairwise_interaction,
+        component_properties=bundle.component_properties,
+        excess_polynomial=bundle.excess_polynomial,
+        transform=bundle.transform,
+        excess_transform=bundle.excess_transform,
         tokenizer=tokenizer,
-        interactions=model_cfg.get("config", {}).get("interactions", "difference"),
-        num_control=model_cfg.get("config", {}).get("num_control", 3),
-        num_targets=model_cfg.get("config", {}).get("num_targets", 1),
-        temperature_dependence=model_cfg.get("config", {}).get(
-            "temperature_dependence"
-        ),
-        relative_excess=model_cfg.get("config", {}).get("relative_excess", False),
-        dropout=model_cfg.get("config", {}).get("dropout", 0.1),
+        interactions=train_cfg.get("interactions"),
+        num_control=train_cfg.get("num_control"),
+        num_targets=len(train_cfg.get("target_columns")),
+        temperature_dependence=train_cfg.get("temperature_dependence"),
+        relative_excess=train_cfg.get("relative_excess"),
+        dropout=train_cfg.get("dropout"),
     )
     return model, best_ckpt
 

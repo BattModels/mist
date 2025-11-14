@@ -37,9 +37,13 @@ def resolve_tokenizer(self, tokenizer=None):
     if getattr(self, "tokenizer", None) is not None:
         return self.tokenizer
     try:
-        return AutoTokenizer.from_pretrained(self.name_or_path, use_fast=True)
+        return AutoTokenizer.from_pretrained(
+            self.name_or_path, use_fast=True, trust_remote_code=True
+        )
     except Exception:
-        return AutoTokenizer.from_pretrained(self.config._name_or_path, use_fast=True)
+        return AutoTokenizer.from_pretrained(
+            self.config._name_or_path, use_fast=True, trust_remote_code=True
+        )
 
 
 class MISTIonicConductivityConfig(PretrainedConfig):
@@ -87,7 +91,6 @@ class MISTIonicConductivity(PreTrainedModel):
         tokenizer=None,
         n_components: int = 38,
     ) -> "MISTIonicConductivity":
-        # try to minimal-config the head
         if isinstance(task_network, VFTDecayTaskHead):
             tn = {
                 "type": "VFTDecayTaskHead",
@@ -144,88 +147,57 @@ class MISTIonicConductivity(PreTrainedModel):
             return pred.view(-1, 1), params
         return pred.view(-1, 1), alpha
 
-    def embed_mixture(
-        self, smiles_list: List[List[str]], compositions: List[List[float]]
-    ):
-        tok = resolve_tokenizer(self)
-        batch_size = len(smiles_list)
-        mixes = []
-        with torch.inference_mode():
-            for b in range(batch_size):
-                mix_emb = None
-                for i in range(min(len(smiles_list[b]), self.n_components)):
-                    smi = smiles_list[b][i]
-                    comp = torch.tensor(
-                        compositions[b][i], dtype=torch.float32, device=self.device
-                    )
-
-                    t = tok([smi], return_tensors="pt", padding=True)
-                    input_ids = t["input_ids"].to(self.device)
-                    attention_mask = t["attention_mask"].to(self.device)
-                    enc = self.encoder(
-                        input_ids,
-                        attention_mask=attention_mask,
-                        return_dict=True,
-                        output_hidden_states=True,
-                    ).last_hidden_state[:, 0, :]
-                    enc = enc * comp
-                    mix_emb = enc if mix_emb is None else (mix_emb + enc)
-                mixes.append(mix_emb)
-        return torch.cat(mixes, dim=0).cpu()
-
     def predict(
         self,
-        smiles_list: List[List[str]],
-        compositions: List[List[float]],
-        temperatures: List[float],
-        salt_mole_fraction: List[float],
+        solvent_composition: List[Dict[str, float]],
+        cation: str,
+        anion: str,
+        temperature: float,
         return_dict: bool = True,
-        tokenizer=None,
     ):
-        tok = resolve_tokenizer(self, tokenizer)
-        B = len(smiles_list)
-        batch: Dict[str, torch.Tensor] = {
+        tokenizer = resolve_tokenizer(self)
+        collate = DataCollatorWithPadding(tokenizer)
+        total_solvent_comp = sum(
+            [v for comp_dict in solvent_composition for k, v in comp_dict.items()]
+        )
+        assert (
+            total_solvent_comp < 1.0
+        ), f"Total solvent mole fractions must be less than 1, got {total_solvent_comp}"
+
+        salt_comp = 1.0 - total_solvent_comp
+
+        components = list(solvent_composition)
+        while len(components) < 3:
+            components.append({"[H]": 0.0})  # Hydrogen as placeholder
+
+        components.append({cation: salt_comp})
+        components.append({anion: salt_comp})
+
+        assert len(components) == 5, f"Expected 5 components, got {len(components)}"
+
+        output = {
             "temperature": torch.tensor(
-                temperatures, dtype=torch.float32, device=self.device
-            ),
-            "composition_4": torch.tensor(
-                salt_mole_fraction, dtype=torch.float32, device=self.device
-            ),
+                [temperature], dtype=torch.float32, device=self.device
+            )
         }
 
-        # build per-component padded inputs
-        for i in range(self.n_components):
-            input_ids_list, attention_mask_list, comp_list = [], [], []
-            for b in range(B):
-                if i < len(smiles_list[b]):
-                    smi = smiles_list[b][i]
-                    comp = compositions[b][i]
-                else:
-                    smi = "[H]"
-                    comp = 0.0
-                tokens = tok([smi], return_tensors="pt", padding=True)
-                input_ids_list.append(tokens["input_ids"].squeeze(0))
-                attention_mask_list.append(tokens["attention_mask"].squeeze(0))
-                comp_list.append(comp)
-
-            collator = DataCollatorWithPadding(tok)
-            collated = collator(
-                [
-                    {"input_ids": ids, "attention_mask": mask}
-                    for ids, mask in zip(input_ids_list, attention_mask_list)
-                ]
-            )
-            batch[f"input_ids_{i}"] = collated["input_ids"].to(self.device)
-            batch[f"attention_mask_{i}"] = collated["attention_mask"].to(self.device)
-            batch[f"composition_{i}"] = torch.tensor(
-                comp_list, dtype=torch.float32, device=self.device
+        for i, component in enumerate(components):
+            smiles = list(component.keys())[0]
+            composition = list(component.values())[0]
+            batch = tokenizer(smiles)
+            batch = collate([batch])
+            output[f"input_ids_{i}"] = batch["input_ids"].to(self.device)
+            output[f"attention_mask_{i}"] = batch["attention_mask"].to(self.device)
+            output[f"composition_{i}"] = torch.tensor(
+                [composition], dtype=torch.float32, device=self.device
             )
 
         with torch.inference_mode():
-            pred, params = self(batch, return_all=return_dict)
+            pred, params = self(output, return_all=return_dict)
 
         if not return_dict:
             return pred.cpu()
+
         return {
             "conductivity": pred.cpu(),
             "alpha": params["alpha"].cpu(),
@@ -287,10 +259,10 @@ class MISTExcessPhysics(PreTrainedModel):
         self.config = config
         self.encoder = build_encoder_from_dict(config.encoder)
 
-        # Temperature dependence setup
-        n_temperature_targets = 1
+        # Configure Pairwise interaction model
         n_env = 0
-        if config.temperature_dependence == "arrthenius":
+        n_temperature_targets = 1
+        if config.temperature_dependence == "arrhenius":
             n_temperature_targets = 2
             self.temperature_dependence = ArrtheniusActivation()
         elif config.temperature_dependence == "concat":
@@ -300,13 +272,13 @@ class MISTExcessPhysics(PreTrainedModel):
             n_temperature_targets = 2
             n_env = 1
             self.temperature_dependence = LinearExogenousEffect()
+
         else:
             self.temperature_dependence = lambda x, t: x
 
-        # Pairwise interaction module
         self.pairwise_interaction = pairwise_fusion(
             config.interactions,
-            self.encoder.config.hidden_size,
+            config.encoder["hidden_size"],
             config.num_control * n_temperature_targets,
             n_targets=config.num_targets,
             n_env=n_env,
@@ -374,8 +346,10 @@ class MISTExcessPhysics(PreTrainedModel):
         model.pairwise_interaction.load_state_dict(pairwise_interaction.state_dict())
         model.component_properties.load_state_dict(component_properties.state_dict())
         model.excess_polynomial.load_state_dict(excess_polynomial.state_dict())
-        model.transform = transform
-        model.excess_transform = excess_transform
+
+        # Load transform state dicts to preserve the registered buffers
+        model.transform.load_state_dict(transform.state_dict())
+        model.excess_transform.load_state_dict(excess_transform.state_dict())
         model.tokenizer = tokenizer
         return model
 
@@ -451,6 +425,50 @@ class MISTExcessPhysics(PreTrainedModel):
         y = y_linear + y_excess
 
         return y, y_linear, y_excess
+
+    def predict(
+        self,
+        smiles_list: List[List[str]],
+        composition: List[List[float]],
+        temperature: List[float],
+    ):
+        tok = resolve_tokenizer(self, None)
+
+        all_smiles = [smi for mixture in smiles_list for smi in mixture]
+
+        inputs = tok(all_smiles, padding="longest", return_tensors="pt")
+
+        batch_size = len(smiles_list)
+        n_components = len(smiles_list[0])
+        seq_len = inputs["input_ids"].shape[-1]
+
+        input_ids = inputs["input_ids"].reshape(batch_size, n_components, seq_len)
+        attention_mask = inputs["attention_mask"].reshape(
+            batch_size, n_components, seq_len
+        )
+
+        composition_tensor = torch.tensor(composition, dtype=torch.float32)
+        temperature_tensor = torch.tensor(temperature, dtype=torch.float32)
+
+        device = next(self.parameters()).device
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
+        composition_tensor = composition_tensor.to(device)
+        temperature_tensor = temperature_tensor.to(device)
+
+        with torch.no_grad():
+            y, y_linear, y_excess = self.forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                composition=composition_tensor,
+                temperature=temperature_tensor,
+            )
+
+        return {
+            "value": y.cpu(),
+            "linear": y_linear.cpu(),
+            "excess": y_excess.cpu(),
+        }
 
     def save_pretrained(self, save_directory, **kwargs):
         cfg = MISTExcessPhysicsConfig(
