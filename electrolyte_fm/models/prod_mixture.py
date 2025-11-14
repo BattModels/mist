@@ -225,10 +225,9 @@ class MISTIonicConductivity(PreTrainedModel):
             return pred.cpu()
 
         return {
-            "conductivity": pred.cpu(),
-            "alpha": params["alpha"].cpu(),
-            "beta": params["beta"].cpu(),
-            "conductivity_unscaled": params["conductivity"].cpu(),
+            "ln conductivity [mS/cm]": pred.cpu(),
+            "Ea": params["Ea"].cpu(),
+            "Tg": params["Tg"].cpu(),
         }
 
     def save_pretrained(self, save_directory, **kwargs):
