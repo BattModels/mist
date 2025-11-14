@@ -1,3 +1,13 @@
+---
+language: en
+library_name: transformers
+license: gpl-3.0
+tags:
+  - mist
+  - chemistry
+  - molecular-property-prediction
+---
+
 # MIST: Molecular Insight SMILES Transformers
 
 MIST is a family of molecular foundation models for molecular property prediction.
@@ -132,10 +142,10 @@ These are additional multi-target finetuned models consisting of a MIST encoder 
 ### Finetuned Mixture Models
 
 These models consist of a MIST-encoder and physics informed task network for mixture property prediction.
-| Folder                    | Encoder  | Dataset                                                     |
-| ------------------------- | :------: | ----------------------------------------------------------- |
-| mist-conductivity-28M-2mpg8dcd         | MIST-28M | Ionic Conductivity                                          |
-| mist-mixtures-zffffbex    | MIST-28M | Excess Density, Molar Volume and Molar Enthalpy             |
+| Folder                           | Encoder  | Dataset                                                     |
+| -------------------------------- | :------: | ----------------------------------------------------------- |
+| mist-conductivity-28M-2mpg8dcd   | MIST-28M | Ionic Conductivity                                          |
+| mist-mixtures-zffffbex           | MIST-28M | Excess Density, Molar Volume and Molar Enthalpy             |
 
 ## Citation
 

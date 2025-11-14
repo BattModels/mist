@@ -209,8 +209,10 @@ def export_conductivity(ckpt: Path) -> MISTIonicConductivity:
     bundle, best_ckpt = load_model(ckpt, model_class="MISTIonicConductivity")
 
     train_cfg = read_training_config(ckpt)
-    tokenizer = load_tokenizer(train_cfg["data"]["init_args"]["tokenizer"])
-    n_components = train_cfg["model"]["init_args"].get("n_components", 38)
+    tokenizer = load_tokenizer(get_ckpt_tokenizer(ckpt))
+    n_components = train_cfg.get("n_components") or train_cfg.get("model", {}).get(
+        "init_args", {}
+    ).get("n_components")
     model = MISTIonicConductivity.from_components(
         encoder=bundle.encoder,
         task_network=bundle.task_network,

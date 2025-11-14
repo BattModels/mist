@@ -149,47 +149,73 @@ class MISTIonicConductivity(PreTrainedModel):
 
     def predict(
         self,
-        solvent_composition: List[Dict[str, float]],
-        cation: str,
-        anion: str,
-        temperature: float,
+        batch: List[Dict[str, any]],
         return_dict: bool = True,
     ):
+        """
+        Predict ionic conductivity for a batch of samples.
+        """
         tokenizer = resolve_tokenizer(self)
         collate = DataCollatorWithPadding(tokenizer)
-        total_solvent_comp = sum(
-            [v for comp_dict in solvent_composition for k, v in comp_dict.items()]
-        )
-        assert (
-            total_solvent_comp < 1.0
-        ), f"Total solvent mole fractions must be less than 1, got {total_solvent_comp}"
 
-        salt_comp = 1.0 - total_solvent_comp
+        # Prepare batch tensors
+        all_input_ids = [[] for _ in range(5)]
+        all_attention_masks = [[] for _ in range(5)]
+        all_compositions = [[] for _ in range(5)]
+        all_temperatures = []
 
-        components = list(solvent_composition)
-        while len(components) < 3:
-            components.append({"[H]": 0.0})  # Hydrogen as placeholder
+        for sample in batch:
+            solvent_composition = sample["solvent_composition"]
+            cation = sample["cation"]
+            anion = sample["anion"]
+            temperature = sample["temperature"]
 
-        components.append({cation: salt_comp})
-        components.append({anion: salt_comp})
+            total_solvent_comp = sum(
+                [v for comp_dict in solvent_composition for k, v in comp_dict.items()]
+            )
+            assert (
+                total_solvent_comp < 1.0
+            ), f"Total solvent mole fractions must be less than 1, got {total_solvent_comp}"
 
-        assert len(components) == 5, f"Expected 5 components, got {len(components)}"
+            salt_comp = 1.0 - total_solvent_comp
 
+            components = list(solvent_composition)
+            while len(components) < 3:
+                components.append({"[H]": 0.0})  # Hydrogen as placeholder
+
+            components.append({cation: salt_comp})
+            components.append({anion: salt_comp})
+
+            assert len(components) == 5, f"Expected 5 components, got {len(components)}"
+
+            for i, component in enumerate(components):
+                smiles = list(component.keys())[0]
+                composition = list(component.values())[0]
+                tok_output = tokenizer(smiles)
+                all_input_ids[i].append(tok_output["input_ids"])
+                all_attention_masks[i].append(tok_output["attention_mask"])
+                all_compositions[i].append(composition)
+
+            all_temperatures.append(temperature)
+
+        # Collate and create output dict
         output = {
             "temperature": torch.tensor(
-                [temperature], dtype=torch.float32, device=self.device
+                all_temperatures, dtype=torch.float32, device=self.device
             )
         }
 
-        for i, component in enumerate(components):
-            smiles = list(component.keys())[0]
-            composition = list(component.values())[0]
-            batch = tokenizer(smiles)
-            batch = collate([batch])
-            output[f"input_ids_{i}"] = batch["input_ids"].to(self.device)
-            output[f"attention_mask_{i}"] = batch["attention_mask"].to(self.device)
+        for i in range(5):
+            batched = collate(
+                [
+                    {"input_ids": ids, "attention_mask": mask}
+                    for ids, mask in zip(all_input_ids[i], all_attention_masks[i])
+                ]
+            )
+            output[f"input_ids_{i}"] = batched["input_ids"].to(self.device)
+            output[f"attention_mask_{i}"] = batched["attention_mask"].to(self.device)
             output[f"composition_{i}"] = torch.tensor(
-                [composition], dtype=torch.float32, device=self.device
+                all_compositions[i], dtype=torch.float32, device=self.device
             )
 
         with torch.inference_mode():

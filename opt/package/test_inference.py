@@ -182,27 +182,17 @@ class TestConductivityModels:
                 or "conductivity" in model_path.name.lower()
             )
 
-    @pytest.mark.parametrize("test_case_idx", [0, 1])
-    def test_predict_mixtures(
-        self, all_model_paths, conductivity_test_data, test_case_idx
-    ):
+    def test_predict_mixtures(self, all_model_paths, conductivity_test_data):
         conductivity_paths = [
             p for p in all_model_paths if get_model_type_from_path(p) == "conductivity"
         ]
         if not conductivity_paths:
             pytest.skip("No conductivity models found")
 
-        test_case = conductivity_test_data[test_case_idx]
-
         for model_path in conductivity_paths:
             model = AutoModel.from_pretrained(str(model_path), trust_remote_code=True)
 
-            predictions = model.predict(
-                solvent_composition=test_case["solvent_composition"],
-                cation=test_case["cation"],
-                anion=test_case["anion"],
-                temperature=test_case["temperature"],
-            )
+            predictions = model.predict(conductivity_test_data)
 
             assert predictions is not None
 
