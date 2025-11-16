@@ -1,0 +1,458 @@
+# Encoder configurations
+encoders:
+  mist-28M:
+    name: "MIST-28M"
+    base_model: "mist-28M-ti624ev1"
+    num_layers: 8
+    hidden_size: 512
+    intermediate_size: 2048
+    num_attention_heads: 8
+    max_position_embeddings: 2048
+    pretrain_gpus: 2
+    pretrain_time: "12 hours 15 minutes"
+
+  mist-1.8B:
+    name: "MIST-1.8B"
+    base_model: "mist-1.8B-dh61satt"
+    num_layers: 24
+    hidden_size: 1536
+    intermediate_size: 6144
+    num_attention_heads: 24
+    max_position_embeddings: 2048
+    pretrain_gpus: 32
+    pretrain_time: "~7 days"
+
+  mist-26.9M:
+    name: "MIST-28M"
+    base_model: "mist-28M-ti624ev1"
+    num_layers: 8
+    hidden_size: 512
+    intermediate_size: 2048
+    num_attention_heads: 8
+    max_position_embeddings: 2048
+    pretrain_gpus: 2
+    pretrain_time: "12 hours 15 minutes"
+
+# Dataset configurations
+datasets:
+  # MoleculeNet Benchmark - Quantum Mechanics
+  qm8:
+    name: "QM8"
+    source: "MoleculeNet benchmark"
+    description: "The QM8 dataset from MoleculeNet was used. It contains 21,786 small molecules for which time-dependent density functional theory (TDDFT) was used to compute eight excitation energies and four oscillator strengths, resulting in 12 scalar targets per molecule."
+    task_type: "Multi-task regression"
+    task_description: "electronic spectra properties"
+    output_format: "Regression predictions for 12 electronic transition properties (8 excitation energies and 4 oscillator strengths)"
+    output_description: "Returns predictions for 12 electronic spectra properties computed using TDDFT"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) averaged across all 12 properties"
+    split_type: "random"
+    num_samples: 21786
+
+  qm9:
+    name: "QM9"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset from MoleculeNet was used. It contains approximately 134,000 small organic molecules (up to 9 heavy atoms) with 12 quantum mechanical properties calculated using density functional theory (DFT). The properties include geometric, energetic, electronic, and thermodynamic characteristics such as HOMO/LUMO energies, dipole moments, polarizability, heat capacity, and internal energies."
+    task_type: "Multi-task regression"
+    task_description: "quantum properties"
+    output_format: "Regression predictions for 12 quantum mechanical properties"
+    output_description: "Returns predictions for 12 quantum mechanical properties (HOMO, LUMO, gap, r2, zpve, u0, u298, h298, g298, cv, mu, alpha)"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) averaged across all 12 quantum mechanical properties"
+    split_type: "random"
+    num_samples: 133885
+
+  # MoleculeNet Benchmark - Physical Chemistry
+  esol:
+    name: "ESOL"
+    source: "MoleculeNet benchmark"
+    description: "The ESOL (Estimated SOLubility) dataset from MoleculeNet was used. It provides experimental aqueous solubility (log S) measurements for 1,128 small molecules. It is a single-target regression task."
+    task_type: "Regression"
+    task_description: "aqueous solubility"
+    output_format: "Regression prediction for aqueous solubility (log S)"
+    output_description: "Returns predictions for measured log solubility in mols per litre"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Root Mean Squared Error (RMSE)"
+    split_type: "random"
+    num_samples: 1128
+
+  freesolv:
+    name: "FreeSolv"
+    source: "MoleculeNet benchmark"
+    description: "The FreeSolv dataset from MoleculeNet was used. It contains experimental and calculated hydration free energies for 642 neutral molecules in water. It has one regression target per molecule and benchmarks models' ability to predict molecule–solvent interaction energies."
+    task_type: "Regression"
+    task_description: "hydration free energy"
+    output_format: "Regression prediction for hydration free energy (kcal/mol)"
+    output_description: "Returns predictions for hydration free energy in kcal/mol"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Root Mean Squared Error (RMSE) in kcal/mol for hydration free energy predictions"
+    split_type: "random"
+    num_samples: 642
+
+  lipo:
+    name: "Lipophilicity"
+    source: "MoleculeNet benchmark"
+    description: "The Lipophilicity dataset from MoleculeNet was used. It provides measured octanol–water distribution coefficients (log D) for 4,200 small molecules."
+    task_type: "Regression"
+    task_description: "lipophilicity"
+    output_format: "Regression prediction for lipophilicity (logD at pH 7.4)"
+    output_description: "Returns predictions for octanol/water distribution coefficient (logD)"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Root Mean Squared Error (RMSE) in logD units"
+    split_type: "random"
+    num_samples: 4200
+
+  # MoleculeNet Benchmark - Biophysics
+  bbbp:
+    name: "BBBP"
+    source: "MoleculeNet benchmark"
+    description: "The BBBP (Blood-Brain Barrier Penetration) dataset from MoleculeNet was used. It labels 2,039 compounds as penetrating or non-penetrating with respect to the blood-brain barrier. It is a single-task binary classification dataset focused on central nervous system delivery."
+    task_type: "Binary classification"
+    task_description: "blood-brain barrier penetration"
+    output_format: "Binary classification prediction"
+    output_description: "Returns unnormalized logits for binary prediction for blood-brain barrier penetration"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve)"
+    split_type: "scaffold"
+    num_samples: 2039
+
+  hiv:
+    name: "HIV"
+    source: "MoleculeNet benchmark"
+    description: "The HIV dataset from MoleculeNet was used. It contains 41,127 compounds tested for inhibition of HIV-1 replication in T-cell lines. It is a single-task binary classification dataset split 80/10/10 using a scaffold split."
+    task_type: "Binary classification"
+    task_description: "HIV inhibition"
+    output_format: "Binary classification prediction"
+    output_description: "Returns unnormalized logits for binary prediction for HIV inhibition activity"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve)"
+    split_type: "scaffold"
+    num_samples: 41127
+
+  bace:
+    name: "BACE"
+    source: "MoleculeNet benchmark"
+    description: "The BACE dataset from MoleculeNet was used. It includes 1,513 small molecules assayed for inhibition of β-secretase 1 (BACE-1), a target relevant to Alzheimer's disease. It is a single-task binary classification dataset."
+    task_type: "Binary classification"
+    task_description: "BACE-1 inhibition"
+    output_format: "Binary classification prediction"
+    output_description: "Returns unnormalized logits for binary prediction for BACE-1 binding"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve)"
+    split_type: "scaffold"
+    num_samples: 1513
+
+  tox21:
+    name: "Tox21"
+    source: "MoleculeNet benchmark"
+    description: "The Tox21 dataset from MoleculeNet was used. It features 7,831 compounds tested against 12 biological targets related to nuclear receptor signaling and stress response pathways. This is a multi-label binary-classification dataset."
+    task_type: "Multi-label binary classification"
+    task_description: "toxicity endpoints"
+    output_format: "Multi-label binary classification for 12 toxicity endpoints"
+    output_description: "Returns unnormalized logits for predictions for 12 toxicity endpoints (nuclear receptor signaling and stress response)"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve) averaged across all 12 tasks"
+    split_type: "random"
+    num_samples: 7831
+
+  clintox:
+    name: "ClinTox"
+    source: "MoleculeNet benchmark"
+    description: "The ClinTox dataset from MoleculeNet was used. It provides clinical toxicity data for 1,478 compounds, distinguishing FDA-approved drugs from those withdrawn for toxicity. It comprises two binary-classification tasks (approval status and withdrawal risk)."
+    task_type: "Multi-label binary classification"
+    task_description: "clinical trial toxicity"
+    output_format: "Multi-label binary classification for 2 tasks (CT_TOX and FDA approval)"
+    output_description: "Returns unnormalized logits predictions for clinical trial toxicity and FDA approval status"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve) averaged across both tasks"
+    split_type: "random"
+    num_samples: 1478
+
+  sider:
+    name: "SIDER"
+    source: "MoleculeNet benchmark"
+    description: "The SIDER (Side Effect Resource) dataset from MoleculeNet was used. It aggregates adverse drug reactions for 1,427 marketed drugs across 27 MedDRA side-effect terms. This is a multi-label binary-classification dataset."
+    task_type: "Multi-label binary classification"
+    task_description: "adverse drug reactions"
+    output_format: "Multi-label binary classification for 27 types of adverse drug reactions"
+    output_description: "Returns unnormalized logits for 27 MedDRA side-effect terms"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve) averaged across all 27 tasks"
+    split_type: "random"
+    num_samples: 1427
+
+  toxcast:
+    name: "ToxCast"
+    source: "MoleculeNet benchmark"
+    description: "The ToxCast dataset from MoleculeNet was used. It contains over 8,000 compounds tested across 617 high-throughput screening assays covering various biological pathways and toxicity endpoints from the EPA's ToxCast project."
+    task_type: "Multi-label binary classification"
+    task_description: "ToxCast assay endpoints"
+    output_format: "Multi-label binary classification for 617 toxicity assay endpoints"
+    output_description: "Returns unnormalized logits for 617 high-throughput screening assay endpoints"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve) averaged across all 617 tasks"
+    split_type: "random"
+    num_samples: 8615
+
+  muv:
+    name: "MUV"
+    source: "MoleculeNet benchmark"
+    description: "The MUV (Maximum Unbiased Validation) dataset from MoleculeNet was used. It contains 93,087 compounds tested against 17 challenging bioassay targets designed to avoid analogue bias and provide a more realistic evaluation of virtual screening methods."
+    task_type: "Multi-label binary classification"
+    task_description: "bioassay activity"
+    output_format: "Multi-label binary classification for 17 bioassay targets"
+    output_description: "Returns unnormalized logits for 17 bioassay activity endpoints"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve) averaged across all 17 tasks"
+    split_type: "random"
+    num_samples: 93087
+
+  # tmQM Dataset
+  tmQM:
+    name: "tmQM"
+    source: "tmQM benchmark https://doi.org/10.1021/acs.jcim.0c01041"
+    description: "The tmQM dataset was used. It is a quantum mechanics dataset of 108,000 large transition organometallic compounds curated from the Cambridge Structural Database. tmQM provides quantum mechanical properties computed using DFT at the TPSSh-D3BJ/def2-SVP level using geometries optimized at the GFN2-xTB level. The dataset is of particular interest due to its expanded elemental and stereochemical diversity relative to other datasets."
+    task_type: "Multi-task regression"
+    task_description: "quantum properties for organometallic compounds"
+    output_format: "Regression predictions for 8 quantum mechanical properties"
+    output_description: "Returns predictions for HOMO, LUMO, HOMO/LUMO gap, dipole moment, and natural charge"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) averaged across all 8 quantum mechanical properties"
+    split_type: "random"
+    num_samples: 108000
+
+  # Application-specific datasets
+  odour:
+    name: "Olfaction"
+    source: "application dataset"
+    description: "The Olfaction dataset was used, consisting of 4,983 molecules collected by Lee et al. As an arbitrary number of scent labels can be applied to any molecule, the task was framed as a multi-label multi-class binary classification task, with 135 possible scent labels."
+    task_type: "Multi-label binary classification"
+    task_description: "odor descriptors"
+    output_format: "Multi-label binary classification for 135 scent labels"
+    output_description: "Returns unnormalized logits for binary labels for 135 possible scent descriptors"
+    loss_function: "Binary Cross-Entropy Loss"
+    metrics: "AUROC (Area Under the Receiver Operator Curve) averaged across all 135 scent labels"
+    split_type: "random"
+    num_samples: 4983
+
+  dn:
+    name: "BF₃ affinity"
+    source: "Lewis Basicity and Affinity Scales: Data and Measurement, by  Christian Laurence, Jean-François Gal, DOI:10.1002/9780470681909"
+    description: "The BF₃ affinity dataset was used. The BF₃ affinity is a measure of a molecule's Lewis basicity and has been applied to electrolyte design for analyzing lithium-ion salt solubility and solvation environment. The MIST variant was fine-tuned on a dataset of 344 BF₃ affinity measurements of Lewis bases at 298 K and 1 atm."
+    task_type: "Regression"
+    task_description: "BF₃ affinity"
+    output_format: "Regression prediction for BF₃ affinity"
+    output_description: "Returns predictions for BF₃ affinity"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Root Mean Squared Error (RMSE)"
+    split_type: "random"
+    num_samples: 344
+
+  kt:
+    name: "Kamlet-Taft Parameters"
+    source: "DOI 10.1021/acscentsci.1c01151"
+    description: "The Kamlet-Taft solvatochromatic parameters dataset was used. Kamlet-Taft parameters are used to characterize solvent properties, particularly their ability to participate in hydrogen bonding and their polarizability. The three parameters are α (hydrogen bond acidity, the solvent's ability to donate a hydrogen bond), β (hydrogen bond basicity, the solvent's ability to accept a hydrogen bond) and π* (polarizability, the solvent's overall polarity). The fine-tuning dataset consisted of 182 Kamlet-Taft values measured using NMR."
+    task_type: "Multi-task regression"
+    task_description: "Kamlet-Taft parameters"
+    output_format: "Regression predictions for Kamlet-Taft parameters (α, β, π*)"
+    output_description: "Returns predictions for α (H-bond acidity), β (H-bond basicity), and π* (polarity)"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Root Mean Squared Error (RMSE) averaged across all three parameters"
+    split_type: "random"
+    num_samples: 182
+
+  bp:
+    name: "Boiling Point"
+    source: "a Characteristic Temperatures dataset collect by Shang Zhu et al."
+    description: "The Boiling Point dataset (part of the Characteristic Temperatures Dataset) was used. The boiling point of a substance determines part of its thermal operating window. The MIST variant was fine-tuned on a dataset of 3,969 boiling-point data entries curated from the PubChem database. The dataset was filtered to chemicals with fewer than 20 heavy atoms (not including hydrogen) and zero radical electrons."
+    task_type: "Regression"
+    task_description: "boiling point"
+    output_format: "Regression prediction for boiling point (K)"
+    output_description: "Returns predictions for normal boiling point"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Root Mean Squared Error (RMSE) for boiling point predictions"
+    split_type: "random"
+    num_samples: 3969
+
+  fp:
+    name: "Flash Point"
+    source: "a Characteristic Temperatures dataset collect by Shang Zhu et al."
+    description: "The Flash Point dataset (part of the Characteristic Temperatures Dataset) was used. The flash point of a substance is the lowest temperature at which vapors ignite and determines its flammability. The MIST variant was fine-tuned on a dataset of 10,090 flash-point data entries obtained from the literature. The dataset was filtered to chemicals with fewer than 20 heavy atoms (not including hydrogen) and zero radical electrons."
+    task_type: "Regression"
+    task_description: "flash point"
+    output_format: "Regression prediction for flash point (K)"
+    output_description: "Returns predictions for flash point temperature"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Root Mean Squared Error (RMSE) for flash point predictions"
+    split_type: "random"
+    num_samples: 10090
+
+  mp:
+    name: "Melting Point"
+    source: "a Characteristic Temperatures dataset collect by Shang Zhu et al."
+    description: "The Melting Point dataset (part of the Characteristic Temperatures Dataset) was used. The melting point of a substance determines part of its thermal operating window. The MIST variant was fine-tuned on a dataset of 5,734 melting-point data entries curated from the PubChem database. The dataset was filtered to chemicals with fewer than 20 heavy atoms (not including hydrogen) and zero radical electrons."
+    task_type: "Regression"
+    task_description: "melting point"
+    output_format: "Regression prediction for melting point (K)"
+    output_description: "Returns predictions for melting point temperature"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Root Mean Squared Error (RMSE) for melting point predictions"
+    split_type: "random"
+    num_samples: 5734
+
+  # QM9 Single-Target Models
+  mu:
+    name: "QM9 Dipole Moment"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the dipole moment (μ) of molecules. The dipole moment measures the separation of positive and negative electrical charges in a molecule. This property is important for understanding molecular polarity and intermolecular interactions."
+    task_type: "Regression"
+    task_description: "dipole moment"
+    output_format: "Regression prediction for dipole moment (Debye)"
+    output_description: "Returns predictions for molecular dipole moment in Debye (D)"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for dipole moment predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  alpha:
+    name: "QM9 Isotropic Polarizability"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the isotropic polarizability (α) of molecules. Polarizability describes how easily the electron cloud of a molecule can be distorted by an external electric field. This property is important for understanding molecular interactions and optical properties."
+    task_type: "Regression"
+    task_description: "isotropic polarizability"
+    output_format: "Regression prediction for isotropic polarizability (Bohr³)"
+    output_description: "Returns predictions for isotropic polarizability in Bohr³"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for polarizability predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  homo:
+    name: "QM9 HOMO Energy"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the HOMO (Highest Occupied Molecular Orbital) energy of molecules. The HOMO energy is a key electronic property that indicates the energy of the highest occupied molecular orbital and is related to a molecule's ionization potential and reactivity."
+    task_type: "Regression"
+    task_description: "HOMO energy"
+    output_format: "Regression prediction for HOMO energy (Hartree)"
+    output_description: "Returns predictions for HOMO energy in Hartree"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for HOMO energy predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  lumo:
+    name: "QM9 LUMO Energy"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the LUMO (Lowest Unoccupied Molecular Orbital) energy of molecules. The LUMO energy indicates the energy of the lowest unoccupied molecular orbital and is related to a molecule's electron affinity and reactivity."
+    task_type: "Regression"
+    task_description: "LUMO energy"
+    output_format: "Regression prediction for LUMO energy (Hartree)"
+    output_description: "Returns predictions for LUMO energy in Hartree"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for LUMO energy predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  gap:
+    name: "QM9 HOMO-LUMO Gap"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the HOMO-LUMO gap of molecules. The gap represents the energy difference between the highest occupied and lowest unoccupied molecular orbitals. This property is important for understanding electronic excitations, stability, and reactivity of molecules."
+    task_type: "Regression"
+    task_description: "HOMO-LUMO gap"
+    output_format: "Regression prediction for HOMO-LUMO gap (Hartree)"
+    output_description: "Returns predictions for HOMO-LUMO gap in Hartree"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for gap predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  r2:
+    name: "QM9 Electronic Spatial Extent"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the electronic spatial extent (<R²>) of molecules. This property measures the spatial distribution of the electron density and provides information about the size and shape of the electron cloud."
+    task_type: "Regression"
+    task_description: "electronic spatial extent"
+    output_format: "Regression prediction for electronic spatial extent (Bohr²)"
+    output_description: "Returns predictions for <R²> in Bohr²"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for R² predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  zpve:
+    name: "QM9 Zero Point Vibrational Energy"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the zero point vibrational energy (ZPVE) of molecules. ZPVE is the energy that remains in a molecule even at absolute zero temperature due to quantum mechanical vibrations. This property is important for accurate thermochemical calculations."
+    task_type: "Regression"
+    task_description: "zero point vibrational energy"
+    output_format: "Regression prediction for ZPVE (Hartree)"
+    output_description: "Returns predictions for zero point vibrational energy in Hartree"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for ZPVE predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  u0:
+    name: "QM9 Internal Energy at 0K"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the internal energy at 0K (U0) of molecules. This property represents the total internal energy of a molecule at absolute zero temperature, including electronic, nuclear, and zero-point vibrational energies."
+    task_type: "Regression"
+    task_description: "internal energy at 0K"
+    output_format: "Regression prediction for U0 (Hartree)"
+    output_description: "Returns predictions for internal energy at 0K in Hartree"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for U0 predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  u298:
+    name: "QM9 Internal Energy at 298.15K"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the internal energy at 298.15K (U298) of molecules. This property represents the total internal energy at room temperature, including thermal contributions from molecular vibrations, rotations, and translations."
+    task_type: "Regression"
+    task_description: "internal energy at 298.15K"
+    output_format: "Regression prediction for U298 (Hartree)"
+    output_description: "Returns predictions for internal energy at 298.15K in Hartree"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for U298 predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  h298:
+    name: "QM9 Enthalpy at 298.15K"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the enthalpy at 298.15K (H298) of molecules. Enthalpy is a thermodynamic property that represents the total heat content of a system and is important for understanding chemical reactions and phase transitions."
+    task_type: "Regression"
+    task_description: "enthalpy at 298.15K"
+    output_format: "Regression prediction for H298 (Hartree)"
+    output_description: "Returns predictions for enthalpy at 298.15K in Hartree"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for H298 predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  g298:
+    name: "QM9 Free Energy at 298.15K"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the Gibbs free energy at 298.15K (G298) of molecules. Free energy determines the spontaneity of chemical reactions and is a fundamental property for thermodynamic calculations."
+    task_type: "Regression"
+    task_description: "free energy at 298.15K"
+    output_format: "Regression prediction for G298 (Hartree)"
+    output_description: "Returns predictions for free energy at 298.15K in Hartree"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for G298 predictions"
+    split_type: "random"
+    num_samples: 133885
+
+  cv:
+    name: "QM9 Heat Capacity at 298.15K"
+    source: "MoleculeNet benchmark"
+    description: "The QM9 dataset was used to predict the heat capacity at constant volume at 298.15K (Cv) of molecules. Heat capacity measures how much heat energy is required to raise the temperature of a molecule and is important for thermodynamic modeling."
+    task_type: "Regression"
+    task_description: "heat capacity at 298.15K"
+    output_format: "Regression prediction for Cv (cal/(mol·K))"
+    output_description: "Returns predictions for heat capacity at 298.15K in cal/(mol·K)"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for Cv predictions"
+    split_type: "random"
+    num_samples: 133885

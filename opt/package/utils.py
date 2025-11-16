@@ -13,6 +13,7 @@ from smirk import SmirkTokenizerFast
 import electrolyte_fm
 from electrolyte_fm.utils.ckpt import get_ckpt_tokenizer
 from electrolyte_fm.utils.tokenizer import load_tokenizer
+from .generate_model_card import generate_model_card_for_directory
 
 
 def get_best_ckpt(ckpt_dir: Path) -> Path:
@@ -57,10 +58,17 @@ def create_save_directory(
     if license.is_file():
         shutil.copy(license, save_dir)
 
-    shutil.copy(
-        Path(__file__).parent.joinpath("model_card.md"),
-        Path(save_dir, "README.md"),
-    )
+    try:
+        model_card = generate_model_card_for_directory(save_dir, ckpt_path=ckpt)
+        (save_dir / "README.md").write_text(model_card)
+        logging.info(f"Generated model card: {save_dir / 'README.md'}")
+    except Exception as e:
+        logging.warning(f"Could not generate model card for {save_dir.name}: {e}")
+        # Fall back to copying static model card if available
+        static_card = Path(__file__).parent.joinpath("model_card.md")
+        if static_card.exists():
+            shutil.copy(static_card, Path(save_dir, "README.md"))
+            logging.info(f"Copied static model card to {save_dir / 'README.md'}")
 
     if model_class:
         create_demo(save_dir, model_class)
@@ -76,10 +84,14 @@ def create_demo(save_directory: Path, model_class: str):
 
 
 def write_requirements(save_directory: Path, extra_deps: list[str] = []):
-    deps = ["transformers", "torch", "scikit-learn", *extra_deps]
+    deps = ["transformers", "torch", "scikit-learn", "datasets", *extra_deps]
     with open(save_directory.joinpath("requirements.txt"), "w") as fid:
         for dep in deps:
-            fid.write(f"{dep}=={version(dep)}\n")
+            # Pin smirk to 0.1.0
+            if dep == "smirk":
+                fid.write("smirk==0.1.0\n")
+            else:
+                fid.write(f"{dep}=={version(dep)}\n")
 
 
 def extra_deps(ckpt: Path) -> list[str]:

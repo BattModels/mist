@@ -1,0 +1,173 @@
+---
+language: en
+library_name: transformers
+license: gpl-3.0
+tags:
+  - mist
+  - chemistry
+  - molecular-property-prediction
+---
+
+# MIST: Molecular Insight SMILES Transformers
+
+
+MIST is a family of molecular foundation models for molecular property prediction.
+The models were pre-trained on SMILES strings from the [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) dataset using the Masked Language Modeling (MLM) objective, then fine-tuned for downstream prediction tasks.
+Further information is available in [our pre-print on arXiv](https://arxiv.org/abs/2510.18900).
+
+## Model Details
+
+### Model Description
+
+This fine-tuned MIST variant consists of the {{ encoder.name }} encoder finetuned on the {{ dataset.name }} dataset{% if dataset.source %} from {{ dataset.source }}{% endif %}.
+Fine-tuned MIST models consist of the pretrained MIST model (the encoder), followed by a task network.
+The task networks consist of a two-layer MLP with Gaussian Error Linear Units (GELU) activations and dropout.
+The final hidden state vectors for all tokens in the sequence are pooled to produce a single embedding vector.
+Consistent with prior works, the encoder hidden states were pooled by taking the hidden state of the first token.
+
+- **Developed by:** [Electrochemical Energy Group](https://eeg.engin.umich.edu/), University of Michigan, Ann Arbor.
+- **Model type:** Self-supervised pre-trained MIST encoder with supervised finetuning.
+- **License:** GPL 3.0 (GNU General Public License version 3)
+- **Finetuned from model:** [``{{ encoder.base_model }}``](https://huggingface.co/mist-models/{{ encoder.base_model }})
+
+### Model Sources
+
+- **Repository:** [Full MIST Code](https://github.com/BattModels/mist)
+- **Paper:** [arXiv Preprint](https://arxiv.org/abs/2510.18900)
+- **Demo:** [Finetuning and Inference Demo](https://github.com/BattModels/mist-demo)
+
+
+## Getting Started
+
+#### Setting Up Your Environment
+
+Create a virtual environment and install dependencies:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+> **Note**: SMIRK tokenizers require Rust to be installed. See the [Rust installation guide](https://www.rust-lang.org/tools/install) for details.
+
+#### Property Prediction
+
+```python
+from transformers import AutoModel
+from smirk import SmirkTokenizerFast
+# Load the model
+model = AutoModel.from_pretrained(
+    "path/to/model",
+    trust_remote_code=True
+)
+
+# Make predictions{% if dataset.task_description %} for {{ dataset.task_description }}{% endif %}
+smiles_batch = [
+    "CCO",           # Ethanol
+    "CC(=O)O",       # Acetic acid
+    "C1=CC=CC=C1"       # Benzene
+]
+{% if dataset.output_description %}# {{ dataset.output_description }}
+{% endif %}results = model.predict(smiles_batch)
+```
+
+
+### Use and Restrictions
+
+Model weights are provided as-is for research purposes only, without guarantees of correctness, fitness for purpose, or warranties of any kind.
+- Research use only
+- No redistribution without permission
+- No commercial use without licensing agreement
+
+## Training Details
+
+### Training Data
+
+**Pretraining**
+We use the the Enamine REAL Space dataset to pretrain MIST models.
+At time of writing, Enamine REAL Space is the largest database of commercially available compounds.
+The dataset was constructed using *forward synthetic analysis*: experimentally validated building blocks were converted into synthons annotated with reactivity features.
+Enamine REAL Space was selected as the pretraining dataset since it was the largest database of molecular SMILES at the time of training, it is easily accessible for academic use and molecules relevant to downstream tasks, such as drug candidates, electrolytes, fragrances, live in synthetically accessible regions of chemical space.
+
+**Finetuning** {{ dataset.description }}
+
+
+### Training Procedure
+
+<!-- This relates heavily to the Technical Specifications. Content here should link to that section when it is relevant to the training procedure. -->
+
+#### Inputs
+
+- **Inputs**: The input to MIST models are SMILES strings for molecules.
+Unless specified otherwise, models were pretrained and fine-tuned on Kekulized SMILES strings.
+- **Outputs**: {{ dataset.output_format }}
+
+## Evaluation
+
+<!-- This section describes the evaluation protocols and provides the results. -->
+
+### Testing
+
+#### Testing Data
+
+Dataset was split 80/10/10 using a {{ dataset.split_type }} split.
+
+#### Metrics
+{{ dataset.metrics }}
+
+## Technical Specifications
+
+### Model Architecture and Objective
+
+- Encoder: [``RoBERTa-PreLayerNorm``](https://huggingface.co/docs/transformers/en/model_doc/roberta-prelayernorm) encoder with {{ encoder.num_layers }} layers, a hidden size of {{ encoder.hidden_size }}, intermediate size of {{ encoder.intermediate_size }}, {{ encoder.num_attention_heads }} attention heads and maximum sequence length of {{ encoder.max_position_embeddings }}.
+- Task Network: Two-layer MLP (Multi-layer perceptron)
+- Objective
+  - Pretraining: MLM (Masked Language Modeling)
+  - Fine-tuning: {{ dataset.task_type }}
+- Loss:
+  - Pretraining: Cross-Entropy Loss
+  - Fine-tuning: {{ dataset.loss_function }}
+- Optimizer:
+  - Pretraining: ``deepspeed.ops.lamb.FusedLAMB``
+  - Fine-tuning: ``torch.optim.AdamW``
+
+### Compute Infrastructure
+
+#### Hardware
+This model was pre-trained on {{ encoder.pretrain_gpus }} NVIDIA A100-SXM4-80GB GPUs{% if encoder.pretrain_time %} in {{ encoder.pretrain_time }}{% endif %}.
+It was finetuned on 1 NVIDIA A100 GPU.
+
+#### Software
+
+This model was trained with PyTorchLightning using the DeepSpeed strategy for data distributed parallelism.
+Model are exported in a Safetensors format.
+
+## Citation
+
+<!-- If there is a paper or blog post introducing the model, the APA and Bibtex information for that should go in this section. -->
+
+If you use this model in your research, please cite:
+
+```bibtex
+@online{MIST,
+  title = {Foundation Models for Discovery and Exploration in Chemical Space},
+  author = {Wadell, Alexius and Bhutani, Anoushka and Azumah, Victor and Ellis-Mohr, Austin R. and Kelly, Celia and Zhao, Hancheng and Nayak, Anuj K. and Hegazy, Kareem and Brace, Alexander and Lin, Hongyi and Emani, Murali and Vishwanath, Venkatram and Gering, Kevin and Alkan, Melisa and Gibbs, Tom and Wells, Jack and Varshney, Lav R. and Ramsundar, Bharath and Duraisamy, Karthik and Mahoney, Michael W. and Ramanathan, Arvind and Viswanathan, Venkatasubramanian},
+  date = {2025-10-20},
+  eprint = {2510.18900},
+  eprinttype = {arXiv},
+  eprintclass = {physics},
+  doi = {10.48550/arXiv.2510.18900},
+  url = {http://arxiv.org/abs/2510.18900},
+}
+```
+
+## Model Card Authors
+Anoushka Bhutani, Alexius Wadell
+
+## Model Card Contact
+
+For questions, issues, or licensing inquiries, please contact Venkat Viswanathan [venkvis@umich.edu](mailto:venkvis@umich.edu).
+
+
+<hr>
