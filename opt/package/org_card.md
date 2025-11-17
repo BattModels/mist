@@ -95,8 +95,7 @@ Below is a full list of finetuned variants hosted on HuggingFace:
 | mist-28M-0uiq7o7m-freesolv   | MIST-28M | MoleculeNet FreeSolv                 |
 | mist-28M-xzr5ulva-lipo       | MIST-28M | MoleculeNet Lipophilicity            |
 | mist-28M-gzwqzpcr-qm8        | MIST-28M | MoleculeNet QM8                      |
-| mist-28M-szo37rxx-qm9        | MIST-28M | MoleculeNet QM9                      |
-
+| mist-28M-kkgx0omx-qm9        | MIST-28M | MoleculeNet QM9                      |
 
 #### QM9 Benchmark Models
 The single target (MIST-1.8B encoder) models for properties in QM9 are available.
@@ -116,7 +115,6 @@ The single target (MIST-1.8B encoder) models for properties in QM9 are available
 | mist-1.8B-09sntn03-g298      | MIST-1.8B| G298 - Free energy at 298.15K (unit: Hartree)                     |
 | mist-1.8B-j356b3nf-cv        | MIST-1.8B| Cv - Heat capacity at 298.15K (unit: cal/(mol*K))                 |
 
-- `mist-ti624ev1-moleculenet`: Contains MoleculeNet benchmark MIST-28M models trained as part of doi:10.5281/zenodo.13761263
 
 
 ### Finetuned Single Task Models
