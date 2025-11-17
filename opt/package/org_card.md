@@ -95,6 +95,7 @@ Below is a full list of finetuned variants hosted on HuggingFace:
 | mist-28M-0uiq7o7m-freesolv   | MIST-28M | MoleculeNet FreeSolv                 |
 | mist-28M-xzr5ulva-lipo       | MIST-28M | MoleculeNet Lipophilicity            |
 | mist-28M-gzwqzpcr-qm8        | MIST-28M | MoleculeNet QM8                      |
+| mist-28M-szo37rxx-qm9        | MIST-28M | MoleculeNet QM9                      |
 
 
 #### QM9 Benchmark Models
