@@ -154,10 +154,14 @@ def export_finetuned(ckpt: Path) -> MISTFinetuned:
         tokenizer = load_tokenizer(tokenizer["init_args"]["tokenizer"])
     else:
         tokenizer = load_tokenizer("smirk")
+
+    # Try to get channels from training config or packaged model config
     try:
         channels = train_cfg["data"]["init_args"].get("target_columns")
     except KeyError:
-        channels = None
+        # If loading from already-packaged model, channels are at top level
+        channels = train_cfg.get("channels")
+
     model = MISTFinetuned.from_components(
         encoder=bundle.encoder,
         task_network=bundle.task_network,
