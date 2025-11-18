@@ -118,6 +118,31 @@ def get_model_type_from_path(path: Path) -> str:
         return "single"
 
 
+def check_multi_channel_labels(model, model_name: str):
+    """Verify that multi-output models have channel labels."""
+    if "RobertaPreLayerNormModel" in type(model).__name__:
+        return
+
+    if not hasattr(model, "config"):
+        return
+
+    config = model.config
+    if not hasattr(config, "task_network"):
+        return
+
+    output_size = config.task_network.get("output_size", 1)
+    channels = config.channels if hasattr(config, "channels") else None
+
+    if output_size > 1:
+        assert (
+            channels is not None
+        ), f"{model_name} has {output_size} outputs but no channels defined"
+        assert (
+            len(channels) == output_size
+        ), f"{model_name} has {output_size} outputs but {len(channels)} channels"
+        logger.info(f"{model_name} has {len(channels)} channel labels")
+
+
 class TestSingleMoleculeModels:
     def test_model_loads(self, all_model_paths):
         single_paths = [
@@ -286,7 +311,7 @@ class TestEncoderModels:
 
 
 class TestModelIntegrity:
-    def test_model_has_config(self, all_model_paths):
+    def test_model_config(self, all_model_paths):
         for model_path in all_model_paths:
             logger.info(f"Testing config for {model_path.name}")
             model = AutoModel.from_pretrained(str(model_path), trust_remote_code=True)
@@ -295,7 +320,7 @@ class TestModelIntegrity:
             assert model.config is not None
             logger.info(f"Model config type: {type(model.config).__name__}")
 
-    def test_model_has_tokenizer(self, all_model_paths):
+    def test_model_tokenizer(self, all_model_paths):
         for model_path in all_model_paths:
             logger.info(f"Testing tokenizer for {model_path.name}")
             model = AutoModel.from_pretrained(str(model_path), trust_remote_code=True)
@@ -314,6 +339,12 @@ class TestModelIntegrity:
             if torch.cuda.is_available():
                 model = model.to("cuda")
                 assert model.device.type == "cuda"
+
+    def test_multi_channel_labels(self, all_model_paths):
+        for model_path in all_model_paths:
+            logger.info(f"Checking channels for {model_path.name}")
+            model = AutoModel.from_pretrained(str(model_path), trust_remote_code=True)
+            check_multi_channel_labels(model, model_path.name)
 
 
 if __name__ == "__main__":

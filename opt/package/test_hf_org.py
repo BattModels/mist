@@ -13,6 +13,7 @@ from test_inference import (
     excess_test_data,
     validate_predictions,
     get_model_type_from_path,
+    check_multi_channel_labels,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,7 +122,7 @@ class TestHFOrgExcessPhysicsModels:
 
 
 class TestHFOrgModelIntegrity:
-    def test_all_models_have_config(self, hf_org_models, hf_token):
+    def test_all_models_config(self, hf_org_models, hf_token):
         for model_id in hf_org_models:
             logger.info(f"Checking config for {model_id}")
             model = AutoModel.from_pretrained(
@@ -130,7 +131,7 @@ class TestHFOrgModelIntegrity:
             assert hasattr(model, "config")
             assert model.config is not None
 
-    def test_models_have_required_files(self, hf_org_models, hf_token):
+    def test_models_required_files(self, hf_org_models, hf_token):
         api = HfApi(token=hf_token)
 
         for model_id in hf_org_models:
@@ -144,6 +145,14 @@ class TestHFOrgModelIntegrity:
                 "safetensors" in f or "pytorch_model.bin" in f for f in siblings
             )
             assert has_weights, f"{model_id} missing model weights"
+
+    def test_multi_channel_model_labels(self, hf_org_models, hf_token):
+        for model_id in hf_org_models:
+            logger.info(f"Checking channels for {model_id}")
+            model = AutoModel.from_pretrained(
+                model_id, trust_remote_code=True, token=hf_token
+            )
+            check_multi_channel_labels(model, model_id)
 
 
 if __name__ == "__main__":
