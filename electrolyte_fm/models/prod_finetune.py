@@ -165,10 +165,14 @@ class MISTFinetuned(PreTrainedModel):
     def predict(self, smi: List[str], return_dict: bool = True, tokenizer=None):
         tok = self._resolve_tokenizer(tokenizer)
         batch = tok(smi)
-        batch = DataCollatorWithPadding(tok)(batch)
-        inputs = {k: v.to(self.device) for k, v in batch.items()}
+        collate_fn = DataCollatorWithPadding(tok)
+        batch = collate_fn(batch)
+        batch = {
+            "input_ids": batch["input_ids"].to(self.encoder.device),
+            "attention_mask": batch["attention_mask"].to(self.encoder.device),
+        }
         with torch.inference_mode():
-            out = self(**inputs).cpu()
+            out = self(**batch).cpu()
         if self.channels is None or not return_dict:
             return out
         return annotate_prediction(out, maybe_get_annotated_channels(self.channels))

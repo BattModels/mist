@@ -5,6 +5,9 @@ MODEL_TYPE_ALIASES = {{ model_type_aliases|tojson }}
 
 IGNORE_INDEX = -100
 
+AutoTokenizer.register("SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast)
+
+
 def build_encoder(enc_dict: Dict[str, Any]):
     mtype = enc_dict.get("model_type")
     if mtype:
