@@ -15,6 +15,7 @@ from ..utils.metrics import (
 from .model_utils import DeepSpeedMixin
 from .normalize import AbstractNormalizer
 from .prediction_task_head import PredictionTaskHead
+
 from .physics_task_heads import ArrheniusTaskHead, VFTTaskHead
 from enum import Enum
 from lightning.pytorch.loggers import WandbLogger
@@ -61,7 +62,7 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
         self.freeze_encoder = freeze_encoder
         self.n_components = n_components
         self.temperature = TemperatureCondition(temperature)
-
+        self.target_columns = target_columns
         self.lossfn = torch.nn.MSELoss(reduction="none")
         self.transform = AbstractNormalizer.get(transform, self.output_size).eval()
 
@@ -126,13 +127,9 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
 
     def on_fit_start(self):
         """Standardized training data"""
-        state = None
-        if self.global_rank == 0:
-            assert self.trainer.datamodule.target_dataset is not None
-            ds = self.trainer.datamodule.target_dataset
-            state = self.transform.fit(ds)
-
-        state = self.trainer.strategy.broadcast(state)
+        assert self.trainer.datamodule.target_dataset is not None
+        ds = self.trainer.datamodule.target_dataset
+        state = self.transform.fit(ds)
         self.transform.load_state_dict(state)
 
     def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
@@ -156,7 +153,9 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
             )
         pred_unscaled = self.task_network(mix_embedding)
         if transform:
-            return self.transform.forward(pred_unscaled), mix_embedding
+            pred_scaled = self.transform.forward(pred_unscaled), mix_embedding
+
+            return pred_scaled
         return pred_unscaled, mix_embedding
 
     def _scaled_pred_loss(self, batch):
@@ -165,7 +164,6 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
         target = batch["target"]
         target = self.transform.inverse(target)
         loss = masked_loss(self.lossfn, preds, target, batch["target_mask"])
-
         if torch.isnan(loss):
             raise ValueError("Loss is NaN")
 

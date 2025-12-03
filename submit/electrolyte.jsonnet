@@ -2,21 +2,17 @@
   queue: 'venkvis-h100',
   walltime: '8:00:00',
   train: {
-    tags: ['finetuning', 'aem'],
+    tags: ['finetuning', 'elyte_transport'],
     model: {
-      class_path: 'electrolyte_fm.models.ElectrolyteModel',
+      class_path: 'electrolyte_fm.models.MixtureModel',
       init_args: {
         n_components: 5,
         target_columns: $.train.data.init_args.target_col,
         transform: [
           'log_transform',
           'standardize',
-          'log_transform',
-          'standardize',
-          'identity',
-          'identity',
         ],
-        encoder_ckpt: '/nfs/turbo/coe-venkvis/mist/atleto2u/checkpoints/last.ckpt',
+        encoder_ckpt: '/nfs/turbo/coe-venkvis/mist/ti624ev1/pretrained/checkpoints/last.ckpt',
         output_size: std.length($.train.data.init_args.target_col),
         optimizer: {
           class_path: 'torch.optim.AdamW',
@@ -38,19 +34,15 @@
     data: {
       class_path: 'electrolyte_fm.data_modules.ComponentDataModule',
       init_args: {
-        path: '/home/abhutani/electrolyte-fm/diffmix_data/lithium_raw',
+        path: '/nfs/turbo/coe-venkvis/abhutani/electrolyte-fm/diffmix_data/lithium_raw/',
         target_col: [
-          'density (g/mL)',
-          'cP_mean',
-          'Cond (mS) 2',
+          'Diff. Coeff. cm^2/s',
           't+(a)',
-          'dissoc (SI)',
-          'dissoc (TI)',
         ],
         n_components: 5,
-        batch_size: 64,
+        batch_size: 16,
         randomize: false,
-        val_batch_size: 32,
+        val_batch_size: 8,
         iterable: true,
         tokenizer: $.train.model.init_args.encoder_ckpt,
         include_temperature: true,
@@ -58,15 +50,14 @@
     },
     trainer: {
       max_steps: $.train.model.init_args.lr_schedule.init_args.num_training_steps,
-      enable_progress_bar: false,
+      enable_progress_bar: true,
       limit_val_batches: 20,
       precision: '32',
       strategy: 'auto',
-      val_check_interval: 100,
+      val_check_interval: 1000,
     },
   },
   env: {
     TOKENIZER_PARALLELISM: 'true',
-    CUDA_HOME: '~/.spack/opt/spack/intel-2022.0.2/cuda/12.2.0-kojv/',
   },
 }

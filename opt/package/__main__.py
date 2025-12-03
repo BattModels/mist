@@ -26,7 +26,10 @@ from electrolyte_fm.models import (
     MISTMultiTask,
     MISTExcessPhysicsConfig,
     MISTExcessPhysics,
+    MISTMixturesConfig,
+    MISTMixtures,
 )
+from electrolyte_fm.models.mixture_model import TemperatureCondition
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
 from electrolyte_fm.models.normalize import (
@@ -213,7 +216,7 @@ def export_conductivity(ckpt: Path) -> MISTIonicConductivity:
     bundle, best_ckpt = load_model(ckpt, model_class="MISTIonicConductivity")
 
     train_cfg = read_training_config(ckpt)
-    tokenizer = load_tokenizer(get_ckpt_tokenizer(ckpt))
+    tokenizer = load_tokenizer(get_ckpt_tokenizer(best_ckpt))
     n_components = train_cfg.get("n_components") or train_cfg.get("model", {}).get(
         "init_args", {}
     ).get("n_components")
@@ -335,6 +338,85 @@ def excess_physics(ckpt: Path, name: Optional[str] = None, safe: bool = True):
         model_class_name="MISTExcessPhysics",
     )
     L.info("Saved excess physics model to %s", save_dir)
+    create_tar_gz(save_dir)
+
+
+def export_mixtures(ckpt: Path) -> MISTMixtures:
+    bundle, best_ckpt = load_model(ckpt, model_class="MISTMixtures")
+
+    train_cfg = read_training_config(ckpt)
+    tokenizer = load_tokenizer(get_ckpt_tokenizer(best_ckpt))
+
+    model_cfg = train_cfg.get("model", {}).get("init_args", {})
+    n_components = model_cfg.get("n_components", 5)
+    output_size = model_cfg.get("output_size", 2)
+
+    temperature_condition = model_cfg.get("temperature", "false")
+    if hasattr(temperature_condition, "value"):
+        temperature_condition = temperature_condition.value
+
+    # Try to get channels from training config
+    try:
+        channels = train_cfg["data"]["init_args"].get("target_col")
+    except KeyError:
+        channels = model_cfg.get("target_columns")
+
+    model = MISTMixtures.from_components(
+        encoder=bundle.encoder,
+        task_network=bundle.task_network,
+        transform=bundle.transform,
+        tokenizer=tokenizer,
+        n_components=n_components,
+        temperature_condition=temperature_condition,
+        output_size=output_size,
+        channels=channels,
+    )
+    return model, best_ckpt
+
+
+@cli.command()
+def mixtures(ckpt: Path, name: Optional[str] = None, safe: bool = True):
+    """
+    Export a mixture property prediction model.
+    """
+    model, best_ckpt = export_mixtures(ckpt)
+
+    tag = name_model(
+        model,
+        template=name or "mist-mixtures-{model_size}-{ckpt}",
+        ckpt=ckpt_id(best_ckpt),
+    )
+    save_dir = create_save_directory(tag, best_ckpt)
+
+    save_with_tokenizer(model, save_dir, safe=safe)
+
+    # Get dependency classes
+    dep_classes = [
+        PredictionTaskHead,
+        AbstractNormalizer,
+        type(model.transform),
+        TemperatureCondition,
+    ]
+
+    write_modeling_module(
+        save_dir,
+        template,
+        config_class=MISTMixturesConfig,
+        model_class=MISTMixtures,
+        dep_classes=dep_classes,
+        module_basename="modeling_mist_mixtures",
+    )
+
+    patch_auto_map(
+        save_dir,
+        module_basename="modeling_mist_mixtures",
+        model_type="mist_mixtures",
+        architecture_name="MISTMixtures",
+        config_class_name="MISTMixturesConfig",
+        model_class_name="MISTMixtures",
+    )
+
+    L.info("Saved mixtures model to %s", save_dir)
     create_tar_gz(save_dir)
 
 

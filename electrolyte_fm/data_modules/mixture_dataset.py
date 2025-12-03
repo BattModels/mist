@@ -1,6 +1,6 @@
 from pathlib import Path
 from itertools import chain
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 import typer
@@ -55,10 +55,10 @@ def collate_target_stacked(x, target_columns):
         v = x[k]
         if v is None:
             target.append(torch.tensor(0))  # Placeholder, should be masked out
-            mask.append(torch.tensor(True))
+            mask.append(torch.tensor(False))
         else:
             target.append(torch.tensor(v))
-            mask.append(torch.tensor(False))
+            mask.append(torch.tensor(True))
 
     return {"target": torch.stack(target), "target_mask": torch.stack(mask)}
 
@@ -67,7 +67,7 @@ class ComponentDataModule(LightningDataModule):
     def __init__(
         self,
         path: str,
-        target_col: Union[str, List],
+        target_col: list | str,
         n_components: int = 2,
         tokenizer: Optional[str] = None,
         batch_size: int = 64,
@@ -75,7 +75,7 @@ class ComponentDataModule(LightningDataModule):
         num_workers: int = 0,
         prefetch_factor: Optional[int] = None,
         include_temperature: str | bool = False,
-        encoding: Optional[str | MolEncoding] = "smiles",
+        encoding: str | MolEncoding = "smiles",
         iterable: bool = False,
         randomize: bool = False,
         max_length: int = 512,
@@ -168,11 +168,12 @@ class ComponentDataModule(LightningDataModule):
             },
             input_columns=input_columns,
         )
-
         self.train_dataset: Dataset = ds["train"].shuffle()
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
-        self.target_dataset = ds["train"].select_columns(["target", "target_mask"])
+        self.target_dataset = (
+            ds["train"].take(10000).select_columns(["target", "target_mask"])
+        )
 
     def collator(self, batch):
         output = {}
@@ -242,7 +243,7 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
         self,
         path: str | Path,
         n_components: int = 2,
-        temperature_column: str | None = "temperature [kelvin]",
+        temperature_column: Optional[str] = "temperature [kelvin]",
         smi_column: str = "smi{:d}",
         x_column: str = "x{:d}",
         excess_columns: str | list[str] | None = "excess {:s}",
@@ -387,7 +388,7 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
         return out
 
 
-def stack_compounds(row: dict, smi_columns: list[str]):
+def stack_compounds(row: dict, smi_columns: List[str]):
     return {"compounds": tuple(row[col] for col in smi_columns)}
 
 
@@ -404,7 +405,7 @@ def has_training_data(x, has_excess: bool = True) -> bool:
 
 
 def encode_and_tokenize_mixture(
-    compounds: list[tuple[str, ...]],
+    compounds: List[Tuple[str, ...]],
     tokenizer=None,
     encoding: MolEncoding = MolEncoding.SMILES,
     randomize: bool = True,
@@ -436,7 +437,7 @@ def split_dataset(
     output: Path,
     split: str = "random",
     num_shards: int = 4,
-    target_columns: list[str] | None = None,
+    target_columns: Optional[List[str]] = None,
 ):
     import logging
     from .molnet_dataset import train_val_test_split

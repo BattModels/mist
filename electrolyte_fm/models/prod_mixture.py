@@ -21,9 +21,15 @@ from .physics_task_heads import (
     ArrtheniusActivation,
     LinearExogenousEffect,
 )
+from .prediction_task_head import PredictionTaskHead
 from .polynomials import LagrangePolynomial
+from .mixture_model import TemperatureCondition
 from .pairwise_fusion import pairwise_fusion
-from .prod_finetune import build_encoder_from_dict
+from .prod_finetune import (
+    build_encoder_from_dict,
+    annotate_prediction,
+    maybe_get_annotated_channels,
+)
 from .model_utils import masked_mean_pool
 
 from smirk import SmirkTokenizerFast
@@ -515,7 +521,368 @@ class MISTExcessPhysics(PreTrainedModel):
             self.tokenizer.save_pretrained(save_directory)
 
 
+class MISTMixturesConfig(PretrainedConfig):
+    model_type = "mist_mixtures"
+
+    def __init__(
+        self,
+        encoder: Optional[Dict[str, Any]] = None,
+        task_network: Optional[Dict[str, Any]] = None,
+        transform: Optional[Dict[str, Any]] = None,
+        n_components: int = 5,
+        temperature_condition: str = "false",
+        output_size: int = 2,
+        channels: Optional[List[Dict[str, Any]]] = None,
+        tokenizer_class: Optional[str] = "SmirkTokenizer",
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.encoder = encoder or {}
+        self.task_network = task_network or {
+            "embed_dim": 768,
+            "output_size": 2,
+            "dropout": 0.1,
+        }
+        self.transform = transform or {"class": "Standardize", "num_outputs": 2}
+        self.n_components = int(n_components)
+        self.temperature_condition = temperature_condition
+        self.output_size = int(output_size)
+        self.channels = channels
+        self.tokenizer_class = tokenizer_class
+
+
+class MISTMixtures(PreTrainedModel):
+    """
+    Production-ready model for mixture property prediction with multiple targets.
+    Supports various temperature conditioning strategies.
+    """
+
+    config_class = MISTMixturesConfig
+
+    def __init__(self, config: MISTMixturesConfig):
+        super().__init__(config)
+        self.config = config
+        self.encoder = build_encoder_from_dict(config.encoder)
+
+        self.task_network = PredictionTaskHead(
+            embed_dim=config.task_network.get(
+                "embed_dim", self.encoder.config.hidden_size
+            ),
+            output_size=config.task_network.get("output_size", config.output_size),
+            dropout=config.task_network.get("dropout", 0.1),
+        )
+
+        # Build transform
+        self.transform = AbstractNormalizer.get(
+            config.transform.get("class", "Standardize"),
+            config.transform.get("num_outputs", config.output_size),
+        )
+
+        self.n_components = int(config.n_components)
+        self.output_size = int(config.output_size)
+        self.channels = config.channels
+
+        if isinstance(config.temperature_condition, str):
+            self.temperature_condition = TemperatureCondition(
+                config.temperature_condition
+            )
+        else:
+            self.temperature_condition = config.temperature_condition
+
+        self.tokenizer = None
+        self.post_init()
+
+    @classmethod
+    def from_components(
+        cls,
+        encoder: PreTrainedModel,
+        task_network: nn.Module,
+        transform: Any,
+        tokenizer=None,
+        n_components: int = 5,
+        temperature_condition: str = "false",
+        output_size: int = 2,
+        channels: Optional[List[Dict[str, Any]]] = None,
+    ) -> "MISTMixtures":
+        """
+        Create MISTMixtures from individual components.
+
+        Args:
+            encoder: Pretrained encoder model
+            task_network: Task-specific prediction head
+            transform: Normalization transform
+            tokenizer: Tokenizer for encoding SMILES
+            n_components: Maximum number of mixture components
+            temperature_condition: Temperature conditioning strategy
+            output_size: Number of output targets
+            channels: List of channel metadata dictionaries
+        """
+        cfg = MISTMixturesConfig(
+            encoder=encoder.config.to_dict(),
+            task_network={
+                "embed_dim": encoder.config.hidden_size,
+                "output_size": output_size,
+                "dropout": getattr(task_network, "dropout", 0.1),
+            },
+            transform=transform.to_config()
+            if hasattr(transform, "to_config")
+            else {"class": "Standardize", "num_outputs": output_size},
+            n_components=n_components,
+            temperature_condition=temperature_condition,
+            output_size=output_size,
+            channels=channels,
+            tokenizer_class=(
+                getattr(tokenizer, "__class__", type("T", (), {})).__name__
+                if tokenizer
+                else "SmirkTokenizer"
+            ),
+        )
+
+        model = cls(cfg)
+        model.encoder.load_state_dict(encoder.state_dict(), strict=False)
+        model.task_network.load_state_dict(task_network.state_dict())
+
+        # Load transform state dict if available
+        if hasattr(transform, "state_dict"):
+            model.transform.load_state_dict(transform.state_dict())
+
+        model.tokenizer = tokenizer
+        return model
+
+    def forward(
+        self, batch: Dict[str, torch.Tensor], transform: bool = True
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass for mixture property prediction.
+
+        Args:
+            batch: Dictionary containing input_ids, attention_mask, composition
+                   for each component, and optionally temperature
+            transform: If True, apply normalization transform to predictions
+
+        Returns:
+            Tuple of (predictions, mixture_embeddings)
+        """
+        mix_embedding = []
+        for i in range(self.n_components):
+            embedding = self.encoder(
+                batch[f"input_ids_{i}"],
+                attention_mask=batch[f"attention_mask_{i}"],
+                return_dict=True,
+                output_hidden_states=True,
+            ).last_hidden_state.mean(axis=1)
+
+            composition = batch[f"composition_{i}"].view(-1, 1)
+            embedding_scaled = embedding * composition
+            mix_embedding.append(embedding_scaled)
+
+        # Sum weighted embeddings
+        mix_embedding = torch.stack(mix_embedding, dim=1).sum(axis=1)
+
+        if self.temperature_condition == TemperatureCondition.CONCAT:
+            temperature_normalized = batch["temperature"].view(-1, 1) / 400.0
+            mix_embedding = torch.hstack((temperature_normalized, mix_embedding))
+
+        # Get predictions from task network
+        pred_unscaled = self.task_network(mix_embedding)
+
+        if transform:
+            pred_scaled = self.transform.forward(pred_unscaled)
+            return pred_scaled, mix_embedding
+
+        return pred_unscaled, mix_embedding
+
+    def predict(
+        self,
+        mixture: Dict[str, float] | List[Dict[str, float]],
+        temperature: Optional[float | List[float]] = None,
+        return_dict: bool = False,
+    ) -> torch.Tensor | Dict[str, Any]:
+        """
+        Predict mixture properties.
+
+        Args:
+            mixture: Dictionary mapping SMILES to composition (e.g., {"CCOC(=O)OC": 0.5, "C1COC(=O)O1": 0.5})
+                    or list of such dictionaries for batch prediction
+            temperature: Temperature in Kelvin (optional, required if using temperature conditioning)
+                        Can be a single float or list of floats for batch prediction
+            return_dict: If True, return dictionary with detailed predictions
+
+        Returns:
+            Predictions tensor or dict depending on return_dict
+
+        Examples:
+            >>> # Single mixture prediction
+            >>> mixture = {"CCOC(=O)OC": 0.5, "C1COC(=O)O1": 0.5}
+            >>> pred = model.predict(mixture, temperature=298.15)
+
+            >>> # Batch prediction
+            >>> mixtures = [
+            ...     {"CCOC(=O)OC": 0.5, "C1COC(=O)O1": 0.5},
+            ...     {"CCOC(=O)OC": 0.3, "C1COC(=O)O1": 0.7}
+            ... ]
+            >>> preds = model.predict(mixtures, temperature=[298.15, 313.15])
+        """
+        # Convert single mixture to list for uniform processing
+        if isinstance(mixture, dict):
+            mixtures = [mixture]
+            single_prediction = True
+        else:
+            mixtures = mixture
+            single_prediction = False
+
+        # Convert temperature to list
+        if temperature is not None:
+            if isinstance(temperature, (int, float)):
+                temperatures = [float(temperature)] * len(mixtures)
+            else:
+                temperatures = [float(t) for t in temperature]
+        else:
+            temperatures = None
+
+        tokenizer = resolve_tokenizer(self)
+        collator = DataCollatorWithPadding(tokenizer)
+
+        batch_size = len(mixtures)
+
+        # Convert mixture dicts to smiles_list and compositions
+        smiles_list = []
+        compositions = []
+        for mix in mixtures:
+            smiles = list(mix.keys())
+            comps = list(mix.values())
+
+            # Validate component count
+            if len(smiles) > self.n_components:
+                raise ValueError(
+                    f"Too many components: {len(smiles)}, max {self.n_components}"
+                )
+
+            smiles_list.append(smiles)
+            compositions.append(comps)
+
+        batch = {}
+
+        # Add temperature if needed
+        if self.temperature_condition != TemperatureCondition.NONE:
+            if temperatures is None:
+                raise ValueError("Temperature required for this model")
+            assert len(temperatures) == batch_size, "Mismatch in temperature batch size"
+            batch["temperature"] = torch.tensor(
+                temperatures, dtype=torch.float32, device=self.device
+            )
+
+        # Tokenize and prepare batch for each component
+        for i in range(self.n_components):
+            input_ids_list = []
+            attention_mask_list = []
+            comp_list = []
+
+            for batch_idx in range(batch_size):
+                if i < len(smiles_list[batch_idx]):
+                    smi = smiles_list[batch_idx][i]
+                    comp = compositions[batch_idx][i]
+                else:
+                    smi = "[H]"  # Dummy molecule for padding
+                    comp = 0.0
+
+                tok_output = tokenizer(smi)
+                input_ids_list.append(tok_output["input_ids"])
+                attention_mask_list.append(tok_output["attention_mask"])
+                comp_list.append(comp)
+
+            # Collate with padding
+            batched = collator(
+                [
+                    {"input_ids": ids, "attention_mask": mask}
+                    for ids, mask in zip(input_ids_list, attention_mask_list)
+                ]
+            )
+
+            batch[f"input_ids_{i}"] = batched["input_ids"].to(self.device)
+            batch[f"attention_mask_{i}"] = batched["attention_mask"].to(self.device)
+            batch[f"composition_{i}"] = torch.tensor(
+                comp_list, dtype=torch.float32, device=self.device
+            )
+
+        with torch.inference_mode():
+            pred, embeddings = self(batch, transform=True)
+
+        # If single prediction, squeeze the batch dimension
+        if single_prediction:
+            pred = pred.squeeze(0)
+            embeddings = embeddings.squeeze(0)
+
+        pred_cpu = pred.cpu()
+
+        if not return_dict:
+            return pred_cpu
+
+        # If channels are defined, use annotate_prediction
+        if self.channels is not None:
+            # Add batch dimension back if single prediction for annotation
+            if single_prediction:
+                pred_for_annotation = pred_cpu.unsqueeze(0)
+            else:
+                pred_for_annotation = pred_cpu
+
+            annotated = annotate_prediction(
+                pred_for_annotation, list(maybe_get_annotated_channels(self.channels))
+            )
+
+            # For single prediction, unwrap the batch dimension from values
+            if single_prediction:
+                for key in annotated:
+                    annotated[key]["value"] = annotated[key]["value"].squeeze(0)
+
+            return annotated
+
+        # Default dict output without channels
+        result = {
+            "predictions": pred_cpu,
+            "embeddings": embeddings.cpu(),
+            "mixtures": mixtures,
+        }
+
+        if temperatures is not None:
+            result["temperatures"] = (
+                temperatures if not single_prediction else temperatures[0]
+            )
+
+        return result
+
+    def save_pretrained(self, save_directory: str, **kwargs):
+        """Save model configuration and weights."""
+        cfg = MISTMixturesConfig(
+            encoder=self.encoder.config.to_dict(),
+            task_network={
+                "embed_dim": self.encoder.config.hidden_size,
+                "output_size": self.output_size,
+                "dropout": getattr(self.task_network, "dropout", 0.1),
+            },
+            transform=self.transform.to_config()
+            if hasattr(self.transform, "to_config")
+            else {"class": "Standardize", "num_outputs": self.output_size},
+            n_components=self.n_components,
+            temperature_condition=self.temperature_condition.value
+            if hasattr(self.temperature_condition, "value")
+            else str(self.temperature_condition),
+            output_size=self.output_size,
+            channels=self.channels,
+            tokenizer_class=(
+                self.tokenizer.__class__.__name__
+                if getattr(self, "tokenizer", None)
+                else "SmirkTokenizer"
+            ),
+        )
+        super().save_pretrained(save_directory, config=cfg, **kwargs)
+        if getattr(self, "tokenizer", None) is not None:
+            self.tokenizer.save_pretrained(save_directory)
+
+
 AutoConfig.register(MISTIonicConductivityConfig.model_type, MISTIonicConductivityConfig)
 AutoModel.register(MISTIonicConductivityConfig, MISTIonicConductivity)
 AutoConfig.register(MISTExcessPhysicsConfig.model_type, MISTExcessPhysicsConfig)
 AutoModel.register(MISTExcessPhysicsConfig, MISTExcessPhysics)
+AutoConfig.register(MISTMixturesConfig.model_type, MISTMixturesConfig)
+AutoModel.register(MISTMixturesConfig, MISTMixtures)
