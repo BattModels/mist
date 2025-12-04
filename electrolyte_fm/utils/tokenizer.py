@@ -256,6 +256,28 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
 
         return tok
 
+    elif name == "bm2-lab/X-MOL":
+        from .cache import cached_github_archive
+
+        # Retrieve vocab from X-MOL github
+        vocab_file = cached_github_archive(
+            "bm2-lab/X-MOL",
+            "a64cd4222ab819326767224d91fa8605f52f4fc4",
+            "X-MOL_dict",
+        )
+        vocab = {}
+        for line in vocab_file.read_text().split("\n"):
+            if not line.strip():
+                continue
+            token, id = line.split("\t")
+            vocab[token.strip()] = int(id)
+
+        # Equivalent regex for MolTokenizer state-machine
+        # retrieved from GitHub
+        # https://github.com/bm2-lab/X-MOL/blob/a64cd4222ab819326767224d91fa8605f52f4fc4/FT_to_prediction/tokenization.py#L145-L182
+        regex = r"(?:\[[^\]]*(?:\]|$)|%..?|.)[lr]*"
+        return regex_smiles_tokenizer(vocab, regex)
+
     elif (
         Path(name).exists()
         and Path(name).parent.parent.joinpath("config.json").is_file()
