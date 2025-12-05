@@ -56,5 +56,15 @@
     metrics: ['mae'],
     n_components: 5,
   },
+  olfactory_similarity: {
+    path: '/home/abhutani/chemixhub/datasets/chemixhub_mist/olfactory-similarity',
+    temperature: false,
+    target_columns: ['value'],
+    transform: 'standardize',
+    metrics: ['mae'],
+    n_components: 0,
+    model: 'electrolyte_fm.models.MixtureSimilarityModel',
+    data_module: 'electrolyte_fm.data_modules.MultiMixtureDataModule',
 
+  },
 }
