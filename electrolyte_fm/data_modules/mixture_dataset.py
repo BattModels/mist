@@ -129,7 +129,7 @@ class ComponentDataModule(LightningDataModule):
             )
             assert isinstance(self._dataset, IterableDatasetDict)
         else:
-            self._dataset = self._dataset = load_dataset(
+            self._dataset = load_dataset(
                 "csv",
                 name=str(self.path.name),
                 data_files={
@@ -236,6 +236,118 @@ class ComponentDataModule(LightningDataModule):
             batch_size=self.val_batch_size,
             persistent_workers=self.num_workers > 0,
         )
+
+
+class MultiMixtureDataModule(PropertyPredictionDataModule):
+    def __init__(
+        self,
+        path: str | Path,
+        mix1_smiles_column: str = "mix1_smiles",
+        mix2_smiles_column: str = "mix2_smiles",
+        # The arguments below are not used
+        # needed for CLI config compatibility
+        include_temperature: bool | str = False,
+        n_components: int = 0,
+        iterable: bool = False,
+        **kwargs,
+    ):
+        self.path = Path(path)
+        self.mix1_smiles_column = mix1_smiles_column
+        self.mix2_smiles_column = mix2_smiles_column
+
+        assert self.path.exists()
+        super().__init__(smi_column=mix1_smiles_column, **kwargs)
+        assert len(self.target_columns) >= 1
+
+    def _get_dataset(self):
+        self._dataset = load_dataset(
+            "csv",
+            name=str(self.path.name),
+            data_files={
+                "train": str(self.path.joinpath("train.csv")),
+                "validation": str(self.path.joinpath("val.csv")),
+                "test": str(self.path.joinpath("test.csv")),
+            },
+        )
+        return self._dataset
+
+    def setup(self, stage: str) -> None:
+        ds = self.dataset
+        ds = ds.map(
+            collate_target,
+            batched=False,
+            fn_kwargs={"target_columns": self.target_columns, "dtype": torch.float32},
+            remove_columns=self.target_columns,
+        )
+
+        if self.mix1_smiles_column != "compounds_mix1":
+            ds = ds.rename_column(self.mix1_smiles_column, "compounds_mix1")
+        if self.mix2_smiles_column != "compounds_mix2":
+            ds = ds.rename_column(self.mix2_smiles_column, "compounds_mix2")
+
+        ds = ds.map(
+            ensure_list_format,
+            batched=False,
+            fn_kwargs={
+                "mix1_col": "compounds_mix1",
+                "mix2_col": "compounds_mix2",
+            },
+        )
+
+        columns = ["target", "target_mask", "compounds_mix1", "compounds_mix2"]
+
+        ds = ds.select_columns(columns)
+
+        self.train_dataset: Dataset = ds["train"].shuffle()
+        self.val_dataset: Dataset = ds["validation"]
+        if "test" in ds:
+            self.test_dataset: Dataset = ds["test"]
+
+        # Dataset for normalization
+        norm_columns = {"target", "target_mask"}
+        norm_columns = list(set(norm_columns).intersection(columns))
+        self.target_dataset = ds["train"].select_columns(norm_columns)
+
+    @torch.no_grad()
+    def collate_fn(self, batch):
+        mix1_data = encode_and_tokenize_variable_mixture(
+            [obs["compounds_mix1"] for obs in batch],
+            tokenizer=self.tokenize,
+            encoding=self.encoding,
+            randomize=self.randomize,
+            token_collator=self.token_collator,
+            include_encoding=self.include_encoding,
+        )
+
+        mix2_data = encode_and_tokenize_variable_mixture(
+            [obs["compounds_mix2"] for obs in batch],
+            tokenizer=self.tokenize,
+            encoding=self.encoding,
+            randomize=self.randomize,
+            token_collator=self.token_collator,
+            include_encoding=self.include_encoding,
+        )
+
+        out = {
+            "input_ids_mix1": mix1_data["input_ids"],
+            "attention_mask_mix1": mix1_data["attention_mask"],
+            "component_mask_mix1": mix1_data["component_mask"],
+            "input_ids_mix2": mix2_data["input_ids"],
+            "attention_mask_mix2": mix2_data["attention_mask"],
+            "component_mask_mix2": mix2_data["component_mask"],
+            "target": torch.stack(
+                [torch.tensor(obs["target"], dtype=torch.float32) for obs in batch]
+            ),
+            "target_mask": torch.stack(
+                [torch.tensor(obs["target_mask"], dtype=torch.bool) for obs in batch]
+            ),
+        }
+
+        if self.include_encoding:
+            out["compounds_mix1"] = mix1_data["compounds"]
+            out["compounds_mix2"] = mix2_data["compounds"]
+
+        return out
 
 
 class ComponentDataModuleFast(PropertyPredictionDataModule):
@@ -392,6 +504,16 @@ def stack_compounds(row: dict, smi_columns: List[str]):
     return {"compounds": tuple(row[col] for col in smi_columns)}
 
 
+def stack_two_mixtures(
+    row: dict, mix1_smi_columns: list[str], mix2_smi_columns: list[str]
+):
+    """Stack SMILES for two separate mixtures."""
+    return {
+        "compounds_mix1": tuple(row[col] for col in mix1_smi_columns),
+        "compounds_mix2": tuple(row[col] for col in mix2_smi_columns),
+    }
+
+
 def cast_dtype(row: dict, column: str, dtype: torch.dtype):
     return {column: torch.tensor(row[column], dtype=dtype)}
 
@@ -429,6 +551,98 @@ def encode_and_tokenize_mixture(
         out["compounds"] = compounds
 
     return out
+
+
+def encode_and_tokenize_variable_mixture(
+    compounds: list[list[str]],
+    tokenizer=None,
+    encoding: MolEncoding = MolEncoding.SMILES,
+    randomize: bool = True,
+    token_collator=None,
+    include_encoding: bool = False,
+):
+    """Encode and tokenize mixtures with variable numbers of components.
+
+    Args:
+        compounds: List of variable-length lists of SMILES strings
+                   e.g., [["CCO", "CC"], ["CCC", "CCCC", "C"], ...]
+
+    Returns:
+        Dictionary with:
+            - input_ids: (B, max_N, seq_len)
+            - attention_mask: (B, max_N, seq_len)
+            - component_mask: (B, max_N) - boolean mask for valid components
+    """
+    # Encode molecules
+    encode = encoding.random if randomize else encoding
+    B = len(compounds)
+    max_N = max(len(comp_list) for comp_list in compounds)
+
+    # Flatten all SMILES and encode
+    all_smis = []
+    component_counts = []
+    for comp_list in compounds:
+        component_counts.append(len(comp_list))
+        all_smis.extend([encode(smi) if smi else "" for smi in comp_list])
+
+    # Tokenize all SMILES at once
+    toks = token_collator(tokenizer(all_smis))
+    seq_len = toks["input_ids"].shape[1]
+
+    # Initialize output tensors with padding
+    input_ids = torch.zeros((B, max_N, seq_len), dtype=toks["input_ids"].dtype)
+    attention_mask = torch.zeros(
+        (B, max_N, seq_len), dtype=toks["attention_mask"].dtype
+    )
+    component_mask = torch.zeros((B, max_N), dtype=torch.bool)
+
+    # Fill in the tensors with actual data
+    start_idx = 0
+    for b, n_comp in enumerate(component_counts):
+        end_idx = start_idx + n_comp
+        input_ids[b, :n_comp] = toks["input_ids"][start_idx:end_idx]
+        attention_mask[b, :n_comp] = toks["attention_mask"][start_idx:end_idx]
+        component_mask[b, :n_comp] = True
+        start_idx = end_idx
+
+    out = {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "component_mask": component_mask,
+    }
+
+    if include_encoding:
+        out["compounds"] = compounds
+
+    return out
+
+
+def ensure_list_format(row: dict, mix1_col: str, mix2_col: str):
+    """Ensure mixture columns are in list format.
+
+    Handles both native list columns and string representations like "['CCO', 'CC']"
+    """
+    import ast
+
+    def to_list(value):
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            # Try to parse as Python literal (e.g., "['CCO', 'CC']")
+            try:
+                parsed = ast.literal_eval(value)
+                if isinstance(parsed, list):
+                    return parsed
+            except (ValueError, SyntaxError):
+                pass
+            # If single SMILES string, wrap in list
+            return [value]
+        return []
+
+    return {
+        mix1_col: to_list(row[mix1_col]),
+        mix2_col: to_list(row[mix2_col]),
+    }
 
 
 @cli.command()
