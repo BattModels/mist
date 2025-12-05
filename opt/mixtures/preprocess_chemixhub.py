@@ -153,7 +153,39 @@ def process_il_thermo(
     df_test.to_csv(os.path.join(output_dir, "test.csv"))
 
 
+def process_olfactory_similarity(
+    raw_datapath: str = "olfactory-similarity/processed_data/processed_OlfactorySimilarity.csv",
+):
+    raw_datapath = Path(raw_datapath)
+    dataset_name = os.path.basename(raw_datapath.parent.parent)
+    output_dir = os.path.join("chemixhub_mist", dataset_name)
+    os.makedirs(output_dir, exist_ok=True)
+
+    df = pd.read_csv(raw_datapath.parent / "compounds.csv")
+    compound_lookup = dict(zip(df.compound_id, df.smiles))
+    df = pd.read_csv(raw_datapath)
+
+    # Parse string representations of lists and map to SMILES
+    df["mix1_smiles"] = df.cmp_ids_1.apply(
+        lambda x: list(map(compound_lookup.get, eval(x)))
+    )
+    df["mix2_smiles"] = df.cmp_ids_2.apply(
+        lambda x: list(map(compound_lookup.get, eval(x)))
+    )
+    df["target"] = df.value.values
+
+    # Split into train/val/test
+    df_train = df.sample(frac=0.7, random_state=42)
+    df_train.to_csv(os.path.join(output_dir, "train.csv"), index=False)
+    df = df.drop(df_train.index)
+    df_val = df.sample(frac=0.33, random_state=42)
+    df_val.to_csv(os.path.join(output_dir, "val.csv"), index=False)
+    df_test = df.drop(df_val.index)
+    df_test.to_csv(os.path.join(output_dir, "test.csv"), index=False)
+
+
 if __name__ == "__main__":
+    process_olfactory_similarity()
     process_drug_solubility()
     process_binary_mixtures()
     process_binary_mixtures(
