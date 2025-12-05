@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 from itertools import chain
 from typing import List, Optional, Tuple, Union
@@ -561,42 +562,29 @@ def encode_and_tokenize_variable_mixture(
     token_collator=None,
     include_encoding: bool = False,
 ):
-    """Encode and tokenize mixtures with variable numbers of components.
-
-    Args:
-        compounds: List of variable-length lists of SMILES strings
-                   e.g., [["CCO", "CC"], ["CCC", "CCCC", "C"], ...]
-
-    Returns:
-        Dictionary with:
-            - input_ids: (B, max_N, seq_len)
-            - attention_mask: (B, max_N, seq_len)
-            - component_mask: (B, max_N) - boolean mask for valid components
     """
-    # Encode molecules
+    Encode and tokenize mixtures with variable numbers of components.
+    """
+
     encode = encoding.random if randomize else encoding
     B = len(compounds)
     max_N = max(len(comp_list) for comp_list in compounds)
 
-    # Flatten all SMILES and encode
     all_smis = []
     component_counts = []
     for comp_list in compounds:
         component_counts.append(len(comp_list))
         all_smis.extend([encode(smi) if smi else "" for smi in comp_list])
 
-    # Tokenize all SMILES at once
     toks = token_collator(tokenizer(all_smis))
     seq_len = toks["input_ids"].shape[1]
 
-    # Initialize output tensors with padding
     input_ids = torch.zeros((B, max_N, seq_len), dtype=toks["input_ids"].dtype)
     attention_mask = torch.zeros(
         (B, max_N, seq_len), dtype=toks["attention_mask"].dtype
     )
     component_mask = torch.zeros((B, max_N), dtype=torch.bool)
 
-    # Fill in the tensors with actual data
     start_idx = 0
     for b, n_comp in enumerate(component_counts):
         end_idx = start_idx + n_comp
@@ -618,24 +606,21 @@ def encode_and_tokenize_variable_mixture(
 
 
 def ensure_list_format(row: dict, mix1_col: str, mix2_col: str):
-    """Ensure mixture columns are in list format.
-
+    """
+    Ensure mixture columns are in list format.
     Handles both native list columns and string representations like "['CCO', 'CC']"
     """
-    import ast
 
     def to_list(value):
         if isinstance(value, list):
             return value
         if isinstance(value, str):
-            # Try to parse as Python literal (e.g., "['CCO', 'CC']")
             try:
                 parsed = ast.literal_eval(value)
                 if isinstance(parsed, list):
                     return parsed
             except (ValueError, SyntaxError):
                 pass
-            # If single SMILES string, wrap in list
             return [value]
         return []
 
