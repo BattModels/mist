@@ -44,6 +44,17 @@ end
 tokenizer_dataset(args...; kwargs...) = __loader[].tokenizer_dataset(args...; kwargs...)
 load_tokenizer(name_or_path::AbstractString) = __tokenizer[].load_tokenizer(String(name_or_path))
 
+function resolve_tok_path(stats_dir::String, name_or_path::String)
+    if isdir(name_or_path)
+        return name_or_path
+    end
+    stats_tok = joinpath(stats_dir, name_or_path, "tokenizer")
+    if isdir(stats_tok)
+        return stats_tok
+    end
+    return name_or_path
+end
+
 struct DatasetConfig
     name_or_path::String
     tokenizer::String

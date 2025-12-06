@@ -39,7 +39,7 @@ function intrinsic_metrics(token_usage)
     return df
 end
 df_intrinsic = intrinsic_metrics(token_usage)
-CSV.write(joinpath("stats", "intrinsic_metrics.csv"), df_intrinsic)
+CSV.write(joinpath(stats_dir, "intrinsic_metrics.csv"), df_intrinsic)
 
 # Tokenizer Fertility by Dataset
 SmirkPaperPlots.fertility_summary(token_usage; stats_dir) |> display
@@ -99,14 +99,14 @@ df_ng, df_p, df_f = SmirkPaperPlots.df_ngrams_vs_transformer(stats_dir, loss_sta
 
 # NGrams Stats vs. FM Performance
 df_prog = SmirkPaperPlots.df_ngram_stats_v_fm_perf(tok_info, loss_stats, info_loss, df_f)
-CSV.write(joinpath("stats", "ngram_stats_vs_fm.csv"), df_prog)
+CSV.write(joinpath(stats_dir, "ngram_stats_vs_fm.csv"), df_prog)
 
 # Predictive and Fixed-Effect Models
 fe_models, df_predict = SmirkPaperPlots.ngram_vs_transformer_fits(df_ng, df_p, df_f)
 prog_models = SmirkPaperPlots.ngram_prognostic_fits(df_prog)
 display(prog_models[!, [:dataset, :finetuned, :all_rho, :all_rho_p]])
-JLD2.jldsave(joinpath("stats", "quality_models.jld2"); fe_models, df_predict, prog_models)
-CSV.write(joinpath("stats", "ngram_vs_transformer.csv"), df_predict)
+JLD2.jldsave(joinpath(stats_dir, "quality_models.jld2"); fe_models, df_predict, prog_models)
+CSV.write(joinpath(stats_dir, "ngram_vs_transformer.csv"), df_predict)
 
 # Tokenizer Summary
 df_tok = SmirkPaperPlots.tokenizer_summary(stats_dir; k=5)
@@ -134,7 +134,7 @@ with_theme(SmirkPaperPlots.theme()) do
     # Transformer Model Summary
     f, df = SmirkPaperPlots.figure_tf_finetune(stats_dir, dff, dft)
     savefig("tf_finetune", f)
-    CSV.write(joinpath("stats", "tf_model_summary.csv"), df)
+    CSV.write(joinpath(stats_dir, "tf_model_summary.csv"), df)
 
     # N-Gram Analysis
     savefig("ngram_fits", SmirkPaperPlots.figure_ngram_fits(loss_stats, stats_dir))

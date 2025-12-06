@@ -1,15 +1,10 @@
-function top_k_tokens(ngram_file; k=5)
+function top_k_tokens(name_or_path, ngram_file; k=5)
     # Load unigram statistics
-    unigram, tok = jldopen(ngram_file, "r") do data
-        # Load tokenizer
-        name = data["tokenizer"][:tokenizer_name]
-        name = startswith(name, "smirk-gpe") ? "./" * name : name
-        tok = load_tokenizer(name)
-
-        # Get unigram stats
+    unigram= jldopen(ngram_file, "r") do data
         unigram = data["train"]["ngrams"]["1"]
-        return unigram, tok
+        return unigram
     end
+    tok = load_tokenizer(name_or_path)
 
     # Find the top k tokens
     id_count = collect(unigram)
@@ -43,7 +38,8 @@ function tokenizer_summary(stats_dir; k=5)
             vocab_size = jldopen(usage_file) do data
                 return data["tokenizer"].vocab_size
             end
-            top_tokens = top_k_tokens(usage_file; k)
+            name_or_path = TokenizerStats.resolve_tok_path(stats_dir, tokenizer["name_or_path"])
+            top_tokens = top_k_tokens(name_or_path, usage_file; k)
         else
             vocab_size = missing
             top_tokens = missing
