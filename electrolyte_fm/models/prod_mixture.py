@@ -1,8 +1,4 @@
-# Finetuned Mixture Models for Inference
-
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -15,7 +11,7 @@ from transformers import (
     PretrainedConfig,
 )
 
-from .normalize import AbstractNormalizer, Standardize
+from .normalize import Standardize
 from .physics_task_heads import (
     VFTDecayTaskHead,
     ArrtheniusActivation,
@@ -89,7 +85,7 @@ class MISTIonicConductivity(PreTrainedModel):
         encoder: PreTrainedModel,
         task_network: nn.Module,
         tokenizer=None,
-        n_components: int = 38,
+        n_components: int = 5,
     ) -> "MISTIonicConductivity":
         if isinstance(task_network, VFTDecayTaskHead):
             tn = {
@@ -152,16 +148,12 @@ class MISTIonicConductivity(PreTrainedModel):
         batch: List[Dict[str, any]],
         return_dict: bool = True,
     ):
-        """
-        Predict ionic conductivity for a batch of samples.
-        """
         tokenizer = resolve_tokenizer(self)
         collate = DataCollatorWithPadding(tokenizer)
 
-        # Prepare batch tensors
-        all_input_ids = [[] for _ in range(5)]
-        all_attention_masks = [[] for _ in range(5)]
-        all_compositions = [[] for _ in range(5)]
+        all_input_ids = [[] for _ in range(self.n_components)]
+        all_attention_masks = [[] for _ in range(self.n_components)]
+        all_compositions = [[] for _ in range(self.n_components)]
         all_temperatures = []
 
         for sample in batch:
@@ -198,14 +190,13 @@ class MISTIonicConductivity(PreTrainedModel):
 
             all_temperatures.append(temperature)
 
-        # Collate and create output dict
         output = {
             "temperature": torch.tensor(
                 all_temperatures, dtype=torch.float32, device=self.device
             )
         }
 
-        for i in range(5):
+        for i in range(self.n_components):
             batched = collate(
                 [
                     {"input_ids": ids, "attention_mask": mask}
@@ -284,7 +275,6 @@ class MISTExcessPhysics(PreTrainedModel):
         self.config = config
         self.encoder = build_encoder_from_dict(config.encoder)
 
-        # Configure Pairwise interaction model
         n_env = 0
         n_temperature_targets = 1
         if config.temperature_dependence == "arrhenius":
@@ -309,7 +299,6 @@ class MISTExcessPhysics(PreTrainedModel):
             n_env=n_env,
         )
 
-        # Component properties network
         self.component_properties = nn.Sequential(
             nn.Linear(
                 self.encoder.config.hidden_size + n_env, self.encoder.config.hidden_size
@@ -322,13 +311,11 @@ class MISTExcessPhysics(PreTrainedModel):
             ),
         )
 
-        # Excess polynomial
         self.excess_polynomial = LagrangePolynomial(
             polynomial_order=config.num_control + 2,
             zero_endpoints=True,
         )
 
-        # Transforms
         self.transform = Standardize(num_outputs=config.num_targets)
         self.excess_transform = Standardize(num_outputs=config.num_targets)
 
@@ -420,7 +407,6 @@ class MISTExcessPhysics(PreTrainedModel):
         x_i = x_i.clamp(min=0, max=1)
         x_i = x_i.view(B * I_, 1)
 
-        # Apply temperature dependence to coefficients
         pw_coeffs = self.temperature_dependence(pw_coeffs, t_ij.view(B * I_, 1, 1))
 
         # Evaluate interaction polynomials at compositions
@@ -444,7 +430,6 @@ class MISTExcessPhysics(PreTrainedModel):
         if self.config.relative_excess:
             y_excess *= y_linear
 
-        # Transform to real-units
         y_linear = self.transform.forward(y_linear)
         y_excess = self.excess_transform.forward(y_excess)
         y = y_linear + y_excess
