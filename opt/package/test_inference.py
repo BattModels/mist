@@ -91,11 +91,7 @@ def excess_test_data() -> List[Dict[str, Any]]:
 def hf_models_base() -> Path:
     import os
 
-    return Path(
-        os.environ.get(
-            "HF_MODELS_DIR", "/nfs/turbo/coe-venkvis/abhutani/electrolyte-fm/hf-models"
-        )
-    )
+    return Path(os.environ.get("HF_MODELS_DIR", "../hf-models"))
 
 
 @pytest.fixture
