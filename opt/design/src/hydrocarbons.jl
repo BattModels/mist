@@ -10,8 +10,11 @@ carboxylic_acid(n::Int) = "O=C(O)" * "C"^(n - 1)
 nitrile(n::Int) = "N#" * "C"^n
 dinitrile(n::Int) = "N#" * "C"^n * "#N"
 amine(n::Int) = "N" * "C"^n
+thiol(n::Int) = "S" * "C"^n
 halide(n::Int, element::String) = element * "C"^n
 halide(element::String) = Base.Fix2(halide, element)
+ester(n::Int, m::Int=1) = "O=C(O" * "C"^m * ")" * "C"^(n - 1)
+ether(n::Int, m::Int=1) = "C"^n * "O" * "C"^m
 
 function fatty_acid(c::Int, d::Int, n::Int)
     d == 0 && return carboxylic_acid(c)
@@ -54,6 +57,22 @@ function simple_hydrocarbons(n::Int)
         [(; type="Alkynes", smi=alkyne(n)) for n in 2:n],
         [(; type="Arenes", smi=arene(n)) for n in 6:n],
         [(; type="Polyethers", smi=polyether(n)) for n in 2:2:n],
+    ))
+    n_carbon!(df)
+    return df
+end
+
+function fragrance_compounds(n::Int)
+    df = DataFrame(vcat(
+        [(; type="Esters", smi=ester(n)) for n in 1:n],
+        [(; type="Ethers", smi=ether(n)) for n in 3:n],
+        [(; type="Alcohols", smi=alcohol(n)) for n in 1:n],
+        [(; type="Aldehydes", smi=aldehyde(n)) for n in 1:n],
+        [(; type="Carboxylic acids", smi=carboxylic_acid(n)) for n in 2:n],
+        [(; type="Alkenes", smi=alkene(n)) for n in 2:n],
+        [(; type="Arenes", smi=arene(n)) for n in 6:n],
+        [(; type="Thiol", smi=thiol(n)) for n in 1:n],
+
     ))
     n_carbon!(df)
     return df
