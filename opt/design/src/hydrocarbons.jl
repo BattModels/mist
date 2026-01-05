@@ -70,7 +70,7 @@ function fragrance_compounds(n::Int)
         [(; type="Aldehydes", smi=aldehyde(n)) for n in 1:n],
         [(; type="Carboxylic acids", smi=carboxylic_acid(n)) for n in 2:n],
         [(; type="Alkenes", smi=alkene(n)) for n in 2:n],
-        [(; type="Arenes", smi=arene(n)) for n in 6:n],
+        [(; type="Arenes", smi=arene(n)) for n in 0:n],
         [(; type="Thiol", smi=thiol(n)) for n in 1:n],
 
     ))
@@ -78,7 +78,7 @@ function fragrance_compounds(n::Int)
     return df
 end
 
-n_carbon!(df) = transform!(df, :smi => ByRow(smi -> count(==('C'), smi)) => :n_carbon)
+n_carbon!(df) = transform!(df, :smi => ByRow(smi -> count(c -> c == 'C' || c == 'c', smi)) => :n_carbon)
 
 function saturated_fats(max_length::Int; n_max=typemax(Int), d_max=typemax(Int))
     rows = []
