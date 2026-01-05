@@ -97,3 +97,9 @@ function predict_all(df::DataFrame, models...; smi_column=:smi, n=1)
     end
     return df
 end
+
+function load_huggingface_model(name::String)
+    AutoModel = @pyconst(pyimport("transformers").AutoModel)
+    model = AutoModel.from_pretrained(name, trust_remote_code=true)
+    return model
+end
