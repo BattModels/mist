@@ -4,7 +4,7 @@ from datasets import Dataset, load_dataset
 from pathlib import Path
 
 
-class IsotopeDataModule(PropertyPredictionDataModule):
+class CSVDataModule(PropertyPredictionDataModule):
     def __init__(self, path: str, **kwargs):
         # Set default smi_column
         self.path = path
