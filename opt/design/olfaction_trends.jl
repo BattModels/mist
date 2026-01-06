@@ -12,19 +12,14 @@ get_scent_cols(df) = filter(col -> !(col in ["smi", "type", "n_carbon", "branch_
 grid_position(i, ncols) = (div(i - 1, ncols) + 1, mod(i - 1, ncols) + 1)
 
 
-const RDKIT = Ref{Py}()
-const RDKIT_DRAW = Ref{Py}()
-
-function __init__()
-    RDKIT[] = pyimport("rdkit.Chem")
-    RDKIT_DRAW[] = pyimport("rdkit.Chem.Draw")
-end
-
-
 function smiles_to_image(smi::String; img_size=(150, 150))
-    mol = RDKIT[].MolFromSmiles(smi)
-    img_pil = RDKIT_DRAW[].MolToImage(mol, size=img_size)
-    img_array = pyconvert(Array, pyimport("numpy").array(img_pil))
+    rdkit = @pyconst(pyimport("rdkit.Chem"))
+    rdkit_draw = @pyconst(pyimport("rdkit.Chem.Draw"))
+    numpy = @pyconst(pyimport("numpy"))
+
+    mol = rdkit.MolFromSmiles(smi)
+    img_pil = rdkit_draw.MolToImage(mol, size=img_size)
+    img_array = pyconvert(Array, numpy.array(img_pil))
 
     return permutedims(
         [RGB(img_array[i,j,1]/255, img_array[i,j,2]/255, img_array[i,j,3]/255)
@@ -134,7 +129,7 @@ function plot_branched_scent_comparison(df::DataFrame)
     max_variants = maximum(nrow(filter(row -> row.type == type, df)) for type in types)
     scent_colors = [colors[mod1(i, length(colors))] for i in eachindex(scents_to_plot)]
 
-    fig = Figure(size=(250mm, 200mm), figure_padding=(5, 5, 5, 5))
+    fig = Figure(size=(175mm, 140mm), figure_padding=(5, 5, 5, 5))
 
     for (i, type) in enumerate(types)
         df_type = filter(row -> row.type == type, df)
