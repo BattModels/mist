@@ -11,7 +11,7 @@ using Colors: distinguishable_colors, weighted_color_mean, RGBA
 using CategoricalArrays: categorical
 using Format: format
 using FreeTypeAbstraction: FreeTypeAbstraction, newface, FTFont
-using PythonCall: Py, pyconvert
+using PythonCall: PythonCall, Py, pyconvert, pyimport
 using JLD2: jldopen
 using JSON: JSON
 using CategoricalArrays: categorical, levelcode
@@ -20,7 +20,7 @@ using Distributions: Chisq, FDist, Normal, TDist
 using OrderedCollections: OrderedDict
 using CSV: CSV
 using Clustering: hclust
-using RegressionTables: regtable, LatexTable
+using RegressionTables: RegressionTables, regtable, LatexTable
 
 using TokenizerStats
 using TokenizerStats: load_tokenizer, find
@@ -42,6 +42,7 @@ include("figures/transfromer.jl")
 include("figures/jaccard.jl")
 include("figures/fe_models.jl")
 include("figures/intrinsic.jl")
+include("figures/prog_sensitivity.jl")
 
 
 const CLASS_MARKER = Dict(
@@ -65,7 +66,11 @@ const pt = 3 / 4
 const inch = 96
 
 function tokenizers_info(stats_dir)
-    data = JSON.parsefile(abspath(joinpath(stats_dir, "..", "tokenizers.json")))
+    if isfile(stats_dir) && endswith(stats_dir, ".json")
+        data = JSON.parsefile(stats_dir)
+    else
+        data = JSON.parsefile(abspath(joinpath(stats_dir, "..", "tokenizers.json")))
+    end
     return Dict(tok["name_or_path"] => tok for tok in data)
 end
 
