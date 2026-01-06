@@ -31,7 +31,7 @@ end
 
 function tok_log_prob!(f, cb, file, name, smi, max_vocab=50; direction=:forward)
     ngram, tok, info = TokenizerStats.load_ngram_model(file)
-    code = pyconvert(Vector{UInt32}, tok(smi)["input_ids"])
+    code = pyconvert(Vector{Int32}, tok(smi)["input_ids"])
 
     if direction == :forward
         P = TokenizerStats.log_probability(ngram, code)
