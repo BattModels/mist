@@ -54,8 +54,10 @@ function plot_scent_by_type(df::DataFrame)
     types = sort(unique(df.type))
     scent_cols = get_scent_cols(df)
     colors = MISTStyle.CAT_COLORS
-    linestyles = [:solid, (:dash, :dense), (:dot, :dense), :dashdot, :dashdotdot,
-                  (:dot, :loose), (:dash, :loose)]
+    linestyles = [
+        :solid, (:dash, :dense), (:dot, :dense),
+        :dashdot, :dashdotdot, (:dot, :loose), (:dash, :loose)
+    ]
 
     scent_colors = Dict(s => colors[mod1(i, length(colors))] for (i, s) in enumerate(scent_cols))
     scent_linestyles = Dict(s => linestyles[mod1(i, length(linestyles))] for (i, s) in enumerate(scent_cols))
