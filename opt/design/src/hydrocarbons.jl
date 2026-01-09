@@ -224,12 +224,14 @@ end
 
 function fragrance_compounds(n::Int)
     df = DataFrame(vcat(
+        [(; type="Alkanes", smi=alkane(n)) for n in 1:n],
         [(; type="Esters", smi=ester(n)) for n in 1:n],
         [(; type="Ethers", smi=ether(n)) for n in 3:n],
         [(; type="Alcohols", smi=alcohol(n)) for n in 1:n],
         [(; type="Aldehydes", smi=aldehyde(n)) for n in 1:n],
         [(; type="Carboxylic acids", smi=carboxylic_acid(n)) for n in 2:n],
         [(; type="Alkenes", smi=alkene(n)) for n in 2:n],
+        [(; type="Alkynes", smi=alkyne(n)) for n in 2:n],
         [(; type="Arenes", smi=arene(n)) for n in 0:n],
         [(; type="Thiol", smi=thiol(n)) for n in 1:n],
 
