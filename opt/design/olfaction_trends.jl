@@ -1,4 +1,9 @@
-using Makie, DesignRules, MISTStyle, DataFrames, Colors, PythonCall
+using Makie
+using DesignRules
+using MISTStyle
+using DataFrames
+using Colors
+using PythonCall
 using CSV: CSV
 using StatsBase: mean
 
@@ -100,10 +105,13 @@ function plot_scent_by_type(df::DataFrame)
                     linestyle=scent_linestyles[scent]
                 )
 
-                push!(plotted_elements, LineElement(
-                    color=scent_colors[scent],
-                    linestyle=scent_linestyles[scent]
-                ))
+                push!(
+                    plotted_elements,
+                    LineElement(
+                        color=scent_colors[scent],
+                        linestyle=scent_linestyles[scent]
+                    )
+                )
                 push!(plotted_labels, scent)
             end
         end

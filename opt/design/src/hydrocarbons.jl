@@ -25,25 +25,21 @@ function branched_esters(n_total::Int)
     # Generate esters with different chain length splits
     for n_acyl in 1:(n_total - 1)
         n_alkoxy = n_total - n_acyl
-
         # Linear acyl, iso alkoxy (if n_alkoxy >= 3)
         if n_alkoxy >= 3
             push!(esters, (; smi="O=C(O" * iso_alkyl(n_alkoxy) * ")" * "C"^(n_acyl - 1),
                            branch_pattern="iso-alkoxy"))
         end
-
         # Iso acyl, linear alkoxy (n_acyl - 1 >= 3, so n_acyl >= 4)
         if n_acyl >= 4
             push!(esters, (; smi="O=C(O" * "C"^n_alkoxy * ")" * iso_alkyl(n_acyl - 1),
                            branch_pattern="iso-acyl"))
         end
-
         # Tert acyl, linear alkoxy (n_acyl - 1 >= 4, so n_acyl >= 5)
         if n_acyl >= 5
             push!(esters, (; smi="O=C(O" * "C"^n_alkoxy * ")" * tert_alkyl(n_acyl - 1),
                            branch_pattern="tert-acyl"))
         end
-
         # Both iso (n_acyl - 1 >= 3 and n_alkoxy >= 3, so n_acyl >= 4 and n_alkoxy >= 3)
         if n_acyl >= 4 && n_alkoxy >= 3
             push!(esters, (; smi="O=C(O" * iso_alkyl(n_alkoxy) * ")" * iso_alkyl(n_acyl - 1),
@@ -58,31 +54,26 @@ function branched_ethers(n_total::Int)
     # Generate ethers with different chain length splits
     for n_left in 1:(n_total - 1)
         n_right = n_total - n_left
-
         # Linear left, iso right (if n_right >= 3)
         if n_right >= 3
             push!(ethers, (; smi="C"^n_left * "O" * iso_alkyl(n_right),
                            branch_pattern="iso-right"))
         end
-
         # Iso left, linear right (if n_left >= 3)
         if n_left >= 3
             push!(ethers, (; smi=iso_alkyl(n_left) * "O" * "C"^n_right,
                            branch_pattern="iso-left"))
         end
-
         # Tert left, linear right (if n_left >= 4)
         if n_left >= 4
             push!(ethers, (; smi=tert_alkyl(n_left) * "O" * "C"^n_right,
                            branch_pattern="tert-left"))
         end
-
         # Linear left, tert right (if n_right >= 4)
         if n_right >= 4
             push!(ethers, (; smi="C"^n_left * "O" * tert_alkyl(n_right),
                            branch_pattern="tert-right"))
         end
-
         # Both iso (if both sides >= 3)
         if n_left >= 3 && n_right >= 3
             push!(ethers, (; smi=iso_alkyl(n_left) * "O" * iso_alkyl(n_right),
@@ -94,19 +85,16 @@ end
 
 function branched_alcohols(n_total::Int)
     alcohols = []
-
     # Secondary alcohols - OH on carbon with iso branching (if n >= 3)
     if n_total >= 3
         push!(alcohols, (; smi="O" * iso_alkyl(n_total),
                          branch_pattern="secondary-at-O-iso"))
     end
-
     # Tertiary alcohols - OH on carbon with tert branching (if n >= 4)
     if n_total >= 4
         push!(alcohols, (; smi="O" * tert_alkyl(n_total),
                          branch_pattern="tertiary-at-O-tert"))
     end
-
     # Secondary alcohols (OH on internal carbon, linear)
     for pos in 2:(n_total - 1)
         # Linear secondary alcohol
@@ -119,7 +107,6 @@ function branched_alcohols(n_total::Int)
                              branch_pattern="tertiary-at-O"))
         end
     end
-
     # Tertiary alcohols (3 distinct alkyl groups)
     if n_total >= 4
         for n_side1 in 1:(n_total - 3)
@@ -130,25 +117,21 @@ function branched_alcohols(n_total::Int)
             end
         end
     end
-
     return unique(x -> x.smi, alcohols)
 end
 
 function branched_thiols(n_total::Int)
     thiols = []
-
     # Secondary thiols - SH on carbon with iso branching (if n >= 3)
     if n_total >= 3
         push!(thiols, (; smi="S" * iso_alkyl(n_total),
                        branch_pattern="secondary-at-S-iso"))
     end
-
     # Tertiary thiols - SH on carbon with tert branching (if n >= 4)
     if n_total >= 4
         push!(thiols, (; smi="S" * tert_alkyl(n_total),
                        branch_pattern="tertiary-at-S-tert"))
     end
-
     # Secondary thiols (SH on internal carbon, linear)
     for pos in 2:(n_total - 1)
         # Linear secondary thiol
@@ -161,7 +144,6 @@ function branched_thiols(n_total::Int)
                            branch_pattern="tertiary-at-S"))
         end
     end
-
     # Tertiary thiols (3 distinct alkyl groups)
     if n_total >= 4
         for n_side1 in 1:(n_total - 3)
@@ -172,7 +154,6 @@ function branched_thiols(n_total::Int)
             end
         end
     end
-
     return unique(x -> x.smi, thiols)
 end
 
