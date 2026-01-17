@@ -244,8 +244,6 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
         path: str | Path,
         mix1_smiles_column: str = "mix1_smiles",
         mix2_smiles_column: str = "mix2_smiles",
-        mix1_cids_column: str = "mix1_cids",
-        mix2_cids_column: str = "mix2_cids",
         # The arguments below are not used
         # needed for CLI config compatibility
         include_temperature: bool | str = False,
@@ -306,8 +304,7 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
             self.test_dataset: Dataset = ds["test"]
 
         # Dataset for normalization
-        norm_columns = {"target", "target_mask"}
-        norm_columns = list(set(norm_columns).intersection(columns))
+        norm_columns = ["target", "target_mask"]
         self.target_dataset = ds["train"].select_columns(norm_columns)
 
     @torch.no_grad()
@@ -591,7 +588,7 @@ def encode_and_tokenize_variable_mixture(
         end_idx = start_idx + n_comp
         input_ids[b, :n_comp] = toks["input_ids"][start_idx:end_idx]
         attention_mask[b, :n_comp] = toks["attention_mask"][start_idx:end_idx]
-        component_mask[b, :n_comp] = True
+        component_mask[b, :n_comp] = False
         start_idx = end_idx
 
     out = {

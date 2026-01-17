@@ -10,7 +10,7 @@ from .mixture_model import MixtureModel
 from .normalize import AbstractNormalizer
 
 
-class ScaledCosineRegressor(nn.Module):
+class ScaledCosineDistance(nn.Module):
     """
     Use scaled cosine similarity as similarity regressor.
     """
@@ -27,8 +27,6 @@ class ScaledCosineRegressor(nn.Module):
     def forward(self, x1, x2):
         cos = self.cosine(x1, x2).unsqueeze(-1)  # (B, 1),
         d = 1 - cos  # (B, 1)
-        with torch.no_grad():
-            self.scaler.weight.clamp_(min=0)
         return torch.sigmoid(self.scaler(d))  # (B, 1)
 
 
@@ -46,17 +44,12 @@ class AttentionPooling(nn.Module):
         batch_size = x.shape[0]
 
         query = self.query.expand(batch_size, -1, -1)  # (B, 1, embed_dim)
-        # Convert mask for MultiheadAttention (inverted: True=ignore, False=keep)
-        if mask is not None:
-            key_padding_mask = ~mask  # (B, N)
-        else:
-            key_padding_mask = None
 
         pooled, _ = self.attention(
             query=query,
             key=x,
             value=x,
-            key_padding_mask=key_padding_mask,
+            key_padding_mask=mask,
         )
 
         return pooled.squeeze(1)  # (B, embed_dim)
@@ -105,7 +98,7 @@ class MixtureSimilarityModel(MixtureModel):
 
         self.pool_mix = AttentionPooling(embed_dim, num_heads, dropout)
 
-        self.similarity_regressor = ScaledCosineRegressor(out_dim=1)
+        self.similarity_regressor = ScaledCosineDistance(out_dim=1)
 
     def encode_mixture(
         self,
@@ -129,13 +122,11 @@ class MixtureSimilarityModel(MixtureModel):
         )
 
         last_hidden = encoder_output.last_hidden_state  # (B*N, seq_len, embed_dim)
+        last_idx = attention_mask_flat.sum(dim=1) - 1
 
-        attention_mask_expanded = attention_mask_flat.unsqueeze(-1)  # (B*N, seq_len, 1)
-        sum_embeddings = (last_hidden * attention_mask_expanded).sum(
-            dim=1
-        )  # (B*N, embed_dim)
-        sum_mask = attention_mask_expanded.sum(dim=1).clamp(min=1e-9)  # (B*N, 1)
-        component_embeddings = sum_embeddings / sum_mask  # (B*N, embed_dim)
+        # Gather last token embedding: (B*N, d)
+        batch_idx = torch.arange(last_hidden.size(0), device=last_hidden.device)
+        component_embeddings = last_hidden[batch_idx, last_idx, :]
 
         embed_dim = component_embeddings.shape[-1]
         component_embeddings = component_embeddings.view(
