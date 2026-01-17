@@ -56,10 +56,10 @@ def collate_target_stacked(x, target_columns):
         v = x[k]
         if v is None:
             target.append(torch.tensor(0))  # Placeholder, should be masked out
-            mask.append(torch.tensor(True))
+            mask.append(torch.tensor(False))
         else:
             target.append(torch.tensor(v))
-            mask.append(torch.tensor(False))
+            mask.append(torch.tensor(True))
 
     return {"target": torch.stack(target), "target_mask": torch.stack(mask)}
 
@@ -68,15 +68,15 @@ class ComponentDataModule(LightningDataModule):
     def __init__(
         self,
         path: str,
-        target_col: Union[str, List],
+        target_columns: Union[str, List[str]],
         n_components: int = 2,
         tokenizer: Optional[str] = None,
         batch_size: int = 64,
         val_batch_size: Optional[int] = None,
         num_workers: int = 0,
         prefetch_factor: Optional[int] = None,
-        include_temperature: str | bool = False,
-        encoding: Optional[str | MolEncoding] = "smiles",
+        include_temperature: Union[str, bool] = False,
+        encoding: str = "smiles",
         iterable: bool = False,
         randomize: bool = False,
         max_length: int = 512,
@@ -90,11 +90,11 @@ class ComponentDataModule(LightningDataModule):
         self.path: Path = Path(path)
         self.encoding = MolEncoding(encoding)
         self.randomize = randomize
-        if isinstance(target_col, str):
-            target_col = [
-                target_col,
+        if isinstance(target_columns, str):
+            target_columns = [
+                target_columns,
             ]
-        self.target_col = target_col
+        self.target_columns = target_columns
         assert self.path.is_dir() or self.path.is_file()
 
         self.batch_size = batch_size
@@ -153,8 +153,8 @@ class ComponentDataModule(LightningDataModule):
         ds = ds.map(
             collate_target_stacked,
             batched=False,
-            fn_kwargs={"target_columns": self.target_col},
-            remove_columns=self.target_col,
+            fn_kwargs={"target_columns": self.target_columns},
+            remove_columns=self.target_columns,
         )
         ds = ds.map(
             collate_components_and_environment,
@@ -244,6 +244,9 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
         path: str | Path,
         mix1_smiles_column: str = "mix1_smiles",
         mix2_smiles_column: str = "mix2_smiles",
+        descriptor_path: str | Path | None = None,
+        mix1_cids_column: str = "mix1_cids",
+        mix2_cids_column: str = "mix2_cids",
         # The arguments below are not used
         # needed for CLI config compatibility
         include_temperature: bool | str = False,
@@ -254,6 +257,24 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
         self.path = Path(path)
         self.mix1_smiles_column = mix1_smiles_column
         self.mix2_smiles_column = mix2_smiles_column
+        self.mix1_cids_column = mix1_cids_column
+        self.mix2_cids_column = mix2_cids_column
+        self.descriptor_path = Path(descriptor_path) if descriptor_path else None
+        self.descriptor_dict = None
+
+        # Load descriptors if path provided
+        if self.descriptor_path and self.descriptor_path.exists():
+            desc_ds = load_dataset(
+                "csv", data_files=str(self.descriptor_path), split="train"
+            )
+            # Convert to dict: CID -> descriptor tensor
+            self.descriptor_dict = {
+                row["CID"]: torch.tensor(
+                    [v for k, v in row.items() if k != "CID"], dtype=torch.float32
+                )
+                for row in desc_ds
+            }
+            self.descriptor_dim = len(next(iter(self.descriptor_dict.values())))
 
         assert self.path.exists()
         super().__init__(smi_column=mix1_smiles_column, **kwargs)
@@ -296,6 +317,20 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
 
         columns = ["target", "target_mask", "compounds_mix1", "compounds_mix2"]
 
+        # Add descriptors if available
+        if self.descriptor_dict is not None:
+            ds = ds.map(
+                aggregate_descriptors,
+                batched=False,
+                fn_kwargs={
+                    "descriptor_dict": self.descriptor_dict,
+                    "descriptor_dim": self.descriptor_dim,
+                    "mix1_cids_col": self.mix1_cids_column,
+                    "mix2_cids_col": self.mix2_cids_column,
+                },
+            )
+            columns.extend(["descriptors_mix1", "descriptors_mix2"])
+
         ds = ds.select_columns(columns)
 
         self.train_dataset: Dataset = ds["train"].shuffle()
@@ -307,6 +342,22 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
         norm_columns = {"target", "target_mask"}
         norm_columns = list(set(norm_columns).intersection(columns))
         self.target_dataset = ds["train"].select_columns(norm_columns)
+
+        # Descriptor dataset for normalization
+        if self.descriptor_dict is not None:
+            desc_ds = ds["train"].select_columns(
+                ["descriptors_mix1", "descriptors_mix2"]
+            )
+            desc_ds = desc_ds.map(
+                add_descriptor_mask,
+                batched=False,
+                fn_kwargs={"descriptor_dim": self.descriptor_dim},
+            )
+            self.descriptor_dataset = desc_ds.select_columns(
+                ["descriptors", "descriptors_mask"]
+            )
+        else:
+            self.descriptor_dataset = None
 
     @torch.no_grad()
     def collate_fn(self, batch):
@@ -342,6 +393,21 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
                 [torch.tensor(obs["target_mask"], dtype=torch.bool) for obs in batch]
             ),
         }
+
+        # Add descriptors if available
+        if "descriptors_mix1" in batch[0]:
+            out["descriptors_mix1"] = torch.stack(
+                [
+                    torch.tensor(obs["descriptors_mix1"], dtype=torch.float32)
+                    for obs in batch
+                ]
+            )
+            out["descriptors_mix2"] = torch.stack(
+                [
+                    torch.tensor(obs["descriptors_mix2"], dtype=torch.float32)
+                    for obs in batch
+                ]
+            )
 
         if self.include_encoding:
             out["compounds_mix1"] = mix1_data["compounds"]
@@ -626,6 +692,39 @@ def ensure_list_format(row: dict, mix1_col: str, mix2_col: str):
     return {
         mix1_col: to_list(row[mix1_col]),
         mix2_col: to_list(row[mix2_col]),
+    }
+
+
+def aggregate_descriptors(
+    row: dict,
+    descriptor_dict: dict,
+    descriptor_dim: int,
+    mix1_cids_col: str,
+    mix2_cids_col: str,
+):
+    """Aggregate descriptors for mixture components by averaging."""
+
+    def get_mixture_descriptors(cids):
+        if isinstance(cids, str):
+            cids = ast.literal_eval(cids)
+        desc_list = [
+            descriptor_dict[int(cid)] for cid in cids if int(cid) in descriptor_dict
+        ]
+        if desc_list:
+            return torch.stack(desc_list).mean(dim=0).tolist()
+        return [0.0] * descriptor_dim
+
+    return {
+        "descriptors_mix1": get_mixture_descriptors(row[mix1_cids_col]),
+        "descriptors_mix2": get_mixture_descriptors(row[mix2_cids_col]),
+    }
+
+
+def add_descriptor_mask(row: dict, descriptor_dim: int):
+    """Add mask column for descriptors (all True since all descriptors are valid)."""
+    return {
+        "descriptors": row["descriptors_mix1"],
+        "descriptors_mask": [True] * descriptor_dim,
     }
 
 
