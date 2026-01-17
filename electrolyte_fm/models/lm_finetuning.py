@@ -292,3 +292,8 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
                 "lr_scheduler": {"scheduler": schedule(optimizer), "interval": "step"},
             }
         return optimizer
+
+    def get_encoder(self):
+        if not hasattr(self, "model"):
+            self.configure_model()
+        return self.encoder
