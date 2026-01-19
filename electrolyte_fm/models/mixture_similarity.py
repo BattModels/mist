@@ -49,6 +49,8 @@ class EmbeddingDistance(nn.Module):
             return ScaledCosineDistance(**kwargs)
         elif distance in ["euclidean", EuclideanDistance.__name__]:
             return EuclideanDistance(**kwargs)
+        elif distance in ["manhattan", ManhattanDistance.__name__]:
+            return ManhattanDistance(**kwargs)
 
 
 class EuclideanDistance(EmbeddingDistance):
@@ -81,10 +83,6 @@ class ManhattanDistance(EmbeddingDistance):
 
 
 class CosineDistance(EmbeddingDistance):
-    """
-    Use cosine similarity as similarity metric.
-    """
-
     def __init__(self, eps: float = 1e-8):
         super().__init__()
         self.eps = eps
@@ -95,10 +93,6 @@ class CosineDistance(EmbeddingDistance):
 
 
 class ScaledCosineDistance(EmbeddingDistance):
-    """
-    Use scaled cosine similarity as similarity metric.
-    """
-
     def __init__(self, out_dim: int = 1):
         super().__init__()
         self.cosine = nn.CosineSimilarity(dim=1)
