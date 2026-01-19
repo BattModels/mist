@@ -1,3 +1,4 @@
+import math
 from typing import List, Optional
 from itertools import chain
 
@@ -10,9 +11,92 @@ from .mixture_model import MixtureModel
 from .normalize import AbstractNormalizer
 
 
-class ScaledCosineDistance(nn.Module):
+class R2Loss(nn.Module):
+    """R2-based loss function: loss = 1 - R²"""
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        predictions = predictions.flatten()
+        targets = targets.flatten()
+
+        ss_res = ((targets - predictions) ** 2).sum()
+        ss_tot = ((targets - targets.mean()) ** 2).sum()
+        r2 = 1 - (ss_res / (ss_tot + 1e-8))
+
+        return 1 - r2
+
+
+class EmbeddingDistance(nn.Module):
     """
-    Use scaled cosine similarity as similarity regressor.
+    Evaluate distance between embeddings and map to a [0, 1] range:
+    where 0 is total overlap, 1 is the furthest away.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Compute distance between embeddings"""
+        raise NotImplementedError
+
+    @classmethod
+    def get(cls, distance: str, **kwargs) -> "EmbeddingDistance":
+        if distance in ["cosine", CosineDistance.__name__]:
+            return CosineDistance(**kwargs)
+        elif distance in ["scaled_cosine", ScaledCosineDistance.__name__]:
+            return ScaledCosineDistance(**kwargs)
+        elif distance in ["euclidean", EuclideanDistance.__name__]:
+            return EuclideanDistance(**kwargs)
+
+
+class EuclideanDistance(EmbeddingDistance):
+    def __init__(self, eps: float = 1e-8):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
+        x1n = F.normalize(x1, p=2, dim=1, eps=self.eps)
+        x2n = F.normalize(x2, p=2, dim=1, eps=self.eps)
+
+        d = torch.linalg.norm(x1n - x2n, dim=1)  # (B,), in [0, 2]
+        y = (d * 0.5).unsqueeze(-1)  # (B, 1), in [0, 1]
+        return y
+
+
+class ManhattanDistance(EmbeddingDistance):
+    def __init__(self, eps: float = 1e-8):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor) -> torch.Tensor:
+        x1n = F.normalize(x1, p=2, dim=1, eps=self.eps)
+        x2n = F.normalize(x2, p=2, dim=1, eps=self.eps)
+
+        d1 = (x1n - x2n).abs().sum(dim=1)  # (B,), in [0, 2*sqrt(D)]
+        D = x1n.size(1)
+        y = (d1 / (2.0 * math.sqrt(D))).unsqueeze(-1)  # (B, 1), in [0, 1]
+        return y
+
+
+class CosineDistance(EmbeddingDistance):
+    """
+    Use cosine similarity as similarity metric.
+    """
+
+    def __init__(self, eps: float = 1e-8):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x1, x2):
+        cos = F.cosine_similarity(x1, x2, dim=1, eps=self.eps)  # (B,)
+        return ((1.0 - cos) * 0.5).unsqueeze(-1)  # (B, 1)
+
+
+class ScaledCosineDistance(EmbeddingDistance):
+    """
+    Use scaled cosine similarity as similarity metric.
     """
 
     def __init__(self, out_dim: int = 1):
@@ -21,8 +105,8 @@ class ScaledCosineDistance(nn.Module):
         self.scaler = nn.Linear(1, 1, bias=True)
 
         with torch.no_grad():
-            self.scaler.weight.fill_(2.0)
-            self.scaler.bias.fill_(-2.0)
+            self.scaler.weight.fill_(6.0)
+            self.scaler.bias.fill_(-6.0)
 
     def forward(self, x1, x2):
         cos = self.cosine(x1, x2).unsqueeze(-1)  # (B, 1),
@@ -55,6 +139,31 @@ class AttentionPooling(nn.Module):
         return pooled.squeeze(1)  # (B, embed_dim)
 
 
+class WeightedSumPooling(nn.Module):
+    """Weighted sum pooling where weights are predicted from component embeddings."""
+
+    def __init__(self, embed_dim: int, hidden_dim: int = 128, dropout: float = 0.2):
+        super().__init__()
+        # Network to predict weight from embedding
+        self.weight_predictor = nn.Sequential(
+            nn.Linear(embed_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor = None):
+        logits = self.weight_predictor(x).squeeze(-1)  # (B, N)
+
+        if mask is not None:
+            logits = logits.masked_fill(mask, float("-inf"))
+
+        weights = torch.softmax(logits, dim=-1)  # (B, N)
+        pooled = torch.sum(weights.unsqueeze(-1) * x, dim=1)
+
+        return pooled
+
+
 class MixtureSimilarityModel(MixtureModel):
     """
     PyTorch Lightning module for computing similarity/ dissimilarity between two mixtures.
@@ -63,9 +172,9 @@ class MixtureSimilarityModel(MixtureModel):
     def __init__(
         self,
         encoder_ckpt: str,
+        distance_metric: str = "scaled_cosine",
         freeze_encoder: bool = False,
         dropout: float = 0.2,
-        num_heads: int = 8,
         vocab_size: Optional[int] = None,
         metrics: List[str] = ["mae", "rmse", "r2"],
         optimizer: OptimizerCallable = torch.optim.AdamW,
@@ -91,49 +200,59 @@ class MixtureSimilarityModel(MixtureModel):
             temperature=False,
         )
 
-        self.num_heads = num_heads
+        # Override loss function to use R2 loss
+        self.lossfn = R2Loss()
+
         embed_dim = self.encoder.config.hidden_size
+        self.distance_metric = distance_metric
 
         del self.task_network
 
-        self.pool_mix = AttentionPooling(embed_dim, num_heads, dropout)
+        self.pool_mix = WeightedSumPooling(embed_dim, hidden_dim=128, dropout=dropout)
+        self.similarity_regressor = EmbeddingDistance.get(self.distance_metric)
 
-        self.similarity_regressor = ScaledCosineDistance(out_dim=1)
+    def _scaled_pred_loss(self, batch):
+        """Compute R2 loss for mixture similarity."""
+        preds, mix_embedding = self.forward(batch, transform=False)
+        target = batch["target"]
+        target = self.transform.inverse(target)
 
-    def encode_mixture(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        component_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Encode a mixture with variable numebrt of components.
-        """
+        mask = batch["target_mask"]
+        valid_preds = preds[mask]
+        valid_targets = target[mask]
+
+        if valid_preds.numel() > 0:
+            loss = self.lossfn(valid_preds, valid_targets)
+        else:
+            loss = torch.tensor(0.0, device=preds.device)
+
+        if torch.isnan(loss):
+            raise ValueError("Loss is NaN")
+
+        preds = self.transform.forward(preds)
+        return preds, loss
+
+    def encode_mixture(self, input_ids, attention_mask, component_mask):
         batch_size, max_components, seq_len = input_ids.shape
+        input_ids_flat = input_ids.reshape(-1, seq_len)
+        attention_mask_flat = attention_mask.reshape(-1, seq_len)
 
-        input_ids_flat = input_ids.view(-1, seq_len)  # (B*N, seq_len)
-        attention_mask_flat = attention_mask.view(-1, seq_len)  # (B*N, seq_len)
-
-        encoder_output = self.encoder(
+        out = self.encoder(
             input_ids_flat,
             attention_mask=attention_mask_flat,
             return_dict=True,
-            output_hidden_states=True,
+            output_hidden_states=False,
         )
+        last_hidden = out.last_hidden_state  # (B*N, L, d)
 
-        last_hidden = encoder_output.last_hidden_state  # (B*N, seq_len, embed_dim)
-        last_idx = attention_mask_flat.sum(dim=1) - 1
+        comp_emb = last_hidden[:, 0, :]
+        comp_emb = comp_emb.view(batch_size, max_components, -1)
 
-        # Gather last token embedding: (B*N, d)
-        batch_idx = torch.arange(last_hidden.size(0), device=last_hidden.device)
-        component_embeddings = last_hidden[batch_idx, last_idx, :]
+        # If component_mask is False for present, True for missing, zero missing embeddings
+        if component_mask is not None:
+            comp_emb = comp_emb * (~component_mask).unsqueeze(-1).type_as(comp_emb)
 
-        embed_dim = component_embeddings.shape[-1]
-        component_embeddings = component_embeddings.view(
-            batch_size, max_components, embed_dim
-        )
-
-        return component_embeddings
+        return comp_emb
 
     def forward(self, batch, transform=True, **kwargs):  # type: ignore[override]
         mix1_components = self.encode_mixture(
