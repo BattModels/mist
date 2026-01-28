@@ -430,7 +430,6 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
             remove_columns=self.x_columns,
         )
 
-        # Stack compounds
         ds = ds.map(
             stack_compounds,
             batched=False,
@@ -438,7 +437,6 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
             remove_columns=self.smi_columns,
         )
 
-        # Columns in final dataset
         columns = ["target", "target_mask", "composition", "compounds"]
 
         # Normalize temperature column
@@ -452,7 +450,6 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
                 fn_kwargs={"column": "temperature", "dtype": torch.float32},
             )
 
-        # Filter to input columns
         if self.excess_columns:
             columns.extend(["target_excess", "target_excess_mask"])
 
@@ -469,7 +466,6 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
         if "test" in ds:
             self.test_dataset: Dataset = ds["test"]
 
-        # Dataset for normalization
         norm_columns = {
             "target",
             "target_mask",
@@ -507,7 +503,6 @@ def stack_compounds(row: dict, smi_columns: List[str]):
 def stack_two_mixtures(
     row: dict, mix1_smi_columns: list[str], mix2_smi_columns: list[str]
 ):
-    """Stack SMILES for two separate mixtures."""
     return {
         "compounds_mix1": tuple(row[col] for col in mix1_smi_columns),
         "compounds_mix2": tuple(row[col] for col in mix2_smi_columns),
@@ -561,10 +556,6 @@ def encode_and_tokenize_variable_mixture(
     token_collator=None,
     include_encoding: bool = False,
 ):
-    """
-    Encode and tokenize mixtures with variable numbers of components.
-    """
-
     encode = encoding.random if randomize else encoding
     B = len(compounds)
     max_N = max(len(comp_list) for comp_list in compounds)
@@ -605,23 +596,10 @@ def encode_and_tokenize_variable_mixture(
 
 
 def ensure_list_format(row: dict, mix1_col: str, mix2_col: str):
-    """
-    Ensure mixture columns are in list format.
-    Handles both native list columns and string representations like "['CCO', 'CC']"
-    """
-
     def to_list(value):
-        if isinstance(value, list):
-            return value
-        if isinstance(value, str):
-            try:
-                parsed = ast.literal_eval(value)
-                if isinstance(parsed, list):
-                    return parsed
-            except (ValueError, SyntaxError):
-                pass
-            return [value]
-        return []
+        if not isinstance(value, str):
+            return ast.literal_eval(value)
+        return value
 
     return {
         mix1_col: to_list(row[mix1_col]),
