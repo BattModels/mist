@@ -57,7 +57,7 @@
     n_components: 5,
   },
   olfactory_similarity: {
-    path: '/home/abhutani/chemixhub/datasets/chemixhub_mist/olfactory-similarity',
+    path: '~/chemixhub_mist/olfactory-similarity',
     temperature: false,
     target_columns: ['value'],
     transform: 'standardize',
