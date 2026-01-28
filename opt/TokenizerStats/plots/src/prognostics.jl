@@ -13,7 +13,7 @@ function df_ngram_stats_v_fm_perf(tok_info, model_loss, info_loss, df_f; referen
         select(model_loss, :tokenizer, :dataset, :finetuned, :loss_per_token_moments);
         on=[:tokenizer, :dataset],
     )
-    disallowmissing!(df)
+    dropmissing!(df)
     transform!(df,
         :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
         :tokenizer => ByRow(x -> tok_info[x]["encoding"]) => :encoding,

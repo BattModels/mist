@@ -1,7 +1,7 @@
 module TokenizerStats
 
 using Tracy
-using PythonCall: Py, pyimport, pyconvert, @pyconst
+using PythonCall: Py, pyimport, pyisinstance, pybuiltins, pyconvert, @pyconst
 using ArgParse: ArgParseSettings, parse_args, @add_arg_table!
 using OnlineStats: OnlineStats, CountMap, HyperLogLog, Extrema, KHist, Counter, fit!, merge!, value
 using LinearAlgebra: normalize
@@ -14,6 +14,7 @@ using Dates: now
 using SparseArrays: sparse
 using LogExpFunctions: logsumexp, log1pexp, xexpy
 using Serialization: serialize, deserialize
+
 
 function find(dir, pattern)
     found = String[]
@@ -31,14 +32,28 @@ end
 
 const __loader = Ref{Py}()
 const __tokenizer = Ref{Py}()
+const pymodel = Ref{Py}()
+
 function __init__()
     __loader[] = pyimport("helper.loader")
     __tokenizer[] = pyimport("helper.tokenizer")
+    pymodel[] = pyimport("helper.model")
     return nothing
 end
 
 tokenizer_dataset(args...; kwargs...) = __loader[].tokenizer_dataset(args...; kwargs...)
-load_tokenizer(name_or_path) = __tokenizer[].load_tokenizer(name_or_path)
+load_tokenizer(name_or_path::AbstractString) = __tokenizer[].load_tokenizer(String(name_or_path))
+
+function resolve_tok_path(stats_dir::String, name_or_path::String)
+    if isdir(name_or_path)
+        return name_or_path
+    end
+    stats_tok = joinpath(stats_dir, name_or_path, "tokenizer")
+    if isdir(stats_tok)
+        return stats_tok
+    end
+    return name_or_path
+end
 
 struct DatasetConfig
     name_or_path::String
@@ -78,6 +93,10 @@ include("ngrams.jl")
 include("serialize.jl")
 include("collect.jl")
 include("finetune.jl")
+
+# Attention Maps
+include("attention_maps.jl")
+
 include("cli.jl")
 
 end

@@ -25,7 +25,7 @@ end
 Base.length(::NGramModel{N}) where {N} = N
 
 """ Iterator of all token ids (including special) for the model"""
-token_ids(m::NGramModel) = range(0; length=m.vocab_size)
+token_ids(m::NGramModel) = range(Int32(0); length=Int32(m.vocab_size))
 
 """Vocab size, less special tokens"""
 nonspecial_vocab_size(m::NGramModel) = length(token_ids(m)) - length(m.special_tokens)
@@ -72,7 +72,6 @@ function load_ngram_model(file::String, split="train")
             data[split]["ngrams"][string(i)]
         end
         model = NGramModel(tok, grams)
-
         return model, tok, info
     end
 end

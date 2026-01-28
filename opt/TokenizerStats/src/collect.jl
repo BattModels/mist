@@ -144,6 +144,33 @@ function tabulate_dataset(dataset::DatasetConfig, out_file::AbstractString, spli
     return 0
 end
 
+function compute_loss(dataset::DatasetConfig, ngram::NGramModel, split::String; global_rank::Int=0, world_size::Int=1)
+    stats = map(1:length(ngram)) do _
+        OnlineStats.Series(;
+            moments=OnlineStats.Moments(),
+            extrema=Extrema(),
+        )
+    end |> OnlineStats.Group
+    stats = (; cross_entropy=stats, cross_entropy_per_token=deepcopy(stats))
+
+    ds = dataset_split(dataset, split; global_rank, world_size)
+    start_time = time()
+    loss = zeros(length(ngram))
+    for (idx, encoding) in enumerate(ds)
+        code = pyconvert(Vector{UInt32}, encoding["input_ids"])
+        for N in 1:length(ngram)
+            loss[N] = cross_entropy(ngram, code; N)
+        end
+        fit!(stats.cross_entropy, tuple(loss))
+        fit!(stats.cross_entropy_per_token, tuple(loss ./ length(code)))
+        if idx % 1_000_000 == 0 && global_rank == 0
+            elapsed = time() - start_time
+            @info "rank $global_rank on molecule $idx" idx elapsed idx / elapsed
+        end
+    end
+    return stats
+end
+
 function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
     # Init MPI
     MPI.Init()
@@ -174,32 +201,11 @@ function model_loss(dataset::DatasetConfig, ref_file::String, output::String)
     MPI.Barrier(comm)
     start_time = time()
     for split in ["val", "train", "test"]
-        ds = dataset_split(dataset, split; global_rank, world_size)
-        stats = map(1:length(ngram)) do _
-            OnlineStats.Series(;
-                moments=OnlineStats.Moments(),
-                extrema=Extrema(),
-                histogram=KHist(100),
-            )
-        end |> OnlineStats.Group
-        stats = (; cross_entropy=deepcopy(stats), cross_entropy_per_token=deepcopy(stats))
-
         @info "rank $global_rank: started processing $split" now()
-        loss = zeros(length(ngram))
-        start_time = time()
-        for (idx, encoding) in enumerate(ds)
-            code = pyconvert(Vector{UInt32}, encoding["input_ids"])
-            for N in 1:length(ngram)
-                loss[N] = cross_entropy(ngram, code; N)
-            end
-            fit!(stats.cross_entropy, tuple(loss))
-            fit!(stats.cross_entropy_per_token, tuple(loss ./ length(code)))
-            if idx % 1_000_000 == 0 && global_rank == 0
-                elapsed = time() - start_time
-                @info "rank $global_rank on molecule $idx" idx elapsed idx / elapsed
-            end
-        end
+        stats = compute_loss(dataset, ngram, split; global_rank, world_size)
+
         # Reduce stats over ranks
+        @info "reducing stats for $split"
         stats = leader_reduce(merge!, OnlineStats.Group(; stats...); comm)
         split_wall_time = time() - start_time
         if global_rank == 0

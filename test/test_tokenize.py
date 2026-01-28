@@ -34,6 +34,7 @@ OTHER_SMILES_TOKENIZERS = [
     "MolecularAI/Chemformer",
     "seyonec/ChemBERTa-zinc-base-v1",
     "sagawa/ReactionT5-product-prediction",
+    "bm2-lab/X-MOL",
 ]
 
 
@@ -187,3 +188,126 @@ def test_spe_setup():
     assert "[BOS]" in vocab
     assert "[N+]" in vocab
     assert "[N+]" in vocab
+
+
+def test_xmol_tokenizer():
+    # Reference tokenizer from X-MOL
+    # https://github.com/bm2-lab/X-MOL/blob/a64cd4222ab819326767224d91fa8605f52f4fc4/FT_to_prediction/tokenization.py#L152-L176
+    def tokenize(smi):
+        tokens = []
+        dc_a = ("l", "r")
+        marker = 0  # 1,2 indicates that the last token is not complete
+        for c in smi:
+            if marker == 0:
+                if c in dc_a:
+                    tokens[-1] += c
+                else:
+                    tokens.append(c)
+                    if c == "[":
+                        marker = 1
+                    elif c == "%":
+                        marker = 2
+                        marker_l = 2  # indicates that remain length of %**
+            else:
+                tokens[-1] += c
+                if marker == 1:
+                    if c == "]":
+                        marker = 0
+                elif marker == 2:
+                    marker_l -= 1
+                    if marker_l == 0:
+                        marker = 0
+        return tokens
+
+    tok = load_tokenizer("bm2-lab/X-MOL")
+    corpus = [
+        *STANDARD_SMILES,
+        # The following additional molecules were taken from
+        # the X-MOL paper to confirm our regex replication matches
+        # the original state-machine implementation
+        # doi:10.1016/j.scib.2022.01.029
+        "CCn1cc(NC(=O)C2=Cc3ccccc3OC=C2)ccc1=O",
+        "O=S(=O)(N[C@H]1C[C@H]2CC[C@@H]1C2)c1cccc2cccnc12",
+        "CS[C@H]1CC[C@@H](NC(=O)c2cnn3c(C)c(C)sc23)C1",
+        "C[C@@H]1Cc2ccccc2N1CC(=O)Nc1ccc(F)c(C#N)c1",
+        "CCS(=O)(=O)N1CC=C(c2c(C)[nH]c3ccccc23)CC1",
+        "O=C(O)c1cccc(P(=O)(O)O)c1",
+        "c1cccc(c1C(O)=O)C(=O)C",
+        # Base sanity
+        "",
+        "C",
+        "Cl",
+        "Br",
+        # multiple halogens / dc_a gluing
+        "CClBr",
+        "Clrl",
+        "Cll",
+        "Crl",
+        "Crlr",
+        "ClBr",
+        "BrCl",
+        "Cl(Cl)Cl",
+        # generic structure sanity
+        "C.C",
+        "C=C",
+        "C#N",
+        "C(C)(C)C",
+        "c1ccccc1Cl",
+        # Bracket atoms
+        "[NH3+]",
+        "[13CH2-]",
+        "[NH3+]l",
+        "[NH3+]ll",
+        "[13CH2-]r",
+        "[13CH2-]rl",
+        # Bracket weirdness / unterminated
+        "C[",
+        "[C",
+        "C[NH3+",
+        "[C[NH3+",
+        "[C%",
+        "[C%1",
+        "[C%12",
+        # nested-ish bracket weirdness
+        "[C[NH3+]]",
+        "[C[NH3+]]l",
+        "[C[NH3+]]ll",
+        "[[C]]",
+        "[[C]",
+        "[]",
+        "[]C",
+        # Stray closing bracket
+        "C]",
+        "]C",
+        "]",
+        # Ring closure cases
+        "C1CCCCC1",  # plain ring digits
+        "c1ccccc1Cl",
+        # Percent ring opening (marker=2 logic)
+        "%",  # literally just a percent
+        "%1",
+        "%12",
+        "C%12",
+        "C%12C",
+        "C%9",
+        "C%9l",
+        "C%12CC%12",
+        # Incomplete % sequences
+        "C%",
+        "C%1",
+        # Percent + dc_a interactions
+        "%12l",
+        "%12ll",
+        "C%1l",
+        "C%1ll",
+        "C%l",
+        "C%lr",
+    ]
+    for smi in corpus:
+        ref_tokens = tokenize(smi)
+        tokens = tok.tokenize(smi)
+        if "[UNK]" in tokens:
+            # Just split to preserve the UNKs
+            tokens = tok._tokenizer.pre_tokenizer.pre_tokenize_str(smi)
+            tokens = [tok for tok, offset in tokens]
+        assert tokens == ref_tokens

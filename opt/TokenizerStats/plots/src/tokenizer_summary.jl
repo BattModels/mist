@@ -1,15 +1,10 @@
-function top_k_tokens(ngram_file; k=5)
+function top_k_tokens(name_or_path, ngram_file; k=5)
     # Load unigram statistics
-    unigram, tok = jldopen(ngram_file, "r") do data
-        # Load tokenizer
-        name = data["tokenizer"][:tokenizer_name]
-        name = startswith(name, "smirk-gpe") ? "./" * name : name
-        tok = load_tokenizer(name)
-
-        # Get unigram stats
+    unigram= jldopen(ngram_file, "r") do data
         unigram = data["train"]["ngrams"]["1"]
-        return unigram, tok
+        return unigram
     end
+    tok = load_tokenizer(name_or_path)
 
     # Find the top k tokens
     id_count = collect(unigram)
@@ -43,7 +38,8 @@ function tokenizer_summary(stats_dir; k=5)
             vocab_size = jldopen(usage_file) do data
                 return data["tokenizer"].vocab_size
             end
-            top_tokens = top_k_tokens(usage_file; k)
+            name_or_path = TokenizerStats.resolve_tok_path(stats_dir, tokenizer["name_or_path"])
+            top_tokens = top_k_tokens(name_or_path, usage_file; k)
         else
             vocab_size = missing
             top_tokens = missing
@@ -59,6 +55,27 @@ function tokenizer_summary(stats_dir; k=5)
         ))
     end
     return DataFrame(rows)
+end
+
+function fertility_summary(token_usage; stats_dir="./stats")
+    tok_info = SmirkPaperPlots.tokenizers_info(stats_dir)
+    token_usage = transform(token_usage,
+        :dataset => ByRow(x -> x ∉ ["tmQM", "realspace"] ? "MoleculeNet" : x) => :dataset,
+        :tokenizer => ByRow(x -> tok_info[x]["tokenizer_class"]) => :tokenizer_class,
+    )
+    combine(groupby(token_usage, [:tokenizer_class, :dataset])) do gdf
+        dataset = first(gdf.dataset)
+        fertility = reduce(merge, gdf.fertility)
+        avg_fertility = mean(fertility)
+        std_fertility = std(fertility)
+        return (;
+            dataset=lowercase(dataset) in ("tmqm", "realspace") ? dataset : "MoleculeNet",
+            fertility,
+            avg_fertility,
+            std_fertility,
+            fmt_fertility=format("{}\\pm{}", round(avg_fertility; sigdigits=3), round(std_fertility; sigdigits=3)),
+        )
+    end
 end
 
 function report_tokenizer_summary_stats(stats_dir, model_loss, info_loss, usage_stats; k=5)

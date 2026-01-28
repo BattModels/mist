@@ -19,6 +19,7 @@ dependencies = [
     "rdkit>=2025.3.1",
     "scikit-learn>=1.6.1",
     "networkx>=3.4.2",
+    "torch>=2.9.0",
 ]
 
 [build-system]

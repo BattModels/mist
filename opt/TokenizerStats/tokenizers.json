@@ -359,5 +359,16 @@
     "cite": [
       "LMT+Nach0MultimodalNatural2024"
     ]
+  },
+  {
+    "name": "X-MOL",
+    "name_or_path": "bm2-lab/X-MOL",
+    "encoding": "smiles",
+    "tokenizer_class": "atomwise",
+    "domain": "chemistry",
+    "source": "github",
+    "cite": [
+      "XZC+XMOLLargescalePretraining2022"
+    ]
   }
 ]

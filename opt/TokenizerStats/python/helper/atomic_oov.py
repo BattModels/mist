@@ -161,7 +161,7 @@ def fullerene():
     """Iterator over Carbon Fullerenes from C20 to C720 from
     https://nanotube.msu.edu/fullerene/fullerene-isomers.html
     """
-    with open(Path(__file__).parent.parent.joinpath("fullerene.smi")) as fid:
+    with open(Path(__file__).parent.joinpath("fullerene.smi")) as fid:
         for line in fid.readlines():
             yield line.strip()
 
@@ -249,7 +249,7 @@ def tmqm_dataset(path: Optional[str] = None):
     if path is not None:
         path = Path(path)
     else:
-        path = Path(__file__).parent.parent.parent.joinpath("tmQM")
+        path = Path(__file__).parent.parent.parent.parent.joinpath("tmQM")
 
     ds = load_dataset(
         "arrow",
@@ -332,8 +332,11 @@ def tabulate_tokenizer(
     }
 
 
-def process_tokenizer(dataset_name: str, tokenizer: dict[str, str]) -> dict:
+def process_tokenizer(dataset_name: str, tokenizer: dict[str, str], args) -> dict:
     tok = load_tokenizer(tokenizer["name_or_path"])
+    if args.tmqm_dataset is not None:
+        DATASETS["tmQM"] = lambda: tmqm_dataset(args.tmqm_dataset)
+
     dataset = DATASETS[dataset_name]
     LOG.info("processing %s for %s", dataset_name, tokenizer["name"])
     return tabulate_tokenizer(tok, dataset, tokenizer["encoding"])
@@ -346,6 +349,9 @@ if __name__ == "__main__":
     parser.add_argument("--encoding", type=str, default=None)
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("-d", "--dataset", type=str, default=None, action="append")
+    parser.add_argument(
+        "--tmqm-dataset", type=Path, help="Path to the tmQM dataset", default=None
+    )
     parser.add_argument("--output", type=argparse.FileType("w"), default="-")
     parser.add_argument(
         "--tokenizers",
@@ -376,7 +382,7 @@ if __name__ == "__main__":
     datasets = args.dataset or DATASETS.keys()
     with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
         futures = {
-            executor.submit(process_tokenizer, dataset, tokenizer): dataset
+            executor.submit(process_tokenizer, dataset, tokenizer, args): dataset
             for dataset in datasets
         }
 
@@ -392,4 +398,5 @@ if __name__ == "__main__":
     if args.output.name != "<stdout>":
         Path(args.output.name).parent.mkdir(parents=True, exist_ok=True)
 
+    assert len(out) == len(datasets)
     json.dump(out, args.output)

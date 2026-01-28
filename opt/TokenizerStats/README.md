@@ -2,8 +2,8 @@
 
 ## Installation
 
-1. First, install [Python v3.12](https://www.python.org/downloads/), [Poetry](https://python-poetry.org), [Rust](https://www.rust-lang.org/tools/install) and [Julia v1.11](https://julialang.org/downloads/).
-2. Instantiate the python environment: `poetry install`
+1. First, install [Python v3.12](https://www.python.org/downloads/), [uv](https://docs.astral.sh/uv/getting-started/installation/), [Rust](https://www.rust-lang.org/tools/install) and [Julia v1.11](https://julialang.org/downloads/).
+2. Instantiate the python environment: `uv sync`
 3. Activate the environment: `source ./activate`
 > You may need to modify `./activate` for your system
 
@@ -20,7 +20,7 @@ Complete the installation then:
 1. Activate the environment: `source ./activate`
 2. Install the plotting dependencies: `julia --project=plots -e 'using Pkg; Pkg.instantiate()'`
 2. Regenerate analysis files or retrieve files from [https://doi.org/10.5281/zenodo.13761263]()
-2. Generate plots: `julia --project=plots -e 'using SmirkPaperPlots; SmirkPaperPlots.main`
+2. Generate plots: `julia --project=plots -e 'using SmirkPaperPlots; SmirkPaperPlots.main'`
 
 ### Data Drop Files
 
