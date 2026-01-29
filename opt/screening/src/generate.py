@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import torch
 from lightning.fabric import Fabric
 from torch import Tensor, nn
+from transformers import AutoModel
 
 from .hyperloglog import HyperLogLogSet
 from .prod_finetune import MISTFinetuned, MISTMultiTask
@@ -63,6 +64,7 @@ class OracleCritic(nn.Module):
         oracle_cls = {
             "MISTFinetuned": MISTFinetuned,
             "MISTMultiTask": MISTMultiTask,
+            "AutoModel": AutoModel,
         }.get(model_cls)
         oracle = oracle_cls.from_pretrained(model_path)
         channels = [chn["name"] for chn in oracle.channels]
