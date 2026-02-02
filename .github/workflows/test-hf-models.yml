@@ -1,0 +1,68 @@
+name: Test HuggingFace Models
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'opt/package/**'
+      - 'electrolyte_fm/models/prod_*.py'
+      - '.github/workflows/test-hf-models.yml'
+  pull_request:
+    paths:
+      - 'opt/package/**'
+      - 'electrolyte_fm/models/prod_*.py'
+  workflow_dispatch:
+
+jobs:
+  test-models:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test-class:
+          - TestHFOrgSingleMoleculeModels
+          - TestHFOrgConductivityModels
+          - TestHFOrgExcessPhysicsModels
+          - TestHFOrgModelIntegrity
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and set Python version
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: 3.11.8
+          enable-cache: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install project dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run tests
+        env:
+          WANDB_MODE: disabled
+        run: |
+          uv run pytest opt/package/test_hf_org.py::${{ matrix.test-class }} \
+            -v \
+            --log-cli-level=INFO \
+            --durations=10 \
+            --maxfail=5
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.test-class }}
+          path: |
+            .pytest_cache/
+          retention-days: 7

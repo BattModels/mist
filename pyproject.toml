@@ -41,6 +41,8 @@ dev = [
     "pytest>=8",
     "pre-commit>=3.7",
     "ruff>=0.5.4",
+    "huggingface-hub>=0.35.3",
+    "isort>=7.0.0",
 ]
 plotting = [
     "matplotlib~=3.9",

@@ -208,7 +208,6 @@ class IonicConductivityModel(LightningModule, DeepSpeedMixin, LoggingMixin):
                 mix_embedding += embedding
 
         preds = self.task_network(mix_embedding, batch["temperature"])
-        # preds = self.transform.forward(pred_unscaled)
 
         out = {"embedding": embedding, "prediction": preds}
 

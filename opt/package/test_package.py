@@ -7,24 +7,29 @@ from safetensors.torch import load_file
 from transformers import AutoModel, DataCollatorWithPadding
 
 from electrolyte_fm.models.prod_finetune import MISTFinetuned, MISTMultiTask
+from electrolyte_fm.models.prod_mixture import MISTIonicConductivity
 
-# Replace these paths with package variants of the same model using
-# MISTFinetuned and MISTMultiTask
-FINETUNED_CKPT = Path(__file__).parent.joinpath("../../mist-26.9M-b302p09x")
-MULTITASK_CKPT = Path(__file__).parent.joinpath(
-    "../../mist-26.9M-mist-ti624ev1-multitask"
-)
-ENCODER_CKPT = Path("~/Downloads/mist-ti624ev1/").expanduser().resolve()
+# These should be outputs from running the packaging commands:
+#   python -m opt.package finetuned <checkpoint_path>
+#   python -m opt.package multitask <encoder_ckpt> --task-ckpt <task1> --task-ckpt <task2>
+#   python -m opt.package conductivity <checkpoint_path>
+FINETUNED_CKPT = Path(__file__).parent.joinpath()
+MULTITASK_CKPT = Path(__file__).parent.joinpath()
+ENCODER_CKPT = Path("mist-ti624ev1").resolve()
 
 
 @pytest.fixture()
 def finetuned_model():
-    return MISTFinetuned.from_pretrained(str(FINETUNED_CKPT)).eval()
+    return MISTFinetuned.from_pretrained(
+        str(FINETUNED_CKPT), trust_remote_code=True
+    ).eval()
 
 
 @pytest.fixture()
 def multitask_model():
-    return MISTMultiTask.from_pretrained(str(MULTITASK_CKPT)).eval()
+    return MISTMultiTask.from_pretrained(
+        str(MULTITASK_CKPT), trust_remote_code=True
+    ).eval()
 
 
 @pytest.fixture()
@@ -152,3 +157,11 @@ def test_weights_loaded(model, pkgdir, request):
             )
 
     assert matches
+
+
+@pytest.mark.parametrize("model", ["finetuned_model", "multitask_model"])
+def test_encoder_config(model, request):
+    model = request.getfixturevalue(model)
+    config = model.encoder.config
+    if hasattr(config, "add_pooling_layer"):
+        assert config.add_pooling_layer is False

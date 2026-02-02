@@ -153,10 +153,25 @@ class Standardize(AbstractNormalizer):
         self.std = target.std(0).get_data().to(self.std) + self.eps
         return self.state_dict()
 
-    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-        if "transform.mean" in state_dict.keys():
-            state_dict["transform.mean"] = state_dict["transform.mean"].view(1)
-            state_dict["transform.std"] = state_dict["transform.std"].view(1)
+    def load_state_dict(
+        self, state_dict: dict[str, Any], strict: bool = True, assign: bool = False
+    ):
+        # Handle legacy case where keys have "transform." prefix
+        if "transform.mean" in state_dict:
+            state_dict = state_dict.copy()
+            state_dict["mean"] = state_dict.pop("transform.mean")
+            state_dict["std"] = state_dict.pop("transform.std")
+
+        if assign:
+            # Manually assign buffers when assign=True
+            for key, value in state_dict.items():
+                if key in ["mean", "std"]:
+                    self.register_buffer(key, value)
+            result = None
+        else:
+            result = super().load_state_dict(state_dict, strict=strict, assign=False)
+
+        return result
 
 
 class LogTransform(Standardize):

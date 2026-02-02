@@ -1,0 +1,29 @@
+{# Auto-generated remote code for MIST models #}
+{{ imports_src }}
+
+MODEL_TYPE_ALIASES = {{ model_type_aliases|tojson }}
+
+IGNORE_INDEX = -100
+
+AutoTokenizer.register("SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast)
+
+
+def build_encoder(enc_dict: Dict[str, Any]):
+    mtype = enc_dict.get("model_type")
+    if mtype:
+        base = MODEL_TYPE_ALIASES.get(mtype, mtype)
+        cfg_cls = AutoConfig.for_model(base)
+        enc_cfg = cfg_cls.from_dict(enc_dict)
+    elif enc_dict.get("_name_or_path"):
+        enc_cfg = AutoConfig.from_pretrained(enc_dict["_name_or_path"])
+    else:
+        raise KeyError("encoder config missing 'model_type' or '_name_or_path'")
+    if hasattr(enc_cfg, "add_pooling_layer"):
+        enc_cfg.add_pooling_layer = False
+    return AutoModel.from_config(enc_cfg)
+
+{{ deps_src }}
+
+{{ config_src }}
+
+{{ model_src }}
