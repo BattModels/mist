@@ -158,7 +158,7 @@ class Standardize(AbstractNormalizer):
     ):
         # Handle legacy case where keys have "transform." prefix
         if "transform.mean" in state_dict:
-            state_dict = state_dict.copy()  # Don't modify original
+            state_dict = state_dict.copy()
             state_dict["mean"] = state_dict.pop("transform.mean")
             state_dict["std"] = state_dict.pop("transform.std")
 
@@ -166,13 +166,10 @@ class Standardize(AbstractNormalizer):
             # Manually assign buffers when assign=True
             for key, value in state_dict.items():
                 if key in ["mean", "std"]:
-                    # Use register_buffer to properly replace the buffer
                     self.register_buffer(key, value)
-            result = None  # No incompatible keys when we do it manually
+            result = None
         else:
             result = super().load_state_dict(state_dict, strict=strict, assign=False)
-
-        logging.debug(f"  After loading: mean={self.mean}, std={self.std}")
         return result
 
 

@@ -158,16 +158,12 @@ class MISTIonicConductivity(PreTrainedModel):
         batch: List[Dict[str, any]],
         return_dict: bool = True,
     ):
-        """
-        Predict ionic conductivity for a batch of samples.
-        """
         tokenizer = resolve_tokenizer(self)
         collate = DataCollatorWithPadding(tokenizer)
 
-        # Prepare batch tensors
-        all_input_ids = [[] for _ in range(5)]
-        all_attention_masks = [[] for _ in range(5)]
-        all_compositions = [[] for _ in range(5)]
+        all_input_ids = [[] for _ in range(self.n_components)]
+        all_attention_masks = [[] for _ in range(self.n_components)]
+        all_compositions = [[] for _ in range(self.n_components)]
         all_temperatures = []
 
         for sample in batch:
@@ -204,14 +200,13 @@ class MISTIonicConductivity(PreTrainedModel):
 
             all_temperatures.append(temperature)
 
-        # Collate and create output dict
         output = {
             "temperature": torch.tensor(
                 all_temperatures, dtype=torch.float32, device=self.device
             )
         }
 
-        for i in range(5):
+        for i in range(self.n_components):
             batched = collate(
                 [
                     {"input_ids": ids, "attention_mask": mask}
@@ -315,7 +310,6 @@ class MISTExcessPhysics(PreTrainedModel):
             n_env=n_env,
         )
 
-        # Component properties network
         self.component_properties = nn.Sequential(
             nn.Linear(
                 self.encoder.config.hidden_size + n_env, self.encoder.config.hidden_size
@@ -328,13 +322,11 @@ class MISTExcessPhysics(PreTrainedModel):
             ),
         )
 
-        # Excess polynomial
         self.excess_polynomial = LagrangePolynomial(
             polynomial_order=config.num_control + 2,
             zero_endpoints=True,
         )
 
-        # Transforms
         self.transform = Standardize(num_outputs=config.num_targets)
         self.excess_transform = Standardize(num_outputs=config.num_targets)
 
@@ -426,16 +418,11 @@ class MISTExcessPhysics(PreTrainedModel):
         x_i = x_i.clamp(min=0, max=1)
         x_i = x_i.view(B * I_, 1)
 
-        # Apply temperature dependence to coefficients
         pw_coeffs = self.temperature_dependence(pw_coeffs, t_ij.view(B * I_, 1, 1))
 
-        # Evaluate interaction polynomials at compositions
         pw = x_t.view(B * I_, 1) * self.excess_polynomial(pw_coeffs, x_i)
-
-        # Sum over interactions to get excess properties
         y_excess = pw.reshape(B, I_, -1).sum(dim=1)
 
-        # Predict Pure Property (B, C, E) -> (B, C, T)
         if self.config.temperature_dependence in ["concat", "locally-linear"]:
             t_e = temperature.view(B, 1, 1).expand(-1, C, -1)
             y_target = self.component_properties(torch.cat([embs, t_e], dim=-1))
@@ -450,7 +437,6 @@ class MISTExcessPhysics(PreTrainedModel):
         if self.config.relative_excess:
             y_excess *= y_linear
 
-        # Transform to real-units
         y_linear = self.transform.forward(y_linear)
         y_excess = self.excess_transform.forward(y_excess)
         y = y_linear + y_excess
@@ -563,7 +549,6 @@ class MISTMixtures(PreTrainedModel):
         super().__init__(config)
         self.config = config
         self.encoder = build_encoder_from_dict(config.encoder)
-
         self.task_network = PredictionTaskHead(
             embed_dim=config.task_network.get(
                 "embed_dim", self.encoder.config.hidden_size
@@ -652,17 +637,7 @@ class MISTMixtures(PreTrainedModel):
     def forward(
         self, batch: Dict[str, torch.Tensor], transform: bool = True
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward pass for mixture property prediction.
-
-        Args:
-            batch: Dictionary containing input_ids, attention_mask, composition
-                   for each component, and optionally temperature
-            transform: If True, apply normalization transform to predictions
-
-        Returns:
-            Tuple of (predictions, mixture_embeddings)
-        """
+       
         mix_embedding = []
         for i in range(self.n_components):
             embedding = self.encoder(
@@ -692,38 +667,14 @@ class MISTMixtures(PreTrainedModel):
 
         return pred_unscaled, mix_embedding
 
-    def predict(
+    def forward(
         self,
         mixture: Dict[str, float] | List[Dict[str, float]],
         temperature: Optional[float | List[float]] = None,
         return_dict: bool = False,
     ) -> torch.Tensor | Dict[str, Any]:
-        """
-        Predict mixture properties.
-
-        Args:
-            mixture: Dictionary mapping SMILES to composition (e.g., {"CCOC(=O)OC": 0.5, "C1COC(=O)O1": 0.5})
-                    or list of such dictionaries for batch prediction
-            temperature: Temperature in Kelvin (optional, required if using temperature conditioning)
-                        Can be a single float or list of floats for batch prediction
-            return_dict: If True, return dictionary with detailed predictions
-
-        Returns:
-            Predictions tensor or dict depending on return_dict
-
-        Examples:
-            >>> # Single mixture prediction
-            >>> mixture = {"CCOC(=O)OC": 0.5, "C1COC(=O)O1": 0.5}
-            >>> pred = model.predict(mixture, temperature=298.15)
-
-            >>> # Batch prediction
-            >>> mixtures = [
-            ...     {"CCOC(=O)OC": 0.5, "C1COC(=O)O1": 0.5},
-            ...     {"CCOC(=O)OC": 0.3, "C1COC(=O)O1": 0.7}
-            ... ]
-            >>> preds = model.predict(mixtures, temperature=[298.15, 313.15])
-        """
-        # Convert single mixture to list for uniform processing
+        
+      
         if isinstance(mixture, dict):
             mixtures = [mixture]
             single_prediction = True
@@ -745,7 +696,6 @@ class MISTMixtures(PreTrainedModel):
 
         batch_size = len(mixtures)
 
-        # Convert mixture dicts to smiles_list and compositions
         smiles_list = []
         compositions = []
         for mix in mixtures:
@@ -762,8 +712,6 @@ class MISTMixtures(PreTrainedModel):
             compositions.append(comps)
 
         batch = {}
-
-        # Add temperature if needed
         if self.temperature_condition != TemperatureCondition.NONE:
             if temperatures is None:
                 raise ValueError("Temperature required for this model")
@@ -772,7 +720,6 @@ class MISTMixtures(PreTrainedModel):
                 temperatures, dtype=torch.float32, device=self.device
             )
 
-        # Tokenize and prepare batch for each component
         for i in range(self.n_components):
             input_ids_list = []
             attention_mask_list = []
@@ -791,7 +738,6 @@ class MISTMixtures(PreTrainedModel):
                 attention_mask_list.append(tok_output["attention_mask"])
                 comp_list.append(comp)
 
-            # Collate with padding
             batched = collator(
                 [
                     {"input_ids": ids, "attention_mask": mask}
@@ -808,7 +754,6 @@ class MISTMixtures(PreTrainedModel):
         with torch.inference_mode():
             pred, embeddings = self(batch, transform=True)
 
-        # If single prediction, squeeze the batch dimension
         if single_prediction:
             pred = pred.squeeze(0)
             embeddings = embeddings.squeeze(0)
@@ -818,9 +763,7 @@ class MISTMixtures(PreTrainedModel):
         if not return_dict:
             return pred_cpu
 
-        # If channels are defined, use annotate_prediction
         if self.channels is not None:
-            # Add batch dimension back if single prediction for annotation
             if single_prediction:
                 pred_for_annotation = pred_cpu.unsqueeze(0)
             else:
@@ -830,14 +773,12 @@ class MISTMixtures(PreTrainedModel):
                 pred_for_annotation, list(maybe_get_annotated_channels(self.channels))
             )
 
-            # For single prediction, unwrap the batch dimension from values
             if single_prediction:
                 for key in annotated:
                     annotated[key]["value"] = annotated[key]["value"].squeeze(0)
 
             return annotated
 
-        # Default dict output without channels
         result = {
             "predictions": pred_cpu,
             "embeddings": embeddings.cpu(),

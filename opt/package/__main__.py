@@ -228,6 +228,14 @@ def export_conductivity(ckpt: Path) -> MISTIonicConductivity:
     )
     return model, best_ckpt
 
+    patch_auto_map(
+        save_dir,
+        module_basename="modeling_mist_finetuned",
+        model_type="mist_finetuned",
+        architecture_name="MISTFinetuned",
+        config_class_name="MISTFinetunedConfig",
+        model_class_name="MISTFinetuned",
+    )
 
 @cli.command()
 def conductivity(ckpt: Path, name: Optional[str] = None, safe: bool = True):
