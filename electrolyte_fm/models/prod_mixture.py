@@ -589,19 +589,6 @@ class MISTMixtures(PreTrainedModel):
         output_size: int = 2,
         channels: Optional[List[Dict[str, Any]]] = None,
     ) -> "MISTMixtures":
-        """
-        Create MISTMixtures from individual components.
-
-        Args:
-            encoder: Pretrained encoder model
-            task_network: Task-specific prediction head
-            transform: Normalization transform
-            tokenizer: Tokenizer for encoding SMILES
-            n_components: Maximum number of mixture components
-            temperature_condition: Temperature conditioning strategy
-            output_size: Number of output targets
-            channels: List of channel metadata dictionaries
-        """
         cfg = MISTMixturesConfig(
             encoder=encoder.config.to_dict(),
             task_network={
@@ -635,46 +622,11 @@ class MISTMixtures(PreTrainedModel):
         return model
 
     def forward(
-        self, batch: Dict[str, torch.Tensor], transform: bool = True
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-       
-        mix_embedding = []
-        for i in range(self.n_components):
-            embedding = self.encoder(
-                batch[f"input_ids_{i}"],
-                attention_mask=batch[f"attention_mask_{i}"],
-                return_dict=True,
-                output_hidden_states=True,
-            ).last_hidden_state.mean(axis=1)
-
-            composition = batch[f"composition_{i}"].view(-1, 1)
-            embedding_scaled = embedding * composition
-            mix_embedding.append(embedding_scaled)
-
-        # Sum weighted embeddings
-        mix_embedding = torch.stack(mix_embedding, dim=1).sum(axis=1)
-
-        if self.temperature_condition == TemperatureCondition.CONCAT:
-            temperature_normalized = batch["temperature"].view(-1, 1) / 400.0
-            mix_embedding = torch.hstack((temperature_normalized, mix_embedding))
-
-        # Get predictions from task network
-        pred_unscaled = self.task_network(mix_embedding)
-
-        if transform:
-            pred_scaled = self.transform.forward(pred_unscaled)
-            return pred_scaled, mix_embedding
-
-        return pred_unscaled, mix_embedding
-
-    def forward(
         self,
         mixture: Dict[str, float] | List[Dict[str, float]],
         temperature: Optional[float | List[float]] = None,
         return_dict: bool = False,
     ) -> torch.Tensor | Dict[str, Any]:
-        
-      
         if isinstance(mixture, dict):
             mixtures = [mixture]
             single_prediction = True
@@ -682,7 +634,6 @@ class MISTMixtures(PreTrainedModel):
             mixtures = mixture
             single_prediction = False
 
-        # Convert temperature to list
         if temperature is not None:
             if isinstance(temperature, (int, float)):
                 temperatures = [float(temperature)] * len(mixtures)
