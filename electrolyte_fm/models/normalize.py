@@ -170,7 +170,6 @@ class Standardize(AbstractNormalizer):
             result = None
         else:
             result = super().load_state_dict(state_dict, strict=strict, assign=False)
-
         return result
 
 

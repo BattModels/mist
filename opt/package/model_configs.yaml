@@ -15,9 +15,9 @@ encoders:
     name: "MIST-1.8B"
     base_model: "mist-1.8B-dh61satt"
     num_layers: 24
-    hidden_size: 9216
+    hidden_size: 1536
     intermediate_size: 6144
-    num_attention_heads: 18
+    num_attention_heads: 24
     max_position_embeddings: 2048
     pretrain_gpus: 32
     pretrain_time: "~7 days"

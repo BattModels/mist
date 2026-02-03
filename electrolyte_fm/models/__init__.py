@@ -3,6 +3,7 @@ from .lm_finetuning import LMFinetuning
 from .roberta_base import RoBERTa
 from .roberta_prelayernorm import RoBERTaPreLayerNorm
 from .roformer_base import RoFormer
+from .mixture_model import MixtureModel
 from .prod_finetune import (
     MISTFinetunedConfig,
     MISTFinetuned,
@@ -14,4 +15,6 @@ from .prod_mixture import (
     MISTIonicConductivity,
     MISTExcessPhysicsConfig,
     MISTExcessPhysics,
+    MISTMixturesConfig,
+    MISTMixtures,
 )
