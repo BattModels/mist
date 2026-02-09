@@ -67,7 +67,10 @@ class OracleCritic(nn.Module):
             "AutoModel": AutoModel,
         }.get(model_cls)
         oracle = oracle_cls.from_pretrained(model_path)
-        channels = [chn["name"] for chn in oracle.channels]
+        if isinstance(oracle.channels[0], dict):
+            channels = [chn["name"] for chn in oracle.channels]
+        elif isinstance(oracle.channels[0], str):
+            channels = oracle.channels
         if limits is not None:
             critic = QuadrantCritic.from_limits(limits, channels)
         elif all_passing is not None:
@@ -209,7 +212,7 @@ def generate(fabric: Fabric, critics, mol_dataloader):
 
     # Setup Critics
     panel = CriticPanel(critics).to(fabric.device, dtype=torch.bfloat16).eval()
-    panel = torch.compile(panel, dynamic=True, fullgraph=True)
+    # panel = torch.compile(panel, dynamic=True, fullgraph=True)
 
     # Setup Timing
     batch_time = 0.0
