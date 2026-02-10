@@ -211,8 +211,7 @@ def generate(fabric: Fabric, critics, mol_dataloader):
     assert len(critics) > 0, "No critics provided"
 
     # Setup Critics
-    panel = CriticPanel(critics).to(fabric.device, dtype=torch.bfloat16).eval()
-    # panel = torch.compile(panel, dynamic=True, fullgraph=True)
+    panel = CriticPanel(critics).to(fabric.device).eval()
 
     # Setup Timing
     batch_time = 0.0
