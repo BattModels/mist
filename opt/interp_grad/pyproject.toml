@@ -1,0 +1,33 @@
+[project]
+name = "interp_grad"
+version = "0.1.0"
+readme = "README.md"
+requires-python = ">=3.10, <3.13"
+dependencies = [
+    "captum>=0.8.0",
+    "datasets>=4.4.2",
+    "kaleido>=1.2.0",
+    "matplotlib>=3.10.8",
+    "pillow>=12.1.0",
+    "plotly>=6.5.1",
+    "rdkit>=2025.9.3",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "smirk>=0.1.0",
+    "torch>=2.9.1",
+    "transformers>=4.44.2",
+    "electrolyte_fm"
+]
+
+[tool.uv.sources]
+electrolyte_fm = { path = "../../", editable = true }
+
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
