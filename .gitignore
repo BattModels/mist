@@ -5,6 +5,11 @@ wandb/
 electrolyte-fm/
 lightning_logs/
 .venv/
+data/
+
+# IDE settings
+.DS_Store
+*/.DS_Store/
 
 # Log files
 *.o*
