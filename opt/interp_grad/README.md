@@ -14,12 +14,8 @@ Red indicates negative attribution (decreases prediction), green indicates posit
 ## Installation
 
 ```bash
-pip install torch transformers captum rdkit plotly kaleido smirk
+uv sync
 ```
-
-Required custom packages:
-- `electrolyte_fm` (model package)
-- `smirk` (SMILES tokenizer)
 
 ## Usage
 
@@ -45,25 +41,11 @@ save_attribution_plot(
 - `channel_name`: Target property channel (e.g., "fruity", "floral")
 - `n_steps`: Integration steps (default: 150, higher = more accurate but slower)
 
-### Outputs
-
-For each run:
-- `{basename}.pdf` - Combined plot with all molecules
-- `{basename}-mol-{i}.pdf` - Individual molecule structure images
-- `{basename}-predictions.json` - Model predictions for each SMILES
-
-## Running from Command Line
-
-Edit the `__main__` section in [token_attribution.py](token_attribution.py) and run:
-
-```bash
-python token_attribution.py
-```
 
 ## How it Works
 
 1. Converts SMILES to Kekulé form
 2. Tokenizes using SMIRK tokenizer
-3. Computes attributions using Layer Integrated Gradients
+3. Computes attributions using [Layer Integrated Gradients](https://captum.ai/api/layer.html#layer-integrated-gradients) (using a `[PAD]` token as the baseline).
 4. Maps token attributions to molecular atoms/bonds
 5. Generates visualizations with RDKit and Plotly
