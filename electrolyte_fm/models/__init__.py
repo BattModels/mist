@@ -5,5 +5,17 @@ from .roberta_prelayernorm import RoBERTaPreLayerNorm
 from .roformer_base import RoFormer
 from .mixture_model import MixtureModel
 from .mixture_similarity import MixtureSimilarityModel
-from .prod_finetune import MISTFinetuned, MISTMultiTask
-from .prod_mixture import MISTIonicConductivity, MISTExcessPhysics
+from .prod_finetune import (
+    MISTFinetunedConfig,
+    MISTFinetuned,
+    MISTMultiTaskConfig,
+    MISTMultiTask,
+)
+from .prod_mixture import (
+    MISTIonicConductivityConfig,
+    MISTIonicConductivity,
+    MISTExcessPhysicsConfig,
+    MISTExcessPhysics,
+    MISTMixturesConfig,
+    MISTMixtures,
+)

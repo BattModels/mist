@@ -24,6 +24,7 @@ def load_encoder(
     encoder: str | Path | torch.nn.Module,
     load_weights: bool = True,
     max_position_embeddings: Optional[int] = None,
+    strict: bool = False,
 ) -> torch.nn.Module:
     if isinstance(encoder, torch.nn.Module):
         return encoder
@@ -37,7 +38,7 @@ def load_encoder(
             ).get_encoder()
         else:
             return DeepSpeedMixin.load(
-                encoder, max_position_embeddings=max_position_embeddings
+                encoder, max_position_embeddings=max_position_embeddings, strict=strict
             ).get_encoder()
     else:
         from transformers import AutoModel

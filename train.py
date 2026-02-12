@@ -97,7 +97,7 @@ def cli_main(args=None):
     step_ckpt.CHECKPOINT_NAME_LAST = "last"
     callbacks = [
         ThroughputMonitor(),
-        SpikeDetection(atol=0.3, warmup=800, finite_only=False),
+        # SpikeDetection(atol=0.3, warmup=800, finite_only=False),
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,

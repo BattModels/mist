@@ -1,7 +1,7 @@
 function figure_jaccard(stats_dir)
     # Compare the vocabularies of different tokenizers
     tokenizers = tokenizers_info(stats_dir)
-    J, names = tokenizer_jaccard(collect(keys(tokenizers)))
+    J, names = tokenizer_jaccard(stats_dir, collect(keys(tokenizers)))
     names = [tokenizers[name_or_path]["name"] for name_or_path in names]
     figure_jaccard(J, names)
 end
@@ -40,9 +40,9 @@ function figure_jaccard(J::Matrix, names::Vector{String})
     return f
 end
 
-function tokenizer_jaccard(tokenizers::Vector{String})
+function tokenizer_jaccard(stats_dir::String, tokenizers::Vector{String})
     tok_tokens = map(tokenizers) do tokenizer
-        name_or_path = startswith(tokenizer, "smirk-gpe") ? "./" * tokenizer : tokenizer
+        name_or_path = TokenizerStats.resolve_tok_path(stats_dir, tokenizer)
         tok = TokenizerStats.load_tokenizer(name_or_path)
         vocab_size = pyconvert(Int, length(tok))
         pytokens = tok.convert_ids_to_tokens(collect(range(0; length=vocab_size)))

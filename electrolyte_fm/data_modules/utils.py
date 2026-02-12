@@ -106,7 +106,6 @@ def encode_molecules(
     output_column: str | None = None,
     encoding: MolEncoding = MolEncoding.SMILES,
     random: bool = False,
-    max_workers: int = 8,
     **kwargs,
 ) -> AbstractDataset:
     """Convert SMILES encoding in `input_column` to desired `encoding` and save to `output_column`.
@@ -117,23 +116,15 @@ def encode_molecules(
     output_column = output_column or input_column
     encode = encoding if not random else encoding.random
 
-    tasks = Semaphore(max_workers)
-
-    async def async_encode(batch: list[str]) -> dict:
-        async with tasks:
-            return {output_column: [encode(smi) for smi in batch]}
-
-    async def async_filter(batch: list[str | None]) -> list[bool]:
-        async with tasks:
-            return [x is not None for x in batch]
+    def filter(batch: list[str | None]) -> list[bool]:
+        return [x is not None for x in batch]
 
     ds = ds.map(
-        async_encode,
+        lambda x: {output_column: encode(x)},
         input_columns=input_column,
-        batched=True,
         **kwargs,
     )
-    return ds.filter(async_filter, batched=True, input_columns=output_column, **kwargs)
+    return ds.filter(filter, batched=True, input_columns=output_column, **kwargs)
 
 
 def train_val_test_split(ds, **kwargs):

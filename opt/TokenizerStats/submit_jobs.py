@@ -1,4 +1,5 @@
 #!/usr/bin/env -S uv run python
+import re
 import argparse
 import json
 import logging
@@ -287,6 +288,15 @@ def large_mem(tokenizer: str, slurm: dict) -> dict:
     return slurm
 
 
+def find_incomplete_ranks(outputs: list[Path], n_jobs: int) -> set[int]:
+    re_complete = re.compile(r"rank_(\d+)\.jld2$")
+    complete = set()
+    for output in outputs:
+        if m := re_complete.search(output.name):
+            complete.add(int(m.group(1)))
+    return set(range(n_jobs)) - complete
+
+
 def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles", mode="mpi"):
     ds_name = ds_name or str(dataset)
     output = STATS_DIR.joinpath(tokenizer, ds_name, f"usage_{encoding}.jld2")
@@ -299,6 +309,7 @@ def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles", mode=
     slurm.setdefault("mem-per-cpu", "1800M")
     slurm.setdefault("partition", "venkvis-cpu,venkvis-largemem")
 
+    world_size = int(slurm["ntasks"])
     if mode == "batch":
         output = Path(output.parent, ".unmerged", f"usage_{encoding}", output.name)
         slurm["array"] = f"0-{slurm['ntasks'] - 1}"
@@ -311,6 +322,11 @@ def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles", mode=
             witness.touch()
         else:
             witness.unlink(missing_ok=True)
+            incomplete_ranks = find_incomplete_ranks(
+                list(output.parent.glob("*.jld2")), slurm["ntasks"]
+            )
+            if len(incomplete_ranks) < slurm["ntasks"]:
+                slurm["array"] = ",".join(str(x) for x in incomplete_ranks)
 
         slurm["ntasks"] = 1
 
@@ -319,6 +335,7 @@ def usage(dataset, tokenizer, ds_name=None, slurm=None, encoding="smiles", mode=
             "submit_tok_stats.sh",
             "usage",
             f"--mode={mode}",
+            f"--size={world_size}",
             "--splits=all",
             "--encoding",
             encoding,

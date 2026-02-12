@@ -44,14 +44,13 @@ def tokenizer_dataset(
     world_size: int = 1,
     global_rank: int = 0,
     limit: int | None = None,
-    max_workers: int = 8,
 ) -> AbstractDataset:
     tokenizer = load_tokenizer(tokenizer)
     encoding = MolEncoding(encoding)
     ds = get_dataset(name_or_path)
     ds = maybe_shard_dataset(GlobalComm(global_rank, world_size), ds)
 
-    ds = encode_molecules(ds, "smi", encoding=encoding, max_workers=max_workers)
+    ds = encode_molecules(ds, "smi", encoding=encoding)
     ds = ds.map(
         tokenizer,
         batched=is_fast(tokenizer),

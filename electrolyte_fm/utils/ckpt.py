@@ -114,7 +114,7 @@ class SaveConfigWithCkpts(Callback):
                     config["lightning_module"],
                     class_path=config.get("class_path", None),
                 )
-                model_config["vocab_size"] = config["datamodule"]["vocab_size"]
+                model_config["vocab_size"] = 165  # config["datamodule"]["vocab_size"]
 
             else:
                 cls_name, model_config = norm_class_config(config)
@@ -143,6 +143,7 @@ class SaveConfigWithCkpts(Callback):
         checkpoint_dir: str | Path,
         config_path=None,
         map_location=None,
+        strict=True,
         max_position_embeddings: Optional[int] = None,
     ) -> LightningModule:
         """Restore from a deepspeed checkpoint, mainly used for downstream tasks"""
@@ -168,12 +169,12 @@ class SaveConfigWithCkpts(Callback):
             if max_position_embeddings is not None:
                 state = adjust_state_position_embeddings(state, max_position_embeddings)
 
-            model.load_state_dict(state["state_dict"], strict=True, assign=True)
+            model.load_state_dict(state["state_dict"], strict=strict, assign=True)
             return model
 
         if checkpoint_dir.is_file():
             state = torch.load(checkpoint_dir)
-            model.load_state_dict(state["state_dict"], strict=True, assign=True)
+            model.load_state_dict(state["state_dict"], strict=strict, assign=True)
             return model
 
         # Load model weights from the checkpoint
@@ -183,7 +184,7 @@ class SaveConfigWithCkpts(Callback):
             )
 
             state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)
-            model.load_state_dict(state, strict=False, assign=True)
+            model.load_state_dict(state, strict=strict, assign=True)
         except FileNotFoundError:
             logging.error(
                 "failed to load checkpoint %s, trying to load rank 0 model states",
@@ -192,7 +193,7 @@ class SaveConfigWithCkpts(Callback):
             file = Path(checkpoint_dir, "checkpoint", "mp_rank_00_model_states.pt")
             state = torch.load(file)
             logging.info("loaded %s", file)
-            model.load_state_dict(state["module"], strict=True, assign=True)
+            model.load_state_dict(state["module"], strict=strict, assign=True)
 
         return model
 
@@ -227,8 +228,7 @@ def adjust_state_position_embeddings(state, max_position_embeddings):
 
 
 def get_ckpt_tokenizer(path: str | Path) -> str:
-    path = Path(path)
-    config_path = path.parent.parent.joinpath("config.json")
+    config_path = Path(path).parent.parent.joinpath("config.json")
     if not config_path.is_file():
         return str(path)
     with open(config_path, "r") as fid:
