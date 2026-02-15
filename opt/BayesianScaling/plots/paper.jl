@@ -106,7 +106,7 @@ function plot_scaling_params!(f, chains; legend_pos=:top)
         "Hoffmann et al. (Appr. 1)" => (; a = 0.50, b = 0.50),
         "Hoffmann et al. (Appr. 3)" => (; α=0.34, β=0.28, a = 0.46, b = 0.54),
         "Bi et al. (Early)" => (; a = 0.450, b = 0.550),
-        "Bi at al. (Current)" => (; a = 0.524, b = 0.478),
+        "Bi et al. (Current)" => (; a = 0.524, b = 0.478),
     ]
 
     gl = GridLayout(f[1, 1])
