@@ -115,7 +115,7 @@ function plot_scaling_params!(f, chains; legend_pos=:top)
 
    ax_a = Axis(gl[1, 1];
         limits=(nothing, (0, nothing)),
-        xlabel=L"Convergance Rate: $\frac{\alpha \beta}{\alpha + \beta}$",
+        xlabel=L"Convergence Rate: $\frac{\alpha \beta}{\alpha + \beta}$",
         ax_args...
     )
     hist!(ax_a, vec(ζ); hargs...)
