@@ -1,8 +1,8 @@
+import logging
 import re
 import shutil
 import subprocess
 import sys
-import logging
 from importlib.metadata import version
 from pathlib import Path
 from typing import Optional
@@ -13,6 +13,7 @@ from smirk import SmirkTokenizerFast
 import electrolyte_fm
 from electrolyte_fm.utils.ckpt import get_ckpt_tokenizer
 from electrolyte_fm.utils.tokenizer import load_tokenizer
+
 from .generate_model_card import generate_model_card_for_directory
 
 
@@ -87,9 +88,9 @@ def write_requirements(save_directory: Path, extra_deps: list[str] = []):
     deps = ["transformers", "torch", "scikit-learn", "datasets", *extra_deps]
     with open(save_directory.joinpath("requirements.txt"), "w") as fid:
         for dep in deps:
-            # Pin smirk to 0.1.0
+            # Pin smirk to 0.2.0
             if dep == "smirk":
-                fid.write("smirk==0.1.0\n")
+                fid.write("smirk==0.2.0\n")
             else:
                 fid.write(f"{dep}=={version(dep)}\n")
 
