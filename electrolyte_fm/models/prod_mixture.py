@@ -192,7 +192,7 @@ class MISTIonicConductivity(PreTrainedModel):
             for i, component in enumerate(components):
                 smiles = list(component.keys())[0]
                 composition = list(component.values())[0]
-                tok_output = tokenizer(smiles)
+                tok_output = self.tokenizer(smiles)
                 all_input_ids[i].append(tok_output["input_ids"])
                 all_attention_masks[i].append(tok_output["attention_mask"])
                 all_compositions[i].append(composition)
@@ -680,7 +680,7 @@ class MISTMixtures(PreTrainedModel):
                     smi = "[H]"  # Dummy molecule for padding
                     comp = 0.0
 
-                tok_output = tokenizer(smi)
+                tok_output = self.tokenizer(smi)
                 input_ids_list.append(tok_output["input_ids"])
                 attention_mask_list.append(tok_output["attention_mask"])
                 comp_list.append(comp)
