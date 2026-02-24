@@ -136,7 +136,7 @@ class MISTFinetuned(PreTrainedModel):
         y = self.task_network(hs)
         return self.transform.forward(y)
 
-    def _resolve_tokenizer(self, tokenizer = None):
+    def _resolve_tokenizer(self, tokenizer=None):
         if tokenizer is not None:
             return tokenizer
         if getattr(self, "tokenizer", None) is not None:
