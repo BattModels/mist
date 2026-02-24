@@ -189,7 +189,10 @@ class CriticPanel(nn.Module):
         self.critics = nn.ModuleList(critics)
         channels = []
         for critic in critics:
-            channels.extend([chn["name"] for chn in critic.oracle.channels])
+            if isinstance(critic.oracle.channels[0], dict):
+                channels.extend([chn["name"] for chn in critic.oracle.channels])
+            elif isinstance(critic.oracle.channels[0], str):
+                channels.extend(critic.oracle.channels)
         self.channels: list[str] = channels
 
     def forward(
