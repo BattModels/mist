@@ -4,7 +4,7 @@ using Makie
 using LinearAlgebra: tril!
 using MISTStyle: MISTStyle, pt
 using DataFrames
-using PythonCall: PythonCall, Py, pyconvert, pyimport
+using PythonCall: PythonCall, Py, pyconvert, pyimport, @pyconst
 using DelaunayTriangulation
 using Statistics: mean
 

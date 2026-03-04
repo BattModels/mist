@@ -3,6 +3,12 @@ clean_target_name(x::String) = replace((strip∘first∘split)(x, "["), " " => "
 load_excess_model(ckpt) = pyexcess[].load_excess_model(ckpt)
 load_conductivity_model(ckpt) = pyionic[].load_conductivity_model(ckpt)
 
+function load_huggingface_model(name::String)
+    AutoModel = @pyconst(pyimport("transformers").AutoModel)
+    model = AutoModel.from_pretrained(name, trust_remote_code=true)
+    return model
+end
+
 function evaluate_mixtures(model::Py, mixtures::Vector{<:Dict}; kwargs...)
     pymixtures = map(mixtures) do mixture
         PythonCall.pydict(;
@@ -16,6 +22,7 @@ end
 function evaluate_mixture(model::Py, compounds::String...; temperature::Real=298.15, kwargs...)
     evaluate_mixtures(model, [Dict("compounds" => compounds, "temperature" => temperature)]; kwargs...)
 end
+
 
 function evaluate_mixtures(model::Py, mixtures::Union{Py, Vector{Py}}; n = 20, gradients=true)
     targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
@@ -43,6 +50,64 @@ function evaluate_mixtures(model::Py, mixtures::Union{Py, Vector{Py}}; n = 20, g
     end
     return DataFrame(rows)
 end
+
+
+function evaluate_mixtures_hf_ckpt(model_name::String, mixtures::Vector{<:Dict}; n=20, batch_size=16)
+    AutoModel = @pyconst(pyimport("transformers").AutoModel)
+    model = AutoModel.from_pretrained(model_name, trust_remote_code=true)
+
+    targets = clean_target_name.([
+        "density [gram / centimeter ** 3]",
+        "molar volume [centimeter ** 3 / mole]",
+        "molar enthalpy [joule / mole]",
+    ])
+
+    dfs = DataFrame[]
+    for batch_start in 1:batch_size:length(mixtures)
+        batch_end = min(batch_start + batch_size - 1, length(mixtures))
+        batch_mixtures = mixtures[batch_start:batch_end]
+
+        rows = Dict{String, Any}[]
+        for mixture in batch_mixtures
+            compounds = mixture["compounds"]
+            temperature = get(mixture, "temperature", 298.15)
+            n_compounds = length(compounds)
+
+            compositions = pyconvert(Vector{Vector{Float64}},
+                PythonCall.pylist(pyexcess[].generate_simplex_grid(n_compounds, n)))
+
+            smiles_list = [compounds for _ in 1:length(compositions)]
+            temperatures = fill(Float64(temperature), length(compositions))
+
+            result = model.predict(
+                PythonCall.pylist([PythonCall.pylist(s) for s in smiles_list]),
+                PythonCall.pylist([PythonCall.pylist(c) for c in compositions]),
+                PythonCall.pylist(temperatures)
+            )
+
+            y = pyconvert(Matrix{Float32}, result["value"])
+            y_linear = pyconvert(Matrix{Float32}, result["linear"])
+            y_excess = pyconvert(Matrix{Float32}, result["excess"])
+
+            for (idx, comp) in enumerate(compositions)
+                out = Dict{String, Any}(
+                    "compounds" => compounds,
+                    "composition" => comp,
+                    "temperature" => temperature,
+                )
+                for (tdx, target) in enumerate(targets)
+                    out[target] = y[idx, tdx]
+                    out["$(target)_excess"] = y_excess[idx, tdx]
+                    out["$(target)_linear"] = y_linear[idx, tdx]
+                end
+                push!(rows, out)
+            end
+        end
+        push!(dfs, DataFrame(rows))
+    end
+    return reduce(vcat, dfs)
+end
+
 
 function process_prediction_with_ref(iter::Py, targets::Vector{String}, gradients::Bool)
     return map(iter) do row
