@@ -295,6 +295,12 @@ wheels = [
 ]
 
 [[package]]
+name = "cirpy"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/bc/3d7cb58ba6ffcde0d18d3f0e72a22caffe7741485bd1d286fd10d6a9a397/CIRpy-1.0.2.tar.gz", hash = "sha256:b08c1483779e1c8fa6a5da7e383138a33e8396b31f56d827a3bca7c83e689c16", size = 20341 }
+
+[[package]]
 name = "click"
 version = "8.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -668,6 +674,8 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "huggingface-hub", specifier = ">=0.35.3" },
+    { name = "isort", specifier = ">=7.0.0" },
     { name = "pre-commit", specifier = ">=3.7" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.5.4" },
@@ -1417,6 +1425,7 @@ source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "botorch" },
+    { name = "cirpy" },
     { name = "dataset" },
     { name = "difftopk" },
     { name = "dscribe" },
@@ -1433,6 +1442,7 @@ dependencies = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.8.1" },
     { name = "botorch", specifier = ">=0.15.1" },
+    { name = "cirpy", specifier = ">=1.0.2" },
     { name = "dataset", specifier = ">=1.6.2" },
     { name = "difftopk", specifier = ">=0.2.0" },
     { name = "dscribe", specifier = ">=2.1.2" },
