@@ -59,16 +59,13 @@ function plot_scent_by_type(df::DataFrame)
     types = sort(unique(df.type))
     scent_cols = get_scent_cols(df)
     colors = MISTStyle.CAT_COLORS
-    linestyles = [
-        :solid, (:dash, :dense), (:dot, :dense),
-        :dashdot, :dashdotdot, (:dot, :loose), (:dash, :loose)
-    ]
+    markers = [:circle, :rect, :diamond, :utriangle, :dtriangle, :pentagon, :cross, :xcross]
 
     scent_colors = Dict(s => colors[mod1(i, length(colors))] for (i, s) in enumerate(scent_cols))
-    scent_linestyles = Dict(s => linestyles[mod1(i, length(linestyles))] for (i, s) in enumerate(scent_cols))
+    scent_markers = Dict(s => markers[mod1(i, length(markers))] for (i, s) in enumerate(scent_cols))
 
-    fig = Figure(size=(250mm, 120mm), figure_padding=(3, 3, 3, 3))
-    n_cols = ceil(Int, length(types) / 2)
+    fig = Figure(size=(175mm, 170mm), figure_padding=(3, 3, 3, 3))
+    n_cols = ceil(Int, length(types) / 4)
 
     for (i, type) in enumerate(types)
         df_type = filter(row -> row.type == type, df)
@@ -99,17 +96,18 @@ function plot_scent_by_type(df::DataFrame)
                     sigmoid.(y_mean .+ y_std),
                     color=(scent_colors[scent], 0.2)
                 )
-                lines!(
+                scatterlines!(
                     ax, df_type.n_carbon, y_prob,
                     color=scent_colors[scent],
-                    linestyle=scent_linestyles[scent]
+                    marker=scent_markers[scent],
+                    markersize=5
                 )
 
                 push!(
                     plotted_elements,
-                    LineElement(
+                    MarkerElement(
                         color=scent_colors[scent],
-                        linestyle=scent_linestyles[scent]
+                        marker=scent_markers[scent],
                     )
                 )
                 push!(plotted_labels, scent)
@@ -139,16 +137,18 @@ function plot_branched_scent_comparison(df::DataFrame)
     max_variants = maximum(nrow(filter(row -> row.type == type, df)) for type in types)
     scent_colors = [colors[mod1(i, length(colors))] for i in eachindex(scents_to_plot)]
 
-    fig = Figure(size=(175mm, 140mm), figure_padding=(5, 5, 5, 5))
+    fig = Figure(size=(175mm, 120mm), figure_padding=(5, 5, 5, 5))
+    gl = GridLayout(fig[1, 1])
 
     for (i, type) in enumerate(types)
         df_type = filter(row -> row.type == type, df)
         row_pos, col_pos = grid_position(i, 2)
 
         ax = Axis(
-            fig[row_pos, col_pos],
+            gl[row_pos, col_pos],
             ylabel="Probability",
             title=type,
+            titlesize=6,
             xticklabelrotation=π/3,
             xticklabelalign=(:right, :center),
             limits=(0.5, max_variants + 0.5, 0, 1.3),
@@ -180,8 +180,14 @@ function plot_branched_scent_comparison(df::DataFrame)
         end
     end
 
+    sublabels = ["a", "b", "c", "d", "e", "f"]
+    for (i, label) in enumerate(sublabels[1:length(types)])
+        row_pos, col_pos = grid_position(i, 2)
+        sublabel!(gl[row_pos, col_pos, TopLeft()], label; left=15pt)
+    end
+
     Legend(
-        fig[3, :],
+        fig[2, 1],
         [PolyElement(color=c) for c in scent_colors],
         scents_to_plot,
         orientation=:horizontal,
