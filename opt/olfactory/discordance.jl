@@ -185,15 +185,13 @@ function plot_metric_panel!(ax, metric_data, metric)
 
     if !isempty(struct_data)
         violin!(ax, fill(0.0, length(struct_data)), struct_data;
-                color=MISTStyle.UM_COLORS.maize,
-                alpha = 0.8,
+                color=(MISTStyle.UM_COLORS.maize, 0.5),
                 width=0.8,
                 datalimits=extrema)
     end
     if !isempty(label_data)
         violin!(ax, fill(1.0, length(label_data)), label_data;
-                color=MISTStyle.UM_COLORS.blue,
-                alpha = 0.8,
+                color=(MISTStyle.UM_COLORS.blue, 0.5),
                 width=0.8,
                 datalimits=extrema)
     end
