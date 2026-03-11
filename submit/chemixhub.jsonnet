@@ -1,20 +1,23 @@
+local tasks = import 'chemixhub_tasks.libsonnet';
 local pretrain = import 'pretrain.jsonnet';
 
-local tasks = import 'chemixhub_tasks.libsonnet';
-
-function(dataset='il_thermo_viscosity') {
+function(dataset='olfactory_similarity') {
   walltime: '2:0:0',
   nodes: 1,  // Multi-node is not currently supported. Config is only on leader node
   env: {
     TOKENIZERS_PARALLELISM: true,
   },
   train: {
-    tags: ['chemixub', dataset],
+    tags: ['chemixhub', dataset],
     data: {
-      class_path: 'electrolyte_fm.data_modules.ComponentDataModule',
+      class_path: std.get(
+        tasks[dataset],
+        'data_module',
+        'electrolyte_fm.data_modules.ComponentDataModule'
+      ),
       init_args: {
         path: tasks[dataset].path,
-        target_col: tasks[dataset].target_columns,
+        target_columns: tasks[dataset].target_columns,
         n_components: tasks[dataset].n_components,
         batch_size: 2,
         val_batch_size: 2 * self.batch_size,
@@ -26,14 +29,18 @@ function(dataset='il_thermo_viscosity') {
       },
     },
     model: {
-      class_path: 'electrolyte_fm.models.MixtureModel',
+      class_path: std.get(
+        tasks[dataset],
+        'model',
+        'electrolyte_fm.models.MixtureModel'
+      ),
       init_args: {
-        output_size: std.length($.train.data.init_args.target_col),
-        encoder_ckpt: 'ibm/MoLFormer-XL-both-10pct',
+        output_size: std.length($.train.data.init_args.target_columns),
+        encoder_ckpt: '/nfs/turbo/coe-venkvis/mist/ti624ev1/pretrained/checkpoints/last.ckpt',
         freeze_encoder: false,
         metrics: tasks[dataset].metrics,
         transform: tasks[dataset].transform,
-        target_columns: $.train.data.init_args.target_col,
+        target_columns: $.train.data.init_args.target_columns,
         n_components: $.train.data.init_args.n_components,
         // Duplicate pre-training optimizer config
         optimizer: {

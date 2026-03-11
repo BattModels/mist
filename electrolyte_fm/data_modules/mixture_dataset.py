@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 from itertools import chain
 from typing import List, Optional, Tuple, Union
@@ -67,15 +68,15 @@ class ComponentDataModule(LightningDataModule):
     def __init__(
         self,
         path: str,
-        target_col: list | str,
+        target_columns: Union[str, List[str]],
         n_components: int = 2,
         tokenizer: Optional[str] = None,
         batch_size: int = 64,
         val_batch_size: Optional[int] = None,
         num_workers: int = 0,
         prefetch_factor: Optional[int] = None,
-        include_temperature: str | bool = False,
-        encoding: str | MolEncoding = "smiles",
+        include_temperature: Union[str, bool] = False,
+        encoding: Optional[str | MolEncoding] = "smiles",
         iterable: bool = False,
         randomize: bool = False,
         max_length: int = 512,
@@ -89,11 +90,11 @@ class ComponentDataModule(LightningDataModule):
         self.path: Path = Path(path)
         self.encoding = MolEncoding(encoding)
         self.randomize = randomize
-        if isinstance(target_col, str):
-            target_col = [
-                target_col,
+        if isinstance(target_columns, str):
+            target_columns = [
+                target_columns,
             ]
-        self.target_col = target_col
+        self.target_columns = target_columns
         assert self.path.is_dir() or self.path.is_file()
 
         self.batch_size = batch_size
@@ -129,7 +130,7 @@ class ComponentDataModule(LightningDataModule):
             )
             assert isinstance(self._dataset, IterableDatasetDict)
         else:
-            self._dataset = self._dataset = load_dataset(
+            self._dataset = load_dataset(
                 "csv",
                 name=str(self.path.name),
                 data_files={
@@ -152,8 +153,8 @@ class ComponentDataModule(LightningDataModule):
         ds = ds.map(
             collate_target_stacked,
             batched=False,
-            fn_kwargs={"target_columns": self.target_col},
-            remove_columns=self.target_col,
+            fn_kwargs={"target_columns": self.target_columns},
+            remove_columns=self.target_columns,
         )
         ds = ds.map(
             collate_components_and_environment,
@@ -238,6 +239,117 @@ class ComponentDataModule(LightningDataModule):
         )
 
 
+class MultiMixtureDataModule(PropertyPredictionDataModule):
+    def __init__(
+        self,
+        path: str | Path,
+        mix1_smiles_column: str = "mix1_smiles",
+        mix2_smiles_column: str = "mix2_smiles",
+        # The arguments below are not used
+        # needed for CLI config compatibility
+        include_temperature: bool | str = False,
+        n_components: int = 0,
+        iterable: bool = False,
+        **kwargs,
+    ):
+        self.path = Path(path)
+        self.mix1_smiles_column = mix1_smiles_column
+        self.mix2_smiles_column = mix2_smiles_column
+
+        assert self.path.exists()
+        super().__init__(smi_column=mix1_smiles_column, **kwargs)
+        assert len(self.target_columns) >= 1
+
+    def _get_dataset(self):
+        self._dataset = load_dataset(
+            "csv",
+            name=str(self.path.name),
+            data_files={
+                "train": str(self.path.joinpath("train.csv")),
+                "validation": str(self.path.joinpath("val.csv")),
+                "test": str(self.path.joinpath("test.csv")),
+            },
+        )
+        return self._dataset
+
+    def setup(self, stage: str) -> None:
+        ds = self.dataset
+        ds = ds.map(
+            collate_target,
+            batched=False,
+            fn_kwargs={"target_columns": self.target_columns, "dtype": torch.float32},
+            remove_columns=self.target_columns,
+        )
+
+        if self.mix1_smiles_column != "compounds_mix1":
+            ds = ds.rename_column(self.mix1_smiles_column, "compounds_mix1")
+        if self.mix2_smiles_column != "compounds_mix2":
+            ds = ds.rename_column(self.mix2_smiles_column, "compounds_mix2")
+
+        ds = ds.map(
+            ensure_list_format,
+            batched=False,
+            fn_kwargs={
+                "mix1_col": "compounds_mix1",
+                "mix2_col": "compounds_mix2",
+            },
+        )
+
+        columns = ["target", "target_mask", "compounds_mix1", "compounds_mix2"]
+
+        ds = ds.select_columns(columns)
+
+        self.train_dataset: Dataset = ds["train"].shuffle()
+        self.val_dataset: Dataset = ds["validation"]
+        if "test" in ds:
+            self.test_dataset: Dataset = ds["test"]
+
+        # Dataset for normalization
+        norm_columns = ["target", "target_mask"]
+        self.target_dataset = ds["train"].select_columns(norm_columns)
+
+    @torch.no_grad()
+    def collate_fn(self, batch):
+        mix1_data = encode_and_tokenize_variable_mixture(
+            [obs["compounds_mix1"] for obs in batch],
+            tokenizer=self.tokenize,
+            encoding=self.encoding,
+            randomize=self.randomize,
+            token_collator=self.token_collator,
+            include_encoding=self.include_encoding,
+        )
+
+        mix2_data = encode_and_tokenize_variable_mixture(
+            [obs["compounds_mix2"] for obs in batch],
+            tokenizer=self.tokenize,
+            encoding=self.encoding,
+            randomize=self.randomize,
+            token_collator=self.token_collator,
+            include_encoding=self.include_encoding,
+        )
+
+        out = {
+            "input_ids_mix1": mix1_data["input_ids"],
+            "attention_mask_mix1": mix1_data["attention_mask"],
+            "component_mask_mix1": mix1_data["component_mask"],
+            "input_ids_mix2": mix2_data["input_ids"],
+            "attention_mask_mix2": mix2_data["attention_mask"],
+            "component_mask_mix2": mix2_data["component_mask"],
+            "target": torch.stack(
+                [torch.tensor(obs["target"], dtype=torch.float32) for obs in batch]
+            ),
+            "target_mask": torch.stack(
+                [torch.tensor(obs["target_mask"], dtype=torch.bool) for obs in batch]
+            ),
+        }
+
+        if self.include_encoding:
+            out["compounds_mix1"] = mix1_data["compounds"]
+            out["compounds_mix2"] = mix2_data["compounds"]
+
+        return out
+
+
 class ComponentDataModuleFast(PropertyPredictionDataModule):
     def __init__(
         self,
@@ -318,7 +430,6 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
             remove_columns=self.x_columns,
         )
 
-        # Stack compounds
         ds = ds.map(
             stack_compounds,
             batched=False,
@@ -326,7 +437,6 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
             remove_columns=self.smi_columns,
         )
 
-        # Columns in final dataset
         columns = ["target", "target_mask", "composition", "compounds"]
 
         # Normalize temperature column
@@ -340,7 +450,6 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
                 fn_kwargs={"column": "temperature", "dtype": torch.float32},
             )
 
-        # Filter to input columns
         if self.excess_columns:
             columns.extend(["target_excess", "target_excess_mask"])
 
@@ -357,7 +466,6 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
         if "test" in ds:
             self.test_dataset: Dataset = ds["test"]
 
-        # Dataset for normalization
         norm_columns = {
             "target",
             "target_mask",
@@ -390,6 +498,15 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
 
 def stack_compounds(row: dict, smi_columns: List[str]):
     return {"compounds": tuple(row[col] for col in smi_columns)}
+
+
+def stack_two_mixtures(
+    row: dict, mix1_smi_columns: list[str], mix2_smi_columns: list[str]
+):
+    return {
+        "compounds_mix1": tuple(row[col] for col in mix1_smi_columns),
+        "compounds_mix2": tuple(row[col] for col in mix2_smi_columns),
+    }
 
 
 def cast_dtype(row: dict, column: str, dtype: torch.dtype):
@@ -429,6 +546,65 @@ def encode_and_tokenize_mixture(
         out["compounds"] = compounds
 
     return out
+
+
+def encode_and_tokenize_variable_mixture(
+    compounds: list[list[str]],
+    tokenizer=None,
+    encoding: MolEncoding = MolEncoding.SMILES,
+    randomize: bool = True,
+    token_collator=None,
+    include_encoding: bool = False,
+):
+    encode = encoding.random if randomize else encoding
+    B = len(compounds)
+    max_N = max(len(comp_list) for comp_list in compounds)
+
+    all_smis = []
+    component_counts = []
+    for comp_list in compounds:
+        component_counts.append(len(comp_list))
+        all_smis.extend([encode(smi) if smi else "" for smi in comp_list])
+
+    toks = token_collator(tokenizer(all_smis))
+    seq_len = toks["input_ids"].shape[1]
+
+    input_ids = torch.zeros((B, max_N, seq_len), dtype=toks["input_ids"].dtype)
+    attention_mask = torch.zeros(
+        (B, max_N, seq_len), dtype=toks["attention_mask"].dtype
+    )
+    component_mask = torch.zeros((B, max_N), dtype=torch.bool)
+
+    start_idx = 0
+    for b, n_comp in enumerate(component_counts):
+        end_idx = start_idx + n_comp
+        input_ids[b, :n_comp] = toks["input_ids"][start_idx:end_idx]
+        attention_mask[b, :n_comp] = toks["attention_mask"][start_idx:end_idx]
+        component_mask[b, :n_comp] = False
+        start_idx = end_idx
+
+    out = {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "component_mask": component_mask,
+    }
+
+    if include_encoding:
+        out["compounds"] = compounds
+
+    return out
+
+
+def ensure_list_format(row: dict, mix1_col: str, mix2_col: str):
+    def to_list(value):
+        if not isinstance(value, str):
+            return ast.literal_eval(value)
+        return value
+
+    return {
+        mix1_col: to_list(row[mix1_col]),
+        mix2_col: to_list(row[mix2_col]),
+    }
 
 
 @cli.command()
