@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import torch
 from lightning.fabric import Fabric
 from torch import Tensor, nn
+from transformers import AutoModel
 
 from .hyperloglog import HyperLogLogSet
 from .prod_finetune import MISTFinetuned, MISTMultiTask
@@ -63,9 +64,13 @@ class OracleCritic(nn.Module):
         oracle_cls = {
             "MISTFinetuned": MISTFinetuned,
             "MISTMultiTask": MISTMultiTask,
+            "AutoModel": AutoModel,
         }.get(model_cls)
         oracle = oracle_cls.from_pretrained(model_path)
-        channels = [chn["name"] for chn in oracle.channels]
+        if isinstance(oracle.channels[0], dict):
+            channels = [chn["name"] for chn in oracle.channels]
+        elif isinstance(oracle.channels[0], str):
+            channels = oracle.channels
         if limits is not None:
             critic = QuadrantCritic.from_limits(limits, channels)
         elif all_passing is not None:
@@ -184,7 +189,10 @@ class CriticPanel(nn.Module):
         self.critics = nn.ModuleList(critics)
         channels = []
         for critic in critics:
-            channels.extend([chn["name"] for chn in critic.oracle.channels])
+            if isinstance(critic.oracle.channels[0], dict):
+                channels.extend([chn["name"] for chn in critic.oracle.channels])
+            elif isinstance(critic.oracle.channels[0], str):
+                channels.extend(critic.oracle.channels)
         self.channels: list[str] = channels
 
     def forward(
@@ -206,8 +214,7 @@ def generate(fabric: Fabric, critics, mol_dataloader):
     assert len(critics) > 0, "No critics provided"
 
     # Setup Critics
-    panel = CriticPanel(critics).to(fabric.device, dtype=torch.bfloat16).eval()
-    panel = torch.compile(panel, dynamic=True, fullgraph=True)
+    panel = CriticPanel(critics).to(fabric.device).eval()
 
     # Setup Timing
     batch_time = 0.0

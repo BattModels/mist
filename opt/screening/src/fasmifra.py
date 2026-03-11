@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def stream_fasmifra(
     fragments_file: str,
-    exe_path: Path = Path(__file__).parent.parent.joinpath("vendor", "fasmifra.exe"),
+    exe_path: Path = Path(__file__).parent.parent.joinpath("vendor", "fasmifra"),
     seed: int = 42,
     read_timeout: float = 60.0,
 ):

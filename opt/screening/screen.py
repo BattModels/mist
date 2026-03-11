@@ -6,6 +6,8 @@ from typing import Optional
 from uuid import uuid4
 from itertools import islice
 
+import torch._dynamo
+
 import typer
 import yaml
 from lightning.fabric import Fabric
@@ -13,7 +15,9 @@ from src.database import dump_to_sqlite_threaded
 from src.dataloader import DatabaseFragmentDataset
 from src.generate import OracleCritic, generate
 from src.utils import configure_logging, take_for_seconds
-from torch.autograd.profiler import emit_nvtx
+
+torch._dynamo.config.suppress_errors = True
+
 
 HARTREE_TO_EV = 27.211_386_245_981
 CAL_TO_JOULES = 4.184
@@ -93,15 +97,14 @@ def main(
     if (limit := config.get("limit_walltime", None)) is not None:
         mol_generator = take_for_seconds(mol_generator, limit)
 
-    with emit_nvtx():
-        dump_to_sqlite_threaded(
-            generate(
-                fabric,
-                critics,
-                mol_generator,
-            ),
-            out_dir.joinpath(f"rank_{fabric.global_rank}.sqlite"),
-        )
+    dump_to_sqlite_threaded(
+        generate(
+            fabric,
+            critics,
+            mol_generator,
+        ),
+        out_dir.joinpath(f"rank_{fabric.global_rank}.sqlite"),
+    )
 
 
 if __name__ == "__main__":

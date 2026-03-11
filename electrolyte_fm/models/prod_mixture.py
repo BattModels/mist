@@ -86,7 +86,7 @@ class MISTIonicConductivity(PreTrainedModel):
             raise ValueError(f"Unknown task_network type: {tn_type}")
 
         self.n_components = int(config.n_components)
-        self.tokenizer = None
+        self.tokenizer = resolve_tokenizer()
         self.post_init()
 
     @classmethod
@@ -158,8 +158,7 @@ class MISTIonicConductivity(PreTrainedModel):
         batch: List[Dict[str, any]],
         return_dict: bool = True,
     ):
-        tokenizer = resolve_tokenizer(self)
-        collate = DataCollatorWithPadding(tokenizer)
+        collate = DataCollatorWithPadding(self.tokenizer)
 
         all_input_ids = [[] for _ in range(self.n_components)]
         all_attention_masks = [[] for _ in range(self.n_components)]
@@ -193,7 +192,7 @@ class MISTIonicConductivity(PreTrainedModel):
             for i, component in enumerate(components):
                 smiles = list(component.keys())[0]
                 composition = list(component.values())[0]
-                tok_output = tokenizer(smiles)
+                tok_output = self.tokenizer(smiles)
                 all_input_ids[i].append(tok_output["input_ids"])
                 all_attention_masks[i].append(tok_output["attention_mask"])
                 all_compositions[i].append(composition)
@@ -330,7 +329,7 @@ class MISTExcessPhysics(PreTrainedModel):
         self.transform = Standardize(num_outputs=config.num_targets)
         self.excess_transform = Standardize(num_outputs=config.num_targets)
 
-        self.tokenizer = None
+        self.tokenizer = resolve_tokenizer()
         self.post_init()
 
     @classmethod
@@ -449,11 +448,9 @@ class MISTExcessPhysics(PreTrainedModel):
         composition: List[List[float]],
         temperature: List[float],
     ):
-        tok = resolve_tokenizer(self, None)
-
         all_smiles = [smi for mixture in smiles_list for smi in mixture]
 
-        inputs = tok(all_smiles, padding="longest", return_tensors="pt")
+        inputs = self.tokenizer(all_smiles, padding="longest", return_tensors="pt")
 
         batch_size = len(smiles_list)
         n_components = len(smiles_list[0])
@@ -574,7 +571,7 @@ class MISTMixtures(PreTrainedModel):
         else:
             self.temperature_condition = config.temperature_condition
 
-        self.tokenizer = None
+        self.tokenizer = resolve_tokenizer()
         self.post_init()
 
     @classmethod
@@ -642,8 +639,7 @@ class MISTMixtures(PreTrainedModel):
         else:
             temperatures = None
 
-        tokenizer = resolve_tokenizer(self)
-        collator = DataCollatorWithPadding(tokenizer)
+        collator = DataCollatorWithPadding(self.tokenizer)
 
         batch_size = len(mixtures)
 
@@ -684,7 +680,7 @@ class MISTMixtures(PreTrainedModel):
                     smi = "[H]"  # Dummy molecule for padding
                     comp = 0.0
 
-                tok_output = tokenizer(smi)
+                tok_output = self.tokenizer(smi)
                 input_ids_list.append(tok_output["input_ids"])
                 attention_mask_list.append(tok_output["attention_mask"])
                 comp_list.append(comp)

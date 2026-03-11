@@ -31,6 +31,7 @@ def fragment_smi(
     w: int = 150,
     smi_column: str = "smi",
     name_column: str | None = None,
+    num_passes: int = 1,
 ):
     # Delay import to reduce startup time
     frag_file = frag_file or "fragments.smi"
@@ -63,6 +64,8 @@ def fragment_smi(
                 str(w),
                 "-o",
                 str(frag_file),
+                "-n",
+                str(num_passes),
             ]
         )
     return frag_file

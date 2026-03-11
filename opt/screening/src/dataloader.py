@@ -152,7 +152,11 @@ class DatabaseFragmentDataset(FragmentDataset):
         self.ref_fragments = list(ref_frags)
 
         logging.info(
-            {"message": "found ref. fragments", "unique": self.max_id, "path": db_path}
+            {
+                "message": "found ref. fragments",
+                "unique": len(self.ref_fragments),
+                "path": ref_frag_file,
+            }
         )
 
     def fragments(self) -> Iterator[str]:

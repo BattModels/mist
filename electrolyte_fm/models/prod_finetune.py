@@ -96,7 +96,7 @@ class MISTFinetuned(PreTrainedModel):
             config.transform["class"], config.transform["num_outputs"]
         )
         self.channels = config.channels
-        self.tokenizer = None
+        self.tokenizer = self._resolve_tokenizer()
         self.post_init()
 
     @classmethod
@@ -136,7 +136,7 @@ class MISTFinetuned(PreTrainedModel):
         y = self.task_network(hs)
         return self.transform.forward(y)
 
-    def _resolve_tokenizer(self, tokenizer):
+    def _resolve_tokenizer(self, tokenizer=None):
         if tokenizer is not None:
             return tokenizer
         if getattr(self, "tokenizer", None) is not None:
@@ -151,9 +151,8 @@ class MISTFinetuned(PreTrainedModel):
             )
 
     def embed(self, smi: List[str], tokenizer=None):
-        tok = self._resolve_tokenizer(tokenizer)
-        batch = tok(smi)
-        batch = DataCollatorWithPadding(tok)(batch)
+        batch = self.tokenizer(smi)
+        batch = DataCollatorWithPadding(self.tokenizer)(batch)
         input_ids = batch["input_ids"].to(self.device)
         attention_mask = batch["attention_mask"].to(self.device)
         with torch.inference_mode():
@@ -163,9 +162,8 @@ class MISTFinetuned(PreTrainedModel):
         return hs.to("cpu")
 
     def predict(self, smi: List[str], return_dict: bool = True, tokenizer=None):
-        tok = self._resolve_tokenizer(tokenizer)
-        batch = tok(smi)
-        collate_fn = DataCollatorWithPadding(tok)
+        batch = self.tokenizer(smi)
+        collate_fn = DataCollatorWithPadding(self.tokenizer)
         batch = collate_fn(batch)
         batch = {
             "input_ids": batch["input_ids"].to(self.encoder.device),
@@ -233,7 +231,7 @@ class MISTMultiTask(PreTrainedModel):
             self.transforms
         ), "task_networks and transforms must align"
         self.channels = config.channels
-        self.tokenizer = None
+        self.tokenizer = self._resolve_tokenizer()
         self.post_init()
 
     @classmethod
@@ -279,7 +277,7 @@ class MISTMultiTask(PreTrainedModel):
             outs.append(tf.forward(tn(hs)))
         return torch.cat(outs, dim=-1)
 
-    def _resolve_tokenizer(self, tokenizer):
+    def _resolve_tokenizer(self, tokenizer=None):
         if tokenizer is not None:
             return tokenizer
         if getattr(self, "tokenizer", None) is not None:
@@ -294,9 +292,8 @@ class MISTMultiTask(PreTrainedModel):
             )
 
     def predict(self, smi: List[str], tokenizer=None):
-        tok = self._resolve_tokenizer(tokenizer)
-        batch = tok(smi)
-        batch = DataCollatorWithPadding(tok)(batch)
+        batch = self.tokenizer(smi)
+        batch = DataCollatorWithPadding(self.tokenizer)(batch)
         inputs = {k: v.to(self.device) for k, v in batch.items()}
         with torch.inference_mode():
             out = self(**inputs).cpu()
@@ -305,9 +302,8 @@ class MISTMultiTask(PreTrainedModel):
         return annotate_prediction(out, self.channels)
 
     def embed(self, smi: List[str], tokenizer=None):
-        tok = self._resolve_tokenizer(tokenizer)
-        batch = tok(smi)
-        batch = DataCollatorWithPadding(tok)(batch)
+        batch = self.tokenizer(smi)
+        batch = DataCollatorWithPadding(self.tokenizer)(batch)
         input_ids = batch["input_ids"].to(self.device)
         attention_mask = batch["attention_mask"].to(self.device)
         with torch.inference_mode():
