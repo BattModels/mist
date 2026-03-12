@@ -1,19 +1,19 @@
-from electrolyte_fm.models.prod_finetune import MISTFinetuned
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import torch
-from transformers import AutoModel
-from captum.attr import LayerIntegratedGradients
-from smirk import SmirkTokenizerFast
-import numpy as np
-
-from rdkit import Chem
-from io import BytesIO
 import base64
-import os
 import json
+import os
+from io import BytesIO
 
-from src.plot_utils import get_color_mapper, draw_molecule_with_attributions
+import numpy as np
+import plotly.graph_objects as go
+import torch
+from captum.attr import LayerIntegratedGradients
+from plotly.subplots import make_subplots
+from rdkit import Chem
+from smirk import SmirkTokenizerFast
+from src.plot_utils import draw_molecule_with_attributions, get_color_mapper
+from transformers import AutoModel
+
+from electrolyte_fm.models.prod_finetune import MISTFinetuned
 
 
 def kekulize_smiles(smiles):
@@ -79,11 +79,12 @@ def compute_attributions(smiles, model, tokenizer, n_steps=50, target_idx=None):
     input_ids = torch.tensor(encoded["input_ids"]).to(device)
     attention_mask = torch.tensor(encoded["attention_mask"]).to(device)
 
+    pad_id = None
     if hasattr(model, "config") and hasattr(model.config, "pad_token_id"):
         pad_id = model.config.pad_token_id
     elif tokenizer is not None:
         pad_id = tokenizer.pad_token_id
-    else:
+    if pad_id is None:
         pad_id = SmirkTokenizerFast().pad_token_id
 
     baseline_ids = torch.full_like(input_ids, pad_id)
@@ -200,7 +201,7 @@ def add_molecule_subplot(fig, row, kekule_smiles, tokens, scores, channel_name):
         )
 
     colors = [
-        f"rgba({int(cmap(norm(s))[0]*255)},{int(cmap(norm(s))[1]*255)},{int(cmap(norm(s))[2]*255)},{cmap(norm(s))[3]})"
+        f"rgba({int(cmap(norm(s))[0] * 255)},{int(cmap(norm(s))[1] * 255)},{int(cmap(norm(s))[2] * 255)},{cmap(norm(s))[3]})"
         for s in scores_np
     ]
 
