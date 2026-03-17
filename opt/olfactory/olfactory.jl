@@ -10,8 +10,7 @@ using CategoricalArrays
 using HDF5
 using LinearAlgebra
 
-# Directory containing the data release files
-const DATA_DIR = realpath("/Users/anoushka/VSCodeProjects/electrolyte-fm/opt/olfactory")
+const DATA_DIR = realpath(joinpath("..", "..", "data"))
 
 function plot_count_corr!(f)
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "dataset_size_auroc.csv")))

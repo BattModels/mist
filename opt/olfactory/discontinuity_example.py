@@ -1,5 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+
 from electrolyte_fm.models.prod_finetune import MISTFinetuned
 
 small_change = [
@@ -33,10 +34,8 @@ def get_non_zero_columns(row):
     return row[row != 0].index.tolist()
 
 
-# Apply the function to each row
 non_zero_cols_per_row = df.apply(get_non_zero_columns, axis=1)
 
-# Print the results
 for index, row in binary_df.iterrows():
     c = get_non_zero_columns(row)
     print(f"Row {index}: Non-zero columns: {c}")
