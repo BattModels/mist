@@ -12,6 +12,9 @@ dependencies = [
     "pandas>=2.2.3",
     "numpy>=2.2.4",
     "scipy>=1.11.0",
-    "smirk>=0.2.0",
+    "smirk",
     "datasets>=4.6.1",
 ]
+
+[tool.uv.sources]
+smirk = { git = "https://github.com/BattModels/smirk", rev = "main" }
