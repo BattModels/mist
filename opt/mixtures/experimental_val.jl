@@ -110,6 +110,6 @@ function plot_sign_flip_compounds()
     cas_nums = String.(skipmissing(df[!, "CAS #"]))
     with_theme(MISTStyle.theme()) do
         plot_sign_flip_compounds(cas_nums, "mist-models/mist-mixtures-zffffbex")
-    end |> MISTStyle.savefig("sign_flip-part1")
+    end |> MISTStyle.savefig("sign_flip")
     return 0
 end
