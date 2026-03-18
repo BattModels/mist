@@ -18,7 +18,7 @@ def f_SHE_Li(beta: torch.Tensor) -> torch.Tensor:
 
 
 def U_dis(beta: torch.Tensor) -> torch.Tensor:
-    # TODO: specify the function for U_dis(ET^N) based on beta
+    # TODO: specify the function for U_dis based on beta
     return
 
 
