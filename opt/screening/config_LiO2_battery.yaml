@@ -1,0 +1,75 @@
+generation:
+  db_path: zinc_fragment/fragments.sqlite
+  n_fragments: 1000
+  reference_fragments: electrolyte.smi.frag
+  epoch_size: 1200
+  limit_db_fragments: null
+  limit_ref_fragments: null
+  batch_size: 768
+critics:
+  - model_path: mist-models/mist-26.9M-b302p09x-bp
+    limits:
+      bp:
+        - 75
+        - null
+    model_cls: AutoModel
+  - model_path: mist-models/mist-26.9M-y3ge5pf9-mp
+    limits:
+      mp:
+        - null
+        - 0
+    model_cls: AutoModel
+  - model_path: mist-models/mist-x4i8qzuq-qm9
+    limits:
+      gap:
+        - 0.183964066
+        - null
+      homo:
+        - null
+        - -0.257681261
+      lumo:
+        - null
+        - 0.1171
+    model_cls: AutoModel
+  - model_path: mist-models/mist-27.1M-pKa
+    limits:
+      pka_value:
+        - null
+        - null
+    model_cls: AutoModel
+  - model_path: mist-models/mist-26.9M-0vxdbm36-kt
+    limits:
+      beta:
+        - null
+        - null
+    model_cls: AutoModel
+  - model_path: mist-models/mist-27.1M-1gcxtg8y-ETN
+    limits:
+      ETN:
+        - null
+        - null
+    model_cls: AutoModel
+
+equations:
+  module: opt.screening.lithium_air_equations
+  critics:
+    - function: h_abstraction_energy
+      inputs: [pka, beta, ETN]
+      output: h_abs_energy
+      limits: [null, 0]
+    - function: nucleophilic_attack_bound
+      inputs: [pka, beta, ETN]
+      output: r_n_bound
+      limits: [0, 1.0]
+    - function: solution_mediated_reaction
+      inputs: [beta, ETN]
+      output: delta_G_HA_sol
+      limits: [-6.46, -0.35]
+    - function: eORR_eOER_bound
+      inputs: [beta]
+      output: orr_oer_ratio
+      limits: [0.8, 1.2]
+    - function: eORR_bound
+      inputs: [beta]
+      output: orr
+      limits: [2, 2.2]
