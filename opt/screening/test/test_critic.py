@@ -2,6 +2,8 @@ import torch
 from src.generate import (
     AnyCritic,
     CriticPanel,
+    EquationCritic,
+    EquationOracle,
     OracleCritic,
     QuadrantCritic,
     limits_to_bounds,
@@ -205,4 +207,51 @@ class TestOracleCriticAndPanel:
         assert torch.allclose(y_combined, expected_y)
 
         # critic1: 0.5∈(0,1) ⇒ True; critic2: -1.0∈(-2,0) & 2.0∈(1,3) ⇒ True ⇒ net_score True
+        assert torch.all(net_score == torch.tensor([True, True]))
+
+
+class TestEquationCritic:
+    def test_equation_oracle_forward(self):
+        def sum_func(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+            return a + b
+
+        oracle = EquationOracle(sum_func, ["x", "y"], "sum_xy")
+        predictions = {"x": torch.tensor([1.0, 2.0]), "y": torch.tensor([3.0, 4.0])}
+        result = oracle(predictions)
+        assert torch.allclose(result, torch.tensor([[4.0], [6.0]]))
+        assert oracle.channels == ["sum_xy"]
+
+    def test_equation_critic_with_limits(self):
+        def product_func(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+            return a * b
+
+        oracle = EquationOracle(product_func, ["x", "y"], "product")
+        critic = QuadrantCritic(torch.tensor([0.0]), torch.tensor([10.0]))
+        eq_critic = EquationCritic(oracle, critic)
+
+        predictions = {"x": torch.tensor([2.0, 5.0]), "y": torch.tensor([3.0, 3.0])}
+        y_out, score = eq_critic(predictions)
+
+        assert torch.allclose(y_out, torch.tensor([[6.0], [15.0]]))
+        assert torch.all(score == torch.tensor([True, False]))
+
+    def test_panel_with_equation_critic(self):
+        oracle1 = DummyOracle(channels=["a"], output=[2.0])
+        limits1 = {"a": (0.0, 5.0)}
+        oc1 = OracleCritic(oracle1, QuadrantCritic.from_limits(limits1, ["a"]))
+
+        def double_func(a: torch.Tensor) -> torch.Tensor:
+            return 2 * a
+
+        eq_oracle = EquationOracle(double_func, ["a"], "double_a")
+        eq_critic_limits = QuadrantCritic(torch.tensor([0.0]), torch.tensor([5.0]))
+        eq_critic = EquationCritic(eq_oracle, eq_critic_limits)
+
+        panel = CriticPanel([oc1], [eq_critic])
+        assert panel.channels == ["a", "double_a"]
+
+        input_ids = torch.zeros((2, 3), dtype=torch.int64)
+        y_combined, net_score = panel(input_ids)
+
+        assert torch.allclose(y_combined, torch.tensor([[2.0, 4.0], [2.0, 4.0]]))
         assert torch.all(net_score == torch.tensor([True, True]))
