@@ -1,7 +1,7 @@
 generation:
   db_path: zinc_fragment/fragments.sqlite
   n_fragments: 1000
-  reference_fragments: electrolyte.smi.frag
+  reference_fragments: lithium-air/fragments.smi
   epoch_size: 1200
   limit_db_fragments: null
   limit_ref_fragments: null
@@ -39,14 +39,14 @@ critics:
     model_cls: AutoModel
 
 equations:
-  module: opt.screening.lithium_air_equations
+  module: lithium_air_equations
   critics:
     - function: h_abstraction_energy
-      inputs: [pka, beta, ETN]
+      inputs: [pka_value, beta, ETN]
       output: h_abs_energy
       limits: [null, 0]
     - function: nucleophilic_attack_bound
-      inputs: [pka, beta, ETN]
+      inputs: [pka_value, beta, ETN]
       output: r_n_bound
       limits: [0, 1.0]
     - function: solution_mediated_reaction
