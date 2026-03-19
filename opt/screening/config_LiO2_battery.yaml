@@ -19,18 +19,6 @@ critics:
         - null
         - 0
     model_cls: AutoModel
-  - model_path: mist-models/mist-x4i8qzuq-qm9
-    limits:
-      gap:
-        - 0.183964066
-        - null
-      homo:
-        - null
-        - -0.257681261
-      lumo:
-        - null
-        - 0.1171
-    model_cls: AutoModel
   - model_path: mist-models/mist-27.1M-pKa
     limits:
       pka_value:
