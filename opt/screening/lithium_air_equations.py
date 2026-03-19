@@ -18,8 +18,7 @@ def f_SHE_Li(beta: torch.Tensor) -> torch.Tensor:
 
 
 def U_dis(beta: torch.Tensor) -> torch.Tensor:
-    # TODO: specify the function for U_dis based on beta
-    return
+    return -3.330 - 0.226 * beta - 1.075 * beta**2
 
 
 def h_abstraction_energy(
