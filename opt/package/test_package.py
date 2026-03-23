@@ -165,3 +165,19 @@ def test_encoder_config(model, request):
     config = model.encoder.config
     if hasattr(config, "add_pooling_layer"):
         assert config.add_pooling_layer is False
+
+
+def test_export_multitask_preserves_tasks():
+    """Test that export_multitask preserves task_networks and transforms
+    when loading an already-packaged MISTMultiTask model."""
+    from opt.package.__main__ import export_multitask
+
+    # Load an already-packaged multitask model with empty task_ckpt
+    model = export_multitask(MULTITASK_CKPT, task_ckpt=[])
+
+    # Verify task_networks and transforms are preserved, not empty
+    assert len(model.task_networks) > 0, "task_networks should not be empty"
+    assert len(model.transforms) > 0, "transforms should not be empty"
+    assert len(model.task_networks) == len(
+        model.transforms
+    ), "task_networks and transforms should align"
