@@ -5,57 +5,60 @@
 #   python -m opt.package --help
 
 from __future__ import annotations
+
 import ast
 import inspect
 import json
 import logging
 from pathlib import Path
-from typing import Iterable, Type, Optional, List, Tuple, Set
+from typing import Iterable, List, Optional, Set, Tuple, Type
+
 import typer
 from safetensors.torch import load_file
 from transformers import AutoConfig, AutoModel
 
-from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
-from electrolyte_fm.models.lm_finetuning import load_encoder
 from electrolyte_fm.models import (
-    MISTFinetunedConfig,
-    MISTFinetuned,
-    MISTIonicConductivityConfig,
-    MISTIonicConductivity,
-    MISTMultiTaskConfig,
-    MISTMultiTask,
-    MISTExcessPhysicsConfig,
     MISTExcessPhysics,
-    MISTMixturesConfig,
+    MISTExcessPhysicsConfig,
+    MISTFinetuned,
+    MISTFinetunedConfig,
+    MISTIonicConductivity,
+    MISTIonicConductivityConfig,
     MISTMixtures,
+    MISTMixturesConfig,
+    MISTMultiTask,
+    MISTMultiTaskConfig,
 )
+from electrolyte_fm.models.lm_finetuning import load_encoder
 from electrolyte_fm.models.mixture_model import TemperatureCondition
-from electrolyte_fm.utils.tokenizer import load_tokenizer
-from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
 from electrolyte_fm.models.normalize import (
     AbstractNormalizer,
-    Standardize,
-    PowerTransform,
+    IdentityTransform,
     LogTransform,
     MaxScaleTransform,
-    IdentityTransform,
+    PowerTransform,
+    Standardize,
 )
+from electrolyte_fm.models.pairwise_fusion import pairwise_fusion
 from electrolyte_fm.models.physics_task_heads import (
-    VFTDecayTaskHead,
     ArrtheniusActivation,
     LinearExogenousEffect,
+    VFTDecayTaskHead,
 )
 from electrolyte_fm.models.polynomials import LagrangePolynomial
-from electrolyte_fm.models.pairwise_fusion import pairwise_fusion
-from .utils import (
-    name_model,
-    get_best_ckpt,
-    create_save_directory,
-    ckpt_id,
-    save_tokenizer,
-    create_tar_gz,
-)
+from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
+from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts, get_ckpt_tokenizer
+from electrolyte_fm.utils.tokenizer import load_tokenizer
+
 from .migrate_legacy import load_legacy_packaged_checkpoint
+from .utils import (
+    ckpt_id,
+    create_save_directory,
+    create_tar_gz,
+    get_best_ckpt,
+    name_model,
+    save_tokenizer,
+)
 from .write_model_class import write_modeling_module
 
 cli = typer.Typer()
@@ -421,10 +424,9 @@ def mixtures(ckpt: Path, name: Optional[str] = None, safe: bool = True):
 
 
 def export_multitask(encoder_ckpt: Path, task_ckpt: List[Path]) -> MISTMultiTask:
-    encoder_ckpt = maybe_best_ckpt(encoder_ckpt)
-
     try:
         # Try loading from training checkpoints
+        encoder_ckpt = maybe_best_ckpt(encoder_ckpt)
         encoder = load_encoder(encoder_ckpt)
         tokenizer = get_ckpt_tokenizer(encoder_ckpt)
 
@@ -452,6 +454,11 @@ def export_multitask(encoder_ckpt: Path, task_ckpt: List[Path]) -> MISTMultiTask
 
         try:
             encoder_model, _ = load_model(encoder_ckpt)
+
+            # If the loaded model is already a MISTMultiTask, return it directly
+            if isinstance(encoder_model, MISTMultiTask):
+                return encoder_model
+
             encoder = (
                 encoder_model.encoder
                 if hasattr(encoder_model, "encoder")
@@ -532,7 +539,7 @@ def multitask(
         architecture_name="MISTMultiTask",
         config_class_name="MISTMultiTaskConfig",
         model_class_name="MISTMultiTask",
-    )(save_dir)
+    )
     L.info("Saved multitask model to %s", save_dir)
     create_tar_gz(save_dir)
 
