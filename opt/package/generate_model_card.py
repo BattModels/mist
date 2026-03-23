@@ -10,10 +10,11 @@
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
-import json
+
 import yaml
 from jinja2 import Environment, FileSystemLoader, Template
 
@@ -132,7 +133,7 @@ def generate_model_card_for_directory(
         parts = model_dir.name.split("-")
         if len(parts) >= 2:
             encoder_size = parts[1]
-            if encoder_size in ["26.9M", "27.0M", "28M"]:
+            if encoder_size in ["26.9M", "27.0M", "27.1M", "28M"]:
                 encoder_key = "mist-28M"
             elif encoder_size == "1.8B":
                 encoder_key = "mist-1.8B"
