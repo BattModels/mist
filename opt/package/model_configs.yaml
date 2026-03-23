@@ -457,7 +457,8 @@ datasets:
     split_type: "random"
     num_samples: 133885
 
-  pKa:
+  # Solvent property models
+  pka:
     name: "Dissociation Constant (pKa)"
     source: "The IUPAC Digitized pKa Dataset retrived from the repository https://github.com/IUPAC/Dissociation-Constants was used. The dataset was filtered to include only measurements of pKaH1 taken at 25°C."
     task_type: "Regression"
