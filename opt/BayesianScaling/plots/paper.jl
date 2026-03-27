@@ -110,11 +110,11 @@ function plot_scaling_params!(f, chains; legend_pos=:top)
     )
 
     prior_works = [
-        "Kaplan et al." => (; α=0.076, β=0.103, a = 0.58, b = 0.42),
         "Hoffmann et al. (Appr. 1)" => (; a = 0.50, b = 0.50),
         "Hoffmann et al. (Appr. 3)" => (; α=0.34, β=0.28, a = 0.46, b = 0.54),
         "Bi et al. (Early)" => (; a = 0.450, b = 0.550),
         "Bi et al. (Current)" => (; a = 0.524, b = 0.478),
+        "Kaplan et al." => (; α=0.076, β=0.103, a = 0.58, b = 0.42),
     ]
 
     gl = GridLayout(f[1, 1])
@@ -175,12 +175,14 @@ function plot_scaling_params!(f, chains; legend_pos=:top)
     Legend(legend_pos, elem, MISTStyle.label.(elem);
         tellwidth,
         tellheight,
-        margin=2pt .* (1, 1, 1, 1),
         orientation,
         nbanks,
         halign,
         valign,
+        padding=(4pt, 4pt, 1pt, 1pt),
+        colgap=4pt,
     )
+    rowgap!(gl, 2pt)
 
     return f
 end
@@ -328,7 +330,7 @@ function plot_lr_partial_dependence!(f, model, chains; p=0.95, npoints=100)
 end
 
 function figure_bayesian(data;
-    N=logrange(1e5, 3e9; length=50),
+    N=logrange(1e5, 4e9; length=50),
     C=logrange(1e-5 * pf_day, 100*pf_day; length=50),
     p=0.95,
     n_samples=500,
@@ -462,7 +464,7 @@ function figure_bayesian(data;
 end
 
 function figure_bayesian_panel(data;
-    N=logrange(1e5, 3e9; length=50),
+    N=logrange(1e5, 4e9; length=50),
     C=logrange(1e-5 * pf_day, 100*pf_day; length=50),
     p=0.95,
     n_samples=500,
