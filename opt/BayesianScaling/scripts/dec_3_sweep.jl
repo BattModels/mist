@@ -10,7 +10,7 @@ using Setfield: @set!
 
 GIT_ROOT = readchomp(`git rev-parse --show-toplevel`)
 
-include("wandb_import.jl")
+# include("wandb_import.jl")
 
 function prior_d_model_lr!(priors; lr_0=1.64e-4, d_model=768, batch_size=1024)
     # LR scaling with Model size used in Attention is All You Need
@@ -22,7 +22,23 @@ function prior_d_model_lr!(priors; lr_0=1.64e-4, d_model=768, batch_size=1024)
     return priors
 end
 
-function build_models()
+function dec_3_sweep_runs()
+    df = pretraining_runs(
+        joinpath(GIT_ROOT, ".cache", "wandb-export");
+    )
+    subset!(df,
+        :tokenizer => ByRow(==("smirk")),
+        :created => ByRow(<=(DateTime(2025, 1))),
+        :tags => ByRow(tags -> "dec-3-sweep" in tags),
+        [:step, :max_steps] => ByRow((s, ms) -> s / ms > 0.8);
+        skipmissing=true,
+    )
+    dropmissing!(df, [:model_size, :d_model, :effective_batch_size, :max_steps, :lr, :ff_ratio, :aspect_ratio, :kv_size])
+    subset!(df, :val_loss_best => ByRow(x -> 1e-6 < x < 1.0); skipmissing=true)
+    return df
+end
+
+function build_models(df_sweep)
     formulas = Dict(
         "baseline" => ShapedScaling(),
         "hoffman" => HoffmanScaling(),
@@ -34,17 +50,7 @@ function build_models()
 
     models = Dict()
     for eval_batch in [1, 1e3, 1e4, 1e5, 1e6]
-        df = pretraining_runs(
-            joinpath(GIT_ROOT, ".cache", "wandb-export");
-            smoothed_eval_batch=eval_batch
-        )
-        subset!(df,
-            :tokenizer => ByRow(==("smirk")),
-            :created => ByRow(<=(DateTime(2025, 1))),
-            :tags => ByRow(tags -> "dec-3-sweep" in tags),
-            [:step, :max_steps] => ByRow((s, ms) -> s / ms > 0.8);
-            skipmissing=true,
-        )
+        df = deepcopy(df_sweep)
         loss = eval_batch == 1 ? :val_loss_best : :val_loss_smooth
         df = select(df,
             :model_size,
@@ -164,7 +170,22 @@ function fit_summary()
     return df
 end
 
+function export_runs()
+    df_sweep = dec_3_sweep_runs()
+    outdir = joinpath(pkgdir(BayesianScaling), "out")
+    open(joinpath(outdir, "dec_3_sweep_runs.jsonl"), "w") do fid
+        for run in eachrow(df_sweep)
+            println(fid, JSON.json(Dict(pairs(run))))
+        end
+    end
+    return df_sweep
+end
+
 function (@main)(args)
-    models = build_models()
+    # Record runs
+    df_sweep = export_runs()
+
+    # Build models
+    models = build_models(df_sweep)
     run_models(models)
 end

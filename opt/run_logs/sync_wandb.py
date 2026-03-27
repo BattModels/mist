@@ -174,6 +174,12 @@ def run_summary(run: Run):
         metadata = run.metadata if isinstance(run.metadata, dict) else {}
         git_info = metadata.get("git", {})
         summary = run.summary if isinstance(run.summary, dict) else {}
+        summary_metrics = (
+            dict(run.summary_metrics)
+            if hasattr(run, "summary_metrics") and run.summary_metrics
+            else {}
+        )
+        sys_metrics = system_metrics(run)
 
         stats = {
             "id": run.id,
@@ -187,7 +193,9 @@ def run_summary(run: Run):
             "created": metadata.get("startedAt"),
             "gpu": metadata.get("gpu"),
             "commit": git_info.get("commit") if isinstance(git_info, dict) else None,
-            "runtime": summary.get("_runtime"),
+            "runtime": summary.get("_runtime")
+            or summary_metrics.get("_runtime")
+            or get_entry(summary_metrics, "_wandb", "runtime"),
             "optimizer": {
                 "class_path": get_entry(
                     config, "cli", "model", "optimizer", "class_path"
@@ -242,13 +250,11 @@ def run_summary(run: Run):
                     run, "stats/val_batch_throughput", "mean"
                 ),
                 "train_batch_time": summary_metric(run, "stats/train_batch_time_epoch"),
-                **system_metrics(run),
+                **sys_metrics,
             },
-            "summary_metrics": dict(run.summary_metrics)
-            if hasattr(run, "summary_metrics") and run.summary_metrics
-            else {},
+            "summary_metrics": summary_metrics,
         }
-
+        print(stats["id"], stats["runtime"])
         # Record world_size
         world_size = (stats["job_config"]["nodes"] or nan) * (
             stats["job_config"]["gpus_per_node"] or nan
