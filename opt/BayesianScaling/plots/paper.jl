@@ -1,3 +1,4 @@
+#!/usr/bin/env -S uv run julia --project=@script --startup-file=no
 using Makie
 using MISTStyle
 using DataFrames
@@ -5,6 +6,12 @@ using StatsBase
 using JLD2: jldopen
 using BayesianScaling
 using BayesianScaling: pf_day, get_nbins
+
+const AVG_SEQ_LENGTH::Float64 = 65.2
+"""
+Average number of tokens per molecule for the Smirk Tokenizer on REALSpace
+Source: SI for doi:10.1021/acs.jcim.5c01856
+"""
 
 function mark_model!(ax_scale, ax_compute;
     model_loss,
@@ -15,11 +22,12 @@ function mark_model!(ax_scale, ax_compute;
     eff_batch_size,
     colorbar,
     h_loss,
+    avg_seq_length = 1,
     kwargs...
 )
     N = BayesianScaling.non_embedding_size(d_model, ff_ratio * d_model, n_layers)
     D = steps * eff_batch_size
-    C = 6 * float(N) * float(D)
+    C = 6 * float(N) * float(D) * float(avg_seq_length)
     kwargs = (;
         marker=:star5,
         color=model_loss,
@@ -321,9 +329,10 @@ end
 
 function figure_bayesian(data;
     N=logrange(1e5, 3e9; length=50),
-    C=logrange(1e12, 2*pf_day; length=50),
+    C=logrange(1e-5 * pf_day, 100*pf_day; length=50),
     p=0.95,
     n_samples=500,
+    avg_seq_length::AbstractFloat = 1.0,
 )
     model = data["model"]
     chains = data["chains"]
@@ -333,7 +342,7 @@ function figure_bayesian(data;
 
     model_loss = StatsBase.response(model)
     model_size = df.model_size
-    model_flops = @. 6 * float(df.model_size) * float(df.data_size)
+    model_flops = @. 6 * float(df.model_size) * float(df.data_size) * float(avg_seq_length)
 
     f_height = model.formula isa BayesianScaling.ShapedScaling ? 4.5inch : 3inch
     f = Figure(;
@@ -358,13 +367,13 @@ function figure_bayesian(data;
         ylabel="Non-Embedding Parameters",
     )
 
-    loss_c_opt = BayesianScaling.compute_optimal_loss(scaling(chain_samples), C; p)
+    loss_c_opt = BayesianScaling.compute_optimal_loss(scaling(chain_samples), C ./ avg_seq_length; p)
     h_opt = predictionband!(ax_compute, C ./ pf_day, loss_c_opt...;
         color=MISTStyle.UM_COLORS.maize,
         linewidth=2pt,
         band_color=(RGBf(0.596, 0.612, 0.592), 0.4),
     )
-    loss_cs = first(BayesianScaling.hoffman_compute_scaling(scaling(chain_samples), N, C))'
+    loss_cs = first(BayesianScaling.hoffman_compute_scaling(scaling(chain_samples), N, C ./ avg_seq_length))'
     levels = logrange(minimum(loss_cs), 1.0; length=10)
     cb = Colorbar(gl[1, end+1];
         label="Validation Loss (nats)",
@@ -388,7 +397,7 @@ function figure_bayesian(data;
     )
 
 
-    N_opt = BayesianScaling.compute_optimal_model_size(scaling(chain_samples), C)
+    N_opt = BayesianScaling.compute_optimal_model_size(scaling(chain_samples), C ./ avg_seq_length)
     predictionband!(ax_scale, C ./ pf_day, N_opt...;
         color=h_opt.color,
         linewidth=h_opt.linewidth,
@@ -414,6 +423,7 @@ function figure_bayesian(data;
         model_loss=0.01019080262631178,
         colorbar=cb,
         h_loss,
+        avg_seq_length,
     )
 
     # dh61satt
@@ -426,6 +436,7 @@ function figure_bayesian(data;
         model_loss=0.03703538700938225,
         colorbar=cb,
         h_loss,
+        avg_seq_length,
     )
 
 
@@ -452,9 +463,10 @@ end
 
 function figure_bayesian_panel(data;
     N=logrange(1e5, 3e9; length=50),
-    C=logrange(1e12, 2*pf_day; length=50),
+    C=logrange(1e-5 * pf_day, 100*pf_day; length=50),
     p=0.95,
     n_samples=500,
+    avg_seq_length::AbstractFloat = 1,
 )
     f = Figure(; size=(89mm, 170mm), figure_padding=(2, 2, 2, 4))
 
@@ -466,7 +478,7 @@ function figure_bayesian_panel(data;
 
     model_loss = StatsBase.response(model)
     model_size = df.model_size
-    model_flops = @. 6 * float(df.model_size) * float(df.data_size)
+    model_flops = @. 6 * float(df.model_size) * float(df.data_size) * float(avg_seq_length)
 
     # Plot Covariance
     colsize!(f.layout, 1, 100mm)
@@ -497,13 +509,13 @@ function figure_bayesian_panel(data;
         ylabel="Non-Embedding Parameters",
     )
 
-    loss_c_opt = BayesianScaling.compute_optimal_loss(scaling(chain_samples), C; p)
+    loss_c_opt = BayesianScaling.compute_optimal_loss(scaling(chain_samples), C ./ avg_seq_length; p)
     h_opt = predictionband!(ax_compute, C ./ pf_day, loss_c_opt...;
         color=MISTStyle.UM_COLORS.maize,
         linewidth=2pt,
         band_color=(RGBf(0.596, 0.612, 0.592), 0.4),
     )
-    loss_cs = first(BayesianScaling.hoffman_compute_scaling(scaling(chain_samples), N, C))'
+    loss_cs = first(BayesianScaling.hoffman_compute_scaling(scaling(chain_samples), N, C ./ avg_seq_length))'
     levels = logrange(minimum(loss_cs), 1.0; length=10)
     cb = Colorbar(gl[1, end+1];
         label="Validation Loss (nats)",
@@ -527,7 +539,7 @@ function figure_bayesian_panel(data;
     )
 
 
-    N_opt = BayesianScaling.compute_optimal_model_size(scaling(chain_samples), C)
+    N_opt = BayesianScaling.compute_optimal_model_size(scaling(chain_samples), C ./ avg_seq_length)
     predictionband!(ax_scale, C ./ pf_day, N_opt...;
         color=h_opt.color,
         linewidth=h_opt.linewidth,
@@ -553,6 +565,7 @@ function figure_bayesian_panel(data;
         model_loss=0.01019080262631178,
         colorbar=cb,
         h_loss,
+        avg_seq_length,
     )
 
     # dh61satt
@@ -565,6 +578,7 @@ function figure_bayesian_panel(data;
         model_loss=0.03703538700938225,
         colorbar=cb,
         h_loss,
+        avg_seq_length,
     )
 
     # Fit distributions
@@ -604,7 +618,7 @@ end
 function plot_all(dir; kwargs...)
     for model in readdir(dir; join=true)
         isfile(joinpath(model, "chains.jld2")) || continue
-        plot_model(model)
+        plot_model(model; avg_seq_length=AVG_SEQ_LENGTH, kwargs...)
     end
 end
 
@@ -618,7 +632,7 @@ function (@main)(ARGS=[])
     # Panel figure
     data = jldopen(joinpath(chains_dir, "dec-3-sweep-smoothed-1.0--geometric-shape-gamma", "chains.jld2"), "r")
     with_theme(MISTStyle.theme()) do
-        figure_bayesian_panel(data)
+        figure_bayesian_panel(data; avg_seq_length=AVG_SEQ_LENGTH)
     end |> MISTStyle.savefig("scaling_panel_baseline")
 
     return nothing
