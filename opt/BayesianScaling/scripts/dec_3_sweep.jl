@@ -173,6 +173,7 @@ end
 function export_runs()
     df_sweep = dec_3_sweep_runs()
     outdir = joinpath(pkgdir(BayesianScaling), "out")
+    mkpath(outdir)
     open(joinpath(outdir, "dec_3_sweep_runs.jsonl"), "w") do fid
         for run in eachrow(df_sweep)
             println(fid, JSON.json(Dict(pairs(run))))

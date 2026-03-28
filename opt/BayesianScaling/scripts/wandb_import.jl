@@ -1,5 +1,5 @@
 using DataFrames
-using Dates: Dates, DateTime
+using Dates: Dates, DateTime, @dateformat_str
 using JSON: JSON
 using BayesianScaling: find, average_last
 
@@ -62,34 +62,47 @@ function pretraining_runs(dir::AbstractString; smoothed_eval_batch=1e6)
         val_loss_last=get_metric(run["metrics"]; metric="loss_epoch", split="val", type="last")
         val_loss_best = ismissing(val_loss_best) ? val_loss_min : val_loss_best
 
-        push!(row, (;
-            id=run["id"],
-            state=run["state"],
-            user=run["user"],
-            cluster=run["cluster"],
-            commit=run["commit"],
-            tags=string.(run["tags"]),
-            created=DateTime(run["created"][1:23], Dates.ISODateTimeFormat),
-            model_size=run["model"]["model_size"],
-            model_class=run["model"]["class_path"],
-            d_model,
-            ff_ratio,
-            kv_size,
-            aspect_ratio,
-            optimizer=run["optimizer"]["class_path"],
-            tokenizer=run["data"]["tokenizer"],
-            max_steps=run["trainer"]["num_training_steps"],
-            step=get_metric(run["metrics"]; metric="global_step", type="last"),
-            gas=run["trainer"]["gas"],
-            effective_batch_size=run["trainer"]["effective_batch_size"],
-            effective_val_epoch,
-            lr=run["optimizer"]["lr"],
-            beta1,
-            beta2,
-            val_loss_best,
-            val_loss_last,
-            val_loss_smooth
-        ))
+        # Parse Date
+        if !ismissing(run["created"])
+            created = DateTime(run["created"][1:23], Dates.ISODateTimeFormat)
+        else
+            created = missing
+        end
+
+        try
+            push!(row, (;
+                id=run["id"],
+                state=run["state"],
+                user=run["user"],
+                cluster=run["cluster"],
+                commit=run["commit"],
+                tags=string.(run["tags"]),
+                created,
+                runtime=float(run["runtime"]),
+                world_size=Int(run["job_config"]["world_size"]),
+                model_size=run["model"]["model_size"],
+                model_class=run["model"]["class_path"],
+                d_model,
+                ff_ratio,
+                kv_size,
+                aspect_ratio,
+                optimizer=run["optimizer"]["class_path"],
+                tokenizer=run["data"]["tokenizer"],
+                max_steps=run["trainer"]["num_training_steps"],
+                step=get_metric(run["metrics"]; metric="global_step", type="last"),
+                gas=run["trainer"]["gas"],
+                effective_batch_size=run["trainer"]["effective_batch_size"],
+                effective_val_epoch,
+                lr=run["optimizer"]["lr"],
+                beta1,
+                beta2,
+                val_loss_best,
+                val_loss_last,
+                val_loss_smooth
+            ))
+        catch e
+            @error "Failed to import $file" e
+        end
     end
     return DataFrame(row)
 end
