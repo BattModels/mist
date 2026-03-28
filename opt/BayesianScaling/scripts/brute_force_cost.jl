@@ -3,7 +3,7 @@
 # Usage: ./brute_force_cost.jl ../out/dec_3_sweep_runs.jsonl
 using DataFrames
 using JSON: JSON
-using BayesianScaling: non_embedding_size
+using BayesianScaling: non_embedding_size, pf_day
 
 const AVG_SEQ_LENGTH::Float64 = 65.2
 """
