@@ -152,9 +152,9 @@ function plot_metric_panel!(ax, metric_data, metric)
     struct_data, label_data = filter(r -> r.cliff == "struct", metric_data).value,
                                filter(r -> r.cliff == "label", metric_data).value
 
-    !isempty(struct_data) && violin!(ax, fill(0.0, length(struct_data)), struct_data;
+    violin!(ax, fill(0.0, length(struct_data)), struct_data;
                                       color=(MISTStyle.UM_COLORS.maize, 0.5), width=0.8, datalimits=extrema)
-    !isempty(label_data) && violin!(ax, fill(1.0, length(label_data)), label_data;
+    violin!(ax, fill(1.0, length(label_data)), label_data;
                                      color=(MISTStyle.UM_COLORS.blue, 0.5), width=0.8, datalimits=extrema)
 
     unique_triples = unique(collect(zip(metric_data.anchor, metric_data.struct_cliff, metric_data.label)))
@@ -165,7 +165,6 @@ function plot_metric_panel!(ax, metric_data, metric)
         triple_data = filter(r -> r.anchor == a && r.struct_cliff == s && r.label == l, metric_data)
         struct_vals, label_vals = filter(r -> r.cliff == "struct", triple_data).value,
                                    filter(r -> r.cliff == "label", triple_data).value
-        (isempty(struct_vals) || isempty(label_vals)) && continue
 
         struct_val, label_val = struct_vals[1], label_vals[1]
         lines!(ax, [0, 1], [struct_val, label_val]; color=colors[idx], linestyle=:solid)
@@ -190,9 +189,10 @@ function plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="
     csv_data = NamedTuple[]
 
     with_theme(MISTStyle.theme()) do
-        fig = Figure(size=(50mm, 50mm), padding=(2,2,2,4))
+        fig = Figure(size=(55mm, 50mm), padding=(4,4,4,4))
         ax = Axis(fig[1,1]; xlabel="Structural Distance",
-                  ylabel=normalize ? "Normalized $metric" : metric, aspect=1)
+                  ylabel=normalize ? "Normalized $metric" : metric, aspect=1,
+                  limits = ( (0.3, 1),  (0.3, 1)))
 
         for (idx, (anchor, sc, lc)) in enumerate(unique_triads)
             color, marker = colors[idx], markers[mod1(idx, length(markers))]
@@ -200,7 +200,6 @@ function plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="
             for (cliff_type, stroke) in [("struct", nothing), ("label", :black)]
                 row = filter(r -> r.anchor == anchor && r.struct_cliff == sc &&
                                   r.label == lc && r.cliff == cliff_type, triples_df)
-                isempty(row) && continue
 
                 x, y = get_val(row, "Structural Distance"), norm_val(get_val(row, metric))
                 scatter!(ax, [x], [y]; color, marker, strokewidth=isnothing(stroke) ? 0 : 0.6,
@@ -213,16 +212,13 @@ function plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="
 
             sr = filter(r -> r.anchor == anchor && r.struct_cliff == sc && r.label == lc && r.cliff == "struct", triples_df)
             lr = filter(r -> r.anchor == anchor && r.struct_cliff == sc && r.label == lc && r.cliff == "label", triples_df)
-            (!isempty(sr) && !isempty(lr)) && lines!(ax,
+            lines!(ax,
                 [get_val(sr, "Structural Distance"), get_val(lr, "Structural Distance")],
                 [norm_val(get_val(sr, metric)), norm_val(get_val(lr, metric))]; color=(color, 0.5), linewidth=1)
         end
-
-        ablines!(ax, 0, 1; color=:gray, linestyle=:dash, linewidth=1)
-        xlims!(ax, (0.3, 1)); ylims!(ax, (0.3, 1))
         axislegend(ax, [MarkerElement(color=:gray, marker=:circle, markersize=3),
                         MarkerElement(color=:gray, marker=:circle, strokewidth=0.6, strokecolor=:black, markersize=3)],
-                   ["Structurally Similar", "Perceptually Similar"]; position=:rb, padding=(1,1,1,1))
+                   [ "Perceptually Similar", "Structurally Similar"]; position=:rb, padding=(1,1,1,1))
 
         MISTStyle.savefig("struct_vs_$(lowercase(replace(metric, ' ' => '_', '(' => "", ')' => "")))", fig)
     end
@@ -256,8 +252,16 @@ function plot_discordance(label_path="../../osmo_data/safe_to_share.csv",
     with_theme(MISTStyle.theme()) do
         fig = Figure(size=(150mm, 75mm))
         gl = GridLayout(fig[1, 1])
-        axes = [Axis(gl[div(i-1,3)+1, mod1(i,3)]; xlabel="", ylabel=distances[i],
-                     xticks=([0,1], ["Dissimilar\nStructure", "Similar\nStructure"])) for i in 1:5]
+        axes = [
+            Axis(
+                gl[div(i-1,3)+1, mod1(i,3)];
+                xlabel="",
+                ylabel=distances[i],
+                spinewidth=0.8,
+                xgridvisible = false,
+                ygridvisible = false,
+                xticks=([0,1], ["Dissimilar\nStructure", "Similar\nStructure"])
+                ) for i in 1:5]
         linkyaxes!(axes[1], axes[2], axes[3])
 
         for (ax, metric) in zip(axes, distances)
