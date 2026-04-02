@@ -68,7 +68,7 @@ class ComponentDataModule(LightningDataModule):
     def __init__(
         self,
         path: str,
-        target_columns: Union[str, List[str]],
+        target_columns: list | str,
         n_components: int = 2,
         tokenizer: Optional[str] = None,
         batch_size: int = 64,

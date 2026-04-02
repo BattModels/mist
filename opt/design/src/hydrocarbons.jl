@@ -22,25 +22,27 @@ tert_alkyl(n::Int) = n < 4 ? "C"^n : "C(C)(C)" * "C"^(n - 3)
 
 function branched_esters(n_total::Int)
     esters = []
-    # Generate esters with different chain length splits
     for n_acyl in 1:(n_total - 1)
         n_alkoxy = n_total - n_acyl
-        # Linear acyl, iso alkoxy (if n_alkoxy >= 3)
+
+        push!(esters, (; smi="O=C(O" * "C"^n_alkoxy * ")" * "C"^(n_acyl - 1),
+                       branch_pattern="linear"))
+
         if n_alkoxy >= 3
             push!(esters, (; smi="O=C(O" * iso_alkyl(n_alkoxy) * ")" * "C"^(n_acyl - 1),
                            branch_pattern="iso-alkoxy"))
         end
-        # Iso acyl, linear alkoxy (n_acyl - 1 >= 3, so n_acyl >= 4)
+
         if n_acyl >= 4
             push!(esters, (; smi="O=C(O" * "C"^n_alkoxy * ")" * iso_alkyl(n_acyl - 1),
                            branch_pattern="iso-acyl"))
         end
-        # Tert acyl, linear alkoxy (n_acyl - 1 >= 4, so n_acyl >= 5)
+
         if n_acyl >= 5
             push!(esters, (; smi="O=C(O" * "C"^n_alkoxy * ")" * tert_alkyl(n_acyl - 1),
                            branch_pattern="tert-acyl"))
         end
-        # Both iso (n_acyl - 1 >= 3 and n_alkoxy >= 3, so n_acyl >= 4 and n_alkoxy >= 3)
+
         if n_acyl >= 4 && n_alkoxy >= 3
             push!(esters, (; smi="O=C(O" * iso_alkyl(n_alkoxy) * ")" * iso_alkyl(n_acyl - 1),
                            branch_pattern="iso-both"))
@@ -51,30 +53,32 @@ end
 
 function branched_ethers(n_total::Int)
     ethers = []
-    # Generate ethers with different chain length splits
     for n_left in 1:(n_total - 1)
         n_right = n_total - n_left
-        # Linear left, iso right (if n_right >= 3)
+
+        push!(ethers, (; smi="C"^n_left * "O" * "C"^n_right,
+                       branch_pattern="linear"))
+
         if n_right >= 3
             push!(ethers, (; smi="C"^n_left * "O" * iso_alkyl(n_right),
                            branch_pattern="iso-right"))
         end
-        # Iso left, linear right (if n_left >= 3)
+
         if n_left >= 3
             push!(ethers, (; smi=iso_alkyl(n_left) * "O" * "C"^n_right,
                            branch_pattern="iso-left"))
         end
-        # Tert left, linear right (if n_left >= 4)
+
         if n_left >= 4
             push!(ethers, (; smi=tert_alkyl(n_left) * "O" * "C"^n_right,
                            branch_pattern="tert-left"))
         end
-        # Linear left, tert right (if n_right >= 4)
+
         if n_right >= 4
             push!(ethers, (; smi="C"^n_left * "O" * tert_alkyl(n_right),
                            branch_pattern="tert-right"))
         end
-        # Both iso (if both sides >= 3)
+
         if n_left >= 3 && n_right >= 3
             push!(ethers, (; smi=iso_alkyl(n_left) * "O" * iso_alkyl(n_right),
                            branch_pattern="iso-both"))
@@ -85,29 +89,30 @@ end
 
 function branched_alcohols(n_total::Int)
     alcohols = []
-    # Secondary alcohols - OH on carbon with iso branching (if n >= 3)
+
+    push!(alcohols, (; smi="O" * "C"^n_total,
+                     branch_pattern="primary-linear"))
+
     if n_total >= 3
         push!(alcohols, (; smi="O" * iso_alkyl(n_total),
                          branch_pattern="secondary-at-O-iso"))
     end
-    # Tertiary alcohols - OH on carbon with tert branching (if n >= 4)
+
     if n_total >= 4
         push!(alcohols, (; smi="O" * tert_alkyl(n_total),
                          branch_pattern="tertiary-at-O-tert"))
     end
-    # Secondary alcohols (OH on internal carbon, linear)
+
     for pos in 2:(n_total - 1)
-        # Linear secondary alcohol
         push!(alcohols, (; smi="C"^(pos - 1) * "C(O)" * "C"^(n_total - pos),
                          branch_pattern="secondary-linear"))
 
-        # Tertiary alcohol with branching at OH position (both sides must exist)
         if pos >= 2 && pos <= n_total - 2
             push!(alcohols, (; smi="C"^(pos - 1) * "C(O)(C)" * "C"^(n_total - pos - 1),
                              branch_pattern="tertiary-at-O"))
         end
     end
-    # Tertiary alcohols (3 distinct alkyl groups)
+
     if n_total >= 4
         for n_side1 in 1:(n_total - 3)
             for n_side2 in 1:(n_total - n_side1 - 2)
@@ -122,29 +127,30 @@ end
 
 function branched_thiols(n_total::Int)
     thiols = []
-    # Secondary thiols - SH on carbon with iso branching (if n >= 3)
+
+    push!(thiols, (; smi="S" * "C"^n_total,
+                   branch_pattern="primary-linear"))
+
     if n_total >= 3
         push!(thiols, (; smi="S" * iso_alkyl(n_total),
                        branch_pattern="secondary-at-S-iso"))
     end
-    # Tertiary thiols - SH on carbon with tert branching (if n >= 4)
+
     if n_total >= 4
         push!(thiols, (; smi="S" * tert_alkyl(n_total),
                        branch_pattern="tertiary-at-S-tert"))
     end
-    # Secondary thiols (SH on internal carbon, linear)
+
     for pos in 2:(n_total - 1)
-        # Linear secondary thiol
         push!(thiols, (; smi="C"^(pos - 1) * "C(S)" * "C"^(n_total - pos),
                        branch_pattern="secondary-linear"))
 
-        # Tertiary thiol with branching at SH position (both sides must exist)
         if pos >= 2 && pos <= n_total - 2
             push!(thiols, (; smi="C"^(pos - 1) * "C(S)(C)" * "C"^(n_total - pos - 1),
                            branch_pattern="tertiary-at-S"))
         end
     end
-    # Tertiary thiols (3 distinct alkyl groups)
+
     if n_total >= 4
         for n_side1 in 1:(n_total - 3)
             for n_side2 in 1:(n_total - n_side1 - 2)
@@ -205,15 +211,15 @@ end
 
 function fragrance_compounds(n::Int)
     df = DataFrame(vcat(
-        [(; type="Alkanes", smi=alkane(n)) for n in 1:n],
+        # [(; type="Alkanes", smi=alkane(n)) for n in 1:n],
         [(; type="Esters", smi=ester(n)) for n in 1:n],
         [(; type="Ethers", smi=ether(n)) for n in 3:n],
         [(; type="Alcohols", smi=alcohol(n)) for n in 1:n],
         [(; type="Aldehydes", smi=aldehyde(n)) for n in 1:n],
         [(; type="Carboxylic acids", smi=carboxylic_acid(n)) for n in 2:n],
-        [(; type="Alkenes", smi=alkene(n)) for n in 2:n],
-        [(; type="Alkynes", smi=alkyne(n)) for n in 2:n],
-        [(; type="Arenes", smi=arene(n)) for n in 0:n],
+        # [(; type="Alkenes", smi=alkene(n)) for n in 2:n],
+        # [(; type="Alkynes", smi=alkyne(n)) for n in 2:n],
+        # [(; type="Arenes", smi=arene(n)) for n in 0:n],
         [(; type="Thiol", smi=thiol(n)) for n in 1:n],
 
     ))
@@ -223,10 +229,10 @@ end
 
 function branched_fragrance_compounds(n::Int)
     df = DataFrame(vcat(
-        [(; type="Branched Esters", row...) for row in branched_esters(n)],
-        [(; type="Branched Ethers", row...) for row in branched_ethers(n)],
-        [(; type="Branched Alcohols", row...) for row in branched_alcohols(n)],
-        [(; type="Branched Thiols", row...) for row in branched_thiols(n)],
+        [(; type="Esters", row...) for row in branched_esters(n)],
+        [(; type="Ethers", row...) for row in branched_ethers(n)],
+        [(; type="Alcohols", row...) for row in branched_alcohols(n)],
+        [(; type="Thiols", row...) for row in branched_thiols(n)],
     ))
     n_carbon!(df)
     return df
