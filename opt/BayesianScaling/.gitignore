@@ -1,3 +1,4 @@
 # Ignore output directory (or symlink to it)
 out/
 out
+fig/

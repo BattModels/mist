@@ -10,7 +10,11 @@ using Setfield: @set!
 
 GIT_ROOT = readchomp(`git rev-parse --show-toplevel`)
 
-# include("wandb_import.jl")
+if isinteractive()
+    includet("wandb_import.jl")
+else
+    include("wandb_import.jl")
+end
 
 function prior_d_model_lr!(priors; lr_0=1.64e-4, d_model=768, batch_size=1024)
     # LR scaling with Model size used in Attention is All You Need
@@ -30,7 +34,7 @@ function dec_3_sweep_runs()
         :tokenizer => ByRow(==("smirk")),
         :created => ByRow(<=(DateTime(2025, 1))),
         :tags => ByRow(tags -> "dec-3-sweep" in tags),
-        [:step, :max_steps] => ByRow((s, ms) -> s / ms > 0.8);
+        # [:step, :max_steps] => ByRow((s, ms) -> s / ms > 0.8);
         skipmissing=true,
     )
     dropmissing!(df, [:model_size, :d_model, :effective_batch_size, :max_steps, :lr, :ff_ratio, :aspect_ratio, :kv_size])

@@ -1,7 +1,9 @@
 #!/usr/bin/env -S julia +release --color=auto --startup-file=no --project=@script
 using PrettyTables
 using DataFrames
-using BayesianScaling: BayesianScaling, find, selectparam
+using BayesianScaling: BayesianScaling, selectparam
+using StatsBase: response, cor, corspearman
+using Format: format
 using JLD2: jldopen
 using MISTStyle
 using Makie
@@ -69,19 +71,17 @@ function model_summary(files)
     return DataFrame(rows)
 end
 
-function model_name(model, lr_model_size, geometric_penalty, harmonic_shape_penalty)
-
-    named = Dict(
-        ("Penalized", :model_size, true, false) => "Penalized, Baseline",
-        ("Penalized", :d_model, true, false) => "Penalized, LR Scales with Hidden Size",
-        ("Penalized", :model_size, false, true) => "Penalized, Additive",
-        ("Penalized", :model_size, true, true) => "Penalized, Harmonic Shape Penalty",
-        ("Chinchilla", nothing, nothing, nothing) => "No Penalties",
-    )
-    return get(named, (model, lr_model_size, geometric_penalty, harmonic_shape_penalty), nothing)
-end
-
 function write_scaling_param_table(df::DataFrame; sigdigits=3)
+    function model_name(model, lr_model_size, geometric_penalty, harmonic_shape_penalty)
+        named = Dict(
+            ("Penalized", :model_size, true, false) => "Penalized, Baseline",
+            ("Penalized", :d_model, true, false) => "Penalized, \\(\\eta_{\\star} = f(d_{\\text{model}})\\)",
+            ("Penalized", :model_size, true, true) => "\\stacked{Penalized, Harmonic}{Shape Penalty}",
+            ("Penalized", :model_size, false, true) => "Penalized, Additive",
+            ("Chinchilla", nothing, nothing, nothing) => "No Penalties",
+        )
+        return get(named, (model, lr_model_size, geometric_penalty, harmonic_shape_penalty), nothing)
+    end
     df = transform(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(LatexCell∘model_name) => :model_name)
     subset!(df, :model_name => ByRow(!isnothing))
     sort!(df, :waic)
@@ -91,8 +91,8 @@ function write_scaling_param_table(df::DataFrame; sigdigits=3)
         :waic => latex_cell"\acs{WAIC}",
         :mape =>latex_cell"\acs{MAPE}",
         # :aic =>latex_cell"\acs{AIC}",
-        :pearson =>latex_cell"Pearson's \(\rho\)",
-        :spearman =>latex_cell"Spearman's \(\rho\)",
+        :pearson =>latex_cell"\makecell{Pearson's\\\(r\)}",
+        :spearman =>latex_cell"\makecell{Spearman's\\\(\rho\)}",
         :A =>latex_cell"$A$",
         :B =>latex_cell"$B$",
         :α =>latex_cell"$\alpha$",
@@ -121,7 +121,7 @@ function write_scaling_param_table(df::DataFrame; sigdigits=3)
             l = sn(l; sigdigits)
             u = sn(u; sigdigits)
         end
-        return LatexCell("\\ci{$μ}{$l}{$u}")
+        return LatexCell("\\cistacked{$μ}{$l}{$u}")
     end
     function fmt_metric(v, i, j)
         metrics = [:waic, :mape, :aic, :pearson, :spearman]
@@ -136,7 +136,7 @@ function write_scaling_param_table(df::DataFrame; sigdigits=3)
             return format("{}", v)
         end
     end
-    return pretty_table(df[:, first.(cols)];
+    return pretty_table(String, df[:, first.(cols)];
         tf,
         alignment=[col in [:model_name] ? :l : :c for col in first.(cols)],
         formatters=(fmt_ci, fmt_metric),
@@ -194,6 +194,44 @@ function figure_smoothed_scaling(df)
     return f
 end
 
+function summary_rows(df; sigdigits=3)
+    sort!(df, :n_smooth)
+    function model_name(model, lr_model_size, geometric_penalty, harmonic_shape_penalty)
+        named = Dict(
+            ("Penalized", :model_size, true, false) => "MIST, Penalized Scaling \\cref{eq:penalized_neural_scaling}",
+            ("Chinchilla", nothing, nothing, nothing) => "MIST, No Penalty Terms",
+        )
+        return get(named, (model, lr_model_size, geometric_penalty, harmonic_shape_penalty), nothing)
+    end
+    transform!(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(model_name) => :model_name)
+    df = subset(df,
+        :model_name => ByRow(!isnothing),
+        :file => ByRow(endswith("gamma")),
+        :n_smooth => ByRow(==(1)),
+    )
+
+    function format_ci(v)
+        μ, l, u = v
+        μ = round(μ; sigdigits)
+        l = round(l; sigdigits)
+        u = round(u; sigdigits)
+        return "\\ci{$μ}{$l}{$u}"
+    end
+    open(joinpath("fig", "scaling_summary_rows.tex"), "w") do io
+        for model in eachrow(df)
+            row = [
+                model.model_name,
+                format_ci(model.α),
+                format_ci(model.β),
+                format_ci(model.a),
+                format_ci(model.b),
+                format_ci(model.r)
+            ]
+            println(io, join(row, " & ") * " \\\\ % $(model.file)")
+        end
+    end
+    return nothing
+end
 
 function (@main)(ARGS)
     df = model_summary(BayesianScaling.find("out", r"dec-3-.*chains.jld2"))
@@ -202,4 +240,5 @@ function (@main)(ARGS)
     open(joinpath("fig", "param_table.tex"), "w") do io
         write(io, table)
     end
+    summary_rows(df)
 end

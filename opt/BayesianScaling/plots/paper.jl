@@ -597,14 +597,15 @@ function figure_bayesian_panel(data;
     return f
 end
 
-function plot_model(model; kwargs...)
+function plot_model(model; avg_seq_length, kwargs...)
     @info "plotting $model"
     run_name = basename(model)
     data = jldopen(joinpath(model, "chains.jld2"), "r")
     try
+        suffix = avg_seq_length != 1 ? "-token-cost" : ""
         with_theme(MISTStyle.theme()) do
-            figure_bayesian(data; kwargs...)
-        end |> MISTStyle.savefig("bayesian-$run_name")
+            figure_bayesian(data; avg_seq_length, kwargs...)
+        end |> MISTStyle.savefig("bayesian-$(run_name)$(suffix)")
 
         with_theme(MISTStyle.theme()) do
             plot_prediction_intervals(data["model"], data["chains"])
@@ -620,6 +621,7 @@ end
 function plot_all(dir; kwargs...)
     for model in readdir(dir; join=true)
         isfile(joinpath(model, "chains.jld2")) || continue
+        plot_model(model; avg_seq_length=1.0, kwargs...)
         plot_model(model; avg_seq_length=AVG_SEQ_LENGTH, kwargs...)
     end
 end
@@ -634,8 +636,11 @@ function (@main)(ARGS=[])
     # Panel figure
     data = jldopen(joinpath(chains_dir, "dec-3-sweep-smoothed-1.0--geometric-shape-gamma", "chains.jld2"), "r")
     with_theme(MISTStyle.theme()) do
-        figure_bayesian_panel(data; avg_seq_length=AVG_SEQ_LENGTH)
+        figure_bayesian_panel(data; avg_seq_length=1.0)
     end |> MISTStyle.savefig("scaling_panel_baseline")
+    with_theme(MISTStyle.theme()) do
+        figure_bayesian_panel(data; avg_seq_length=AVG_SEQ_LENGTH)
+    end |> MISTStyle.savefig("scaling_panel_baseline-token-cost")
 
     return nothing
 end

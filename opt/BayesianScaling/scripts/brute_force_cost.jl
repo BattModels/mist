@@ -46,7 +46,7 @@ function compute_full_cost(df::DataFrame)
         p = NamedTuple{l_names}(p)
         N = non_embedding_size(p.d_model, p.ff_ratio, p.n_layer)
         D = p.data_size
-        return 6 * N * D * AVG_SEQ_LENGTH
+        return 6 * N * D # * AVG_SEQ_LENGTH
     end
     return levels, total_cost
 end
@@ -62,14 +62,14 @@ function compute_partial_cost(df::DataFrame; include_lr::Bool=true)
     l_names = keys(levels)
     total_cost = sum(Iterators.product(levels...)) do p
         p = NamedTuple{l_names}(p)
-        return 6 * p.model_size * p.data_size * AVG_SEQ_LENGTH
+        return 6 * p.model_size * p.data_size # * AVG_SEQ_LENGTH
     end
     return levels, total_cost
 end
 
 function compute_bayes_cost(df::DataFrame)
     N = df.model_size
-    D = @. df.effective_batch_size * df.max_steps * AVG_SEQ_LENGTH
+    D = @. df.effective_batch_size * df.max_steps # * AVG_SEQ_LENGTH
     return sum(x -> 6 * prod(x), zip(N, D))
 end
 
@@ -79,7 +79,7 @@ function estimate_cost(levels::NamedTuple)
         p = NamedTuple{l_names}(p)
         N = non_embedding_size(p.d_model, p.ff_ratio, p.n_layer)
         D = p.data_size
-        return 6 * N * D * AVG_SEQ_LENGTH
+        return 6 * N * D # * AVG_SEQ_LENGTH
     end
     return total_compute
 end
@@ -105,32 +105,26 @@ function latex_math_identifier(x)
     s = String(x)
     if occursin("_", s)
         head, tail... = split(s, "_")
-        return "\$" * head * "_{\\text{" * join(tail, "\\_") * "}}\$"
+        return "\$" * head * "_{\\textrm{" * join(tail, "\\_") * "}}\$"
     end
     return "\$" * s * "\$"
 end
 
 function latex_inline_identifier(x)
-    if x in (:d_model, :n_layer, :kv_size)
+    if x in (:n_layer, :d_model)
         return latex_math_identifier(x)
+    elseif x == :model_size
+        return "\$N\$"
     elseif x == :data_size
         return "\$D\$"
     elseif x == :lr_prefactor
-        return "\$lr\$"
+        return "\$\\eta_{0}\$"
     elseif x == :ff_ratio
-        return "ff\\_ratio"
+        return latex_math_identifier("r_ff")
+    elseif x == :kv_size
+        return latex_math_identifier("r_kv")
     elseif x == :effective_batch_size
-        return "batch"
-    else
-        return latex_escape_identifier(x)
-    end
-end
-
-function latex_description_label(x)
-    if x in (:d_model, :n_layer, :kv_size)
-        return latex_math_identifier(x)
-    elseif x == :lr_prefactor
-        return "\$lr\\_prefactor\$"
+        return "\$\\mathcal{B}\$"
     else
         return latex_escape_identifier(x)
     end
@@ -176,12 +170,12 @@ function latex_levels_block(
             continue
         end
         n = length(v)
-        label = latex_description_label(k)
+        label = latex_inline_identifier(k)
         vec = latex_vector(v)
         println(io, "\\item[$label ($n)]")
-        println(io, "\\[")
+        println(io, "\$")
         println(io, vec)
-        println(io, "\\]")
+        println(io, "\$")
         println(io)
     end
 
