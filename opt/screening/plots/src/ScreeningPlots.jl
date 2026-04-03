@@ -1,12 +1,13 @@
 module ScreeningPlots
 
-using Makie
+using CairoMakie
 using DataFrames
 using Random: randperm
 using Graphs: complete_graph, boruvka_mst
 using Metaheuristics: Metaheuristics
 using JSON: JSON
 using SQLite: SQLite
+using CSV: CSV
 using PythonCall: Py, PyList, pyimport, pyconvert
 using GLM: @formula, lm, glm, Normal, LogLink, coef
 using Format: format
@@ -52,6 +53,7 @@ include("sqlite.jl")
 include("pareto.jl")
 include("odor.jl")
 include("xyz.jl")
+include("lithium_air.jl")
 
 function canonicalize(smi::String)
     mol = __rdkit_chem[].MolFromSmiles(smi)

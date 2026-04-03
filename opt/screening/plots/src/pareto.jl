@@ -1,8 +1,22 @@
 function get_pareto_front(x::Vector, y::Vector; quad=:lt, ax=nothing)
-    @assert quad == :lt "not implemented"
-    idx = Metaheuristics.get_non_dominated_solutions_perm(map(vcat, x, -1 .* y))
+    # quad options:
+    # :lt = minimize x, maximize y (lower-left to top-right)
+    # :ll = minimize x, minimize y (lower-left)
+    # :rt = maximize x, minimize y (right-top to bottom-left)
+    if quad == :lt
+        # Minimize x, maximize y
+        idx = Metaheuristics.get_non_dominated_solutions_perm(map(vcat, x, -1 .* y))
+    elseif quad == :ll
+        # Minimize both x and y
+        idx = Metaheuristics.get_non_dominated_solutions_perm(map(vcat, x, y))
+    elseif quad == :rt
+        # Maximize x, minimize y
+        idx = Metaheuristics.get_non_dominated_solutions_perm(map(vcat, -1 .* x, y))
+    else
+        error("quad=$quad not implemented")
+    end
     front = Point2.(x[idx], y[idx])
-    frontier = Point2.(sort(front; by=first, rev=true))
+    frontier_base = Point2.(sort(front; by=first, rev=true))
     if ax !== nothing
         limits = lift(ax.finallimits) do hr
             lx, ly = hr.origin
@@ -12,12 +26,26 @@ function get_pareto_front(x::Vector, y::Vector; quad=:lt, ax=nothing)
             return (; lx, ly, ux, uy)
         end
         frontier = lift(limits) do limits
-            fs = Point2(limits.ux, frontier[1][2])
-            fe = Point2(frontier[end][1], limits.ly)
-            vcat([fs], frontier, [fe])
+            if quad == :lt
+                fs = Point2(limits.ux, frontier_base[1][2])
+                fe = Point2(frontier_base[end][1], limits.ly)
+                vcat([fs], frontier_base, [fe])
+            elseif quad == :ll
+                fs = Point2(limits.ux, frontier_base[1][2])
+                fe = Point2(frontier_base[end][1], limits.uy)
+                vcat([fs], frontier_base, [fe])
+            elseif quad == :rt
+                fs = Point2(frontier_base[1][1], limits.uy)
+                fe = Point2(limits.lx, frontier_base[end][2])
+                vcat([fs], frontier_base, [fe])
+            else
+                error("quad=$quad not implemented for axis extension")
+            end
         end
+        return frontier
+    else
+        return frontier_base
     end
-    return frontier
 end
 
 function plot_generation(cases)
