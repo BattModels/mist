@@ -459,16 +459,16 @@ datasets:
 
   # Solvent property models
   pka:
-    name: "Dissociation Constant (pKa)"
-    source: "The IUPAC Digitized pKa Dataset retrived from the repository https://github.com/IUPAC/Dissociation-Constants was used. The dataset was filtered to include only measurements of pKaH1 taken at 25°C."
+    name: "Dissociation Constant (pKa) in DMSO"
+    source: "The raw dataset was taken from Acid Dissociation Constants in Selected Dipolar Non-Hydrogen-Bond-Donor Solvents (IUPAC Technical Report).  The dataset was filtered to include only measurements which included a value for the measurement in DMSO. Duplicates were averaged over based on InChI keys and two measurements for mixtures were excluded."
     task_type: "Regression"
-    task_description: "dissociation constant at 298.15K"
+    task_description: "dissociation constant in DMSO"
     output_format: "Regression prediction for pKa"
-    output_description: "Returns predictions for dissociation constant at 298.15K"
+    output_description: "Returns predictions for pKa in DMSO"
     loss_function: "Mean Squared Error (MSE) Loss"
     metrics: "Mean Absolute Error (MAE) for pKa predictions"
     split_type: "random"
-    num_samples: 3,573
+    num_samples: 3,254
 
   etn:
     name: "Normalized Dimroth-Reichardt Solvent Polarity Parameter (ETN)"
