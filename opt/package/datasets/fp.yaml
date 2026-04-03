@@ -2,12 +2,7 @@
 # Characteristic temperatures dataset collected by Shang Zhu et al., as cited in the packaged metadata.
 name: Flash Point
 source: a Characteristic Temperatures dataset collect by Shang Zhu et al.
-description: The Flash Point dataset (part of the Characteristic Temperatures Dataset)
-  was used. The flash point of a substance is the lowest temperature at which vapors
-  ignite and determines its flammability. The MIST variant was fine-tuned on a dataset
-  of 10,090 flash-point data entries obtained from the literature. The dataset was
-  filtered to chemicals with fewer than 20 heavy atoms (not including hydrogen) and
-  zero radical electrons.
+description: The Flash Point dataset (part of the Characteristic Temperatures Dataset) was used. The flash point of a substance is the lowest temperature at which vapors ignite and determines its flammability. The MIST variant was fine-tuned on a dataset of 10,090 flash-point data entries obtained from the literature. The dataset was filtered to chemicals with fewer than 20 heavy atoms (not including hydrogen) and zero radical electrons.
 task_type: Regression
 task_description: flash point
 output_format: Regression prediction for flash point (K)
@@ -17,6 +12,6 @@ metrics: Root Mean Squared Error (RMSE) for flash point predictions
 split_type: random
 num_samples: 10090
 channels:
-- name: fp
-  unit: degree_Celsius
-  description: Flash point
+  - name: fp
+    unit: degree_Kelvin
+    description: Flash point

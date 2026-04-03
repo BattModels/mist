@@ -3,9 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+import pint
 import yaml
 
 DATASETS_DIR = Path(__file__).parent / "datasets"
+UNIT_REGISTRY = pint.UnitRegistry()
+UNIT_REGISTRY.define("logit = []")
 
 
 def normalize_dataset_name(name: str) -> str:
@@ -66,7 +69,26 @@ def load_dataset_spec(dataset_name: str) -> dict:
     path = DATASETS_DIR / f"{dataset_key}.yaml"
     if not path.is_file():
         raise ValueError(f"Dataset spec not found for '{dataset_name}' at {path}")
-    return yaml.safe_load(path.read_text())
+    spec = yaml.safe_load(path.read_text())
+    validate_dataset_spec_units(spec, dataset_name=dataset_key)
+    return spec
+
+
+def validate_dataset_spec_units(spec: dict, *, dataset_name: str) -> None:
+    for index, channel in enumerate(spec.get("channels", [])):
+        if not isinstance(channel, dict):
+            continue
+        unit = channel.get("unit")
+        if unit is None:
+            continue
+        try:
+            UNIT_REGISTRY.parse_units(unit)
+        except Exception as exc:
+            channel_name = channel.get("name", f"index {index}")
+            raise ValueError(
+                f"Dataset '{dataset_name}' channel '{channel_name}' has invalid unit "
+                f"{unit!r}"
+            ) from exc
 
 
 def parse_dataset_from_name(name: str) -> Optional[str]:

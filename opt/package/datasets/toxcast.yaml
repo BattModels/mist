@@ -3,1867 +3,1247 @@
 # MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
 name: ToxCast
 source: MoleculeNet benchmark
-description: The ToxCast dataset from MoleculeNet was used. It contains over 8,000
-  compounds tested across 617 high-throughput screening assays covering various biological
-  pathways and toxicity endpoints from the EPA's ToxCast project.
+description: The ToxCast dataset from MoleculeNet was used. It contains over 8,000 compounds tested across 617 high-throughput screening assays covering various biological pathways and toxicity endpoints from the EPA's ToxCast project.
 task_type: Multi-label binary classification
 task_description: ToxCast assay endpoints
 output_format: Multi-label binary classification for 617 toxicity assay endpoints
-output_description: Returns unnormalized logits for 617 high-throughput screening
-  assay endpoints
+output_description: Returns unnormalized logits for 617 high-throughput screening assay endpoints
 loss_function: Binary Cross-Entropy Loss
 metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 617 tasks
 split_type: random
 num_samples: 8615
 channels:
-- name: ACEA_T47D_80hr_Negative
-  unit: logit
-  description: ToxCast assay endpoint ACEA T47D 80hr Negative
-- name: ACEA_T47D_80hr_Positive
-  unit: logit
-  description: ToxCast assay endpoint ACEA T47D 80hr Positive
-- name: APR_HepG2_CellCycleArrest_24h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 CellCycleArrest 24h dn
-- name: APR_HepG2_CellCycleArrest_24h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 CellCycleArrest 24h up
-- name: APR_HepG2_CellCycleArrest_72h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 CellCycleArrest 72h dn
-- name: APR_HepG2_CellLoss_24h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 CellLoss 24h dn
-- name: APR_HepG2_CellLoss_72h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 CellLoss 72h dn
-- name: APR_HepG2_MicrotubuleCSK_24h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MicrotubuleCSK 24h dn
-- name: APR_HepG2_MicrotubuleCSK_24h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MicrotubuleCSK 24h up
-- name: APR_HepG2_MicrotubuleCSK_72h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MicrotubuleCSK 72h dn
-- name: APR_HepG2_MicrotubuleCSK_72h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MicrotubuleCSK 72h up
-- name: APR_HepG2_MitoMass_24h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoMass 24h dn
-- name: APR_HepG2_MitoMass_24h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoMass 24h up
-- name: APR_HepG2_MitoMass_72h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoMass 72h dn
-- name: APR_HepG2_MitoMass_72h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoMass 72h up
-- name: APR_HepG2_MitoMembPot_1h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoMembPot 1h dn
-- name: APR_HepG2_MitoMembPot_24h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoMembPot 24h dn
-- name: APR_HepG2_MitoMembPot_72h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoMembPot 72h dn
-- name: APR_HepG2_MitoticArrest_24h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoticArrest 24h up
-- name: APR_HepG2_MitoticArrest_72h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 MitoticArrest 72h up
-- name: APR_HepG2_NuclearSize_24h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 NuclearSize 24h dn
-- name: APR_HepG2_NuclearSize_72h_dn
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 NuclearSize 72h dn
-- name: APR_HepG2_NuclearSize_72h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 NuclearSize 72h up
-- name: APR_HepG2_OxidativeStress_24h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 OxidativeStress 24h up
-- name: APR_HepG2_OxidativeStress_72h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 OxidativeStress 72h up
-- name: APR_HepG2_StressKinase_1h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 StressKinase 1h up
-- name: APR_HepG2_StressKinase_24h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 StressKinase 24h up
-- name: APR_HepG2_StressKinase_72h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 StressKinase 72h up
-- name: APR_HepG2_p53Act_24h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 p53Act 24h up
-- name: APR_HepG2_p53Act_72h_up
-  unit: logit
-  description: ToxCast assay endpoint APR HepG2 p53Act 72h up
-- name: APR_Hepat_Apoptosis_24hr_up
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat Apoptosis 24hr up
-- name: APR_Hepat_Apoptosis_48hr_up
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat Apoptosis 48hr up
-- name: APR_Hepat_CellLoss_24hr_dn
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat CellLoss 24hr dn
-- name: APR_Hepat_CellLoss_48hr_dn
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat CellLoss 48hr dn
-- name: APR_Hepat_DNADamage_24hr_up
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat DNADamage 24hr up
-- name: APR_Hepat_DNADamage_48hr_up
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat DNADamage 48hr up
-- name: APR_Hepat_DNATexture_24hr_up
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat DNATexture 24hr up
-- name: APR_Hepat_DNATexture_48hr_up
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat DNATexture 48hr up
-- name: APR_Hepat_MitoFxnI_1hr_dn
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat MitoFxnI 1hr dn
-- name: APR_Hepat_MitoFxnI_24hr_dn
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat MitoFxnI 24hr dn
-- name: APR_Hepat_MitoFxnI_48hr_dn
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat MitoFxnI 48hr dn
-- name: APR_Hepat_NuclearSize_24hr_dn
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat NuclearSize 24hr dn
-- name: APR_Hepat_NuclearSize_48hr_dn
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat NuclearSize 48hr dn
-- name: APR_Hepat_Steatosis_24hr_up
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat Steatosis 24hr up
-- name: APR_Hepat_Steatosis_48hr_up
-  unit: logit
-  description: ToxCast assay endpoint APR Hepat Steatosis 48hr up
-- name: ATG_AP_1_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG AP 1 CIS dn
-- name: ATG_AP_1_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG AP 1 CIS up
-- name: ATG_AP_2_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG AP 2 CIS dn
-- name: ATG_AP_2_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG AP 2 CIS up
-- name: ATG_AR_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG AR TRANS dn
-- name: ATG_AR_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG AR TRANS up
-- name: ATG_Ahr_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG Ahr CIS dn
-- name: ATG_Ahr_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Ahr CIS up
-- name: ATG_BRE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG BRE CIS dn
-- name: ATG_BRE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG BRE CIS up
-- name: ATG_CAR_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG CAR TRANS dn
-- name: ATG_CAR_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG CAR TRANS up
-- name: ATG_CMV_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG CMV CIS dn
-- name: ATG_CMV_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG CMV CIS up
-- name: ATG_CRE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG CRE CIS dn
-- name: ATG_CRE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG CRE CIS up
-- name: ATG_C_EBP_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG C EBP CIS dn
-- name: ATG_C_EBP_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG C EBP CIS up
-- name: ATG_DR4_LXR_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG DR4 LXR CIS dn
-- name: ATG_DR4_LXR_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG DR4 LXR CIS up
-- name: ATG_DR5_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG DR5 CIS dn
-- name: ATG_DR5_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG DR5 CIS up
-- name: ATG_E2F_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG E2F CIS dn
-- name: ATG_E2F_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG E2F CIS up
-- name: ATG_EGR_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG EGR CIS up
-- name: ATG_ERE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG ERE CIS dn
-- name: ATG_ERE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG ERE CIS up
-- name: ATG_ERRa_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG ERRa TRANS dn
-- name: ATG_ERRg_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG ERRg TRANS dn
-- name: ATG_ERRg_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG ERRg TRANS up
-- name: ATG_ERa_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG ERa TRANS up
-- name: ATG_E_Box_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG E Box CIS dn
-- name: ATG_E_Box_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG E Box CIS up
-- name: ATG_Ets_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG Ets CIS dn
-- name: ATG_Ets_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Ets CIS up
-- name: ATG_FXR_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG FXR TRANS up
-- name: ATG_FoxA2_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG FoxA2 CIS dn
-- name: ATG_FoxA2_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG FoxA2 CIS up
-- name: ATG_FoxO_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG FoxO CIS dn
-- name: ATG_FoxO_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG FoxO CIS up
-- name: ATG_GAL4_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG GAL4 TRANS dn
-- name: ATG_GATA_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG GATA CIS dn
-- name: ATG_GATA_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG GATA CIS up
-- name: ATG_GLI_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG GLI CIS dn
-- name: ATG_GLI_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG GLI CIS up
-- name: ATG_GRE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG GRE CIS dn
-- name: ATG_GRE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG GRE CIS up
-- name: ATG_GR_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG GR TRANS dn
-- name: ATG_GR_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG GR TRANS up
-- name: ATG_HIF1a_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG HIF1a CIS dn
-- name: ATG_HIF1a_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG HIF1a CIS up
-- name: ATG_HNF4a_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG HNF4a TRANS dn
-- name: ATG_HNF4a_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG HNF4a TRANS up
-- name: ATG_HNF6_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG HNF6 CIS dn
-- name: ATG_HNF6_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG HNF6 CIS up
-- name: ATG_HSE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG HSE CIS dn
-- name: ATG_HSE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG HSE CIS up
-- name: ATG_IR1_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG IR1 CIS dn
-- name: ATG_IR1_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG IR1 CIS up
-- name: ATG_ISRE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG ISRE CIS dn
-- name: ATG_ISRE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG ISRE CIS up
-- name: ATG_LXRa_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG LXRa TRANS dn
-- name: ATG_LXRa_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG LXRa TRANS up
-- name: ATG_LXRb_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG LXRb TRANS dn
-- name: ATG_LXRb_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG LXRb TRANS up
-- name: ATG_MRE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG MRE CIS up
-- name: ATG_M_06_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG M 06 TRANS up
-- name: ATG_M_19_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG M 19 CIS dn
-- name: ATG_M_19_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG M 19 TRANS dn
-- name: ATG_M_19_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG M 19 TRANS up
-- name: ATG_M_32_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG M 32 CIS dn
-- name: ATG_M_32_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG M 32 CIS up
-- name: ATG_M_32_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG M 32 TRANS dn
-- name: ATG_M_32_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG M 32 TRANS up
-- name: ATG_M_61_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG M 61 TRANS up
-- name: ATG_Myb_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG Myb CIS dn
-- name: ATG_Myb_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Myb CIS up
-- name: ATG_Myc_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG Myc CIS dn
-- name: ATG_Myc_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Myc CIS up
-- name: ATG_NFI_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG NFI CIS dn
-- name: ATG_NFI_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG NFI CIS up
-- name: ATG_NF_kB_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG NF kB CIS dn
-- name: ATG_NF_kB_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG NF kB CIS up
-- name: ATG_NRF1_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG NRF1 CIS dn
-- name: ATG_NRF1_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG NRF1 CIS up
-- name: ATG_NRF2_ARE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG NRF2 ARE CIS dn
-- name: ATG_NRF2_ARE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG NRF2 ARE CIS up
-- name: ATG_NURR1_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG NURR1 TRANS dn
-- name: ATG_NURR1_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG NURR1 TRANS up
-- name: ATG_Oct_MLP_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG Oct MLP CIS dn
-- name: ATG_Oct_MLP_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Oct MLP CIS up
-- name: ATG_PBREM_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG PBREM CIS dn
-- name: ATG_PBREM_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG PBREM CIS up
-- name: ATG_PPARa_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG PPARa TRANS dn
-- name: ATG_PPARa_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG PPARa TRANS up
-- name: ATG_PPARd_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG PPARd TRANS up
-- name: ATG_PPARg_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG PPARg TRANS up
-- name: ATG_PPRE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG PPRE CIS dn
-- name: ATG_PPRE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG PPRE CIS up
-- name: ATG_PXRE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG PXRE CIS dn
-- name: ATG_PXRE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG PXRE CIS up
-- name: ATG_PXR_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG PXR TRANS dn
-- name: ATG_PXR_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG PXR TRANS up
-- name: ATG_Pax6_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Pax6 CIS up
-- name: ATG_RARa_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG RARa TRANS dn
-- name: ATG_RARa_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG RARa TRANS up
-- name: ATG_RARb_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG RARb TRANS dn
-- name: ATG_RARb_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG RARb TRANS up
-- name: ATG_RARg_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG RARg TRANS dn
-- name: ATG_RARg_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG RARg TRANS up
-- name: ATG_RORE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG RORE CIS dn
-- name: ATG_RORE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG RORE CIS up
-- name: ATG_RORb_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG RORb TRANS dn
-- name: ATG_RORg_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG RORg TRANS dn
-- name: ATG_RORg_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG RORg TRANS up
-- name: ATG_RXRa_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG RXRa TRANS dn
-- name: ATG_RXRa_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG RXRa TRANS up
-- name: ATG_RXRb_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG RXRb TRANS dn
-- name: ATG_RXRb_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG RXRb TRANS up
-- name: ATG_SREBP_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG SREBP CIS dn
-- name: ATG_SREBP_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG SREBP CIS up
-- name: ATG_STAT3_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG STAT3 CIS dn
-- name: ATG_STAT3_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG STAT3 CIS up
-- name: ATG_Sox_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG Sox CIS dn
-- name: ATG_Sox_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Sox CIS up
-- name: ATG_Sp1_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG Sp1 CIS dn
-- name: ATG_Sp1_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Sp1 CIS up
-- name: ATG_TAL_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG TAL CIS dn
-- name: ATG_TAL_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG TAL CIS up
-- name: ATG_TA_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG TA CIS dn
-- name: ATG_TA_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG TA CIS up
-- name: ATG_TCF_b_cat_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG TCF b cat CIS dn
-- name: ATG_TCF_b_cat_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG TCF b cat CIS up
-- name: ATG_TGFb_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG TGFb CIS dn
-- name: ATG_TGFb_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG TGFb CIS up
-- name: ATG_THRa1_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG THRa1 TRANS dn
-- name: ATG_THRa1_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG THRa1 TRANS up
-- name: ATG_VDRE_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG VDRE CIS dn
-- name: ATG_VDRE_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG VDRE CIS up
-- name: ATG_VDR_TRANS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG VDR TRANS dn
-- name: ATG_VDR_TRANS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG VDR TRANS up
-- name: ATG_XTT_Cytotoxicity_up
-  unit: logit
-  description: ToxCast assay endpoint ATG XTT Cytotoxicity up
-- name: ATG_Xbp1_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG Xbp1 CIS dn
-- name: ATG_Xbp1_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG Xbp1 CIS up
-- name: ATG_p53_CIS_dn
-  unit: logit
-  description: ToxCast assay endpoint ATG p53 CIS dn
-- name: ATG_p53_CIS_up
-  unit: logit
-  description: ToxCast assay endpoint ATG p53 CIS up
-- name: BSK_3C_Eselectin_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C Eselectin down
-- name: BSK_3C_HLADR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C HLADR down
-- name: BSK_3C_ICAM1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C ICAM1 down
-- name: BSK_3C_IL8_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C IL8 down
-- name: BSK_3C_MCP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C MCP1 down
-- name: BSK_3C_MIG_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C MIG down
-- name: BSK_3C_Proliferation_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C Proliferation down
-- name: BSK_3C_SRB_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C SRB down
-- name: BSK_3C_Thrombomodulin_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C Thrombomodulin down
-- name: BSK_3C_Thrombomodulin_up
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C Thrombomodulin up
-- name: BSK_3C_TissueFactor_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C TissueFactor down
-- name: BSK_3C_TissueFactor_up
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C TissueFactor up
-- name: BSK_3C_VCAM1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C VCAM1 down
-- name: BSK_3C_Vis_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C Vis down
-- name: BSK_3C_uPAR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 3C uPAR down
-- name: BSK_4H_Eotaxin3_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H Eotaxin3 down
-- name: BSK_4H_MCP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H MCP1 down
-- name: BSK_4H_Pselectin_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H Pselectin down
-- name: BSK_4H_Pselectin_up
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H Pselectin up
-- name: BSK_4H_SRB_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H SRB down
-- name: BSK_4H_VCAM1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H VCAM1 down
-- name: BSK_4H_VEGFRII_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H VEGFRII down
-- name: BSK_4H_uPAR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H uPAR down
-- name: BSK_4H_uPAR_up
-  unit: logit
-  description: ToxCast assay endpoint BSK 4H uPAR up
-- name: BSK_BE3C_HLADR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C HLADR down
-- name: BSK_BE3C_IL1a_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C IL1a down
-- name: BSK_BE3C_IP10_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C IP10 down
-- name: BSK_BE3C_MIG_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C MIG down
-- name: BSK_BE3C_MMP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C MMP1 down
-- name: BSK_BE3C_MMP1_up
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C MMP1 up
-- name: BSK_BE3C_PAI1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C PAI1 down
-- name: BSK_BE3C_SRB_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C SRB down
-- name: BSK_BE3C_TGFb1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C TGFb1 down
-- name: BSK_BE3C_tPA_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C tPA down
-- name: BSK_BE3C_uPAR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C uPAR down
-- name: BSK_BE3C_uPAR_up
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C uPAR up
-- name: BSK_BE3C_uPA_down
-  unit: logit
-  description: ToxCast assay endpoint BSK BE3C uPA down
-- name: BSK_CASM3C_HLADR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C HLADR down
-- name: BSK_CASM3C_IL6_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C IL6 down
-- name: BSK_CASM3C_IL6_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C IL6 up
-- name: BSK_CASM3C_IL8_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C IL8 down
-- name: BSK_CASM3C_LDLR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C LDLR down
-- name: BSK_CASM3C_LDLR_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C LDLR up
-- name: BSK_CASM3C_MCP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C MCP1 down
-- name: BSK_CASM3C_MCP1_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C MCP1 up
-- name: BSK_CASM3C_MCSF_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C MCSF down
-- name: BSK_CASM3C_MCSF_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C MCSF up
-- name: BSK_CASM3C_MIG_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C MIG down
-- name: BSK_CASM3C_Proliferation_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C Proliferation down
-- name: BSK_CASM3C_Proliferation_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C Proliferation up
-- name: BSK_CASM3C_SAA_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C SAA down
-- name: BSK_CASM3C_SAA_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C SAA up
-- name: BSK_CASM3C_SRB_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C SRB down
-- name: BSK_CASM3C_Thrombomodulin_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C Thrombomodulin down
-- name: BSK_CASM3C_Thrombomodulin_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C Thrombomodulin up
-- name: BSK_CASM3C_TissueFactor_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C TissueFactor down
-- name: BSK_CASM3C_VCAM1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C VCAM1 down
-- name: BSK_CASM3C_VCAM1_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C VCAM1 up
-- name: BSK_CASM3C_uPAR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C uPAR down
-- name: BSK_CASM3C_uPAR_up
-  unit: logit
-  description: ToxCast assay endpoint BSK CASM3C uPAR up
-- name: BSK_KF3CT_ICAM1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT ICAM1 down
-- name: BSK_KF3CT_IL1a_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT IL1a down
-- name: BSK_KF3CT_IP10_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT IP10 down
-- name: BSK_KF3CT_IP10_up
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT IP10 up
-- name: BSK_KF3CT_MCP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT MCP1 down
-- name: BSK_KF3CT_MCP1_up
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT MCP1 up
-- name: BSK_KF3CT_MMP9_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT MMP9 down
-- name: BSK_KF3CT_SRB_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT SRB down
-- name: BSK_KF3CT_TGFb1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT TGFb1 down
-- name: BSK_KF3CT_TIMP2_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT TIMP2 down
-- name: BSK_KF3CT_uPA_down
-  unit: logit
-  description: ToxCast assay endpoint BSK KF3CT uPA down
-- name: BSK_LPS_CD40_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS CD40 down
-- name: BSK_LPS_Eselectin_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS Eselectin down
-- name: BSK_LPS_Eselectin_up
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS Eselectin up
-- name: BSK_LPS_IL1a_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS IL1a down
-- name: BSK_LPS_IL1a_up
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS IL1a up
-- name: BSK_LPS_IL8_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS IL8 down
-- name: BSK_LPS_IL8_up
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS IL8 up
-- name: BSK_LPS_MCP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS MCP1 down
-- name: BSK_LPS_MCSF_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS MCSF down
-- name: BSK_LPS_PGE2_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS PGE2 down
-- name: BSK_LPS_PGE2_up
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS PGE2 up
-- name: BSK_LPS_SRB_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS SRB down
-- name: BSK_LPS_TNFa_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS TNFa down
-- name: BSK_LPS_TNFa_up
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS TNFa up
-- name: BSK_LPS_TissueFactor_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS TissueFactor down
-- name: BSK_LPS_TissueFactor_up
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS TissueFactor up
-- name: BSK_LPS_VCAM1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK LPS VCAM1 down
-- name: BSK_SAg_CD38_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg CD38 down
-- name: BSK_SAg_CD40_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg CD40 down
-- name: BSK_SAg_CD69_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg CD69 down
-- name: BSK_SAg_Eselectin_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg Eselectin down
-- name: BSK_SAg_Eselectin_up
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg Eselectin up
-- name: BSK_SAg_IL8_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg IL8 down
-- name: BSK_SAg_IL8_up
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg IL8 up
-- name: BSK_SAg_MCP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg MCP1 down
-- name: BSK_SAg_MIG_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg MIG down
-- name: BSK_SAg_PBMCCytotoxicity_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg PBMCCytotoxicity down
-- name: BSK_SAg_PBMCCytotoxicity_up
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg PBMCCytotoxicity up
-- name: BSK_SAg_Proliferation_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg Proliferation down
-- name: BSK_SAg_SRB_down
-  unit: logit
-  description: ToxCast assay endpoint BSK SAg SRB down
-- name: BSK_hDFCGF_CollagenIII_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF CollagenIII down
-- name: BSK_hDFCGF_EGFR_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF EGFR down
-- name: BSK_hDFCGF_EGFR_up
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF EGFR up
-- name: BSK_hDFCGF_IL8_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF IL8 down
-- name: BSK_hDFCGF_IP10_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF IP10 down
-- name: BSK_hDFCGF_MCSF_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF MCSF down
-- name: BSK_hDFCGF_MIG_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF MIG down
-- name: BSK_hDFCGF_MMP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF MMP1 down
-- name: BSK_hDFCGF_MMP1_up
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF MMP1 up
-- name: BSK_hDFCGF_PAI1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF PAI1 down
-- name: BSK_hDFCGF_Proliferation_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF Proliferation down
-- name: BSK_hDFCGF_SRB_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF SRB down
-- name: BSK_hDFCGF_TIMP1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF TIMP1 down
-- name: BSK_hDFCGF_VCAM1_down
-  unit: logit
-  description: ToxCast assay endpoint BSK hDFCGF VCAM1 down
-- name: CEETOX_H295R_11DCORT_dn
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R 11DCORT dn
-- name: CEETOX_H295R_ANDR_dn
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R ANDR dn
-- name: CEETOX_H295R_CORTISOL_dn
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R CORTISOL dn
-- name: CEETOX_H295R_DOC_dn
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R DOC dn
-- name: CEETOX_H295R_DOC_up
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R DOC up
-- name: CEETOX_H295R_ESTRADIOL_dn
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R ESTRADIOL dn
-- name: CEETOX_H295R_ESTRADIOL_up
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R ESTRADIOL up
-- name: CEETOX_H295R_ESTRONE_dn
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R ESTRONE dn
-- name: CEETOX_H295R_ESTRONE_up
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R ESTRONE up
-- name: CEETOX_H295R_OHPREG_up
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R OHPREG up
-- name: CEETOX_H295R_OHPROG_dn
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R OHPROG dn
-- name: CEETOX_H295R_OHPROG_up
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R OHPROG up
-- name: CEETOX_H295R_PROG_up
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R PROG up
-- name: CEETOX_H295R_TESTO_dn
-  unit: logit
-  description: ToxCast assay endpoint CEETOX H295R TESTO dn
-- name: CLD_ABCB1_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD ABCB1 48hr
-- name: CLD_ABCG2_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD ABCG2 48hr
-- name: CLD_CYP1A1_24hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP1A1 24hr
-- name: CLD_CYP1A1_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP1A1 48hr
-- name: CLD_CYP1A1_6hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP1A1 6hr
-- name: CLD_CYP1A2_24hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP1A2 24hr
-- name: CLD_CYP1A2_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP1A2 48hr
-- name: CLD_CYP1A2_6hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP1A2 6hr
-- name: CLD_CYP2B6_24hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP2B6 24hr
-- name: CLD_CYP2B6_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP2B6 48hr
-- name: CLD_CYP2B6_6hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP2B6 6hr
-- name: CLD_CYP3A4_24hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP3A4 24hr
-- name: CLD_CYP3A4_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP3A4 48hr
-- name: CLD_CYP3A4_6hr
-  unit: logit
-  description: ToxCast assay endpoint CLD CYP3A4 6hr
-- name: CLD_GSTA2_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD GSTA2 48hr
-- name: CLD_SULT2A_24hr
-  unit: logit
-  description: ToxCast assay endpoint CLD SULT2A 24hr
-- name: CLD_SULT2A_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD SULT2A 48hr
-- name: CLD_UGT1A1_24hr
-  unit: logit
-  description: ToxCast assay endpoint CLD UGT1A1 24hr
-- name: CLD_UGT1A1_48hr
-  unit: logit
-  description: ToxCast assay endpoint CLD UGT1A1 48hr
-- name: NCCT_HEK293T_CellTiterGLO
-  unit: logit
-  description: ToxCast assay endpoint NCCT HEK293T CellTiterGLO
-- name: NCCT_QuantiLum_inhib_2_dn
-  unit: logit
-  description: ToxCast assay endpoint NCCT QuantiLum inhib 2 dn
-- name: NCCT_QuantiLum_inhib_dn
-  unit: logit
-  description: ToxCast assay endpoint NCCT QuantiLum inhib dn
-- name: NCCT_TPO_AUR_dn
-  unit: logit
-  description: ToxCast assay endpoint NCCT TPO AUR dn
-- name: NCCT_TPO_GUA_dn
-  unit: logit
-  description: ToxCast assay endpoint NCCT TPO GUA dn
-- name: NHEERL_ZF_144hpf_TERATOSCORE_up
-  unit: logit
-  description: ToxCast assay endpoint NHEERL ZF 144hpf TERATOSCORE up
-- name: NVS_ADME_hCYP19A1
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP19A1
-- name: NVS_ADME_hCYP1A1
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP1A1
-- name: NVS_ADME_hCYP1A2
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP1A2
-- name: NVS_ADME_hCYP2A6
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP2A6
-- name: NVS_ADME_hCYP2B6
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP2B6
-- name: NVS_ADME_hCYP2C19
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP2C19
-- name: NVS_ADME_hCYP2C9
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP2C9
-- name: NVS_ADME_hCYP2D6
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP2D6
-- name: NVS_ADME_hCYP3A4
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP3A4
-- name: NVS_ADME_hCYP4F12
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME hCYP4F12
-- name: NVS_ADME_rCYP2C12
-  unit: logit
-  description: ToxCast assay endpoint NVS ADME rCYP2C12
-- name: NVS_ENZ_hAChE
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hAChE
-- name: NVS_ENZ_hAMPKa1
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hAMPKa1
-- name: NVS_ENZ_hAurA
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hAurA
-- name: NVS_ENZ_hBACE
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hBACE
-- name: NVS_ENZ_hCASP5
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hCASP5
-- name: NVS_ENZ_hCK1D
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hCK1D
-- name: NVS_ENZ_hDUSP3
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hDUSP3
-- name: NVS_ENZ_hES
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hES
-- name: NVS_ENZ_hElastase
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hElastase
-- name: NVS_ENZ_hFGFR1
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hFGFR1
-- name: NVS_ENZ_hGSK3b
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hGSK3b
-- name: NVS_ENZ_hMMP1
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hMMP1
-- name: NVS_ENZ_hMMP13
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hMMP13
-- name: NVS_ENZ_hMMP2
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hMMP2
-- name: NVS_ENZ_hMMP3
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hMMP3
-- name: NVS_ENZ_hMMP7
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hMMP7
-- name: NVS_ENZ_hMMP9
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hMMP9
-- name: NVS_ENZ_hPDE10
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPDE10
-- name: NVS_ENZ_hPDE4A1
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPDE4A1
-- name: NVS_ENZ_hPDE5
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPDE5
-- name: NVS_ENZ_hPI3Ka
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPI3Ka
-- name: NVS_ENZ_hPTEN
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPTEN
-- name: NVS_ENZ_hPTPN11
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPTPN11
-- name: NVS_ENZ_hPTPN12
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPTPN12
-- name: NVS_ENZ_hPTPN13
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPTPN13
-- name: NVS_ENZ_hPTPN9
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPTPN9
-- name: NVS_ENZ_hPTPRC
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hPTPRC
-- name: NVS_ENZ_hSIRT1
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hSIRT1
-- name: NVS_ENZ_hSIRT2
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hSIRT2
-- name: NVS_ENZ_hTrkA
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hTrkA
-- name: NVS_ENZ_hVEGFR2
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ hVEGFR2
-- name: NVS_ENZ_oCOX1
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ oCOX1
-- name: NVS_ENZ_oCOX2
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ oCOX2
-- name: NVS_ENZ_rAChE
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ rAChE
-- name: NVS_ENZ_rCNOS
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ rCNOS
-- name: NVS_ENZ_rMAOAC
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ rMAOAC
-- name: NVS_ENZ_rMAOAP
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ rMAOAP
-- name: NVS_ENZ_rMAOBC
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ rMAOBC
-- name: NVS_ENZ_rMAOBP
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ rMAOBP
-- name: NVS_ENZ_rabI2C
-  unit: logit
-  description: ToxCast assay endpoint NVS ENZ rabI2C
-- name: NVS_GPCR_bAdoR_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR bAdoR NonSelective
-- name: NVS_GPCR_bDR_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR bDR NonSelective
-- name: NVS_GPCR_g5HT4
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR g5HT4
-- name: NVS_GPCR_gH2
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR gH2
-- name: NVS_GPCR_gLTB4
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR gLTB4
-- name: NVS_GPCR_gLTD4
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR gLTD4
-- name: NVS_GPCR_gMPeripheral_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR gMPeripheral NonSelective
-- name: NVS_GPCR_gOpiateK
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR gOpiateK
-- name: NVS_GPCR_h5HT2A
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR h5HT2A
-- name: NVS_GPCR_h5HT5A
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR h5HT5A
-- name: NVS_GPCR_h5HT6
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR h5HT6
-- name: NVS_GPCR_h5HT7
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR h5HT7
-- name: NVS_GPCR_hAT1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hAT1
-- name: NVS_GPCR_hAdoRA1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hAdoRA1
-- name: NVS_GPCR_hAdoRA2a
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hAdoRA2a
-- name: NVS_GPCR_hAdra2A
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hAdra2A
-- name: NVS_GPCR_hAdra2C
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hAdra2C
-- name: NVS_GPCR_hAdrb1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hAdrb1
-- name: NVS_GPCR_hAdrb2
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hAdrb2
-- name: NVS_GPCR_hAdrb3
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hAdrb3
-- name: NVS_GPCR_hDRD1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hDRD1
-- name: NVS_GPCR_hDRD2s
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hDRD2s
-- name: NVS_GPCR_hDRD4.4
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hDRD4.4
-- name: NVS_GPCR_hH1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hH1
-- name: NVS_GPCR_hLTB4_BLT1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hLTB4 BLT1
-- name: NVS_GPCR_hM1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hM1
-- name: NVS_GPCR_hM2
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hM2
-- name: NVS_GPCR_hM3
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hM3
-- name: NVS_GPCR_hM4
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hM4
-- name: NVS_GPCR_hNK2
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hNK2
-- name: NVS_GPCR_hOpiate_D1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hOpiate D1
-- name: NVS_GPCR_hOpiate_mu
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hOpiate mu
-- name: NVS_GPCR_hTXA2
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR hTXA2
-- name: NVS_GPCR_p5HT2C
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR p5HT2C
-- name: NVS_GPCR_r5HT1_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR r5HT1 NonSelective
-- name: NVS_GPCR_r5HT_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR r5HT NonSelective
-- name: NVS_GPCR_rAdra1B
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rAdra1B
-- name: NVS_GPCR_rAdra1_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rAdra1 NonSelective
-- name: NVS_GPCR_rAdra2_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rAdra2 NonSelective
-- name: NVS_GPCR_rAdrb_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rAdrb NonSelective
-- name: NVS_GPCR_rNK1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rNK1
-- name: NVS_GPCR_rNK3
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rNK3
-- name: NVS_GPCR_rOpiate_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rOpiate NonSelective
-- name: NVS_GPCR_rOpiate_NonSelectiveNa
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rOpiate NonSelectiveNa
-- name: NVS_GPCR_rSST
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rSST
-- name: NVS_GPCR_rTRH
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rTRH
-- name: NVS_GPCR_rV1
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rV1
-- name: NVS_GPCR_rabPAF
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rabPAF
-- name: NVS_GPCR_rmAdra2B
-  unit: logit
-  description: ToxCast assay endpoint NVS GPCR rmAdra2B
-- name: NVS_IC_hKhERGCh
-  unit: logit
-  description: ToxCast assay endpoint NVS IC hKhERGCh
-- name: NVS_IC_rCaBTZCHL
-  unit: logit
-  description: ToxCast assay endpoint NVS IC rCaBTZCHL
-- name: NVS_IC_rCaDHPRCh_L
-  unit: logit
-  description: ToxCast assay endpoint NVS IC rCaDHPRCh L
-- name: NVS_IC_rNaCh_site2
-  unit: logit
-  description: ToxCast assay endpoint NVS IC rNaCh site2
-- name: NVS_LGIC_bGABARa1
-  unit: logit
-  description: ToxCast assay endpoint NVS LGIC bGABARa1
-- name: NVS_LGIC_h5HT3
-  unit: logit
-  description: ToxCast assay endpoint NVS LGIC h5HT3
-- name: NVS_LGIC_hNNR_NBungSens
-  unit: logit
-  description: ToxCast assay endpoint NVS LGIC hNNR NBungSens
-- name: NVS_LGIC_rGABAR_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS LGIC rGABAR NonSelective
-- name: NVS_LGIC_rNNR_BungSens
-  unit: logit
-  description: ToxCast assay endpoint NVS LGIC rNNR BungSens
-- name: NVS_MP_hPBR
-  unit: logit
-  description: ToxCast assay endpoint NVS MP hPBR
-- name: NVS_MP_rPBR
-  unit: logit
-  description: ToxCast assay endpoint NVS MP rPBR
-- name: NVS_NR_bER
-  unit: logit
-  description: ToxCast assay endpoint NVS NR bER
-- name: NVS_NR_bPR
-  unit: logit
-  description: ToxCast assay endpoint NVS NR bPR
-- name: NVS_NR_cAR
-  unit: logit
-  description: ToxCast assay endpoint NVS NR cAR
-- name: NVS_NR_hAR
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hAR
-- name: NVS_NR_hCAR_Antagonist
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hCAR Antagonist
-- name: NVS_NR_hER
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hER
-- name: NVS_NR_hFXR_Agonist
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hFXR Agonist
-- name: NVS_NR_hFXR_Antagonist
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hFXR Antagonist
-- name: NVS_NR_hGR
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hGR
-- name: NVS_NR_hPPARa
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hPPARa
-- name: NVS_NR_hPPARg
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hPPARg
-- name: NVS_NR_hPR
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hPR
-- name: NVS_NR_hPXR
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hPXR
-- name: NVS_NR_hRAR_Antagonist
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hRAR Antagonist
-- name: NVS_NR_hRARa_Agonist
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hRARa Agonist
-- name: NVS_NR_hTRa_Antagonist
-  unit: logit
-  description: ToxCast assay endpoint NVS NR hTRa Antagonist
-- name: NVS_NR_mERa
-  unit: logit
-  description: ToxCast assay endpoint NVS NR mERa
-- name: NVS_NR_rAR
-  unit: logit
-  description: ToxCast assay endpoint NVS NR rAR
-- name: NVS_NR_rMR
-  unit: logit
-  description: ToxCast assay endpoint NVS NR rMR
-- name: NVS_OR_gSIGMA_NonSelective
-  unit: logit
-  description: ToxCast assay endpoint NVS OR gSIGMA NonSelective
-- name: NVS_TR_gDAT
-  unit: logit
-  description: ToxCast assay endpoint NVS TR gDAT
-- name: NVS_TR_hAdoT
-  unit: logit
-  description: ToxCast assay endpoint NVS TR hAdoT
-- name: NVS_TR_hDAT
-  unit: logit
-  description: ToxCast assay endpoint NVS TR hDAT
-- name: NVS_TR_hNET
-  unit: logit
-  description: ToxCast assay endpoint NVS TR hNET
-- name: NVS_TR_hSERT
-  unit: logit
-  description: ToxCast assay endpoint NVS TR hSERT
-- name: NVS_TR_rNET
-  unit: logit
-  description: ToxCast assay endpoint NVS TR rNET
-- name: NVS_TR_rSERT
-  unit: logit
-  description: ToxCast assay endpoint NVS TR rSERT
-- name: NVS_TR_rVMAT2
-  unit: logit
-  description: ToxCast assay endpoint NVS TR rVMAT2
-- name: OT_AR_ARELUC_AG_1440
-  unit: logit
-  description: ToxCast assay endpoint OT AR ARELUC AG 1440
-- name: OT_AR_ARSRC1_0480
-  unit: logit
-  description: ToxCast assay endpoint OT AR ARSRC1 0480
-- name: OT_AR_ARSRC1_0960
-  unit: logit
-  description: ToxCast assay endpoint OT AR ARSRC1 0960
-- name: OT_ER_ERaERa_0480
-  unit: logit
-  description: ToxCast assay endpoint OT ER ERaERa 0480
-- name: OT_ER_ERaERa_1440
-  unit: logit
-  description: ToxCast assay endpoint OT ER ERaERa 1440
-- name: OT_ER_ERaERb_0480
-  unit: logit
-  description: ToxCast assay endpoint OT ER ERaERb 0480
-- name: OT_ER_ERaERb_1440
-  unit: logit
-  description: ToxCast assay endpoint OT ER ERaERb 1440
-- name: OT_ER_ERbERb_0480
-  unit: logit
-  description: ToxCast assay endpoint OT ER ERbERb 0480
-- name: OT_ER_ERbERb_1440
-  unit: logit
-  description: ToxCast assay endpoint OT ER ERbERb 1440
-- name: OT_ERa_EREGFP_0120
-  unit: logit
-  description: ToxCast assay endpoint OT ERa EREGFP 0120
-- name: OT_ERa_EREGFP_0480
-  unit: logit
-  description: ToxCast assay endpoint OT ERa EREGFP 0480
-- name: OT_FXR_FXRSRC1_0480
-  unit: logit
-  description: ToxCast assay endpoint OT FXR FXRSRC1 0480
-- name: OT_FXR_FXRSRC1_1440
-  unit: logit
-  description: ToxCast assay endpoint OT FXR FXRSRC1 1440
-- name: OT_NURR1_NURR1RXRa_0480
-  unit: logit
-  description: ToxCast assay endpoint OT NURR1 NURR1RXRa 0480
-- name: OT_NURR1_NURR1RXRa_1440
-  unit: logit
-  description: ToxCast assay endpoint OT NURR1 NURR1RXRa 1440
-- name: TOX21_ARE_BLA_Agonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ARE BLA Agonist ch1
-- name: TOX21_ARE_BLA_Agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ARE BLA Agonist ch2
-- name: TOX21_ARE_BLA_agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ARE BLA agonist ratio
-- name: TOX21_ARE_BLA_agonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ARE BLA agonist viability
-- name: TOX21_AR_BLA_Agonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR BLA Agonist ch1
-- name: TOX21_AR_BLA_Agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR BLA Agonist ch2
-- name: TOX21_AR_BLA_Agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR BLA Agonist ratio
-- name: TOX21_AR_BLA_Antagonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR BLA Antagonist ch1
-- name: TOX21_AR_BLA_Antagonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR BLA Antagonist ch2
-- name: TOX21_AR_BLA_Antagonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR BLA Antagonist ratio
-- name: TOX21_AR_BLA_Antagonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR BLA Antagonist viability
-- name: TOX21_AR_LUC_MDAKB2_Agonist
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR LUC MDAKB2 Agonist
-- name: TOX21_AR_LUC_MDAKB2_Antagonist
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR LUC MDAKB2 Antagonist
-- name: TOX21_AR_LUC_MDAKB2_Antagonist2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AR LUC MDAKB2 Antagonist2
-- name: TOX21_AhR_LUC_Agonist
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AhR LUC Agonist
-- name: TOX21_Aromatase_Inhibition
-  unit: logit
-  description: ToxCast assay endpoint TOX21 Aromatase Inhibition
-- name: TOX21_AutoFluor_HEK293_Cell_blue
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AutoFluor HEK293 Cell blue
-- name: TOX21_AutoFluor_HEK293_Media_blue
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AutoFluor HEK293 Media blue
-- name: TOX21_AutoFluor_HEPG2_Cell_blue
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AutoFluor HEPG2 Cell blue
-- name: TOX21_AutoFluor_HEPG2_Cell_green
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AutoFluor HEPG2 Cell green
-- name: TOX21_AutoFluor_HEPG2_Media_blue
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AutoFluor HEPG2 Media blue
-- name: TOX21_AutoFluor_HEPG2_Media_green
-  unit: logit
-  description: ToxCast assay endpoint TOX21 AutoFluor HEPG2 Media green
-- name: TOX21_ELG1_LUC_Agonist
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ELG1 LUC Agonist
-- name: TOX21_ERa_BLA_Agonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa BLA Agonist ch1
-- name: TOX21_ERa_BLA_Agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa BLA Agonist ch2
-- name: TOX21_ERa_BLA_Agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa BLA Agonist ratio
-- name: TOX21_ERa_BLA_Antagonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa BLA Antagonist ch1
-- name: TOX21_ERa_BLA_Antagonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa BLA Antagonist ch2
-- name: TOX21_ERa_BLA_Antagonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa BLA Antagonist ratio
-- name: TOX21_ERa_BLA_Antagonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa BLA Antagonist viability
-- name: TOX21_ERa_LUC_BG1_Agonist
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa LUC BG1 Agonist
-- name: TOX21_ERa_LUC_BG1_Antagonist
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ERa LUC BG1 Antagonist
-- name: TOX21_ESRE_BLA_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ESRE BLA ch1
-- name: TOX21_ESRE_BLA_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ESRE BLA ch2
-- name: TOX21_ESRE_BLA_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ESRE BLA ratio
-- name: TOX21_ESRE_BLA_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 ESRE BLA viability
-- name: TOX21_FXR_BLA_Antagonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 FXR BLA Antagonist ch1
-- name: TOX21_FXR_BLA_Antagonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 FXR BLA Antagonist ch2
-- name: TOX21_FXR_BLA_agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 FXR BLA agonist ch2
-- name: TOX21_FXR_BLA_agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 FXR BLA agonist ratio
-- name: TOX21_FXR_BLA_antagonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 FXR BLA antagonist ratio
-- name: TOX21_FXR_BLA_antagonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 FXR BLA antagonist viability
-- name: TOX21_GR_BLA_Agonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 GR BLA Agonist ch1
-- name: TOX21_GR_BLA_Agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 GR BLA Agonist ch2
-- name: TOX21_GR_BLA_Agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 GR BLA Agonist ratio
-- name: TOX21_GR_BLA_Antagonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 GR BLA Antagonist ch2
-- name: TOX21_GR_BLA_Antagonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 GR BLA Antagonist ratio
-- name: TOX21_GR_BLA_Antagonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 GR BLA Antagonist viability
-- name: TOX21_HSE_BLA_agonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 HSE BLA agonist ch1
-- name: TOX21_HSE_BLA_agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 HSE BLA agonist ch2
-- name: TOX21_HSE_BLA_agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 HSE BLA agonist ratio
-- name: TOX21_HSE_BLA_agonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 HSE BLA agonist viability
-- name: TOX21_MMP_ratio_down
-  unit: logit
-  description: ToxCast assay endpoint TOX21 MMP ratio down
-- name: TOX21_MMP_ratio_up
-  unit: logit
-  description: ToxCast assay endpoint TOX21 MMP ratio up
-- name: TOX21_MMP_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 MMP viability
-- name: TOX21_NFkB_BLA_agonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 NFkB BLA agonist ch1
-- name: TOX21_NFkB_BLA_agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 NFkB BLA agonist ch2
-- name: TOX21_NFkB_BLA_agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 NFkB BLA agonist ratio
-- name: TOX21_NFkB_BLA_agonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 NFkB BLA agonist viability
-- name: TOX21_PPARd_BLA_Agonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARd BLA Agonist viability
-- name: TOX21_PPARd_BLA_Antagonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARd BLA Antagonist ch1
-- name: TOX21_PPARd_BLA_agonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARd BLA agonist ch1
-- name: TOX21_PPARd_BLA_agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARd BLA agonist ch2
-- name: TOX21_PPARd_BLA_agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARd BLA agonist ratio
-- name: TOX21_PPARd_BLA_antagonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARd BLA antagonist ratio
-- name: TOX21_PPARd_BLA_antagonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARd BLA antagonist viability
-- name: TOX21_PPARg_BLA_Agonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARg BLA Agonist ch1
-- name: TOX21_PPARg_BLA_Agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARg BLA Agonist ch2
-- name: TOX21_PPARg_BLA_Agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARg BLA Agonist ratio
-- name: TOX21_PPARg_BLA_Antagonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARg BLA Antagonist ch1
-- name: TOX21_PPARg_BLA_antagonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARg BLA antagonist ratio
-- name: TOX21_PPARg_BLA_antagonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 PPARg BLA antagonist viability
-- name: TOX21_TR_LUC_GH3_Agonist
-  unit: logit
-  description: ToxCast assay endpoint TOX21 TR LUC GH3 Agonist
-- name: TOX21_TR_LUC_GH3_Antagonist
-  unit: logit
-  description: ToxCast assay endpoint TOX21 TR LUC GH3 Antagonist
-- name: TOX21_VDR_BLA_Agonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 VDR BLA Agonist viability
-- name: TOX21_VDR_BLA_Antagonist_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 VDR BLA Antagonist ch1
-- name: TOX21_VDR_BLA_agonist_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 VDR BLA agonist ch2
-- name: TOX21_VDR_BLA_agonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 VDR BLA agonist ratio
-- name: TOX21_VDR_BLA_antagonist_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 VDR BLA antagonist ratio
-- name: TOX21_VDR_BLA_antagonist_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 VDR BLA antagonist viability
-- name: TOX21_p53_BLA_p1_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p1 ch1
-- name: TOX21_p53_BLA_p1_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p1 ch2
-- name: TOX21_p53_BLA_p1_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p1 ratio
-- name: TOX21_p53_BLA_p1_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p1 viability
-- name: TOX21_p53_BLA_p2_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p2 ch1
-- name: TOX21_p53_BLA_p2_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p2 ch2
-- name: TOX21_p53_BLA_p2_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p2 ratio
-- name: TOX21_p53_BLA_p2_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p2 viability
-- name: TOX21_p53_BLA_p3_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p3 ch1
-- name: TOX21_p53_BLA_p3_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p3 ch2
-- name: TOX21_p53_BLA_p3_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p3 ratio
-- name: TOX21_p53_BLA_p3_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p3 viability
-- name: TOX21_p53_BLA_p4_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p4 ch1
-- name: TOX21_p53_BLA_p4_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p4 ch2
-- name: TOX21_p53_BLA_p4_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p4 ratio
-- name: TOX21_p53_BLA_p4_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p4 viability
-- name: TOX21_p53_BLA_p5_ch1
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p5 ch1
-- name: TOX21_p53_BLA_p5_ch2
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p5 ch2
-- name: TOX21_p53_BLA_p5_ratio
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p5 ratio
-- name: TOX21_p53_BLA_p5_viability
-  unit: logit
-  description: ToxCast assay endpoint TOX21 p53 BLA p5 viability
-- name: Tanguay_ZF_120hpf_AXIS_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf AXIS up
-- name: Tanguay_ZF_120hpf_ActivityScore
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf ActivityScore
-- name: Tanguay_ZF_120hpf_BRAI_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf BRAI up
-- name: Tanguay_ZF_120hpf_CFIN_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf CFIN up
-- name: Tanguay_ZF_120hpf_CIRC_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf CIRC up
-- name: Tanguay_ZF_120hpf_EYE_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf EYE up
-- name: Tanguay_ZF_120hpf_JAW_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf JAW up
-- name: Tanguay_ZF_120hpf_MORT_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf MORT up
-- name: Tanguay_ZF_120hpf_OTIC_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf OTIC up
-- name: Tanguay_ZF_120hpf_PE_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf PE up
-- name: Tanguay_ZF_120hpf_PFIN_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf PFIN up
-- name: Tanguay_ZF_120hpf_PIG_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf PIG up
-- name: Tanguay_ZF_120hpf_SNOU_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf SNOU up
-- name: Tanguay_ZF_120hpf_SOMI_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf SOMI up
-- name: Tanguay_ZF_120hpf_SWIM_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf SWIM up
-- name: Tanguay_ZF_120hpf_TRUN_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf TRUN up
-- name: Tanguay_ZF_120hpf_TR_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf TR up
-- name: Tanguay_ZF_120hpf_YSE_up
-  unit: logit
-  description: ToxCast assay endpoint Tanguay ZF 120hpf YSE up
+  - name: ACEA_T47D_80hr_Negative
+    unit: logit
+  - name: ACEA_T47D_80hr_Positive
+    unit: logit
+  - name: APR_HepG2_CellCycleArrest_24h_dn
+    unit: logit
+  - name: APR_HepG2_CellCycleArrest_24h_up
+    unit: logit
+  - name: APR_HepG2_CellCycleArrest_72h_dn
+    unit: logit
+  - name: APR_HepG2_CellLoss_24h_dn
+    unit: logit
+  - name: APR_HepG2_CellLoss_72h_dn
+    unit: logit
+  - name: APR_HepG2_MicrotubuleCSK_24h_dn
+    unit: logit
+  - name: APR_HepG2_MicrotubuleCSK_24h_up
+    unit: logit
+  - name: APR_HepG2_MicrotubuleCSK_72h_dn
+    unit: logit
+  - name: APR_HepG2_MicrotubuleCSK_72h_up
+    unit: logit
+  - name: APR_HepG2_MitoMass_24h_dn
+    unit: logit
+  - name: APR_HepG2_MitoMass_24h_up
+    unit: logit
+  - name: APR_HepG2_MitoMass_72h_dn
+    unit: logit
+  - name: APR_HepG2_MitoMass_72h_up
+    unit: logit
+  - name: APR_HepG2_MitoMembPot_1h_dn
+    unit: logit
+  - name: APR_HepG2_MitoMembPot_24h_dn
+    unit: logit
+  - name: APR_HepG2_MitoMembPot_72h_dn
+    unit: logit
+  - name: APR_HepG2_MitoticArrest_24h_up
+    unit: logit
+  - name: APR_HepG2_MitoticArrest_72h_up
+    unit: logit
+  - name: APR_HepG2_NuclearSize_24h_dn
+    unit: logit
+  - name: APR_HepG2_NuclearSize_72h_dn
+    unit: logit
+  - name: APR_HepG2_NuclearSize_72h_up
+    unit: logit
+  - name: APR_HepG2_OxidativeStress_24h_up
+    unit: logit
+  - name: APR_HepG2_OxidativeStress_72h_up
+    unit: logit
+  - name: APR_HepG2_StressKinase_1h_up
+    unit: logit
+  - name: APR_HepG2_StressKinase_24h_up
+    unit: logit
+  - name: APR_HepG2_StressKinase_72h_up
+    unit: logit
+  - name: APR_HepG2_p53Act_24h_up
+    unit: logit
+  - name: APR_HepG2_p53Act_72h_up
+    unit: logit
+  - name: APR_Hepat_Apoptosis_24hr_up
+    unit: logit
+  - name: APR_Hepat_Apoptosis_48hr_up
+    unit: logit
+  - name: APR_Hepat_CellLoss_24hr_dn
+    unit: logit
+  - name: APR_Hepat_CellLoss_48hr_dn
+    unit: logit
+  - name: APR_Hepat_DNADamage_24hr_up
+    unit: logit
+  - name: APR_Hepat_DNADamage_48hr_up
+    unit: logit
+  - name: APR_Hepat_DNATexture_24hr_up
+    unit: logit
+  - name: APR_Hepat_DNATexture_48hr_up
+    unit: logit
+  - name: APR_Hepat_MitoFxnI_1hr_dn
+    unit: logit
+  - name: APR_Hepat_MitoFxnI_24hr_dn
+    unit: logit
+  - name: APR_Hepat_MitoFxnI_48hr_dn
+    unit: logit
+  - name: APR_Hepat_NuclearSize_24hr_dn
+    unit: logit
+  - name: APR_Hepat_NuclearSize_48hr_dn
+    unit: logit
+  - name: APR_Hepat_Steatosis_24hr_up
+    unit: logit
+  - name: APR_Hepat_Steatosis_48hr_up
+    unit: logit
+  - name: ATG_AP_1_CIS_dn
+    unit: logit
+  - name: ATG_AP_1_CIS_up
+    unit: logit
+  - name: ATG_AP_2_CIS_dn
+    unit: logit
+  - name: ATG_AP_2_CIS_up
+    unit: logit
+  - name: ATG_AR_TRANS_dn
+    unit: logit
+  - name: ATG_AR_TRANS_up
+    unit: logit
+  - name: ATG_Ahr_CIS_dn
+    unit: logit
+  - name: ATG_Ahr_CIS_up
+    unit: logit
+  - name: ATG_BRE_CIS_dn
+    unit: logit
+  - name: ATG_BRE_CIS_up
+    unit: logit
+  - name: ATG_CAR_TRANS_dn
+    unit: logit
+  - name: ATG_CAR_TRANS_up
+    unit: logit
+  - name: ATG_CMV_CIS_dn
+    unit: logit
+  - name: ATG_CMV_CIS_up
+    unit: logit
+  - name: ATG_CRE_CIS_dn
+    unit: logit
+  - name: ATG_CRE_CIS_up
+    unit: logit
+  - name: ATG_C_EBP_CIS_dn
+    unit: logit
+  - name: ATG_C_EBP_CIS_up
+    unit: logit
+  - name: ATG_DR4_LXR_CIS_dn
+    unit: logit
+  - name: ATG_DR4_LXR_CIS_up
+    unit: logit
+  - name: ATG_DR5_CIS_dn
+    unit: logit
+  - name: ATG_DR5_CIS_up
+    unit: logit
+  - name: ATG_E2F_CIS_dn
+    unit: logit
+  - name: ATG_E2F_CIS_up
+    unit: logit
+  - name: ATG_EGR_CIS_up
+    unit: logit
+  - name: ATG_ERE_CIS_dn
+    unit: logit
+  - name: ATG_ERE_CIS_up
+    unit: logit
+  - name: ATG_ERRa_TRANS_dn
+    unit: logit
+  - name: ATG_ERRg_TRANS_dn
+    unit: logit
+  - name: ATG_ERRg_TRANS_up
+    unit: logit
+  - name: ATG_ERa_TRANS_up
+    unit: logit
+  - name: ATG_E_Box_CIS_dn
+    unit: logit
+  - name: ATG_E_Box_CIS_up
+    unit: logit
+  - name: ATG_Ets_CIS_dn
+    unit: logit
+  - name: ATG_Ets_CIS_up
+    unit: logit
+  - name: ATG_FXR_TRANS_up
+    unit: logit
+  - name: ATG_FoxA2_CIS_dn
+    unit: logit
+  - name: ATG_FoxA2_CIS_up
+    unit: logit
+  - name: ATG_FoxO_CIS_dn
+    unit: logit
+  - name: ATG_FoxO_CIS_up
+    unit: logit
+  - name: ATG_GAL4_TRANS_dn
+    unit: logit
+  - name: ATG_GATA_CIS_dn
+    unit: logit
+  - name: ATG_GATA_CIS_up
+    unit: logit
+  - name: ATG_GLI_CIS_dn
+    unit: logit
+  - name: ATG_GLI_CIS_up
+    unit: logit
+  - name: ATG_GRE_CIS_dn
+    unit: logit
+  - name: ATG_GRE_CIS_up
+    unit: logit
+  - name: ATG_GR_TRANS_dn
+    unit: logit
+  - name: ATG_GR_TRANS_up
+    unit: logit
+  - name: ATG_HIF1a_CIS_dn
+    unit: logit
+  - name: ATG_HIF1a_CIS_up
+    unit: logit
+  - name: ATG_HNF4a_TRANS_dn
+    unit: logit
+  - name: ATG_HNF4a_TRANS_up
+    unit: logit
+  - name: ATG_HNF6_CIS_dn
+    unit: logit
+  - name: ATG_HNF6_CIS_up
+    unit: logit
+  - name: ATG_HSE_CIS_dn
+    unit: logit
+  - name: ATG_HSE_CIS_up
+    unit: logit
+  - name: ATG_IR1_CIS_dn
+    unit: logit
+  - name: ATG_IR1_CIS_up
+    unit: logit
+  - name: ATG_ISRE_CIS_dn
+    unit: logit
+  - name: ATG_ISRE_CIS_up
+    unit: logit
+  - name: ATG_LXRa_TRANS_dn
+    unit: logit
+  - name: ATG_LXRa_TRANS_up
+    unit: logit
+  - name: ATG_LXRb_TRANS_dn
+    unit: logit
+  - name: ATG_LXRb_TRANS_up
+    unit: logit
+  - name: ATG_MRE_CIS_up
+    unit: logit
+  - name: ATG_M_06_TRANS_up
+    unit: logit
+  - name: ATG_M_19_CIS_dn
+    unit: logit
+  - name: ATG_M_19_TRANS_dn
+    unit: logit
+  - name: ATG_M_19_TRANS_up
+    unit: logit
+  - name: ATG_M_32_CIS_dn
+    unit: logit
+  - name: ATG_M_32_CIS_up
+    unit: logit
+  - name: ATG_M_32_TRANS_dn
+    unit: logit
+  - name: ATG_M_32_TRANS_up
+    unit: logit
+  - name: ATG_M_61_TRANS_up
+    unit: logit
+  - name: ATG_Myb_CIS_dn
+    unit: logit
+  - name: ATG_Myb_CIS_up
+    unit: logit
+  - name: ATG_Myc_CIS_dn
+    unit: logit
+  - name: ATG_Myc_CIS_up
+    unit: logit
+  - name: ATG_NFI_CIS_dn
+    unit: logit
+  - name: ATG_NFI_CIS_up
+    unit: logit
+  - name: ATG_NF_kB_CIS_dn
+    unit: logit
+  - name: ATG_NF_kB_CIS_up
+    unit: logit
+  - name: ATG_NRF1_CIS_dn
+    unit: logit
+  - name: ATG_NRF1_CIS_up
+    unit: logit
+  - name: ATG_NRF2_ARE_CIS_dn
+    unit: logit
+  - name: ATG_NRF2_ARE_CIS_up
+    unit: logit
+  - name: ATG_NURR1_TRANS_dn
+    unit: logit
+  - name: ATG_NURR1_TRANS_up
+    unit: logit
+  - name: ATG_Oct_MLP_CIS_dn
+    unit: logit
+  - name: ATG_Oct_MLP_CIS_up
+    unit: logit
+  - name: ATG_PBREM_CIS_dn
+    unit: logit
+  - name: ATG_PBREM_CIS_up
+    unit: logit
+  - name: ATG_PPARa_TRANS_dn
+    unit: logit
+  - name: ATG_PPARa_TRANS_up
+    unit: logit
+  - name: ATG_PPARd_TRANS_up
+    unit: logit
+  - name: ATG_PPARg_TRANS_up
+    unit: logit
+  - name: ATG_PPRE_CIS_dn
+    unit: logit
+  - name: ATG_PPRE_CIS_up
+    unit: logit
+  - name: ATG_PXRE_CIS_dn
+    unit: logit
+  - name: ATG_PXRE_CIS_up
+    unit: logit
+  - name: ATG_PXR_TRANS_dn
+    unit: logit
+  - name: ATG_PXR_TRANS_up
+    unit: logit
+  - name: ATG_Pax6_CIS_up
+    unit: logit
+  - name: ATG_RARa_TRANS_dn
+    unit: logit
+  - name: ATG_RARa_TRANS_up
+    unit: logit
+  - name: ATG_RARb_TRANS_dn
+    unit: logit
+  - name: ATG_RARb_TRANS_up
+    unit: logit
+  - name: ATG_RARg_TRANS_dn
+    unit: logit
+  - name: ATG_RARg_TRANS_up
+    unit: logit
+  - name: ATG_RORE_CIS_dn
+    unit: logit
+  - name: ATG_RORE_CIS_up
+    unit: logit
+  - name: ATG_RORb_TRANS_dn
+    unit: logit
+  - name: ATG_RORg_TRANS_dn
+    unit: logit
+  - name: ATG_RORg_TRANS_up
+    unit: logit
+  - name: ATG_RXRa_TRANS_dn
+    unit: logit
+  - name: ATG_RXRa_TRANS_up
+    unit: logit
+  - name: ATG_RXRb_TRANS_dn
+    unit: logit
+  - name: ATG_RXRb_TRANS_up
+    unit: logit
+  - name: ATG_SREBP_CIS_dn
+    unit: logit
+  - name: ATG_SREBP_CIS_up
+    unit: logit
+  - name: ATG_STAT3_CIS_dn
+    unit: logit
+  - name: ATG_STAT3_CIS_up
+    unit: logit
+  - name: ATG_Sox_CIS_dn
+    unit: logit
+  - name: ATG_Sox_CIS_up
+    unit: logit
+  - name: ATG_Sp1_CIS_dn
+    unit: logit
+  - name: ATG_Sp1_CIS_up
+    unit: logit
+  - name: ATG_TAL_CIS_dn
+    unit: logit
+  - name: ATG_TAL_CIS_up
+    unit: logit
+  - name: ATG_TA_CIS_dn
+    unit: logit
+  - name: ATG_TA_CIS_up
+    unit: logit
+  - name: ATG_TCF_b_cat_CIS_dn
+    unit: logit
+  - name: ATG_TCF_b_cat_CIS_up
+    unit: logit
+  - name: ATG_TGFb_CIS_dn
+    unit: logit
+  - name: ATG_TGFb_CIS_up
+    unit: logit
+  - name: ATG_THRa1_TRANS_dn
+    unit: logit
+  - name: ATG_THRa1_TRANS_up
+    unit: logit
+  - name: ATG_VDRE_CIS_dn
+    unit: logit
+  - name: ATG_VDRE_CIS_up
+    unit: logit
+  - name: ATG_VDR_TRANS_dn
+    unit: logit
+  - name: ATG_VDR_TRANS_up
+    unit: logit
+  - name: ATG_XTT_Cytotoxicity_up
+    unit: logit
+  - name: ATG_Xbp1_CIS_dn
+    unit: logit
+  - name: ATG_Xbp1_CIS_up
+    unit: logit
+  - name: ATG_p53_CIS_dn
+    unit: logit
+  - name: ATG_p53_CIS_up
+    unit: logit
+  - name: BSK_3C_Eselectin_down
+    unit: logit
+  - name: BSK_3C_HLADR_down
+    unit: logit
+  - name: BSK_3C_ICAM1_down
+    unit: logit
+  - name: BSK_3C_IL8_down
+    unit: logit
+  - name: BSK_3C_MCP1_down
+    unit: logit
+  - name: BSK_3C_MIG_down
+    unit: logit
+  - name: BSK_3C_Proliferation_down
+    unit: logit
+  - name: BSK_3C_SRB_down
+    unit: logit
+  - name: BSK_3C_Thrombomodulin_down
+    unit: logit
+  - name: BSK_3C_Thrombomodulin_up
+    unit: logit
+  - name: BSK_3C_TissueFactor_down
+    unit: logit
+  - name: BSK_3C_TissueFactor_up
+    unit: logit
+  - name: BSK_3C_VCAM1_down
+    unit: logit
+  - name: BSK_3C_Vis_down
+    unit: logit
+  - name: BSK_3C_uPAR_down
+    unit: logit
+  - name: BSK_4H_Eotaxin3_down
+    unit: logit
+  - name: BSK_4H_MCP1_down
+    unit: logit
+  - name: BSK_4H_Pselectin_down
+    unit: logit
+  - name: BSK_4H_Pselectin_up
+    unit: logit
+  - name: BSK_4H_SRB_down
+    unit: logit
+  - name: BSK_4H_VCAM1_down
+    unit: logit
+  - name: BSK_4H_VEGFRII_down
+    unit: logit
+  - name: BSK_4H_uPAR_down
+    unit: logit
+  - name: BSK_4H_uPAR_up
+    unit: logit
+  - name: BSK_BE3C_HLADR_down
+    unit: logit
+  - name: BSK_BE3C_IL1a_down
+    unit: logit
+  - name: BSK_BE3C_IP10_down
+    unit: logit
+  - name: BSK_BE3C_MIG_down
+    unit: logit
+  - name: BSK_BE3C_MMP1_down
+    unit: logit
+  - name: BSK_BE3C_MMP1_up
+    unit: logit
+  - name: BSK_BE3C_PAI1_down
+    unit: logit
+  - name: BSK_BE3C_SRB_down
+    unit: logit
+  - name: BSK_BE3C_TGFb1_down
+    unit: logit
+  - name: BSK_BE3C_tPA_down
+    unit: logit
+  - name: BSK_BE3C_uPAR_down
+    unit: logit
+  - name: BSK_BE3C_uPAR_up
+    unit: logit
+  - name: BSK_BE3C_uPA_down
+    unit: logit
+  - name: BSK_CASM3C_HLADR_down
+    unit: logit
+  - name: BSK_CASM3C_IL6_down
+    unit: logit
+  - name: BSK_CASM3C_IL6_up
+    unit: logit
+  - name: BSK_CASM3C_IL8_down
+    unit: logit
+  - name: BSK_CASM3C_LDLR_down
+    unit: logit
+  - name: BSK_CASM3C_LDLR_up
+    unit: logit
+  - name: BSK_CASM3C_MCP1_down
+    unit: logit
+  - name: BSK_CASM3C_MCP1_up
+    unit: logit
+  - name: BSK_CASM3C_MCSF_down
+    unit: logit
+  - name: BSK_CASM3C_MCSF_up
+    unit: logit
+  - name: BSK_CASM3C_MIG_down
+    unit: logit
+  - name: BSK_CASM3C_Proliferation_down
+    unit: logit
+  - name: BSK_CASM3C_Proliferation_up
+    unit: logit
+  - name: BSK_CASM3C_SAA_down
+    unit: logit
+  - name: BSK_CASM3C_SAA_up
+    unit: logit
+  - name: BSK_CASM3C_SRB_down
+    unit: logit
+  - name: BSK_CASM3C_Thrombomodulin_down
+    unit: logit
+  - name: BSK_CASM3C_Thrombomodulin_up
+    unit: logit
+  - name: BSK_CASM3C_TissueFactor_down
+    unit: logit
+  - name: BSK_CASM3C_VCAM1_down
+    unit: logit
+  - name: BSK_CASM3C_VCAM1_up
+    unit: logit
+  - name: BSK_CASM3C_uPAR_down
+    unit: logit
+  - name: BSK_CASM3C_uPAR_up
+    unit: logit
+  - name: BSK_KF3CT_ICAM1_down
+    unit: logit
+  - name: BSK_KF3CT_IL1a_down
+    unit: logit
+  - name: BSK_KF3CT_IP10_down
+    unit: logit
+  - name: BSK_KF3CT_IP10_up
+    unit: logit
+  - name: BSK_KF3CT_MCP1_down
+    unit: logit
+  - name: BSK_KF3CT_MCP1_up
+    unit: logit
+  - name: BSK_KF3CT_MMP9_down
+    unit: logit
+  - name: BSK_KF3CT_SRB_down
+    unit: logit
+  - name: BSK_KF3CT_TGFb1_down
+    unit: logit
+  - name: BSK_KF3CT_TIMP2_down
+    unit: logit
+  - name: BSK_KF3CT_uPA_down
+    unit: logit
+  - name: BSK_LPS_CD40_down
+    unit: logit
+  - name: BSK_LPS_Eselectin_down
+    unit: logit
+  - name: BSK_LPS_Eselectin_up
+    unit: logit
+  - name: BSK_LPS_IL1a_down
+    unit: logit
+  - name: BSK_LPS_IL1a_up
+    unit: logit
+  - name: BSK_LPS_IL8_down
+    unit: logit
+  - name: BSK_LPS_IL8_up
+    unit: logit
+  - name: BSK_LPS_MCP1_down
+    unit: logit
+  - name: BSK_LPS_MCSF_down
+    unit: logit
+  - name: BSK_LPS_PGE2_down
+    unit: logit
+  - name: BSK_LPS_PGE2_up
+    unit: logit
+  - name: BSK_LPS_SRB_down
+    unit: logit
+  - name: BSK_LPS_TNFa_down
+    unit: logit
+  - name: BSK_LPS_TNFa_up
+    unit: logit
+  - name: BSK_LPS_TissueFactor_down
+    unit: logit
+  - name: BSK_LPS_TissueFactor_up
+    unit: logit
+  - name: BSK_LPS_VCAM1_down
+    unit: logit
+  - name: BSK_SAg_CD38_down
+    unit: logit
+  - name: BSK_SAg_CD40_down
+    unit: logit
+  - name: BSK_SAg_CD69_down
+    unit: logit
+  - name: BSK_SAg_Eselectin_down
+    unit: logit
+  - name: BSK_SAg_Eselectin_up
+    unit: logit
+  - name: BSK_SAg_IL8_down
+    unit: logit
+  - name: BSK_SAg_IL8_up
+    unit: logit
+  - name: BSK_SAg_MCP1_down
+    unit: logit
+  - name: BSK_SAg_MIG_down
+    unit: logit
+  - name: BSK_SAg_PBMCCytotoxicity_down
+    unit: logit
+  - name: BSK_SAg_PBMCCytotoxicity_up
+    unit: logit
+  - name: BSK_SAg_Proliferation_down
+    unit: logit
+  - name: BSK_SAg_SRB_down
+    unit: logit
+  - name: BSK_hDFCGF_CollagenIII_down
+    unit: logit
+  - name: BSK_hDFCGF_EGFR_down
+    unit: logit
+  - name: BSK_hDFCGF_EGFR_up
+    unit: logit
+  - name: BSK_hDFCGF_IL8_down
+    unit: logit
+  - name: BSK_hDFCGF_IP10_down
+    unit: logit
+  - name: BSK_hDFCGF_MCSF_down
+    unit: logit
+  - name: BSK_hDFCGF_MIG_down
+    unit: logit
+  - name: BSK_hDFCGF_MMP1_down
+    unit: logit
+  - name: BSK_hDFCGF_MMP1_up
+    unit: logit
+  - name: BSK_hDFCGF_PAI1_down
+    unit: logit
+  - name: BSK_hDFCGF_Proliferation_down
+    unit: logit
+  - name: BSK_hDFCGF_SRB_down
+    unit: logit
+  - name: BSK_hDFCGF_TIMP1_down
+    unit: logit
+  - name: BSK_hDFCGF_VCAM1_down
+    unit: logit
+  - name: CEETOX_H295R_11DCORT_dn
+    unit: logit
+  - name: CEETOX_H295R_ANDR_dn
+    unit: logit
+  - name: CEETOX_H295R_CORTISOL_dn
+    unit: logit
+  - name: CEETOX_H295R_DOC_dn
+    unit: logit
+  - name: CEETOX_H295R_DOC_up
+    unit: logit
+  - name: CEETOX_H295R_ESTRADIOL_dn
+    unit: logit
+  - name: CEETOX_H295R_ESTRADIOL_up
+    unit: logit
+  - name: CEETOX_H295R_ESTRONE_dn
+    unit: logit
+  - name: CEETOX_H295R_ESTRONE_up
+    unit: logit
+  - name: CEETOX_H295R_OHPREG_up
+    unit: logit
+  - name: CEETOX_H295R_OHPROG_dn
+    unit: logit
+  - name: CEETOX_H295R_OHPROG_up
+    unit: logit
+  - name: CEETOX_H295R_PROG_up
+    unit: logit
+  - name: CEETOX_H295R_TESTO_dn
+    unit: logit
+  - name: CLD_ABCB1_48hr
+    unit: logit
+  - name: CLD_ABCG2_48hr
+    unit: logit
+  - name: CLD_CYP1A1_24hr
+    unit: logit
+  - name: CLD_CYP1A1_48hr
+    unit: logit
+  - name: CLD_CYP1A1_6hr
+    unit: logit
+  - name: CLD_CYP1A2_24hr
+    unit: logit
+  - name: CLD_CYP1A2_48hr
+    unit: logit
+  - name: CLD_CYP1A2_6hr
+    unit: logit
+  - name: CLD_CYP2B6_24hr
+    unit: logit
+  - name: CLD_CYP2B6_48hr
+    unit: logit
+  - name: CLD_CYP2B6_6hr
+    unit: logit
+  - name: CLD_CYP3A4_24hr
+    unit: logit
+  - name: CLD_CYP3A4_48hr
+    unit: logit
+  - name: CLD_CYP3A4_6hr
+    unit: logit
+  - name: CLD_GSTA2_48hr
+    unit: logit
+  - name: CLD_SULT2A_24hr
+    unit: logit
+  - name: CLD_SULT2A_48hr
+    unit: logit
+  - name: CLD_UGT1A1_24hr
+    unit: logit
+  - name: CLD_UGT1A1_48hr
+    unit: logit
+  - name: NCCT_HEK293T_CellTiterGLO
+    unit: logit
+  - name: NCCT_QuantiLum_inhib_2_dn
+    unit: logit
+  - name: NCCT_QuantiLum_inhib_dn
+    unit: logit
+  - name: NCCT_TPO_AUR_dn
+    unit: logit
+  - name: NCCT_TPO_GUA_dn
+    unit: logit
+  - name: NHEERL_ZF_144hpf_TERATOSCORE_up
+    unit: logit
+  - name: NVS_ADME_hCYP19A1
+    unit: logit
+  - name: NVS_ADME_hCYP1A1
+    unit: logit
+  - name: NVS_ADME_hCYP1A2
+    unit: logit
+  - name: NVS_ADME_hCYP2A6
+    unit: logit
+  - name: NVS_ADME_hCYP2B6
+    unit: logit
+  - name: NVS_ADME_hCYP2C19
+    unit: logit
+  - name: NVS_ADME_hCYP2C9
+    unit: logit
+  - name: NVS_ADME_hCYP2D6
+    unit: logit
+  - name: NVS_ADME_hCYP3A4
+    unit: logit
+  - name: NVS_ADME_hCYP4F12
+    unit: logit
+  - name: NVS_ADME_rCYP2C12
+    unit: logit
+  - name: NVS_ENZ_hAChE
+    unit: logit
+  - name: NVS_ENZ_hAMPKa1
+    unit: logit
+  - name: NVS_ENZ_hAurA
+    unit: logit
+  - name: NVS_ENZ_hBACE
+    unit: logit
+  - name: NVS_ENZ_hCASP5
+    unit: logit
+  - name: NVS_ENZ_hCK1D
+    unit: logit
+  - name: NVS_ENZ_hDUSP3
+    unit: logit
+  - name: NVS_ENZ_hES
+    unit: logit
+  - name: NVS_ENZ_hElastase
+    unit: logit
+  - name: NVS_ENZ_hFGFR1
+    unit: logit
+  - name: NVS_ENZ_hGSK3b
+    unit: logit
+  - name: NVS_ENZ_hMMP1
+    unit: logit
+  - name: NVS_ENZ_hMMP13
+    unit: logit
+  - name: NVS_ENZ_hMMP2
+    unit: logit
+  - name: NVS_ENZ_hMMP3
+    unit: logit
+  - name: NVS_ENZ_hMMP7
+    unit: logit
+  - name: NVS_ENZ_hMMP9
+    unit: logit
+  - name: NVS_ENZ_hPDE10
+    unit: logit
+  - name: NVS_ENZ_hPDE4A1
+    unit: logit
+  - name: NVS_ENZ_hPDE5
+    unit: logit
+  - name: NVS_ENZ_hPI3Ka
+    unit: logit
+  - name: NVS_ENZ_hPTEN
+    unit: logit
+  - name: NVS_ENZ_hPTPN11
+    unit: logit
+  - name: NVS_ENZ_hPTPN12
+    unit: logit
+  - name: NVS_ENZ_hPTPN13
+    unit: logit
+  - name: NVS_ENZ_hPTPN9
+    unit: logit
+  - name: NVS_ENZ_hPTPRC
+    unit: logit
+  - name: NVS_ENZ_hSIRT1
+    unit: logit
+  - name: NVS_ENZ_hSIRT2
+    unit: logit
+  - name: NVS_ENZ_hTrkA
+    unit: logit
+  - name: NVS_ENZ_hVEGFR2
+    unit: logit
+  - name: NVS_ENZ_oCOX1
+    unit: logit
+  - name: NVS_ENZ_oCOX2
+    unit: logit
+  - name: NVS_ENZ_rAChE
+    unit: logit
+  - name: NVS_ENZ_rCNOS
+    unit: logit
+  - name: NVS_ENZ_rMAOAC
+    unit: logit
+  - name: NVS_ENZ_rMAOAP
+    unit: logit
+  - name: NVS_ENZ_rMAOBC
+    unit: logit
+  - name: NVS_ENZ_rMAOBP
+    unit: logit
+  - name: NVS_ENZ_rabI2C
+    unit: logit
+  - name: NVS_GPCR_bAdoR_NonSelective
+    unit: logit
+  - name: NVS_GPCR_bDR_NonSelective
+    unit: logit
+  - name: NVS_GPCR_g5HT4
+    unit: logit
+  - name: NVS_GPCR_gH2
+    unit: logit
+  - name: NVS_GPCR_gLTB4
+    unit: logit
+  - name: NVS_GPCR_gLTD4
+    unit: logit
+  - name: NVS_GPCR_gMPeripheral_NonSelective
+    unit: logit
+  - name: NVS_GPCR_gOpiateK
+    unit: logit
+  - name: NVS_GPCR_h5HT2A
+    unit: logit
+  - name: NVS_GPCR_h5HT5A
+    unit: logit
+  - name: NVS_GPCR_h5HT6
+    unit: logit
+  - name: NVS_GPCR_h5HT7
+    unit: logit
+  - name: NVS_GPCR_hAT1
+    unit: logit
+  - name: NVS_GPCR_hAdoRA1
+    unit: logit
+  - name: NVS_GPCR_hAdoRA2a
+    unit: logit
+  - name: NVS_GPCR_hAdra2A
+    unit: logit
+  - name: NVS_GPCR_hAdra2C
+    unit: logit
+  - name: NVS_GPCR_hAdrb1
+    unit: logit
+  - name: NVS_GPCR_hAdrb2
+    unit: logit
+  - name: NVS_GPCR_hAdrb3
+    unit: logit
+  - name: NVS_GPCR_hDRD1
+    unit: logit
+  - name: NVS_GPCR_hDRD2s
+    unit: logit
+  - name: NVS_GPCR_hDRD4.4
+    unit: logit
+  - name: NVS_GPCR_hH1
+    unit: logit
+  - name: NVS_GPCR_hLTB4_BLT1
+    unit: logit
+  - name: NVS_GPCR_hM1
+    unit: logit
+  - name: NVS_GPCR_hM2
+    unit: logit
+  - name: NVS_GPCR_hM3
+    unit: logit
+  - name: NVS_GPCR_hM4
+    unit: logit
+  - name: NVS_GPCR_hNK2
+    unit: logit
+  - name: NVS_GPCR_hOpiate_D1
+    unit: logit
+  - name: NVS_GPCR_hOpiate_mu
+    unit: logit
+  - name: NVS_GPCR_hTXA2
+    unit: logit
+  - name: NVS_GPCR_p5HT2C
+    unit: logit
+  - name: NVS_GPCR_r5HT1_NonSelective
+    unit: logit
+  - name: NVS_GPCR_r5HT_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rAdra1B
+    unit: logit
+  - name: NVS_GPCR_rAdra1_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rAdra2_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rAdrb_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rNK1
+    unit: logit
+  - name: NVS_GPCR_rNK3
+    unit: logit
+  - name: NVS_GPCR_rOpiate_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rOpiate_NonSelectiveNa
+    unit: logit
+  - name: NVS_GPCR_rSST
+    unit: logit
+  - name: NVS_GPCR_rTRH
+    unit: logit
+  - name: NVS_GPCR_rV1
+    unit: logit
+  - name: NVS_GPCR_rabPAF
+    unit: logit
+  - name: NVS_GPCR_rmAdra2B
+    unit: logit
+  - name: NVS_IC_hKhERGCh
+    unit: logit
+  - name: NVS_IC_rCaBTZCHL
+    unit: logit
+  - name: NVS_IC_rCaDHPRCh_L
+    unit: logit
+  - name: NVS_IC_rNaCh_site2
+    unit: logit
+  - name: NVS_LGIC_bGABARa1
+    unit: logit
+  - name: NVS_LGIC_h5HT3
+    unit: logit
+  - name: NVS_LGIC_hNNR_NBungSens
+    unit: logit
+  - name: NVS_LGIC_rGABAR_NonSelective
+    unit: logit
+  - name: NVS_LGIC_rNNR_BungSens
+    unit: logit
+  - name: NVS_MP_hPBR
+    unit: logit
+  - name: NVS_MP_rPBR
+    unit: logit
+  - name: NVS_NR_bER
+    unit: logit
+  - name: NVS_NR_bPR
+    unit: logit
+  - name: NVS_NR_cAR
+    unit: logit
+  - name: NVS_NR_hAR
+    unit: logit
+  - name: NVS_NR_hCAR_Antagonist
+    unit: logit
+  - name: NVS_NR_hER
+    unit: logit
+  - name: NVS_NR_hFXR_Agonist
+    unit: logit
+  - name: NVS_NR_hFXR_Antagonist
+    unit: logit
+  - name: NVS_NR_hGR
+    unit: logit
+  - name: NVS_NR_hPPARa
+    unit: logit
+  - name: NVS_NR_hPPARg
+    unit: logit
+  - name: NVS_NR_hPR
+    unit: logit
+  - name: NVS_NR_hPXR
+    unit: logit
+  - name: NVS_NR_hRAR_Antagonist
+    unit: logit
+  - name: NVS_NR_hRARa_Agonist
+    unit: logit
+  - name: NVS_NR_hTRa_Antagonist
+    unit: logit
+  - name: NVS_NR_mERa
+    unit: logit
+  - name: NVS_NR_rAR
+    unit: logit
+  - name: NVS_NR_rMR
+    unit: logit
+  - name: NVS_OR_gSIGMA_NonSelective
+    unit: logit
+  - name: NVS_TR_gDAT
+    unit: logit
+  - name: NVS_TR_hAdoT
+    unit: logit
+  - name: NVS_TR_hDAT
+    unit: logit
+  - name: NVS_TR_hNET
+    unit: logit
+  - name: NVS_TR_hSERT
+    unit: logit
+  - name: NVS_TR_rNET
+    unit: logit
+  - name: NVS_TR_rSERT
+    unit: logit
+  - name: NVS_TR_rVMAT2
+    unit: logit
+  - name: OT_AR_ARELUC_AG_1440
+    unit: logit
+  - name: OT_AR_ARSRC1_0480
+    unit: logit
+  - name: OT_AR_ARSRC1_0960
+    unit: logit
+  - name: OT_ER_ERaERa_0480
+    unit: logit
+  - name: OT_ER_ERaERa_1440
+    unit: logit
+  - name: OT_ER_ERaERb_0480
+    unit: logit
+  - name: OT_ER_ERaERb_1440
+    unit: logit
+  - name: OT_ER_ERbERb_0480
+    unit: logit
+  - name: OT_ER_ERbERb_1440
+    unit: logit
+  - name: OT_ERa_EREGFP_0120
+    unit: logit
+  - name: OT_ERa_EREGFP_0480
+    unit: logit
+  - name: OT_FXR_FXRSRC1_0480
+    unit: logit
+  - name: OT_FXR_FXRSRC1_1440
+    unit: logit
+  - name: OT_NURR1_NURR1RXRa_0480
+    unit: logit
+  - name: OT_NURR1_NURR1RXRa_1440
+    unit: logit
+  - name: TOX21_ARE_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_ARE_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_ARE_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_ARE_BLA_agonist_viability
+    unit: logit
+  - name: TOX21_AR_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_AR_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_AR_BLA_Agonist_ratio
+    unit: logit
+  - name: TOX21_AR_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_AR_BLA_Antagonist_ch2
+    unit: logit
+  - name: TOX21_AR_BLA_Antagonist_ratio
+    unit: logit
+  - name: TOX21_AR_BLA_Antagonist_viability
+    unit: logit
+  - name: TOX21_AR_LUC_MDAKB2_Agonist
+    unit: logit
+  - name: TOX21_AR_LUC_MDAKB2_Antagonist
+    unit: logit
+  - name: TOX21_AR_LUC_MDAKB2_Antagonist2
+    unit: logit
+  - name: TOX21_AhR_LUC_Agonist
+    unit: logit
+  - name: TOX21_Aromatase_Inhibition
+    unit: logit
+  - name: TOX21_AutoFluor_HEK293_Cell_blue
+    unit: logit
+  - name: TOX21_AutoFluor_HEK293_Media_blue
+    unit: logit
+  - name: TOX21_AutoFluor_HEPG2_Cell_blue
+    unit: logit
+  - name: TOX21_AutoFluor_HEPG2_Cell_green
+    unit: logit
+  - name: TOX21_AutoFluor_HEPG2_Media_blue
+    unit: logit
+  - name: TOX21_AutoFluor_HEPG2_Media_green
+    unit: logit
+  - name: TOX21_ELG1_LUC_Agonist
+    unit: logit
+  - name: TOX21_ERa_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_ERa_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_ERa_BLA_Agonist_ratio
+    unit: logit
+  - name: TOX21_ERa_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_ERa_BLA_Antagonist_ch2
+    unit: logit
+  - name: TOX21_ERa_BLA_Antagonist_ratio
+    unit: logit
+  - name: TOX21_ERa_BLA_Antagonist_viability
+    unit: logit
+  - name: TOX21_ERa_LUC_BG1_Agonist
+    unit: logit
+  - name: TOX21_ERa_LUC_BG1_Antagonist
+    unit: logit
+  - name: TOX21_ESRE_BLA_ch1
+    unit: logit
+  - name: TOX21_ESRE_BLA_ch2
+    unit: logit
+  - name: TOX21_ESRE_BLA_ratio
+    unit: logit
+  - name: TOX21_ESRE_BLA_viability
+    unit: logit
+  - name: TOX21_FXR_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_FXR_BLA_Antagonist_ch2
+    unit: logit
+  - name: TOX21_FXR_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_FXR_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_FXR_BLA_antagonist_ratio
+    unit: logit
+  - name: TOX21_FXR_BLA_antagonist_viability
+    unit: logit
+  - name: TOX21_GR_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_GR_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_GR_BLA_Agonist_ratio
+    unit: logit
+  - name: TOX21_GR_BLA_Antagonist_ch2
+    unit: logit
+  - name: TOX21_GR_BLA_Antagonist_ratio
+    unit: logit
+  - name: TOX21_GR_BLA_Antagonist_viability
+    unit: logit
+  - name: TOX21_HSE_BLA_agonist_ch1
+    unit: logit
+  - name: TOX21_HSE_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_HSE_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_HSE_BLA_agonist_viability
+    unit: logit
+  - name: TOX21_MMP_ratio_down
+    unit: logit
+  - name: TOX21_MMP_ratio_up
+    unit: logit
+  - name: TOX21_MMP_viability
+    unit: logit
+  - name: TOX21_NFkB_BLA_agonist_ch1
+    unit: logit
+  - name: TOX21_NFkB_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_NFkB_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_NFkB_BLA_agonist_viability
+    unit: logit
+  - name: TOX21_PPARd_BLA_Agonist_viability
+    unit: logit
+  - name: TOX21_PPARd_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_PPARd_BLA_agonist_ch1
+    unit: logit
+  - name: TOX21_PPARd_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_PPARd_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_PPARd_BLA_antagonist_ratio
+    unit: logit
+  - name: TOX21_PPARd_BLA_antagonist_viability
+    unit: logit
+  - name: TOX21_PPARg_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_PPARg_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_PPARg_BLA_Agonist_ratio
+    unit: logit
+  - name: TOX21_PPARg_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_PPARg_BLA_antagonist_ratio
+    unit: logit
+  - name: TOX21_PPARg_BLA_antagonist_viability
+    unit: logit
+  - name: TOX21_TR_LUC_GH3_Agonist
+    unit: logit
+  - name: TOX21_TR_LUC_GH3_Antagonist
+    unit: logit
+  - name: TOX21_VDR_BLA_Agonist_viability
+    unit: logit
+  - name: TOX21_VDR_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_VDR_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_VDR_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_VDR_BLA_antagonist_ratio
+    unit: logit
+  - name: TOX21_VDR_BLA_antagonist_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p1_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p1_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p1_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p1_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p2_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p2_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p2_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p2_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p3_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p3_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p3_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p3_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p4_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p4_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p4_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p4_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p5_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p5_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p5_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p5_viability
+    unit: logit
+  - name: Tanguay_ZF_120hpf_AXIS_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_ActivityScore
+    unit: logit
+  - name: Tanguay_ZF_120hpf_BRAI_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_CFIN_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_CIRC_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_EYE_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_JAW_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_MORT_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_OTIC_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_PE_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_PFIN_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_PIG_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_SNOU_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_SOMI_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_SWIM_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_TRUN_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_TR_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_YSE_up
+    unit: logit

@@ -3,9 +3,7 @@
 # MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
 name: SIDER
 source: MoleculeNet benchmark
-description: The SIDER (Side Effect Resource) dataset from MoleculeNet was used. It
-  aggregates adverse drug reactions for 1,427 marketed drugs across 27 MedDRA side-effect
-  terms. This is a multi-label binary-classification dataset.
+description: The SIDER (Side Effect Resource) dataset from MoleculeNet was used. It aggregates adverse drug reactions for 1,427 marketed drugs across 27 MedDRA side-effect terms. This is a multi-label binary-classification dataset.
 task_type: Multi-label binary classification
 task_description: adverse drug reactions
 output_format: Multi-label binary classification for 27 types of adverse drug reactions
@@ -15,95 +13,57 @@ metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 27 t
 split_type: random
 num_samples: 1427
 channels:
-- name: Hepatobiliary disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Hepatobiliary disorders
-- name: Metabolism and nutrition disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Metabolism and nutrition
-    disorders
-- name: Product issues
-  unit: logit
-  description: Reported side effect in the MedDRA category Product issues
-- name: Eye disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Eye disorders
-- name: Investigations
-  unit: logit
-  description: Reported side effect in the MedDRA category Investigations
-- name: Musculoskeletal and connective tissue disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Musculoskeletal and connective
-    tissue disorders
-- name: Gastrointestinal disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Gastrointestinal disorders
-- name: Social circumstances
-  unit: logit
-  description: Reported side effect in the MedDRA category Social circumstances
-- name: Immune system disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Immune system disorders
-- name: Reproductive system and breast disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Reproductive system and
-    breast disorders
-- name: Neoplasms benign, malignant and unspecified (incl cysts and polyps)
-  unit: logit
-  description: Reported side effect in the MedDRA category Neoplasms benign, malignant
-    and unspecified (incl cysts and polyps)
-- name: General disorders and administration site conditions
-  unit: logit
-  description: Reported side effect in the MedDRA category General disorders and administration
-    site conditions
-- name: Endocrine disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Endocrine disorders
-- name: Surgical and medical procedures
-  unit: logit
-  description: Reported side effect in the MedDRA category Surgical and medical procedures
-- name: Vascular disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Vascular disorders
-- name: Blood and lymphatic system disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Blood and lymphatic system
-    disorders
-- name: Skin and subcutaneous tissue disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Skin and subcutaneous tissue
-    disorders
-- name: Congenital, familial and genetic disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Congenital, familial and
-    genetic disorders
-- name: Infections and infestations
-  unit: logit
-  description: Reported side effect in the MedDRA category Infections and infestations
-- name: Respiratory, thoracic and mediastinal disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Respiratory, thoracic and
-    mediastinal disorders
-- name: Psychiatric disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Psychiatric disorders
-- name: Renal and urinary disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Renal and urinary disorders
-- name: Pregnancy, puerperium and perinatal conditions
-  unit: logit
-  description: Reported side effect in the MedDRA category Pregnancy, puerperium and
-    perinatal conditions
-- name: Ear and labyrinth disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Ear and labyrinth disorders
-- name: Cardiac disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Cardiac disorders
-- name: Nervous system disorders
-  unit: logit
-  description: Reported side effect in the MedDRA category Nervous system disorders
-- name: Injury, poisoning and procedural complications
-  unit: logit
-  description: Reported side effect in the MedDRA category Injury, poisoning and procedural
-    complications
+  - name: Hepatobiliary disorders
+    unit: logit
+  - name: Metabolism and nutrition disorders
+    unit: logit
+  - name: Product issues
+    unit: logit
+  - name: Eye disorders
+    unit: logit
+  - name: Investigations
+    unit: logit
+  - name: Musculoskeletal and connective tissue disorders
+    unit: logit
+  - name: Gastrointestinal disorders
+    unit: logit
+  - name: Social circumstances
+    unit: logit
+  - name: Immune system disorders
+    unit: logit
+  - name: Reproductive system and breast disorders
+    unit: logit
+  - name: Neoplasms benign, malignant and unspecified (incl cysts and polyps)
+    unit: logit
+  - name: General disorders and administration site conditions
+    unit: logit
+  - name: Endocrine disorders
+    unit: logit
+  - name: Surgical and medical procedures
+    unit: logit
+  - name: Vascular disorders
+    unit: logit
+  - name: Blood and lymphatic system disorders
+    unit: logit
+  - name: Skin and subcutaneous tissue disorders
+    unit: logit
+  - name: Congenital, familial and genetic disorders
+    unit: logit
+  - name: Infections and infestations
+    unit: logit
+  - name: Respiratory, thoracic and mediastinal disorders
+    unit: logit
+  - name: Psychiatric disorders
+    unit: logit
+  - name: Renal and urinary disorders
+    unit: logit
+  - name: Pregnancy, puerperium and perinatal conditions
+    unit: logit
+  - name: Ear and labyrinth disorders
+    unit: logit
+  - name: Cardiac disorders
+    unit: logit
+  - name: Nervous system disorders
+    unit: logit
+  - name: Injury, poisoning and procedural complications
+    unit: logit

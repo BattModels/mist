@@ -3,23 +3,19 @@
 # MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
 name: ClinTox
 source: MoleculeNet benchmark
-description: The ClinTox dataset from MoleculeNet was used. It provides clinical toxicity
-  data for 1,478 compounds, distinguishing FDA-approved drugs from those withdrawn
-  for toxicity. It comprises two binary-classification tasks (approval status and
-  withdrawal risk).
+description: The ClinTox dataset from MoleculeNet was used. It provides clinical toxicity data for 1,478 compounds, distinguishing FDA-approved drugs from those withdrawn for toxicity. It comprises two binary-classification tasks (approval status and withdrawal risk).
 task_type: Multi-label binary classification
 task_description: clinical trial toxicity
 output_format: Multi-label binary classification for 2 tasks (CT_TOX and FDA approval)
-output_description: Returns unnormalized logits predictions for clinical trial toxicity
-  and FDA approval status
+output_description: Returns unnormalized logits predictions for clinical trial toxicity and FDA approval status
 loss_function: Binary Cross-Entropy Loss
 metrics: AUROC (Area Under the Receiver Operator Curve) averaged across both tasks
 split_type: random
 num_samples: 1478
 channels:
-- name: FDA_APPROVED
-  unit: logit
-  description: FDA approval status
-- name: CT_TOX
-  unit: logit
-  description: Clinical-trial toxicity status
+  - name: FDA_APPROVED
+    unit: logit
+    description: FDA approval status
+  - name: CT_TOX
+    unit: logit
+    description: Clinical-trial toxicity status

@@ -4,10 +4,7 @@
 # MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
 name: FreeSolv
 source: MoleculeNet benchmark
-description: The FreeSolv dataset from MoleculeNet was used. It contains experimental
-  and calculated hydration free energies for 642 neutral molecules in water. It has
-  one regression target per molecule and benchmarks models' ability to predict molecule–solvent
-  interaction energies.
+description: The FreeSolv dataset from MoleculeNet was used. It contains experimental and calculated hydration free energies for 642 neutral molecules in water. It has one regression target per molecule and benchmarks models' ability to predict molecule–solvent interaction energies.
 task_type: Regression
 task_description: hydration free energy
 output_format: Regression prediction for hydration free energy (kcal/mol)
@@ -17,6 +14,6 @@ metrics: Root Mean Squared Error (RMSE) in kcal/mol for hydration free energy pr
 split_type: random
 num_samples: 642
 channels:
-- name: expt
-  unit: kilocalorie / mole
-  description: Hydration free energy
+  - name: expt
+    unit: kilocalorie / mole
+    description: Hydration free energy

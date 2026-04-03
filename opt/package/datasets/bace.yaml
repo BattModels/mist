@@ -3,9 +3,7 @@
 # MoleculeNet benchmark metadata for the BACE task: https://doi.org/10.1021/acs.jcim.7b00118
 name: BACE
 source: MoleculeNet benchmark
-description: The BACE dataset from MoleculeNet was used. It includes 1,513 small molecules
-  assayed for inhibition of β-secretase 1 (BACE-1), a target relevant to Alzheimer's
-  disease. It is a single-task binary classification dataset.
+description: The BACE dataset from MoleculeNet was used. It includes 1,513 small molecules assayed for inhibition of β-secretase 1 (BACE-1), a target relevant to Alzheimer's disease. It is a single-task binary classification dataset.
 task_type: Binary classification
 task_description: BACE-1 inhibition
 output_format: Binary classification prediction
@@ -15,6 +13,6 @@ metrics: AUROC (Area Under the Receiver Operator Curve)
 split_type: scaffold
 num_samples: 1513
 channels:
-- name: Class
-  unit: logit
-  description: BACE-1 inhibitor
+  - name: Class
+    unit: logit
+    description: BACE-1 inhibitor

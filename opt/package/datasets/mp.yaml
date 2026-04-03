@@ -2,11 +2,7 @@
 # Characteristic temperatures dataset collected by Shang Zhu et al., as cited in the packaged metadata.
 name: Melting Point
 source: a Characteristic Temperatures dataset collect by Shang Zhu et al.
-description: The Melting Point dataset (part of the Characteristic Temperatures Dataset)
-  was used. The melting point of a substance determines part of its thermal operating
-  window. The MIST variant was fine-tuned on a dataset of 5,734 melting-point data
-  entries curated from the PubChem database. The dataset was filtered to chemicals
-  with fewer than 20 heavy atoms (not including hydrogen) and zero radical electrons.
+description: The Melting Point dataset (part of the Characteristic Temperatures Dataset) was used. The melting point of a substance determines part of its thermal operating window. The MIST variant was fine-tuned on a dataset of 5,734 melting-point data entries curated from the PubChem database. The dataset was filtered to chemicals with fewer than 20 heavy atoms (not including hydrogen) and zero radical electrons.
 task_type: Regression
 task_description: melting point
 output_format: Regression prediction for melting point (K)
@@ -16,6 +12,6 @@ metrics: Root Mean Squared Error (RMSE) for melting point predictions
 split_type: random
 num_samples: 5734
 channels:
-- name: mp
-  unit: degree_Celsius
-  description: Melting point
+  - name: mp
+    unit: degree_Kelvin
+    description: Melting point

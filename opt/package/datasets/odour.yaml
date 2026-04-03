@@ -2,423 +2,283 @@
 # Model card dataset source: Lee et al. olfaction dataset, as cited by the packaged model card.
 name: Olfaction
 source: application dataset
-description: The Olfaction dataset was used, consisting of 4,983 molecules collected
-  by Lee et al. As an arbitrary number of scent labels can be applied to any molecule,
-  the task was framed as a multi-label multi-class binary classification task, with
-  135 possible scent labels.
+description: The Olfaction dataset was used, consisting of 4,983 molecules collected by Lee et al. As an arbitrary number of scent labels can be applied to any molecule, the task was framed as a multi-label multi-class binary classification task, with 135 possible scent labels.
 task_type: Multi-label binary classification
 task_description: odor descriptors
 output_format: Multi-label binary classification for 135 scent labels
-output_description: Returns unnormalized logits for binary labels for 135 possible
-  scent descriptors
+output_description: Returns unnormalized logits for binary labels for 135 possible scent descriptors
 loss_function: Binary Cross-Entropy Loss
-metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 135 scent
-  labels
+metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 135 scent labels
 split_type: random
 num_samples: 4983
 channels:
-- name: almond
-  unit: logit
-  description: Odor descriptor almond
-- name: amber
-  unit: logit
-  description: Odor descriptor amber
-- name: animal
-  unit: logit
-  description: Odor descriptor animal
-- name: anisic
-  unit: logit
-  description: Odor descriptor anisic
-- name: apple
-  unit: logit
-  description: Odor descriptor apple
-- name: apricot
-  unit: logit
-  description: Odor descriptor apricot
-- name: aromatic
-  unit: logit
-  description: Odor descriptor aromatic
-- name: balsamic
-  unit: logit
-  description: Odor descriptor balsamic
-- name: banana
-  unit: logit
-  description: Odor descriptor banana
-- name: beefy
-  unit: logit
-  description: Odor descriptor beefy
-- name: bergamot
-  unit: logit
-  description: Odor descriptor bergamot
-- name: berry
-  unit: logit
-  description: Odor descriptor berry
-- name: bitter
-  unit: logit
-  description: Odor descriptor bitter
-- name: black currant
-  unit: logit
-  description: Odor descriptor black currant
-- name: brandy
-  unit: logit
-  description: Odor descriptor brandy
-- name: burnt
-  unit: logit
-  description: Odor descriptor burnt
-- name: buttery
-  unit: logit
-  description: Odor descriptor buttery
-- name: cabbage
-  unit: logit
-  description: Odor descriptor cabbage
-- name: camphoreous
-  unit: logit
-  description: Odor descriptor camphoreous
-- name: caramellic
-  unit: logit
-  description: Odor descriptor caramellic
-- name: cedar
-  unit: logit
-  description: Odor descriptor cedar
-- name: celery
-  unit: logit
-  description: Odor descriptor celery
-- name: chamomile
-  unit: logit
-  description: Odor descriptor chamomile
-- name: cheesy
-  unit: logit
-  description: Odor descriptor cheesy
-- name: cherry
-  unit: logit
-  description: Odor descriptor cherry
-- name: chocolate
-  unit: logit
-  description: Odor descriptor chocolate
-- name: cinnamon
-  unit: logit
-  description: Odor descriptor cinnamon
-- name: citrus
-  unit: logit
-  description: Odor descriptor citrus
-- name: clean
-  unit: logit
-  description: Odor descriptor clean
-- name: clove
-  unit: logit
-  description: Odor descriptor clove
-- name: cocoa
-  unit: logit
-  description: Odor descriptor cocoa
-- name: coconut
-  unit: logit
-  description: Odor descriptor coconut
-- name: coffee
-  unit: logit
-  description: Odor descriptor coffee
-- name: cognac
-  unit: logit
-  description: Odor descriptor cognac
-- name: cooked
-  unit: logit
-  description: Odor descriptor cooked
-- name: cooling
-  unit: logit
-  description: Odor descriptor cooling
-- name: cortex
-  unit: logit
-  description: Odor descriptor cortex
-- name: coumarinic
-  unit: logit
-  description: Odor descriptor coumarinic
-- name: creamy
-  unit: logit
-  description: Odor descriptor creamy
-- name: cucumber
-  unit: logit
-  description: Odor descriptor cucumber
-- name: dairy
-  unit: logit
-  description: Odor descriptor dairy
-- name: dry
-  unit: logit
-  description: Odor descriptor dry
-- name: earthy
-  unit: logit
-  description: Odor descriptor earthy
-- name: ethereal
-  unit: logit
-  description: Odor descriptor ethereal
-- name: fatty
-  unit: logit
-  description: Odor descriptor fatty
-- name: fermented
-  unit: logit
-  description: Odor descriptor fermented
-- name: fishy
-  unit: logit
-  description: Odor descriptor fishy
-- name: floral
-  unit: logit
-  description: Odor descriptor floral
-- name: fresh
-  unit: logit
-  description: Odor descriptor fresh
-- name: fruit skin
-  unit: logit
-  description: Odor descriptor fruit skin
-- name: fruity
-  unit: logit
-  description: Odor descriptor fruity
-- name: garlic
-  unit: logit
-  description: Odor descriptor garlic
-- name: gassy
-  unit: logit
-  description: Odor descriptor gassy
-- name: geranium
-  unit: logit
-  description: Odor descriptor geranium
-- name: grape
-  unit: logit
-  description: Odor descriptor grape
-- name: grapefruit
-  unit: logit
-  description: Odor descriptor grapefruit
-- name: grassy
-  unit: logit
-  description: Odor descriptor grassy
-- name: green
-  unit: logit
-  description: Odor descriptor green
-- name: hawthorn
-  unit: logit
-  description: Odor descriptor hawthorn
-- name: hay
-  unit: logit
-  description: Odor descriptor hay
-- name: hazelnut
-  unit: logit
-  description: Odor descriptor hazelnut
-- name: herbal
-  unit: logit
-  description: Odor descriptor herbal
-- name: honey
-  unit: logit
-  description: Odor descriptor honey
-- name: hyacinth
-  unit: logit
-  description: Odor descriptor hyacinth
-- name: jasmin
-  unit: logit
-  description: Odor descriptor jasmin
-- name: juicy
-  unit: logit
-  description: Odor descriptor juicy
-- name: ketonic
-  unit: logit
-  description: Odor descriptor ketonic
-- name: lactonic
-  unit: logit
-  description: Odor descriptor lactonic
-- name: lavender
-  unit: logit
-  description: Odor descriptor lavender
-- name: leafy
-  unit: logit
-  description: Odor descriptor leafy
-- name: leathery
-  unit: logit
-  description: Odor descriptor leathery
-- name: lemon
-  unit: logit
-  description: Odor descriptor lemon
-- name: lily
-  unit: logit
-  description: Odor descriptor lily
-- name: malty
-  unit: logit
-  description: Odor descriptor malty
-- name: meaty
-  unit: logit
-  description: Odor descriptor meaty
-- name: medicinal
-  unit: logit
-  description: Odor descriptor medicinal
-- name: melon
-  unit: logit
-  description: Odor descriptor melon
-- name: metallic
-  unit: logit
-  description: Odor descriptor metallic
-- name: milky
-  unit: logit
-  description: Odor descriptor milky
-- name: mint
-  unit: logit
-  description: Odor descriptor mint
-- name: muguet
-  unit: logit
-  description: Odor descriptor muguet
-- name: mushroom
-  unit: logit
-  description: Odor descriptor mushroom
-- name: musk
-  unit: logit
-  description: Odor descriptor musk
-- name: musty
-  unit: logit
-  description: Odor descriptor musty
-- name: natural
-  unit: logit
-  description: Odor descriptor natural
-- name: nutty
-  unit: logit
-  description: Odor descriptor nutty
-- name: odorless
-  unit: logit
-  description: Odor descriptor odorless
-- name: oily
-  unit: logit
-  description: Odor descriptor oily
-- name: onion
-  unit: logit
-  description: Odor descriptor onion
-- name: orange
-  unit: logit
-  description: Odor descriptor orange
-- name: orangeflower
-  unit: logit
-  description: Odor descriptor orangeflower
-- name: orris
-  unit: logit
-  description: Odor descriptor orris
-- name: ozone
-  unit: logit
-  description: Odor descriptor ozone
-- name: peach
-  unit: logit
-  description: Odor descriptor peach
-- name: pear
-  unit: logit
-  description: Odor descriptor pear
-- name: phenolic
-  unit: logit
-  description: Odor descriptor phenolic
-- name: pine
-  unit: logit
-  description: Odor descriptor pine
-- name: pineapple
-  unit: logit
-  description: Odor descriptor pineapple
-- name: plum
-  unit: logit
-  description: Odor descriptor plum
-- name: popcorn
-  unit: logit
-  description: Odor descriptor popcorn
-- name: potato
-  unit: logit
-  description: Odor descriptor potato
-- name: powdery
-  unit: logit
-  description: Odor descriptor powdery
-- name: pungent
-  unit: logit
-  description: Odor descriptor pungent
-- name: radish
-  unit: logit
-  description: Odor descriptor radish
-- name: raspberry
-  unit: logit
-  description: Odor descriptor raspberry
-- name: ripe
-  unit: logit
-  description: Odor descriptor ripe
-- name: roasted
-  unit: logit
-  description: Odor descriptor roasted
-- name: rose
-  unit: logit
-  description: Odor descriptor rose
-- name: rummy
-  unit: logit
-  description: Odor descriptor rummy
-- name: sandalwood
-  unit: logit
-  description: Odor descriptor sandalwood
-- name: savory
-  unit: logit
-  description: Odor descriptor savory
-- name: sharp
-  unit: logit
-  description: Odor descriptor sharp
-- name: smoky
-  unit: logit
-  description: Odor descriptor smoky
-- name: soapy
-  unit: logit
-  description: Odor descriptor soapy
-- name: solvent
-  unit: logit
-  description: Odor descriptor solvent
-- name: sour
-  unit: logit
-  description: Odor descriptor sour
-- name: spicy
-  unit: logit
-  description: Odor descriptor spicy
-- name: strawberry
-  unit: logit
-  description: Odor descriptor strawberry
-- name: sulfurous
-  unit: logit
-  description: Odor descriptor sulfurous
-- name: sweaty
-  unit: logit
-  description: Odor descriptor sweaty
-- name: sweet
-  unit: logit
-  description: Odor descriptor sweet
-- name: tea
-  unit: logit
-  description: Odor descriptor tea
-- name: terpenic
-  unit: logit
-  description: Odor descriptor terpenic
-- name: tobacco
-  unit: logit
-  description: Odor descriptor tobacco
-- name: tomato
-  unit: logit
-  description: Odor descriptor tomato
-- name: tropical
-  unit: logit
-  description: Odor descriptor tropical
-- name: vanilla
-  unit: logit
-  description: Odor descriptor vanilla
-- name: vegetable
-  unit: logit
-  description: Odor descriptor vegetable
-- name: vetiver
-  unit: logit
-  description: Odor descriptor vetiver
-- name: violet
-  unit: logit
-  description: Odor descriptor violet
-- name: warm
-  unit: logit
-  description: Odor descriptor warm
-- name: waxy
-  unit: logit
-  description: Odor descriptor waxy
-- name: weedy
-  unit: logit
-  description: Odor descriptor weedy
-- name: winey
-  unit: logit
-  description: Odor descriptor winey
-- name: woody
-  unit: logit
-  description: Odor descriptor woody
+  - name: almond
+    unit: logit
+  - name: amber
+    unit: logit
+  - name: animal
+    unit: logit
+  - name: anisic
+    unit: logit
+  - name: apple
+    unit: logit
+  - name: apricot
+    unit: logit
+  - name: aromatic
+    unit: logit
+  - name: balsamic
+    unit: logit
+  - name: banana
+    unit: logit
+  - name: beefy
+    unit: logit
+  - name: bergamot
+    unit: logit
+  - name: berry
+    unit: logit
+  - name: bitter
+    unit: logit
+  - name: black currant
+    unit: logit
+  - name: brandy
+    unit: logit
+  - name: burnt
+    unit: logit
+  - name: buttery
+    unit: logit
+  - name: cabbage
+    unit: logit
+  - name: camphoreous
+    unit: logit
+  - name: caramellic
+    unit: logit
+  - name: cedar
+    unit: logit
+  - name: celery
+    unit: logit
+  - name: chamomile
+    unit: logit
+  - name: cheesy
+    unit: logit
+  - name: cherry
+    unit: logit
+  - name: chocolate
+    unit: logit
+  - name: cinnamon
+    unit: logit
+  - name: citrus
+    unit: logit
+  - name: clean
+    unit: logit
+  - name: clove
+    unit: logit
+  - name: cocoa
+    unit: logit
+  - name: coconut
+    unit: logit
+  - name: coffee
+    unit: logit
+  - name: cognac
+    unit: logit
+  - name: cooked
+    unit: logit
+  - name: cooling
+    unit: logit
+  - name: cortex
+    unit: logit
+  - name: coumarinic
+    unit: logit
+  - name: creamy
+    unit: logit
+  - name: cucumber
+    unit: logit
+  - name: dairy
+    unit: logit
+  - name: dry
+    unit: logit
+  - name: earthy
+    unit: logit
+  - name: ethereal
+    unit: logit
+  - name: fatty
+    unit: logit
+  - name: fermented
+    unit: logit
+  - name: fishy
+    unit: logit
+  - name: floral
+    unit: logit
+  - name: fresh
+    unit: logit
+  - name: fruit skin
+    unit: logit
+  - name: fruity
+    unit: logit
+  - name: garlic
+    unit: logit
+  - name: gassy
+    unit: logit
+  - name: geranium
+    unit: logit
+  - name: grape
+    unit: logit
+  - name: grapefruit
+    unit: logit
+  - name: grassy
+    unit: logit
+  - name: green
+    unit: logit
+  - name: hawthorn
+    unit: logit
+  - name: hay
+    unit: logit
+  - name: hazelnut
+    unit: logit
+  - name: herbal
+    unit: logit
+  - name: honey
+    unit: logit
+  - name: hyacinth
+    unit: logit
+  - name: jasmin
+    unit: logit
+  - name: juicy
+    unit: logit
+  - name: ketonic
+    unit: logit
+  - name: lactonic
+    unit: logit
+  - name: lavender
+    unit: logit
+  - name: leafy
+    unit: logit
+  - name: leathery
+    unit: logit
+  - name: lemon
+    unit: logit
+  - name: lily
+    unit: logit
+  - name: malty
+    unit: logit
+  - name: meaty
+    unit: logit
+  - name: medicinal
+    unit: logit
+  - name: melon
+    unit: logit
+  - name: metallic
+    unit: logit
+  - name: milky
+    unit: logit
+  - name: mint
+    unit: logit
+  - name: muguet
+    unit: logit
+  - name: mushroom
+    unit: logit
+  - name: musk
+    unit: logit
+  - name: musty
+    unit: logit
+  - name: natural
+    unit: logit
+  - name: nutty
+    unit: logit
+  - name: odorless
+    unit: logit
+  - name: oily
+    unit: logit
+  - name: onion
+    unit: logit
+  - name: orange
+    unit: logit
+  - name: orangeflower
+    unit: logit
+  - name: orris
+    unit: logit
+  - name: ozone
+    unit: logit
+  - name: peach
+    unit: logit
+  - name: pear
+    unit: logit
+  - name: phenolic
+    unit: logit
+  - name: pine
+    unit: logit
+  - name: pineapple
+    unit: logit
+  - name: plum
+    unit: logit
+  - name: popcorn
+    unit: logit
+  - name: potato
+    unit: logit
+  - name: powdery
+    unit: logit
+  - name: pungent
+    unit: logit
+  - name: radish
+    unit: logit
+  - name: raspberry
+    unit: logit
+  - name: ripe
+    unit: logit
+  - name: roasted
+    unit: logit
+  - name: rose
+    unit: logit
+  - name: rummy
+    unit: logit
+  - name: sandalwood
+    unit: logit
+  - name: savory
+    unit: logit
+  - name: sharp
+    unit: logit
+  - name: smoky
+    unit: logit
+  - name: soapy
+    unit: logit
+  - name: solvent
+    unit: logit
+  - name: sour
+    unit: logit
+  - name: spicy
+    unit: logit
+  - name: strawberry
+    unit: logit
+  - name: sulfurous
+    unit: logit
+  - name: sweaty
+    unit: logit
+  - name: sweet
+    unit: logit
+  - name: tea
+    unit: logit
+  - name: terpenic
+    unit: logit
+  - name: tobacco
+    unit: logit
+  - name: tomato
+    unit: logit
+  - name: tropical
+    unit: logit
+  - name: vanilla
+    unit: logit
+  - name: vegetable
+    unit: logit
+  - name: vetiver
+    unit: logit
+  - name: violet
+    unit: logit
+  - name: warm
+    unit: logit
+  - name: waxy
+    unit: logit
+  - name: weedy
+    unit: logit
+  - name: winey
+    unit: logit
+  - name: woody
+    unit: logit

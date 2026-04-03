@@ -3,9 +3,7 @@
 # MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
 name: ESOL
 source: MoleculeNet benchmark
-description: The ESOL (Estimated SOLubility) dataset from MoleculeNet was used. It
-  provides experimental aqueous solubility (log S) measurements for 1,128 small molecules.
-  It is a single-target regression task.
+description: The ESOL (Estimated SOLubility) dataset from MoleculeNet was used. It provides experimental aqueous solubility (log S) measurements for 1,128 small molecules. It is a single-target regression task.
 task_type: Regression
 task_description: aqueous solubility
 output_format: Regression prediction for aqueous solubility (log S)
@@ -15,5 +13,5 @@ metrics: Root Mean Squared Error (RMSE)
 split_type: random
 num_samples: 1128
 channels:
-- name: log_solubility
-  description: Aqueous solubility log S
+  - name: log_solubility
+    description: Aqueous log solubility in moles per liter

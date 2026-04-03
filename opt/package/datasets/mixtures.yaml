@@ -2,12 +2,12 @@
 # Target names below follow the packaged dataset and model card for the excess-property prediction task.
 # Mixture excess-property dataset card: https://huggingface.co/datasets/mist-models/excess-properties
 channels:
-  - name: "density"
+  - name: density
     unit: gram / centimeter ** 3
     description: Mixture density
-  - name: "molar volume"
+  - name: molar volume
     unit: centimeter ** 3 / mole
     description: Mixture molar volume
-  - name: "molar enthalpy"
+  - name: molar enthalpy
     unit: joule / mole
     description: Mixture molar enthalpy
