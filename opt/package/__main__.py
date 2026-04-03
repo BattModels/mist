@@ -60,6 +60,7 @@ from .utils import (
     save_tokenizer,
 )
 from .write_model_class import write_modeling_module
+from .channel_schema import resolve_dataset_channels
 
 cli = typer.Typer()
 logging.basicConfig(level=logging.INFO)
@@ -152,7 +153,7 @@ def pretrained(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     create_tar_gz(save_dir)
 
 
-def export_finetuned(ckpt: Path) -> MISTFinetuned:
+def export_finetuned(ckpt: Path, dataset: Optional[str] = None) -> MISTFinetuned:
     bundle, best_ckpt = load_model(ckpt, model_class="MISTFinetuned")
     train_cfg = read_training_config(ckpt)
     tokenizer = train_cfg.get("data")
@@ -161,12 +162,11 @@ def export_finetuned(ckpt: Path) -> MISTFinetuned:
     else:
         tokenizer = load_tokenizer("smirk")
 
-    # Try to get channels from training config or packaged model config
-    try:
-        channels = train_cfg["data"]["init_args"].get("target_columns")
-    except KeyError:
-        # If loading from already-packaged model, channels are at top level
-        channels = train_cfg.get("channels")
+    channels = resolve_dataset_channels(
+        train_cfg,
+        dataset=dataset,
+        source_names=[ckpt.name, best_ckpt.name],
+    )
 
     model = MISTFinetuned.from_components(
         encoder=bundle.encoder,
@@ -179,11 +179,19 @@ def export_finetuned(ckpt: Path) -> MISTFinetuned:
 
 
 @cli.command()
-def finetuned(ckpt: Path, name: Optional[str] = None, safe: bool = True):
+def finetuned(
+    ckpt: Path,
+    name: Optional[str] = None,
+    safe: bool = True,
+    dataset: Optional[str] = typer.Option(
+        None,
+        help="Override dataset name instead of autodetecting it from the checkpoint config",
+    ),
+):
     """
     Export a finetuned model with embedded remote code.
     """
-    model, best_ckpt = export_finetuned(ckpt)
+    model, best_ckpt = export_finetuned(ckpt, dataset=dataset)
 
     tag = name_model(
         model,
@@ -344,7 +352,7 @@ def excess_physics(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     create_tar_gz(save_dir)
 
 
-def export_mixtures(ckpt: Path) -> MISTMixtures:
+def export_mixtures(ckpt: Path, dataset: Optional[str] = None) -> MISTMixtures:
     bundle, best_ckpt = load_model(ckpt, model_class="MISTMixtures")
 
     train_cfg = read_training_config(ckpt)
@@ -358,11 +366,11 @@ def export_mixtures(ckpt: Path) -> MISTMixtures:
     if hasattr(temperature_condition, "value"):
         temperature_condition = temperature_condition.value
 
-    # Try to get channels from training config
-    try:
-        channels = train_cfg["data"]["init_args"].get("target_col")
-    except KeyError:
-        channels = model_cfg.get("target_columns")
+    channels = resolve_dataset_channels(
+        train_cfg,
+        dataset=dataset,
+        source_names=[ckpt.name, best_ckpt.name],
+    )
 
     model = MISTMixtures.from_components(
         encoder=bundle.encoder,
@@ -378,11 +386,19 @@ def export_mixtures(ckpt: Path) -> MISTMixtures:
 
 
 @cli.command()
-def mixtures(ckpt: Path, name: Optional[str] = None, safe: bool = True):
+def mixtures(
+    ckpt: Path,
+    name: Optional[str] = None,
+    safe: bool = True,
+    dataset: Optional[str] = typer.Option(
+        None,
+        help="Override dataset name instead of autodetecting it from the checkpoint config",
+    ),
+):
     """
     Export a mixture property prediction model.
     """
-    model, best_ckpt = export_mixtures(ckpt)
+    model, best_ckpt = export_mixtures(ckpt, dataset=dataset)
 
     tag = name_model(
         model,
@@ -423,21 +439,35 @@ def mixtures(ckpt: Path, name: Optional[str] = None, safe: bool = True):
     create_tar_gz(save_dir)
 
 
-def export_multitask(encoder_ckpt: Path, task_ckpt: List[Path]) -> MISTMultiTask:
+def export_multitask(
+    encoder_ckpt: Path,
+    task_ckpt: List[Path],
+    task_datasets: Optional[List[Optional[str]]] = None,
+) -> MISTMultiTask:
+    encoder_ckpt = maybe_best_ckpt(encoder_ckpt)
+    if task_datasets is None:
+        task_datasets = [None] * len(task_ckpt)
+    if len(task_datasets) != len(task_ckpt):
+        raise ValueError("task_datasets must match task_ckpt length")
     try:
         # Try loading from training checkpoints
-        encoder_ckpt = maybe_best_ckpt(encoder_ckpt)
         encoder = load_encoder(encoder_ckpt)
         tokenizer = get_ckpt_tokenizer(encoder_ckpt)
 
         task_networks, transforms, channels = [], [], []
-        for ckpt in task_ckpt:
+        for ckpt, dataset in zip(task_ckpt, task_datasets):
             ckpt = maybe_best_ckpt(ckpt)
             cfg = read_training_config(ckpt)
             assert cfg["model"]["init_args"][
                 "freeze_encoder"
             ], f"Encoder not frozen for {ckpt}"
-            channels.extend(cfg["data"]["init_args"]["target_columns"])
+            channels.extend(
+                resolve_dataset_channels(
+                    cfg,
+                    dataset=dataset,
+                    source_names=[ckpt.name],
+                )
+            )
             bundle = SaveConfigWithCkpts.load(ckpt, strict=False)
             task_networks.append(bundle.task_network)
             transforms.append(bundle.transform)
@@ -498,6 +528,10 @@ def multitask(
     task_ckpt: List[Path] = typer.Option(
         [], help="Repeat to add multiple task checkpoints"
     ),
+    task_dataset: List[str] = typer.Option(
+        [],
+        help="Repeat to override the dataset name for each task checkpoint in order",
+    ),
     tasks_in_folder: bool = False,
     name: Optional[str] = None,
     safe: bool = True,
@@ -510,7 +544,15 @@ def multitask(
             if d.is_dir() and d.name != "pretrained":
                 task_ckpt.append(get_best_ckpt(d))
 
-    model = export_multitask(encoder_ckpt, task_ckpt)
+    task_datasets: List[Optional[str]]
+    if task_dataset:
+        if len(task_dataset) != len(task_ckpt):
+            raise ValueError("task_dataset must be provided once per task_ckpt")
+        task_datasets = list(task_dataset)
+    else:
+        task_datasets = [None] * len(task_ckpt)
+
+    model = export_multitask(encoder_ckpt, task_ckpt, task_datasets=task_datasets)
 
     tag = name_model(
         model,

@@ -1,0 +1,20 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-28M-8fh43gke-hiv/resolve/main/config.json
+# MoleculeNet benchmark metadata for the HIV task: https://doi.org/10.1021/acs.jcim.7b00118
+name: HIV
+source: MoleculeNet benchmark
+description: The HIV dataset from MoleculeNet was used. It contains 41,127 compounds
+  tested for inhibition of HIV-1 replication in T-cell lines. It is a single-task
+  binary classification dataset split 80/10/10 using a scaffold split.
+task_type: Binary classification
+task_description: HIV inhibition
+output_format: Binary classification prediction
+output_description: Returns unnormalized logits for binary prediction for HIV inhibition
+  activity
+loss_function: Binary Cross-Entropy Loss
+metrics: AUROC (Area Under the Receiver Operator Curve)
+split_type: scaffold
+num_samples: 41127
+channels:
+- name: activity
+  unit: logit
+  description: Active against HIV replication

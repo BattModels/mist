@@ -1,0 +1,22 @@
+# Published Hugging Face config has channels set to null: https://huggingface.co/mist-models/mist-28M-0uiq7o7m-freesolv/resolve/main/config.json
+# Single-target name below follows the canonical MoleculeNet / DeepChem target column for FreeSolv.
+# Mobley and Guthrie. FreeSolv: a database of experimental and calculated hydration free energies, with input files. https://doi.org/10.1007/s10822-014-9747-x
+# MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
+name: FreeSolv
+source: MoleculeNet benchmark
+description: The FreeSolv dataset from MoleculeNet was used. It contains experimental
+  and calculated hydration free energies for 642 neutral molecules in water. It has
+  one regression target per molecule and benchmarks models' ability to predict molecule–solvent
+  interaction energies.
+task_type: Regression
+task_description: hydration free energy
+output_format: Regression prediction for hydration free energy (kcal/mol)
+output_description: Returns predictions for hydration free energy in kcal/mol
+loss_function: Mean Squared Error (MSE) Loss
+metrics: Root Mean Squared Error (RMSE) in kcal/mol for hydration free energy predictions
+split_type: random
+num_samples: 642
+channels:
+- name: expt
+  unit: kilocalorie / mole
+  description: Hydration free energy

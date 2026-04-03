@@ -1,0 +1,19 @@
+# Published Hugging Face config has channels set to null: https://huggingface.co/mist-models/mist-28M-xzr5ulva-lipo/resolve/main/config.json
+# Single-target name below follows the canonical MoleculeNet / DeepChem target column for lipophilicity.
+# MoleculeNet benchmark metadata for the lipophilicity task: https://doi.org/10.1021/acs.jcim.7b00118
+name: Lipophilicity
+source: MoleculeNet benchmark
+description: The Lipophilicity dataset from MoleculeNet was used. It provides measured
+  octanol–water distribution coefficients (log D) for 4,200 small molecules.
+task_type: Regression
+task_description: lipophilicity
+output_format: Regression prediction for lipophilicity (logD at pH 7.4)
+output_description: Returns predictions for octanol/water distribution coefficient
+  (logD)
+loss_function: Mean Squared Error (MSE) Loss
+metrics: Root Mean Squared Error (RMSE) in logD units
+split_type: random
+num_samples: 4200
+channels:
+- name: exp
+  description: Octanol/water distribution coefficient logD at pH 7.4

@@ -1,0 +1,20 @@
+# Published Hugging Face config has channels set to null: https://huggingface.co/mist-models/mist-28M-8loj3bab-bace/resolve/main/config.json
+# Single-target name below follows the canonical MoleculeNet / DeepChem target column for BACE.
+# MoleculeNet benchmark metadata for the BACE task: https://doi.org/10.1021/acs.jcim.7b00118
+name: BACE
+source: MoleculeNet benchmark
+description: The BACE dataset from MoleculeNet was used. It includes 1,513 small molecules
+  assayed for inhibition of β-secretase 1 (BACE-1), a target relevant to Alzheimer's
+  disease. It is a single-task binary classification dataset.
+task_type: Binary classification
+task_description: BACE-1 inhibition
+output_format: Binary classification prediction
+output_description: Returns unnormalized logits for binary prediction for BACE-1 binding
+loss_function: Binary Cross-Entropy Loss
+metrics: AUROC (Area Under the Receiver Operator Curve)
+split_type: scaffold
+num_samples: 1513
+channels:
+- name: Class
+  unit: logit
+  description: BACE-1 inhibitor

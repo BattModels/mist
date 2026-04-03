@@ -1,0 +1,13 @@
+# Authenticated Hugging Face config for this model omits top-level channels: https://huggingface.co/mist-models/mist-mixtures-zffffbex/resolve/main/config.json
+# Target names below follow the packaged dataset and model card for the excess-property prediction task.
+# Mixture excess-property dataset card: https://huggingface.co/datasets/mist-models/excess-properties
+channels:
+  - name: "density"
+    unit: gram / centimeter ** 3
+    description: Mixture density
+  - name: "molar volume"
+    unit: centimeter ** 3 / mole
+    description: Mixture molar volume
+  - name: "molar enthalpy"
+    unit: joule / mole
+    description: Mixture molar enthalpy

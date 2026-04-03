@@ -1,0 +1,54 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-28M-kw4ks27p-tox21/resolve/main/config.json
+# Tox21 Data Challenge 2014 overview: https://doi.org/10.3389/fenvs.2015.00080
+# MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
+name: Tox21
+source: MoleculeNet benchmark
+description: The Tox21 dataset from MoleculeNet was used. It features 7,831 compounds
+  tested against 12 biological targets related to nuclear receptor signaling and stress
+  response pathways. This is a multi-label binary-classification dataset.
+task_type: Multi-label binary classification
+task_description: toxicity endpoints
+output_format: Multi-label binary classification for 12 toxicity endpoints
+output_description: Returns unnormalized logits for predictions for 12 toxicity endpoints
+  (nuclear receptor signaling and stress response)
+loss_function: Binary Cross-Entropy Loss
+metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 12 tasks
+split_type: random
+num_samples: 7831
+channels:
+- name: NR-AR
+  unit: logit
+  description: Nuclear receptor androgen receptor activity
+- name: NR-AR-LBD
+  unit: logit
+  description: Nuclear receptor androgen receptor ligand-binding domain activity
+- name: NR-AhR
+  unit: logit
+  description: Nuclear receptor aryl hydrocarbon receptor activity
+- name: NR-Aromatase
+  unit: logit
+  description: Nuclear receptor aromatase activity
+- name: NR-ER
+  unit: logit
+  description: Nuclear receptor estrogen receptor activity
+- name: NR-ER-LBD
+  unit: logit
+  description: Nuclear receptor estrogen receptor ligand-binding domain activity
+- name: NR-PPAR-gamma
+  unit: logit
+  description: Nuclear receptor PPAR-gamma activity
+- name: SR-ARE
+  unit: logit
+  description: Stress response antioxidant response element activity
+- name: SR-ATAD5
+  unit: logit
+  description: Stress response ATAD5 activity
+- name: SR-HSE
+  unit: logit
+  description: Stress response heat shock element activity
+- name: SR-MMP
+  unit: logit
+  description: Stress response mitochondrial membrane potential activity
+- name: SR-p53
+  unit: logit
+  description: Stress response p53 activity

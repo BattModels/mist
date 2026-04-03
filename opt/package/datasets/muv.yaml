@@ -1,0 +1,69 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-28M-yr1urd2c-muv/resolve/main/config.json
+# Rohrer and Baumann. Maximum Unbiased Validation (MUV) Data Sets for Virtual Screening Based on PubChem Bioactivity Data. https://doi.org/10.1021/ci8002649
+# MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
+name: MUV
+source: MoleculeNet benchmark
+description: The MUV (Maximum Unbiased Validation) dataset from MoleculeNet was used.
+  It contains 93,087 compounds tested against 17 challenging bioassay targets designed
+  to avoid analogue bias and provide a more realistic evaluation of virtual screening
+  methods.
+task_type: Multi-label binary classification
+task_description: bioassay activity
+output_format: Multi-label binary classification for 17 bioassay targets
+output_description: Returns unnormalized logits for 17 bioassay activity endpoints
+loss_function: Binary Cross-Entropy Loss
+metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 17 tasks
+split_type: random
+num_samples: 93087
+channels:
+- name: MUV-466
+  unit: logit
+  description: MUV assay 466 activity
+- name: MUV-548
+  unit: logit
+  description: MUV assay 548 activity
+- name: MUV-600
+  unit: logit
+  description: MUV assay 600 activity
+- name: MUV-644
+  unit: logit
+  description: MUV assay 644 activity
+- name: MUV-652
+  unit: logit
+  description: MUV assay 652 activity
+- name: MUV-689
+  unit: logit
+  description: MUV assay 689 activity
+- name: MUV-692
+  unit: logit
+  description: MUV assay 692 activity
+- name: MUV-712
+  unit: logit
+  description: MUV assay 712 activity
+- name: MUV-713
+  unit: logit
+  description: MUV assay 713 activity
+- name: MUV-733
+  unit: logit
+  description: MUV assay 733 activity
+- name: MUV-737
+  unit: logit
+  description: MUV assay 737 activity
+- name: MUV-810
+  unit: logit
+  description: MUV assay 810 activity
+- name: MUV-832
+  unit: logit
+  description: MUV assay 832 activity
+- name: MUV-846
+  unit: logit
+  description: MUV assay 846 activity
+- name: MUV-852
+  unit: logit
+  description: MUV assay 852 activity
+- name: MUV-858
+  unit: logit
+  description: MUV assay 858 activity
+- name: MUV-859
+  unit: logit
+  description: MUV assay 859 activity

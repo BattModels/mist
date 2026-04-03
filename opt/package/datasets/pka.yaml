@@ -1,0 +1,6 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-27.1M-f8xk9lsv-pKa/resolve/main/config.json
+# Dataset source noted in the model card: IUPAC Dissociation Constants repository, https://github.com/IUPAC/Dissociation-Constants
+channels:
+  - name: "pka_value"
+    unit: dimensionless
+    description: Acid dissociation constant pKa

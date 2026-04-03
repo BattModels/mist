@@ -1,0 +1,19 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-28M-kcwb9le5-esol/resolve/main/config.json
+# Delaney, J. S. ESOL: A Novel Method for Estimating Aqueous Solubility Directly from Molecular Structure. https://doi.org/10.1021/ci034243x
+# MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
+name: ESOL
+source: MoleculeNet benchmark
+description: The ESOL (Estimated SOLubility) dataset from MoleculeNet was used. It
+  provides experimental aqueous solubility (log S) measurements for 1,128 small molecules.
+  It is a single-target regression task.
+task_type: Regression
+task_description: aqueous solubility
+output_format: Regression prediction for aqueous solubility (log S)
+output_description: Returns predictions for measured log solubility in mols per litre
+loss_function: Mean Squared Error (MSE) Loss
+metrics: Root Mean Squared Error (RMSE)
+split_type: random
+num_samples: 1128
+channels:
+- name: log_solubility
+  description: Aqueous solubility log S
