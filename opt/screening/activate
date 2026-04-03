@@ -14,3 +14,6 @@ export HF_HOME="$GIT_ROOT/.cache/huggingface"
 # Julia
 export JULIA_CONDAPKG_BACKEND=Null
 export JULIA_PYTHONCALL_EXE="${ROOT}/.venv/bin/python"
+export JULIA_GLMAKIE_BACKEND="headless"
+export LD_LIBRARY_PATH=""
+export DISPLAY=0

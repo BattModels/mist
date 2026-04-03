@@ -1,34 +1,34 @@
 import json
 from pathlib import Path
+from typing import Optional
+
+from safetensors.torch import load_file
 from transformers import (
     AutoConfig,
     AutoModel,
     RobertaPreLayerNormConfig,
     RobertaPreLayerNormForMaskedLM,
 )
-from typing import Optional
-from safetensors.torch import load_file
 
 from electrolyte_fm.models import (
-    MISTFinetunedConfig,
-    MISTFinetuned,
-    MISTIonicConductivityConfig,
-    MISTIonicConductivity,
-    MISTMultiTaskConfig,
-    MISTMultiTask,
-    MISTExcessPhysicsConfig,
     MISTExcessPhysics,
+    MISTExcessPhysicsConfig,
+    MISTFinetuned,
+    MISTFinetunedConfig,
+    MISTIonicConductivity,
+    MISTIonicConductivityConfig,
+    MISTMultiTask,
+    MISTMultiTaskConfig,
 )
-
+from electrolyte_fm.models.excess_physics_model import pairwise_fusion
+from electrolyte_fm.models.normalize import AbstractNormalizer
 from electrolyte_fm.models.physics_task_heads import (
-    VFTDecayTaskHead,
     ArrtheniusActivation,
     LinearExogenousEffect,
+    VFTDecayTaskHead,
 )
 from electrolyte_fm.models.polynomials import LagrangePolynomial
-from electrolyte_fm.models.excess_physics_model import pairwise_fusion
 from electrolyte_fm.models.prediction_task_head import PredictionTaskHead
-from electrolyte_fm.models.normalize import AbstractNormalizer
 
 
 def load_legacy_packaged_checkpoint(path: Path, model_class: Optional = None):
@@ -154,3 +154,11 @@ def load_legacy_packaged_checkpoint(path: Path, model_class: Optional = None):
 
     model.load_state_dict(load_file(str(path / "model.safetensors")), strict=False)
     return model
+
+
+if __name__ == "__main___":
+    model = load_legacy_packaged_checkpoint(
+        "/nfs/turbo/coe-venkvis/abhutani/electrolyte-fm/solvent-properties",
+        model_class=MISTMultiTask,
+    )
+    print(str(model))

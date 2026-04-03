@@ -1,0 +1,53 @@
+generation:
+  db_path: zinc_fragment/fragments.sqlite
+  n_fragments: 1000
+  reference_fragments: lithium-air/fragments.smi
+  epoch_size: 1200
+  limit_db_fragments: null
+  limit_ref_fragments: null
+  batch_size: 768
+critics:
+  - model_path: mist-models/mist-26.9M-b302p09x-bp
+    limits:
+      bp:
+        - 75
+        - null
+    model_cls: AutoModel
+  - model_path: mist-models/mist-26.9M-y3ge5pf9-mp
+    limits:
+      mp:
+        - null
+        - 25
+    model_cls: AutoModel
+  - model_path: mist-models/mist-28M-6zlgl2qn-pKa
+    limits:
+      DMSO_pKa:
+        - 30
+        - null
+    model_cls: AutoModel
+  - model_path: mist-models/mist-27.1M-1gcxtg8y-ETN
+    limits:
+      ETN:
+        - null
+        - null
+    model_cls: AutoModel
+  - model_path: ../../hf-models/mist-multi-28.2M-solvent-properties
+    limits:
+      beta:
+        - null
+        - null
+    model_cls: MISTMultiTask
+  - model_path: mist-models/mist-26.9M-kkgx0omx-qm9
+    limits:
+      homo:
+        - -0.4204
+        - null
+    model_cls: AutoModel
+
+equations:
+  module: lithium_air_equations
+  critics:
+    - function: solution_mediated_reaction
+      inputs: [beta, ETN]
+      output: delta_G_HA_sol
+      limits: [-6.46, -0.35]

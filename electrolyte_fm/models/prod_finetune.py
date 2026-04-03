@@ -7,18 +7,18 @@ from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
+from smirk import SmirkTokenizerFast
 from transformers import (
     AutoConfig,
     AutoModel,
     AutoTokenizer,
     DataCollatorWithPadding,
-    PreTrainedModel,
     PretrainedConfig,
+    PreTrainedModel,
 )
 
-from smirk import SmirkTokenizerFast
-from .prediction_task_head import PredictionTaskHead
 from .normalize import AbstractNormalizer
+from .prediction_task_head import PredictionTaskHead
 
 AutoTokenizer.register("SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast)
 
@@ -141,14 +141,28 @@ class MISTFinetuned(PreTrainedModel):
             return tokenizer
         if getattr(self, "tokenizer", None) is not None:
             return self.tokenizer
-        try:
-            return AutoTokenizer.from_pretrained(
-                self.name_or_path, use_fast=True, trust_remote_code=True
-            )
-        except Exception:
-            return AutoTokenizer.from_pretrained(
-                self.config._name_or_path, use_fast=True, trust_remote_code=True
-            )
+
+        if self.name_or_path and "/" in self.name_or_path:
+            try:
+                return AutoTokenizer.from_pretrained(
+                    self.name_or_path, use_fast=True, trust_remote_code=True
+                )
+            except Exception:
+                pass
+
+        if (
+            hasattr(self.config, "_name_or_path")
+            and self.config._name_or_path
+            and "/" in self.config._name_or_path
+        ):
+            try:
+                return AutoTokenizer.from_pretrained(
+                    self.config._name_or_path, use_fast=True, trust_remote_code=True
+                )
+            except Exception:
+                pass
+
+        return None
 
     def embed(self, smi: List[str], tokenizer=None):
         batch = self.tokenizer(smi)
@@ -282,14 +296,28 @@ class MISTMultiTask(PreTrainedModel):
             return tokenizer
         if getattr(self, "tokenizer", None) is not None:
             return self.tokenizer
-        try:
-            return AutoTokenizer.from_pretrained(
-                self.name_or_path, use_fast=True, trust_remote_code=True
-            )
-        except Exception:
-            return AutoTokenizer.from_pretrained(
-                self.config._name_or_path, use_fast=True, trust_remote_code=True
-            )
+
+        if self.name_or_path and "/" in self.name_or_path:
+            try:
+                return AutoTokenizer.from_pretrained(
+                    self.name_or_path, use_fast=True, trust_remote_code=True
+                )
+            except Exception:
+                pass
+
+        if (
+            hasattr(self.config, "_name_or_path")
+            and self.config._name_or_path
+            and "/" in self.config._name_or_path
+        ):
+            try:
+                return AutoTokenizer.from_pretrained(
+                    self.config._name_or_path, use_fast=True, trust_remote_code=True
+                )
+            except Exception:
+                pass
+
+        return None
 
     def predict(self, smi: List[str], tokenizer=None):
         batch = self.tokenizer(smi)

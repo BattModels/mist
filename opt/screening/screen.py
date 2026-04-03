@@ -13,7 +13,7 @@ import yaml
 from lightning.fabric import Fabric
 from src.database import dump_to_sqlite_threaded
 from src.dataloader import DatabaseFragmentDataset
-from src.generate import OracleCritic, generate
+from src.generate import OracleCritic, EquationCritic, generate
 from src.utils import configure_logging, take_for_seconds
 
 torch._dynamo.config.suppress_errors = True
@@ -79,6 +79,17 @@ def main(
 
     # Screening critics
     critics = [OracleCritic.from_pretrained(**critic) for critic in config["critics"]]
+
+    # Equation critics
+    equation_critics = None
+    if "equations" in config:
+        module_path = config["equations"]["module"]
+        equation_critics = [
+            EquationCritic.from_config(module_path, **eq)
+            for eq in config["equations"].get("critics", [])
+            if "limits" in eq
+        ]
+
     # Fragment dataset
     mol_generator = DatabaseFragmentDataset(
         fabric,
@@ -102,6 +113,7 @@ def main(
             fabric,
             critics,
             mol_generator,
+            equation_critics,
         ),
         out_dir.joinpath(f"rank_{fabric.global_rank}.sqlite"),
     )

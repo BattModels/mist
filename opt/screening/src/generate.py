@@ -183,16 +183,69 @@ class AnyCritic(Critic):
         return ((self.lower < y) & (y < self.upper) & (self.mask)).any(-1)
 
 
+class EquationOracle(nn.Module):
+    def __init__(self, func, input_channels: list[str], output_name: str):
+        super().__init__()
+        self.func = func
+        self.input_channels = input_channels
+        self.channels = [output_name]
+
+    def forward(self, predictions: dict[str, torch.Tensor]) -> torch.Tensor:
+        inputs = [predictions[ch] for ch in self.input_channels]
+        result = self.func(*inputs)
+        return torch.atleast_2d(result).T if result.dim() == 1 else result
+
+
+class EquationCritic(nn.Module):
+    def __init__(self, oracle: EquationOracle, critic: Critic):
+        super().__init__()
+        self.oracle = oracle
+        self.critic = critic
+
+    def forward(self, predictions: dict[str, torch.Tensor]):
+        y = self.oracle(predictions)
+        score = self.critic(y)
+        return y, score
+
+    @classmethod
+    def from_config(
+        cls,
+        module_path: str,
+        function: str,
+        inputs: list[str],
+        output: str,
+        limits: list,
+    ):
+        import importlib
+
+        mod = importlib.import_module(module_path)
+        func = getattr(mod, function)
+        oracle = EquationOracle(func, inputs, output)
+        lower = [-torch.inf if limits[0] is None else limits[0]]
+        upper = [torch.inf if limits[1] is None else limits[1]]
+        critic = QuadrantCritic(torch.tensor(lower), torch.tensor(upper))
+        return cls(oracle, critic)
+
+
 class CriticPanel(nn.Module):
-    def __init__(self, critics: list[OracleCritic]):
+    def __init__(
+        self,
+        critics: list[OracleCritic],
+        equation_critics: list[EquationCritic] | None = None,
+    ):
         super().__init__()
         self.critics = nn.ModuleList(critics)
+        self.equation_critics = (
+            nn.ModuleList(equation_critics) if equation_critics else nn.ModuleList([])
+        )
         channels = []
         for critic in critics:
             if isinstance(critic.oracle.channels[0], dict):
                 channels.extend([chn["name"] for chn in critic.oracle.channels])
             elif isinstance(critic.oracle.channels[0], str):
                 channels.extend(critic.oracle.channels)
+        for eq_critic in self.equation_critics:
+            channels.extend(eq_critic.oracle.channels)
         self.channels: list[str] = channels
 
     def forward(
@@ -202,19 +255,31 @@ class CriticPanel(nn.Module):
             input_ids.shape[0], dtype=torch.bool, device=input_ids.device
         )
         y = []
+        predictions = {}
+
         for critic in self.critics:
             yc, score = critic(input_ids, attention_mask=attention_mask)
             net_score &= score
             y.append(yc)
+            for i, ch in enumerate(critic.oracle.channels):
+                ch_name = ch["name"] if isinstance(ch, dict) else ch
+                predictions[ch_name] = yc[:, i]
+
+        for eq_critic in self.equation_critics:
+            yc, score = eq_critic(predictions)
+            net_score &= score
+            y.append(yc)
+            for i, ch in enumerate(eq_critic.oracle.channels):
+                predictions[ch] = yc[:, i]
 
         return torch.cat(y, dim=-1), net_score
 
 
-def generate(fabric: Fabric, critics, mol_dataloader):
+def generate(fabric: Fabric, critics, mol_dataloader, equation_critics=None):
     assert len(critics) > 0, "No critics provided"
 
     # Setup Critics
-    panel = CriticPanel(critics).to(fabric.device).eval()
+    panel = CriticPanel(critics, equation_critics).to(fabric.device).eval()
 
     # Setup Timing
     batch_time = 0.0

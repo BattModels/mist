@@ -456,3 +456,28 @@ datasets:
     metrics: "Mean Absolute Error (MAE) for Cv predictions"
     split_type: "random"
     num_samples: 133885
+
+  # Solvent property models
+  pka:
+    name: "Dissociation Constant (pKa) in DMSO"
+    source: "The raw dataset was taken from Acid Dissociation Constants in Selected Dipolar Non-Hydrogen-Bond-Donor Solvents (IUPAC Technical Report).  The dataset was filtered to include only measurements which included a value for the measurement in DMSO. Duplicates were averaged over based on InChI keys and two measurements for mixtures were excluded."
+    task_type: "Regression"
+    task_description: "dissociation constant in DMSO"
+    output_format: "Regression prediction for pKa"
+    output_description: "Returns predictions for pKa in DMSO"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for pKa predictions"
+    split_type: "random"
+    num_samples: 3,254
+
+  etn:
+    name: "Normalized Dimroth-Reichardt Solvent Polarity Parameter (ETN)"
+    source: "The Dimroth-Reichardt ET dataset retrieved from the Stenutz solvent polarity table (https://www.stenutz.eu/chem/solv20.php?sort=3) was used. The dataset includes tabulated normalized ETN values for listed solvents and solvent-like media."
+    task_type: "Regression"
+    task_description: "normalized empirical solvent polarity parameter E_T^N"
+    output_format: "Regression prediction for ETN"
+    output_description: "Returns predictions for the normalized Dimroth-Reichardt solvent polarity parameter ETN"
+    loss_function: "Mean Squared Error (MSE) Loss"
+    metrics: "Mean Absolute Error (MAE) for ETN predictions"
+    split_type: "random"
+    num_samples: 379
