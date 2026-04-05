@@ -117,6 +117,7 @@ def migrate_org(
     commit_message: str = typer.Option(
         "Migrate channel config", help="Commit title / PR title"
     ),
+    pr: bool = typer.Option(True, help="Create a PR instead of commiting directly"),
     dry_run: bool = typer.Option(False, help="Print actions, do not create PRs"),
     skip_fail: bool = typer.Option(
         True,
@@ -179,9 +180,12 @@ def migrate_org(
             revision=revision,
             operations=[op],
             commit_message=commit_message,
-            create_pr=True,
+            create_pr=pr,
         )
-        typer.echo(f"Opened PR for {repo_id}")
+        if pr:
+            typer.echo(f"Opened PR for {repo_id}")
+        else:
+            typer.echo(f"Migrated config for {repo_id}")
 
 
 if __name__ == "__main__":

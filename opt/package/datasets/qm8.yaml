@@ -11,10 +11,10 @@ split_type: random
 num_samples: 21786
 channels:
   - name: E1-CC2-RI-CC2/def2TZVP
-    unit: Hartree
+    unit: hartree
     description: First excitation energy at the CC2-RI-CC2/def2TZVP level
   - name: E2-CC2-RI-CC2/def2TZVP
-    unit: Hartree
+    unit: hartree
     description: Second excitation energy at the CC2-RI-CC2/def2TZVP level
   - name: f1-CC2-RI-CC2/def2TZVP
     unit: dimensionless
@@ -23,10 +23,10 @@ channels:
     unit: dimensionless
     description: Second oscillator strength at the CC2-RI-CC2/def2TZVP level
   - name: E1-PBE0-LR-TDPBE0/def2SVP
-    unit: Hartree
+    unit: hartree
     description: First excitation energy at the PBE0-LR-TDPBE0/def2SVP level
   - name: E2-PBE0-LR-TDPBE0/def2SVP
-    unit: Hartree
+    unit: hartree
     description: Second excitation energy at the PBE0-LR-TDPBE0/def2SVP level
   - name: f1-PBE0-LR-TDPBE0/def2SVP
     unit: dimensionless
@@ -35,10 +35,10 @@ channels:
     unit: dimensionless
     description: Second oscillator strength at the PBE0-LR-TDPBE0/def2SVP level
   - name: E1-PBE0-LR-TDPBE0/def2TZVP
-    unit: Hartree
+    unit: hartree
     description: First excitation energy at the PBE0-LR-TDPBE0/def2TZVP level
   - name: E2-PBE0-LR-TDPBE0/def2TZVP
-    unit: Hartree
+    unit: hartree
     description: Second excitation energy at the PBE0-LR-TDPBE0/def2TZVP level
   - name: f1-PBE0-LR-TDPBE0/def2TZVP
     unit: dimensionless
@@ -47,10 +47,10 @@ channels:
     unit: dimensionless
     description: Second oscillator strength at the PBE0-LR-TDPBE0/def2TZVP level
   - name: E1-CAM-LR-TDCAM-B3LYP/def2TZVP
-    unit: Hartree
+    unit: hartree
     description: First excitation energy at the CAM-LR-TDCAM-B3LYP/def2TZVP level
   - name: E2-CAM-LR-TDCAM-B3LYP/def2TZVP
-    unit: Hartree
+    unit: hartree
     description: Second excitation energy at the CAM-LR-TDCAM-B3LYP/def2TZVP level
   - name: f1-CAM-LR-TDCAM-B3LYP/def2TZVP
     unit: dimensionless
