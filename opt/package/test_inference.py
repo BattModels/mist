@@ -1,11 +1,12 @@
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Union
+from typing import Any, Dict, List, Union
+
+import numpy as np
 import pytest
 import torch
-import numpy as np
-from transformers import AutoModel
 from smirk import SmirkTokenizerFast
+from transformers import AutoModel
 
 logger = logging.getLogger(__name__)
 

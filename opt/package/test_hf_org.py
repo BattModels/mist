@@ -7,7 +7,7 @@ import pytest
 from huggingface_hub import HfApi
 from transformers import AutoModel
 
-from test_inference import (
+from .test_inference import (
     single_molecule_smiles,
     conductivity_test_data,
     excess_test_data,
