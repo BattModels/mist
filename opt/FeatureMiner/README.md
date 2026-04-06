@@ -11,4 +11,3 @@ MIST finetuned models.
 4. Run `julia --project explore_probes.jl` to extract fitted probe weights from the checkpoints
 5. Instantiate the plotting code: `julia --project=plots -e 'using Pkg; Pkg.instantiate()'`
 6. Evaluate fitted probes: `julia --project=plots ./plots/lipinski_probes.jl`
-

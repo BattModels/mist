@@ -18,5 +18,3 @@ To install:
     - [analysis.jl](./src/analysis.jl.jl): Code for predicting the perform of models using fitted neural scaling laws
 - `./test/` has the unit tests for the BayesianScaling.jl package
 - `./benchmark/`: benchmark suite for evaluating different AD backends using [PkgJogger.jl](https://github.com/awadell1/PkgJogger.jl)
-
-

@@ -146,7 +146,7 @@ def migrate_org(
                 revision=revision,
                 token=token,
             )
-        except Exception as e:
+        except Exception:
             typer.echo(f"Failed to download {repo_id}")
 
         existing = Path(config_path).read_text()
