@@ -10,7 +10,7 @@
 
 
 MIST is a family of molecular foundation models for molecular property prediction.
-The models were pre-trained on [smirk tokenized](https://github.com/BattModels/smirk) SMILES strings from the [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) dataset using the Masked Language Modeling (MLM) objective, then fine-tuned for downstream prediction tasks.
+The models were pre-trained on [Smirk 😏 tokenized](https://github.com/BattModels/smirk) SMILES strings from the [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) dataset using the Masked Language Modeling (MLM) objective, then fine-tuned for downstream prediction tasks.
 
 # Installation
 
