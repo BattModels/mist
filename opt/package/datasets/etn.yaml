@@ -1,0 +1,6 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-27.1M-1gcxtg8y-ETN/resolve/main/config.json
+# Dataset source noted in the model card: Stenutz Dimroth-Reichardt ET solvent polarity table, https://www.stenutz.eu/chem/solv20.php?sort=3
+channels:
+  - name: ETN
+    unit: dimensionless
+    description: Normalized Dimroth-Reichardt solvent polarity parameter E_T^N

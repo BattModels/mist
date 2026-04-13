@@ -1,0 +1,284 @@
+# Authenticated Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-26.9M-48kpooqf-odour/resolve/main/config.json
+# Model card dataset source: Lee et al. olfaction dataset, as cited by the packaged model card.
+name: Olfaction
+source: application dataset
+description: The Olfaction dataset was used, consisting of 4,983 molecules collected by Lee et al. As an arbitrary number of scent labels can be applied to any molecule, the task was framed as a multi-label multi-class binary classification task, with 135 possible scent labels.
+task_type: Multi-label binary classification
+task_description: odor descriptors
+output_format: Multi-label binary classification for 135 scent labels
+output_description: Returns unnormalized logits for binary labels for 135 possible scent descriptors
+loss_function: Binary Cross-Entropy Loss
+metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 135 scent labels
+split_type: random
+num_samples: 4983
+channels:
+  - name: almond
+    unit: logit
+  - name: amber
+    unit: logit
+  - name: animal
+    unit: logit
+  - name: anisic
+    unit: logit
+  - name: apple
+    unit: logit
+  - name: apricot
+    unit: logit
+  - name: aromatic
+    unit: logit
+  - name: balsamic
+    unit: logit
+  - name: banana
+    unit: logit
+  - name: beefy
+    unit: logit
+  - name: bergamot
+    unit: logit
+  - name: berry
+    unit: logit
+  - name: bitter
+    unit: logit
+  - name: black currant
+    unit: logit
+  - name: brandy
+    unit: logit
+  - name: burnt
+    unit: logit
+  - name: buttery
+    unit: logit
+  - name: cabbage
+    unit: logit
+  - name: camphoreous
+    unit: logit
+  - name: caramellic
+    unit: logit
+  - name: cedar
+    unit: logit
+  - name: celery
+    unit: logit
+  - name: chamomile
+    unit: logit
+  - name: cheesy
+    unit: logit
+  - name: cherry
+    unit: logit
+  - name: chocolate
+    unit: logit
+  - name: cinnamon
+    unit: logit
+  - name: citrus
+    unit: logit
+  - name: clean
+    unit: logit
+  - name: clove
+    unit: logit
+  - name: cocoa
+    unit: logit
+  - name: coconut
+    unit: logit
+  - name: coffee
+    unit: logit
+  - name: cognac
+    unit: logit
+  - name: cooked
+    unit: logit
+  - name: cooling
+    unit: logit
+  - name: cortex
+    unit: logit
+  - name: coumarinic
+    unit: logit
+  - name: creamy
+    unit: logit
+  - name: cucumber
+    unit: logit
+  - name: dairy
+    unit: logit
+  - name: dry
+    unit: logit
+  - name: earthy
+    unit: logit
+  - name: ethereal
+    unit: logit
+  - name: fatty
+    unit: logit
+  - name: fermented
+    unit: logit
+  - name: fishy
+    unit: logit
+  - name: floral
+    unit: logit
+  - name: fresh
+    unit: logit
+  - name: fruit skin
+    unit: logit
+  - name: fruity
+    unit: logit
+  - name: garlic
+    unit: logit
+  - name: gassy
+    unit: logit
+  - name: geranium
+    unit: logit
+  - name: grape
+    unit: logit
+  - name: grapefruit
+    unit: logit
+  - name: grassy
+    unit: logit
+  - name: green
+    unit: logit
+  - name: hawthorn
+    unit: logit
+  - name: hay
+    unit: logit
+  - name: hazelnut
+    unit: logit
+  - name: herbal
+    unit: logit
+  - name: honey
+    unit: logit
+  - name: hyacinth
+    unit: logit
+  - name: jasmin
+    unit: logit
+  - name: juicy
+    unit: logit
+  - name: ketonic
+    unit: logit
+  - name: lactonic
+    unit: logit
+  - name: lavender
+    unit: logit
+  - name: leafy
+    unit: logit
+  - name: leathery
+    unit: logit
+  - name: lemon
+    unit: logit
+  - name: lily
+    unit: logit
+  - name: malty
+    unit: logit
+  - name: meaty
+    unit: logit
+  - name: medicinal
+    unit: logit
+  - name: melon
+    unit: logit
+  - name: metallic
+    unit: logit
+  - name: milky
+    unit: logit
+  - name: mint
+    unit: logit
+  - name: muguet
+    unit: logit
+  - name: mushroom
+    unit: logit
+  - name: musk
+    unit: logit
+  - name: musty
+    unit: logit
+  - name: natural
+    unit: logit
+  - name: nutty
+    unit: logit
+  - name: odorless
+    unit: logit
+  - name: oily
+    unit: logit
+  - name: onion
+    unit: logit
+  - name: orange
+    unit: logit
+  - name: orangeflower
+    unit: logit
+  - name: orris
+    unit: logit
+  - name: ozone
+    unit: logit
+  - name: peach
+    unit: logit
+  - name: pear
+    unit: logit
+  - name: phenolic
+    unit: logit
+  - name: pine
+    unit: logit
+  - name: pineapple
+    unit: logit
+  - name: plum
+    unit: logit
+  - name: popcorn
+    unit: logit
+  - name: potato
+    unit: logit
+  - name: powdery
+    unit: logit
+  - name: pungent
+    unit: logit
+  - name: radish
+    unit: logit
+  - name: raspberry
+    unit: logit
+  - name: ripe
+    unit: logit
+  - name: roasted
+    unit: logit
+  - name: rose
+    unit: logit
+  - name: rummy
+    unit: logit
+  - name: sandalwood
+    unit: logit
+  - name: savory
+    unit: logit
+  - name: sharp
+    unit: logit
+  - name: smoky
+    unit: logit
+  - name: soapy
+    unit: logit
+  - name: solvent
+    unit: logit
+  - name: sour
+    unit: logit
+  - name: spicy
+    unit: logit
+  - name: strawberry
+    unit: logit
+  - name: sulfurous
+    unit: logit
+  - name: sweaty
+    unit: logit
+  - name: sweet
+    unit: logit
+  - name: tea
+    unit: logit
+  - name: terpenic
+    unit: logit
+  - name: tobacco
+    unit: logit
+  - name: tomato
+    unit: logit
+  - name: tropical
+    unit: logit
+  - name: vanilla
+    unit: logit
+  - name: vegetable
+    unit: logit
+  - name: vetiver
+    unit: logit
+  - name: violet
+    unit: logit
+  - name: warm
+    unit: logit
+  - name: waxy
+    unit: logit
+  - name: weedy
+    unit: logit
+  - name: winey
+    unit: logit
+  - name: woody
+    unit: logit

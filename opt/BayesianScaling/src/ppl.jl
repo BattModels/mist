@@ -216,7 +216,7 @@ function transform_samples(t::TransformVariables.AbstractTransform, x::Matrix{T}
 end
 
 function transform!(y::AbstractVector, tt::TransformVariables.TransformTuple, x::AbstractVector)
-    (; transformations) = tt
+    transformations = getfield(tt, :inner)
     @assert TransformVariables.dimension(tt) == length(y) == length(x)
     index = firstindex(y)
     for t in transformations
@@ -242,7 +242,7 @@ transform!(y::AbstractVector, t::TransformVariables.AbstractTransform, x::Abstra
 function transfrom_axis(tt::TransformVariables.TransformTuple{<:NamedTuple})
     ax_tt = []
     index = 1
-    for (k, t) in pairs(tt.transformations)
+    for (k, t) in pairs(getfield(tt, :inner))
         ax = transfrom_axis(t)
         n = TransformVariables.dimension(t)
         if ax isa Union{ComponentArrays.ShapedAxis,ComponentArrays.Axis}

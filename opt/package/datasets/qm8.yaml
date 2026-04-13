@@ -1,0 +1,60 @@
+name: QM8
+source: MoleculeNet benchmark
+description: The QM8 dataset from MoleculeNet was used. It contains 21,786 small molecules for which time-dependent density functional theory (TDDFT) was used to compute eight excitation energies and four oscillator strengths, resulting in 12 scalar targets per molecule.
+task_type: Multi-task regression
+task_description: electronic spectra properties
+output_format: Regression predictions for 12 electronic transition properties (8 excitation energies and 4 oscillator strengths)
+output_description: Returns predictions for 12 electronic spectra properties computed using TDDFT
+loss_function: Mean Squared Error (MSE) Loss
+metrics: Mean Absolute Error (MAE) averaged across all 12 properties
+split_type: random
+num_samples: 21786
+channels:
+  - name: E1-CC2-RI-CC2/def2TZVP
+    unit: hartree
+    description: First excitation energy at the CC2-RI-CC2/def2TZVP level
+  - name: E2-CC2-RI-CC2/def2TZVP
+    unit: hartree
+    description: Second excitation energy at the CC2-RI-CC2/def2TZVP level
+  - name: f1-CC2-RI-CC2/def2TZVP
+    unit: dimensionless
+    description: First oscillator strength at the CC2-RI-CC2/def2TZVP level
+  - name: f2-CC2-RI-CC2/def2TZVP
+    unit: dimensionless
+    description: Second oscillator strength at the CC2-RI-CC2/def2TZVP level
+  - name: E1-PBE0-LR-TDPBE0/def2SVP
+    unit: hartree
+    description: First excitation energy at the PBE0-LR-TDPBE0/def2SVP level
+  - name: E2-PBE0-LR-TDPBE0/def2SVP
+    unit: hartree
+    description: Second excitation energy at the PBE0-LR-TDPBE0/def2SVP level
+  - name: f1-PBE0-LR-TDPBE0/def2SVP
+    unit: dimensionless
+    description: First oscillator strength at the PBE0-LR-TDPBE0/def2SVP level
+  - name: f2-PBE0-LR-TDPBE0/def2SVP
+    unit: dimensionless
+    description: Second oscillator strength at the PBE0-LR-TDPBE0/def2SVP level
+  - name: E1-PBE0-LR-TDPBE0/def2TZVP
+    unit: hartree
+    description: First excitation energy at the PBE0-LR-TDPBE0/def2TZVP level
+  - name: E2-PBE0-LR-TDPBE0/def2TZVP
+    unit: hartree
+    description: Second excitation energy at the PBE0-LR-TDPBE0/def2TZVP level
+  - name: f1-PBE0-LR-TDPBE0/def2TZVP
+    unit: dimensionless
+    description: First oscillator strength at the PBE0-LR-TDPBE0/def2TZVP level
+  - name: f2-PBE0-LR-TDPBE0/def2TZVP
+    unit: dimensionless
+    description: Second oscillator strength at the PBE0-LR-TDPBE0/def2TZVP level
+  - name: E1-CAM-LR-TDCAM-B3LYP/def2TZVP
+    unit: hartree
+    description: First excitation energy at the CAM-LR-TDCAM-B3LYP/def2TZVP level
+  - name: E2-CAM-LR-TDCAM-B3LYP/def2TZVP
+    unit: hartree
+    description: Second excitation energy at the CAM-LR-TDCAM-B3LYP/def2TZVP level
+  - name: f1-CAM-LR-TDCAM-B3LYP/def2TZVP
+    unit: dimensionless
+    description: First oscillator strength at the CAM-LR-TDCAM-B3LYP/def2TZVP level
+  - name: f2-CAM-LR-TDCAM-B3LYP/def2TZVP
+    unit: dimensionless
+    description: Second oscillator strength at the CAM-LR-TDCAM-B3LYP/def2TZVP level

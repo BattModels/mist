@@ -1,0 +1,51 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-26.9M-kkgx0omx-qm9/resolve/main/config.json
+# Ramakrishnan et al. Quantum chemistry structures and properties of 134 kilo molecules. https://doi.org/10.1038/sdata.2014.22
+# MoleculeNet benchmark metadata for QM9 target naming: https://doi.org/10.1021/acs.jcim.7b00118
+name: QM9
+source: MoleculeNet benchmark
+description: The QM9 dataset from MoleculeNet was used. It contains approximately 134,000 small organic molecules (up to 9 heavy atoms) with 12 quantum mechanical properties calculated using density functional theory (DFT). The properties include geometric, energetic, electronic, and thermodynamic characteristics such as HOMO/LUMO energies, dipole moments, polarizability, heat capacity, and internal energies.
+task_type: Multi-task regression
+task_description: quantum properties
+output_format: Regression predictions for 12 quantum mechanical properties
+output_description: Returns predictions for 12 quantum mechanical properties (HOMO, LUMO, gap, r2, zpve, u0, u298, h298, g298, cv, mu, alpha)
+loss_function: Mean Squared Error (MSE) Loss
+metrics: Mean Absolute Error (MAE) averaged across all 12 quantum mechanical properties
+split_type: random
+num_samples: 133885
+channels:
+  - name: mu
+    unit: debye
+    description: Dipole moment
+  - name: alpha
+    unit: cubic bohr
+    description: Isotropic polarizability
+  - name: homo
+    unit: hartree
+    description: HOMO energy
+  - name: lumo
+    unit: hartree
+    description: LUMO energy
+  - name: gap
+    unit: hartree
+    description: HOMO-LUMO energy gap
+  - name: r2
+    unit: square bohr
+    description: Electronic spatial extent
+  - name: zpve
+    unit: hartree
+    description: Zero-point vibrational energy
+  - name: u0
+    unit: hartree
+    description: Internal energy at 0 K
+  - name: u298
+    unit: hartree
+    description: Internal energy at 298.15 K
+  - name: h298
+    unit: hartree
+    description: Enthalpy at 298.15 K
+  - name: g298
+    unit: hartree
+    description: Gibbs free energy at 298.15 K
+  - name: cv
+    unit: calorie / mole / kelvin
+    description: Heat capacity at 298.15 K

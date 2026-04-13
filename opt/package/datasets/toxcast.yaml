@@ -1,0 +1,1249 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-28M-ttqcvt6fs-toxcast/resolve/main/config.json
+# Tice et al. Improving the Human Hazard Characterization of Chemicals: A ToxCast Update. https://doi.org/10.1093/toxsci/kfs159
+# MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
+name: ToxCast
+source: MoleculeNet benchmark
+description: The ToxCast dataset from MoleculeNet was used. It contains over 8,000 compounds tested across 617 high-throughput screening assays covering various biological pathways and toxicity endpoints from the EPA's ToxCast project.
+task_type: Multi-label binary classification
+task_description: ToxCast assay endpoints
+output_format: Multi-label binary classification for 617 toxicity assay endpoints
+output_description: Returns unnormalized logits for 617 high-throughput screening assay endpoints
+loss_function: Binary Cross-Entropy Loss
+metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 617 tasks
+split_type: random
+num_samples: 8615
+channels:
+  - name: ACEA_T47D_80hr_Negative
+    unit: logit
+  - name: ACEA_T47D_80hr_Positive
+    unit: logit
+  - name: APR_HepG2_CellCycleArrest_24h_dn
+    unit: logit
+  - name: APR_HepG2_CellCycleArrest_24h_up
+    unit: logit
+  - name: APR_HepG2_CellCycleArrest_72h_dn
+    unit: logit
+  - name: APR_HepG2_CellLoss_24h_dn
+    unit: logit
+  - name: APR_HepG2_CellLoss_72h_dn
+    unit: logit
+  - name: APR_HepG2_MicrotubuleCSK_24h_dn
+    unit: logit
+  - name: APR_HepG2_MicrotubuleCSK_24h_up
+    unit: logit
+  - name: APR_HepG2_MicrotubuleCSK_72h_dn
+    unit: logit
+  - name: APR_HepG2_MicrotubuleCSK_72h_up
+    unit: logit
+  - name: APR_HepG2_MitoMass_24h_dn
+    unit: logit
+  - name: APR_HepG2_MitoMass_24h_up
+    unit: logit
+  - name: APR_HepG2_MitoMass_72h_dn
+    unit: logit
+  - name: APR_HepG2_MitoMass_72h_up
+    unit: logit
+  - name: APR_HepG2_MitoMembPot_1h_dn
+    unit: logit
+  - name: APR_HepG2_MitoMembPot_24h_dn
+    unit: logit
+  - name: APR_HepG2_MitoMembPot_72h_dn
+    unit: logit
+  - name: APR_HepG2_MitoticArrest_24h_up
+    unit: logit
+  - name: APR_HepG2_MitoticArrest_72h_up
+    unit: logit
+  - name: APR_HepG2_NuclearSize_24h_dn
+    unit: logit
+  - name: APR_HepG2_NuclearSize_72h_dn
+    unit: logit
+  - name: APR_HepG2_NuclearSize_72h_up
+    unit: logit
+  - name: APR_HepG2_OxidativeStress_24h_up
+    unit: logit
+  - name: APR_HepG2_OxidativeStress_72h_up
+    unit: logit
+  - name: APR_HepG2_StressKinase_1h_up
+    unit: logit
+  - name: APR_HepG2_StressKinase_24h_up
+    unit: logit
+  - name: APR_HepG2_StressKinase_72h_up
+    unit: logit
+  - name: APR_HepG2_p53Act_24h_up
+    unit: logit
+  - name: APR_HepG2_p53Act_72h_up
+    unit: logit
+  - name: APR_Hepat_Apoptosis_24hr_up
+    unit: logit
+  - name: APR_Hepat_Apoptosis_48hr_up
+    unit: logit
+  - name: APR_Hepat_CellLoss_24hr_dn
+    unit: logit
+  - name: APR_Hepat_CellLoss_48hr_dn
+    unit: logit
+  - name: APR_Hepat_DNADamage_24hr_up
+    unit: logit
+  - name: APR_Hepat_DNADamage_48hr_up
+    unit: logit
+  - name: APR_Hepat_DNATexture_24hr_up
+    unit: logit
+  - name: APR_Hepat_DNATexture_48hr_up
+    unit: logit
+  - name: APR_Hepat_MitoFxnI_1hr_dn
+    unit: logit
+  - name: APR_Hepat_MitoFxnI_24hr_dn
+    unit: logit
+  - name: APR_Hepat_MitoFxnI_48hr_dn
+    unit: logit
+  - name: APR_Hepat_NuclearSize_24hr_dn
+    unit: logit
+  - name: APR_Hepat_NuclearSize_48hr_dn
+    unit: logit
+  - name: APR_Hepat_Steatosis_24hr_up
+    unit: logit
+  - name: APR_Hepat_Steatosis_48hr_up
+    unit: logit
+  - name: ATG_AP_1_CIS_dn
+    unit: logit
+  - name: ATG_AP_1_CIS_up
+    unit: logit
+  - name: ATG_AP_2_CIS_dn
+    unit: logit
+  - name: ATG_AP_2_CIS_up
+    unit: logit
+  - name: ATG_AR_TRANS_dn
+    unit: logit
+  - name: ATG_AR_TRANS_up
+    unit: logit
+  - name: ATG_Ahr_CIS_dn
+    unit: logit
+  - name: ATG_Ahr_CIS_up
+    unit: logit
+  - name: ATG_BRE_CIS_dn
+    unit: logit
+  - name: ATG_BRE_CIS_up
+    unit: logit
+  - name: ATG_CAR_TRANS_dn
+    unit: logit
+  - name: ATG_CAR_TRANS_up
+    unit: logit
+  - name: ATG_CMV_CIS_dn
+    unit: logit
+  - name: ATG_CMV_CIS_up
+    unit: logit
+  - name: ATG_CRE_CIS_dn
+    unit: logit
+  - name: ATG_CRE_CIS_up
+    unit: logit
+  - name: ATG_C_EBP_CIS_dn
+    unit: logit
+  - name: ATG_C_EBP_CIS_up
+    unit: logit
+  - name: ATG_DR4_LXR_CIS_dn
+    unit: logit
+  - name: ATG_DR4_LXR_CIS_up
+    unit: logit
+  - name: ATG_DR5_CIS_dn
+    unit: logit
+  - name: ATG_DR5_CIS_up
+    unit: logit
+  - name: ATG_E2F_CIS_dn
+    unit: logit
+  - name: ATG_E2F_CIS_up
+    unit: logit
+  - name: ATG_EGR_CIS_up
+    unit: logit
+  - name: ATG_ERE_CIS_dn
+    unit: logit
+  - name: ATG_ERE_CIS_up
+    unit: logit
+  - name: ATG_ERRa_TRANS_dn
+    unit: logit
+  - name: ATG_ERRg_TRANS_dn
+    unit: logit
+  - name: ATG_ERRg_TRANS_up
+    unit: logit
+  - name: ATG_ERa_TRANS_up
+    unit: logit
+  - name: ATG_E_Box_CIS_dn
+    unit: logit
+  - name: ATG_E_Box_CIS_up
+    unit: logit
+  - name: ATG_Ets_CIS_dn
+    unit: logit
+  - name: ATG_Ets_CIS_up
+    unit: logit
+  - name: ATG_FXR_TRANS_up
+    unit: logit
+  - name: ATG_FoxA2_CIS_dn
+    unit: logit
+  - name: ATG_FoxA2_CIS_up
+    unit: logit
+  - name: ATG_FoxO_CIS_dn
+    unit: logit
+  - name: ATG_FoxO_CIS_up
+    unit: logit
+  - name: ATG_GAL4_TRANS_dn
+    unit: logit
+  - name: ATG_GATA_CIS_dn
+    unit: logit
+  - name: ATG_GATA_CIS_up
+    unit: logit
+  - name: ATG_GLI_CIS_dn
+    unit: logit
+  - name: ATG_GLI_CIS_up
+    unit: logit
+  - name: ATG_GRE_CIS_dn
+    unit: logit
+  - name: ATG_GRE_CIS_up
+    unit: logit
+  - name: ATG_GR_TRANS_dn
+    unit: logit
+  - name: ATG_GR_TRANS_up
+    unit: logit
+  - name: ATG_HIF1a_CIS_dn
+    unit: logit
+  - name: ATG_HIF1a_CIS_up
+    unit: logit
+  - name: ATG_HNF4a_TRANS_dn
+    unit: logit
+  - name: ATG_HNF4a_TRANS_up
+    unit: logit
+  - name: ATG_HNF6_CIS_dn
+    unit: logit
+  - name: ATG_HNF6_CIS_up
+    unit: logit
+  - name: ATG_HSE_CIS_dn
+    unit: logit
+  - name: ATG_HSE_CIS_up
+    unit: logit
+  - name: ATG_IR1_CIS_dn
+    unit: logit
+  - name: ATG_IR1_CIS_up
+    unit: logit
+  - name: ATG_ISRE_CIS_dn
+    unit: logit
+  - name: ATG_ISRE_CIS_up
+    unit: logit
+  - name: ATG_LXRa_TRANS_dn
+    unit: logit
+  - name: ATG_LXRa_TRANS_up
+    unit: logit
+  - name: ATG_LXRb_TRANS_dn
+    unit: logit
+  - name: ATG_LXRb_TRANS_up
+    unit: logit
+  - name: ATG_MRE_CIS_up
+    unit: logit
+  - name: ATG_M_06_TRANS_up
+    unit: logit
+  - name: ATG_M_19_CIS_dn
+    unit: logit
+  - name: ATG_M_19_TRANS_dn
+    unit: logit
+  - name: ATG_M_19_TRANS_up
+    unit: logit
+  - name: ATG_M_32_CIS_dn
+    unit: logit
+  - name: ATG_M_32_CIS_up
+    unit: logit
+  - name: ATG_M_32_TRANS_dn
+    unit: logit
+  - name: ATG_M_32_TRANS_up
+    unit: logit
+  - name: ATG_M_61_TRANS_up
+    unit: logit
+  - name: ATG_Myb_CIS_dn
+    unit: logit
+  - name: ATG_Myb_CIS_up
+    unit: logit
+  - name: ATG_Myc_CIS_dn
+    unit: logit
+  - name: ATG_Myc_CIS_up
+    unit: logit
+  - name: ATG_NFI_CIS_dn
+    unit: logit
+  - name: ATG_NFI_CIS_up
+    unit: logit
+  - name: ATG_NF_kB_CIS_dn
+    unit: logit
+  - name: ATG_NF_kB_CIS_up
+    unit: logit
+  - name: ATG_NRF1_CIS_dn
+    unit: logit
+  - name: ATG_NRF1_CIS_up
+    unit: logit
+  - name: ATG_NRF2_ARE_CIS_dn
+    unit: logit
+  - name: ATG_NRF2_ARE_CIS_up
+    unit: logit
+  - name: ATG_NURR1_TRANS_dn
+    unit: logit
+  - name: ATG_NURR1_TRANS_up
+    unit: logit
+  - name: ATG_Oct_MLP_CIS_dn
+    unit: logit
+  - name: ATG_Oct_MLP_CIS_up
+    unit: logit
+  - name: ATG_PBREM_CIS_dn
+    unit: logit
+  - name: ATG_PBREM_CIS_up
+    unit: logit
+  - name: ATG_PPARa_TRANS_dn
+    unit: logit
+  - name: ATG_PPARa_TRANS_up
+    unit: logit
+  - name: ATG_PPARd_TRANS_up
+    unit: logit
+  - name: ATG_PPARg_TRANS_up
+    unit: logit
+  - name: ATG_PPRE_CIS_dn
+    unit: logit
+  - name: ATG_PPRE_CIS_up
+    unit: logit
+  - name: ATG_PXRE_CIS_dn
+    unit: logit
+  - name: ATG_PXRE_CIS_up
+    unit: logit
+  - name: ATG_PXR_TRANS_dn
+    unit: logit
+  - name: ATG_PXR_TRANS_up
+    unit: logit
+  - name: ATG_Pax6_CIS_up
+    unit: logit
+  - name: ATG_RARa_TRANS_dn
+    unit: logit
+  - name: ATG_RARa_TRANS_up
+    unit: logit
+  - name: ATG_RARb_TRANS_dn
+    unit: logit
+  - name: ATG_RARb_TRANS_up
+    unit: logit
+  - name: ATG_RARg_TRANS_dn
+    unit: logit
+  - name: ATG_RARg_TRANS_up
+    unit: logit
+  - name: ATG_RORE_CIS_dn
+    unit: logit
+  - name: ATG_RORE_CIS_up
+    unit: logit
+  - name: ATG_RORb_TRANS_dn
+    unit: logit
+  - name: ATG_RORg_TRANS_dn
+    unit: logit
+  - name: ATG_RORg_TRANS_up
+    unit: logit
+  - name: ATG_RXRa_TRANS_dn
+    unit: logit
+  - name: ATG_RXRa_TRANS_up
+    unit: logit
+  - name: ATG_RXRb_TRANS_dn
+    unit: logit
+  - name: ATG_RXRb_TRANS_up
+    unit: logit
+  - name: ATG_SREBP_CIS_dn
+    unit: logit
+  - name: ATG_SREBP_CIS_up
+    unit: logit
+  - name: ATG_STAT3_CIS_dn
+    unit: logit
+  - name: ATG_STAT3_CIS_up
+    unit: logit
+  - name: ATG_Sox_CIS_dn
+    unit: logit
+  - name: ATG_Sox_CIS_up
+    unit: logit
+  - name: ATG_Sp1_CIS_dn
+    unit: logit
+  - name: ATG_Sp1_CIS_up
+    unit: logit
+  - name: ATG_TAL_CIS_dn
+    unit: logit
+  - name: ATG_TAL_CIS_up
+    unit: logit
+  - name: ATG_TA_CIS_dn
+    unit: logit
+  - name: ATG_TA_CIS_up
+    unit: logit
+  - name: ATG_TCF_b_cat_CIS_dn
+    unit: logit
+  - name: ATG_TCF_b_cat_CIS_up
+    unit: logit
+  - name: ATG_TGFb_CIS_dn
+    unit: logit
+  - name: ATG_TGFb_CIS_up
+    unit: logit
+  - name: ATG_THRa1_TRANS_dn
+    unit: logit
+  - name: ATG_THRa1_TRANS_up
+    unit: logit
+  - name: ATG_VDRE_CIS_dn
+    unit: logit
+  - name: ATG_VDRE_CIS_up
+    unit: logit
+  - name: ATG_VDR_TRANS_dn
+    unit: logit
+  - name: ATG_VDR_TRANS_up
+    unit: logit
+  - name: ATG_XTT_Cytotoxicity_up
+    unit: logit
+  - name: ATG_Xbp1_CIS_dn
+    unit: logit
+  - name: ATG_Xbp1_CIS_up
+    unit: logit
+  - name: ATG_p53_CIS_dn
+    unit: logit
+  - name: ATG_p53_CIS_up
+    unit: logit
+  - name: BSK_3C_Eselectin_down
+    unit: logit
+  - name: BSK_3C_HLADR_down
+    unit: logit
+  - name: BSK_3C_ICAM1_down
+    unit: logit
+  - name: BSK_3C_IL8_down
+    unit: logit
+  - name: BSK_3C_MCP1_down
+    unit: logit
+  - name: BSK_3C_MIG_down
+    unit: logit
+  - name: BSK_3C_Proliferation_down
+    unit: logit
+  - name: BSK_3C_SRB_down
+    unit: logit
+  - name: BSK_3C_Thrombomodulin_down
+    unit: logit
+  - name: BSK_3C_Thrombomodulin_up
+    unit: logit
+  - name: BSK_3C_TissueFactor_down
+    unit: logit
+  - name: BSK_3C_TissueFactor_up
+    unit: logit
+  - name: BSK_3C_VCAM1_down
+    unit: logit
+  - name: BSK_3C_Vis_down
+    unit: logit
+  - name: BSK_3C_uPAR_down
+    unit: logit
+  - name: BSK_4H_Eotaxin3_down
+    unit: logit
+  - name: BSK_4H_MCP1_down
+    unit: logit
+  - name: BSK_4H_Pselectin_down
+    unit: logit
+  - name: BSK_4H_Pselectin_up
+    unit: logit
+  - name: BSK_4H_SRB_down
+    unit: logit
+  - name: BSK_4H_VCAM1_down
+    unit: logit
+  - name: BSK_4H_VEGFRII_down
+    unit: logit
+  - name: BSK_4H_uPAR_down
+    unit: logit
+  - name: BSK_4H_uPAR_up
+    unit: logit
+  - name: BSK_BE3C_HLADR_down
+    unit: logit
+  - name: BSK_BE3C_IL1a_down
+    unit: logit
+  - name: BSK_BE3C_IP10_down
+    unit: logit
+  - name: BSK_BE3C_MIG_down
+    unit: logit
+  - name: BSK_BE3C_MMP1_down
+    unit: logit
+  - name: BSK_BE3C_MMP1_up
+    unit: logit
+  - name: BSK_BE3C_PAI1_down
+    unit: logit
+  - name: BSK_BE3C_SRB_down
+    unit: logit
+  - name: BSK_BE3C_TGFb1_down
+    unit: logit
+  - name: BSK_BE3C_tPA_down
+    unit: logit
+  - name: BSK_BE3C_uPAR_down
+    unit: logit
+  - name: BSK_BE3C_uPAR_up
+    unit: logit
+  - name: BSK_BE3C_uPA_down
+    unit: logit
+  - name: BSK_CASM3C_HLADR_down
+    unit: logit
+  - name: BSK_CASM3C_IL6_down
+    unit: logit
+  - name: BSK_CASM3C_IL6_up
+    unit: logit
+  - name: BSK_CASM3C_IL8_down
+    unit: logit
+  - name: BSK_CASM3C_LDLR_down
+    unit: logit
+  - name: BSK_CASM3C_LDLR_up
+    unit: logit
+  - name: BSK_CASM3C_MCP1_down
+    unit: logit
+  - name: BSK_CASM3C_MCP1_up
+    unit: logit
+  - name: BSK_CASM3C_MCSF_down
+    unit: logit
+  - name: BSK_CASM3C_MCSF_up
+    unit: logit
+  - name: BSK_CASM3C_MIG_down
+    unit: logit
+  - name: BSK_CASM3C_Proliferation_down
+    unit: logit
+  - name: BSK_CASM3C_Proliferation_up
+    unit: logit
+  - name: BSK_CASM3C_SAA_down
+    unit: logit
+  - name: BSK_CASM3C_SAA_up
+    unit: logit
+  - name: BSK_CASM3C_SRB_down
+    unit: logit
+  - name: BSK_CASM3C_Thrombomodulin_down
+    unit: logit
+  - name: BSK_CASM3C_Thrombomodulin_up
+    unit: logit
+  - name: BSK_CASM3C_TissueFactor_down
+    unit: logit
+  - name: BSK_CASM3C_VCAM1_down
+    unit: logit
+  - name: BSK_CASM3C_VCAM1_up
+    unit: logit
+  - name: BSK_CASM3C_uPAR_down
+    unit: logit
+  - name: BSK_CASM3C_uPAR_up
+    unit: logit
+  - name: BSK_KF3CT_ICAM1_down
+    unit: logit
+  - name: BSK_KF3CT_IL1a_down
+    unit: logit
+  - name: BSK_KF3CT_IP10_down
+    unit: logit
+  - name: BSK_KF3CT_IP10_up
+    unit: logit
+  - name: BSK_KF3CT_MCP1_down
+    unit: logit
+  - name: BSK_KF3CT_MCP1_up
+    unit: logit
+  - name: BSK_KF3CT_MMP9_down
+    unit: logit
+  - name: BSK_KF3CT_SRB_down
+    unit: logit
+  - name: BSK_KF3CT_TGFb1_down
+    unit: logit
+  - name: BSK_KF3CT_TIMP2_down
+    unit: logit
+  - name: BSK_KF3CT_uPA_down
+    unit: logit
+  - name: BSK_LPS_CD40_down
+    unit: logit
+  - name: BSK_LPS_Eselectin_down
+    unit: logit
+  - name: BSK_LPS_Eselectin_up
+    unit: logit
+  - name: BSK_LPS_IL1a_down
+    unit: logit
+  - name: BSK_LPS_IL1a_up
+    unit: logit
+  - name: BSK_LPS_IL8_down
+    unit: logit
+  - name: BSK_LPS_IL8_up
+    unit: logit
+  - name: BSK_LPS_MCP1_down
+    unit: logit
+  - name: BSK_LPS_MCSF_down
+    unit: logit
+  - name: BSK_LPS_PGE2_down
+    unit: logit
+  - name: BSK_LPS_PGE2_up
+    unit: logit
+  - name: BSK_LPS_SRB_down
+    unit: logit
+  - name: BSK_LPS_TNFa_down
+    unit: logit
+  - name: BSK_LPS_TNFa_up
+    unit: logit
+  - name: BSK_LPS_TissueFactor_down
+    unit: logit
+  - name: BSK_LPS_TissueFactor_up
+    unit: logit
+  - name: BSK_LPS_VCAM1_down
+    unit: logit
+  - name: BSK_SAg_CD38_down
+    unit: logit
+  - name: BSK_SAg_CD40_down
+    unit: logit
+  - name: BSK_SAg_CD69_down
+    unit: logit
+  - name: BSK_SAg_Eselectin_down
+    unit: logit
+  - name: BSK_SAg_Eselectin_up
+    unit: logit
+  - name: BSK_SAg_IL8_down
+    unit: logit
+  - name: BSK_SAg_IL8_up
+    unit: logit
+  - name: BSK_SAg_MCP1_down
+    unit: logit
+  - name: BSK_SAg_MIG_down
+    unit: logit
+  - name: BSK_SAg_PBMCCytotoxicity_down
+    unit: logit
+  - name: BSK_SAg_PBMCCytotoxicity_up
+    unit: logit
+  - name: BSK_SAg_Proliferation_down
+    unit: logit
+  - name: BSK_SAg_SRB_down
+    unit: logit
+  - name: BSK_hDFCGF_CollagenIII_down
+    unit: logit
+  - name: BSK_hDFCGF_EGFR_down
+    unit: logit
+  - name: BSK_hDFCGF_EGFR_up
+    unit: logit
+  - name: BSK_hDFCGF_IL8_down
+    unit: logit
+  - name: BSK_hDFCGF_IP10_down
+    unit: logit
+  - name: BSK_hDFCGF_MCSF_down
+    unit: logit
+  - name: BSK_hDFCGF_MIG_down
+    unit: logit
+  - name: BSK_hDFCGF_MMP1_down
+    unit: logit
+  - name: BSK_hDFCGF_MMP1_up
+    unit: logit
+  - name: BSK_hDFCGF_PAI1_down
+    unit: logit
+  - name: BSK_hDFCGF_Proliferation_down
+    unit: logit
+  - name: BSK_hDFCGF_SRB_down
+    unit: logit
+  - name: BSK_hDFCGF_TIMP1_down
+    unit: logit
+  - name: BSK_hDFCGF_VCAM1_down
+    unit: logit
+  - name: CEETOX_H295R_11DCORT_dn
+    unit: logit
+  - name: CEETOX_H295R_ANDR_dn
+    unit: logit
+  - name: CEETOX_H295R_CORTISOL_dn
+    unit: logit
+  - name: CEETOX_H295R_DOC_dn
+    unit: logit
+  - name: CEETOX_H295R_DOC_up
+    unit: logit
+  - name: CEETOX_H295R_ESTRADIOL_dn
+    unit: logit
+  - name: CEETOX_H295R_ESTRADIOL_up
+    unit: logit
+  - name: CEETOX_H295R_ESTRONE_dn
+    unit: logit
+  - name: CEETOX_H295R_ESTRONE_up
+    unit: logit
+  - name: CEETOX_H295R_OHPREG_up
+    unit: logit
+  - name: CEETOX_H295R_OHPROG_dn
+    unit: logit
+  - name: CEETOX_H295R_OHPROG_up
+    unit: logit
+  - name: CEETOX_H295R_PROG_up
+    unit: logit
+  - name: CEETOX_H295R_TESTO_dn
+    unit: logit
+  - name: CLD_ABCB1_48hr
+    unit: logit
+  - name: CLD_ABCG2_48hr
+    unit: logit
+  - name: CLD_CYP1A1_24hr
+    unit: logit
+  - name: CLD_CYP1A1_48hr
+    unit: logit
+  - name: CLD_CYP1A1_6hr
+    unit: logit
+  - name: CLD_CYP1A2_24hr
+    unit: logit
+  - name: CLD_CYP1A2_48hr
+    unit: logit
+  - name: CLD_CYP1A2_6hr
+    unit: logit
+  - name: CLD_CYP2B6_24hr
+    unit: logit
+  - name: CLD_CYP2B6_48hr
+    unit: logit
+  - name: CLD_CYP2B6_6hr
+    unit: logit
+  - name: CLD_CYP3A4_24hr
+    unit: logit
+  - name: CLD_CYP3A4_48hr
+    unit: logit
+  - name: CLD_CYP3A4_6hr
+    unit: logit
+  - name: CLD_GSTA2_48hr
+    unit: logit
+  - name: CLD_SULT2A_24hr
+    unit: logit
+  - name: CLD_SULT2A_48hr
+    unit: logit
+  - name: CLD_UGT1A1_24hr
+    unit: logit
+  - name: CLD_UGT1A1_48hr
+    unit: logit
+  - name: NCCT_HEK293T_CellTiterGLO
+    unit: logit
+  - name: NCCT_QuantiLum_inhib_2_dn
+    unit: logit
+  - name: NCCT_QuantiLum_inhib_dn
+    unit: logit
+  - name: NCCT_TPO_AUR_dn
+    unit: logit
+  - name: NCCT_TPO_GUA_dn
+    unit: logit
+  - name: NHEERL_ZF_144hpf_TERATOSCORE_up
+    unit: logit
+  - name: NVS_ADME_hCYP19A1
+    unit: logit
+  - name: NVS_ADME_hCYP1A1
+    unit: logit
+  - name: NVS_ADME_hCYP1A2
+    unit: logit
+  - name: NVS_ADME_hCYP2A6
+    unit: logit
+  - name: NVS_ADME_hCYP2B6
+    unit: logit
+  - name: NVS_ADME_hCYP2C19
+    unit: logit
+  - name: NVS_ADME_hCYP2C9
+    unit: logit
+  - name: NVS_ADME_hCYP2D6
+    unit: logit
+  - name: NVS_ADME_hCYP3A4
+    unit: logit
+  - name: NVS_ADME_hCYP4F12
+    unit: logit
+  - name: NVS_ADME_rCYP2C12
+    unit: logit
+  - name: NVS_ENZ_hAChE
+    unit: logit
+  - name: NVS_ENZ_hAMPKa1
+    unit: logit
+  - name: NVS_ENZ_hAurA
+    unit: logit
+  - name: NVS_ENZ_hBACE
+    unit: logit
+  - name: NVS_ENZ_hCASP5
+    unit: logit
+  - name: NVS_ENZ_hCK1D
+    unit: logit
+  - name: NVS_ENZ_hDUSP3
+    unit: logit
+  - name: NVS_ENZ_hES
+    unit: logit
+  - name: NVS_ENZ_hElastase
+    unit: logit
+  - name: NVS_ENZ_hFGFR1
+    unit: logit
+  - name: NVS_ENZ_hGSK3b
+    unit: logit
+  - name: NVS_ENZ_hMMP1
+    unit: logit
+  - name: NVS_ENZ_hMMP13
+    unit: logit
+  - name: NVS_ENZ_hMMP2
+    unit: logit
+  - name: NVS_ENZ_hMMP3
+    unit: logit
+  - name: NVS_ENZ_hMMP7
+    unit: logit
+  - name: NVS_ENZ_hMMP9
+    unit: logit
+  - name: NVS_ENZ_hPDE10
+    unit: logit
+  - name: NVS_ENZ_hPDE4A1
+    unit: logit
+  - name: NVS_ENZ_hPDE5
+    unit: logit
+  - name: NVS_ENZ_hPI3Ka
+    unit: logit
+  - name: NVS_ENZ_hPTEN
+    unit: logit
+  - name: NVS_ENZ_hPTPN11
+    unit: logit
+  - name: NVS_ENZ_hPTPN12
+    unit: logit
+  - name: NVS_ENZ_hPTPN13
+    unit: logit
+  - name: NVS_ENZ_hPTPN9
+    unit: logit
+  - name: NVS_ENZ_hPTPRC
+    unit: logit
+  - name: NVS_ENZ_hSIRT1
+    unit: logit
+  - name: NVS_ENZ_hSIRT2
+    unit: logit
+  - name: NVS_ENZ_hTrkA
+    unit: logit
+  - name: NVS_ENZ_hVEGFR2
+    unit: logit
+  - name: NVS_ENZ_oCOX1
+    unit: logit
+  - name: NVS_ENZ_oCOX2
+    unit: logit
+  - name: NVS_ENZ_rAChE
+    unit: logit
+  - name: NVS_ENZ_rCNOS
+    unit: logit
+  - name: NVS_ENZ_rMAOAC
+    unit: logit
+  - name: NVS_ENZ_rMAOAP
+    unit: logit
+  - name: NVS_ENZ_rMAOBC
+    unit: logit
+  - name: NVS_ENZ_rMAOBP
+    unit: logit
+  - name: NVS_ENZ_rabI2C
+    unit: logit
+  - name: NVS_GPCR_bAdoR_NonSelective
+    unit: logit
+  - name: NVS_GPCR_bDR_NonSelective
+    unit: logit
+  - name: NVS_GPCR_g5HT4
+    unit: logit
+  - name: NVS_GPCR_gH2
+    unit: logit
+  - name: NVS_GPCR_gLTB4
+    unit: logit
+  - name: NVS_GPCR_gLTD4
+    unit: logit
+  - name: NVS_GPCR_gMPeripheral_NonSelective
+    unit: logit
+  - name: NVS_GPCR_gOpiateK
+    unit: logit
+  - name: NVS_GPCR_h5HT2A
+    unit: logit
+  - name: NVS_GPCR_h5HT5A
+    unit: logit
+  - name: NVS_GPCR_h5HT6
+    unit: logit
+  - name: NVS_GPCR_h5HT7
+    unit: logit
+  - name: NVS_GPCR_hAT1
+    unit: logit
+  - name: NVS_GPCR_hAdoRA1
+    unit: logit
+  - name: NVS_GPCR_hAdoRA2a
+    unit: logit
+  - name: NVS_GPCR_hAdra2A
+    unit: logit
+  - name: NVS_GPCR_hAdra2C
+    unit: logit
+  - name: NVS_GPCR_hAdrb1
+    unit: logit
+  - name: NVS_GPCR_hAdrb2
+    unit: logit
+  - name: NVS_GPCR_hAdrb3
+    unit: logit
+  - name: NVS_GPCR_hDRD1
+    unit: logit
+  - name: NVS_GPCR_hDRD2s
+    unit: logit
+  - name: NVS_GPCR_hDRD4.4
+    unit: logit
+  - name: NVS_GPCR_hH1
+    unit: logit
+  - name: NVS_GPCR_hLTB4_BLT1
+    unit: logit
+  - name: NVS_GPCR_hM1
+    unit: logit
+  - name: NVS_GPCR_hM2
+    unit: logit
+  - name: NVS_GPCR_hM3
+    unit: logit
+  - name: NVS_GPCR_hM4
+    unit: logit
+  - name: NVS_GPCR_hNK2
+    unit: logit
+  - name: NVS_GPCR_hOpiate_D1
+    unit: logit
+  - name: NVS_GPCR_hOpiate_mu
+    unit: logit
+  - name: NVS_GPCR_hTXA2
+    unit: logit
+  - name: NVS_GPCR_p5HT2C
+    unit: logit
+  - name: NVS_GPCR_r5HT1_NonSelective
+    unit: logit
+  - name: NVS_GPCR_r5HT_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rAdra1B
+    unit: logit
+  - name: NVS_GPCR_rAdra1_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rAdra2_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rAdrb_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rNK1
+    unit: logit
+  - name: NVS_GPCR_rNK3
+    unit: logit
+  - name: NVS_GPCR_rOpiate_NonSelective
+    unit: logit
+  - name: NVS_GPCR_rOpiate_NonSelectiveNa
+    unit: logit
+  - name: NVS_GPCR_rSST
+    unit: logit
+  - name: NVS_GPCR_rTRH
+    unit: logit
+  - name: NVS_GPCR_rV1
+    unit: logit
+  - name: NVS_GPCR_rabPAF
+    unit: logit
+  - name: NVS_GPCR_rmAdra2B
+    unit: logit
+  - name: NVS_IC_hKhERGCh
+    unit: logit
+  - name: NVS_IC_rCaBTZCHL
+    unit: logit
+  - name: NVS_IC_rCaDHPRCh_L
+    unit: logit
+  - name: NVS_IC_rNaCh_site2
+    unit: logit
+  - name: NVS_LGIC_bGABARa1
+    unit: logit
+  - name: NVS_LGIC_h5HT3
+    unit: logit
+  - name: NVS_LGIC_hNNR_NBungSens
+    unit: logit
+  - name: NVS_LGIC_rGABAR_NonSelective
+    unit: logit
+  - name: NVS_LGIC_rNNR_BungSens
+    unit: logit
+  - name: NVS_MP_hPBR
+    unit: logit
+  - name: NVS_MP_rPBR
+    unit: logit
+  - name: NVS_NR_bER
+    unit: logit
+  - name: NVS_NR_bPR
+    unit: logit
+  - name: NVS_NR_cAR
+    unit: logit
+  - name: NVS_NR_hAR
+    unit: logit
+  - name: NVS_NR_hCAR_Antagonist
+    unit: logit
+  - name: NVS_NR_hER
+    unit: logit
+  - name: NVS_NR_hFXR_Agonist
+    unit: logit
+  - name: NVS_NR_hFXR_Antagonist
+    unit: logit
+  - name: NVS_NR_hGR
+    unit: logit
+  - name: NVS_NR_hPPARa
+    unit: logit
+  - name: NVS_NR_hPPARg
+    unit: logit
+  - name: NVS_NR_hPR
+    unit: logit
+  - name: NVS_NR_hPXR
+    unit: logit
+  - name: NVS_NR_hRAR_Antagonist
+    unit: logit
+  - name: NVS_NR_hRARa_Agonist
+    unit: logit
+  - name: NVS_NR_hTRa_Antagonist
+    unit: logit
+  - name: NVS_NR_mERa
+    unit: logit
+  - name: NVS_NR_rAR
+    unit: logit
+  - name: NVS_NR_rMR
+    unit: logit
+  - name: NVS_OR_gSIGMA_NonSelective
+    unit: logit
+  - name: NVS_TR_gDAT
+    unit: logit
+  - name: NVS_TR_hAdoT
+    unit: logit
+  - name: NVS_TR_hDAT
+    unit: logit
+  - name: NVS_TR_hNET
+    unit: logit
+  - name: NVS_TR_hSERT
+    unit: logit
+  - name: NVS_TR_rNET
+    unit: logit
+  - name: NVS_TR_rSERT
+    unit: logit
+  - name: NVS_TR_rVMAT2
+    unit: logit
+  - name: OT_AR_ARELUC_AG_1440
+    unit: logit
+  - name: OT_AR_ARSRC1_0480
+    unit: logit
+  - name: OT_AR_ARSRC1_0960
+    unit: logit
+  - name: OT_ER_ERaERa_0480
+    unit: logit
+  - name: OT_ER_ERaERa_1440
+    unit: logit
+  - name: OT_ER_ERaERb_0480
+    unit: logit
+  - name: OT_ER_ERaERb_1440
+    unit: logit
+  - name: OT_ER_ERbERb_0480
+    unit: logit
+  - name: OT_ER_ERbERb_1440
+    unit: logit
+  - name: OT_ERa_EREGFP_0120
+    unit: logit
+  - name: OT_ERa_EREGFP_0480
+    unit: logit
+  - name: OT_FXR_FXRSRC1_0480
+    unit: logit
+  - name: OT_FXR_FXRSRC1_1440
+    unit: logit
+  - name: OT_NURR1_NURR1RXRa_0480
+    unit: logit
+  - name: OT_NURR1_NURR1RXRa_1440
+    unit: logit
+  - name: TOX21_ARE_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_ARE_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_ARE_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_ARE_BLA_agonist_viability
+    unit: logit
+  - name: TOX21_AR_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_AR_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_AR_BLA_Agonist_ratio
+    unit: logit
+  - name: TOX21_AR_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_AR_BLA_Antagonist_ch2
+    unit: logit
+  - name: TOX21_AR_BLA_Antagonist_ratio
+    unit: logit
+  - name: TOX21_AR_BLA_Antagonist_viability
+    unit: logit
+  - name: TOX21_AR_LUC_MDAKB2_Agonist
+    unit: logit
+  - name: TOX21_AR_LUC_MDAKB2_Antagonist
+    unit: logit
+  - name: TOX21_AR_LUC_MDAKB2_Antagonist2
+    unit: logit
+  - name: TOX21_AhR_LUC_Agonist
+    unit: logit
+  - name: TOX21_Aromatase_Inhibition
+    unit: logit
+  - name: TOX21_AutoFluor_HEK293_Cell_blue
+    unit: logit
+  - name: TOX21_AutoFluor_HEK293_Media_blue
+    unit: logit
+  - name: TOX21_AutoFluor_HEPG2_Cell_blue
+    unit: logit
+  - name: TOX21_AutoFluor_HEPG2_Cell_green
+    unit: logit
+  - name: TOX21_AutoFluor_HEPG2_Media_blue
+    unit: logit
+  - name: TOX21_AutoFluor_HEPG2_Media_green
+    unit: logit
+  - name: TOX21_ELG1_LUC_Agonist
+    unit: logit
+  - name: TOX21_ERa_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_ERa_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_ERa_BLA_Agonist_ratio
+    unit: logit
+  - name: TOX21_ERa_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_ERa_BLA_Antagonist_ch2
+    unit: logit
+  - name: TOX21_ERa_BLA_Antagonist_ratio
+    unit: logit
+  - name: TOX21_ERa_BLA_Antagonist_viability
+    unit: logit
+  - name: TOX21_ERa_LUC_BG1_Agonist
+    unit: logit
+  - name: TOX21_ERa_LUC_BG1_Antagonist
+    unit: logit
+  - name: TOX21_ESRE_BLA_ch1
+    unit: logit
+  - name: TOX21_ESRE_BLA_ch2
+    unit: logit
+  - name: TOX21_ESRE_BLA_ratio
+    unit: logit
+  - name: TOX21_ESRE_BLA_viability
+    unit: logit
+  - name: TOX21_FXR_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_FXR_BLA_Antagonist_ch2
+    unit: logit
+  - name: TOX21_FXR_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_FXR_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_FXR_BLA_antagonist_ratio
+    unit: logit
+  - name: TOX21_FXR_BLA_antagonist_viability
+    unit: logit
+  - name: TOX21_GR_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_GR_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_GR_BLA_Agonist_ratio
+    unit: logit
+  - name: TOX21_GR_BLA_Antagonist_ch2
+    unit: logit
+  - name: TOX21_GR_BLA_Antagonist_ratio
+    unit: logit
+  - name: TOX21_GR_BLA_Antagonist_viability
+    unit: logit
+  - name: TOX21_HSE_BLA_agonist_ch1
+    unit: logit
+  - name: TOX21_HSE_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_HSE_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_HSE_BLA_agonist_viability
+    unit: logit
+  - name: TOX21_MMP_ratio_down
+    unit: logit
+  - name: TOX21_MMP_ratio_up
+    unit: logit
+  - name: TOX21_MMP_viability
+    unit: logit
+  - name: TOX21_NFkB_BLA_agonist_ch1
+    unit: logit
+  - name: TOX21_NFkB_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_NFkB_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_NFkB_BLA_agonist_viability
+    unit: logit
+  - name: TOX21_PPARd_BLA_Agonist_viability
+    unit: logit
+  - name: TOX21_PPARd_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_PPARd_BLA_agonist_ch1
+    unit: logit
+  - name: TOX21_PPARd_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_PPARd_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_PPARd_BLA_antagonist_ratio
+    unit: logit
+  - name: TOX21_PPARd_BLA_antagonist_viability
+    unit: logit
+  - name: TOX21_PPARg_BLA_Agonist_ch1
+    unit: logit
+  - name: TOX21_PPARg_BLA_Agonist_ch2
+    unit: logit
+  - name: TOX21_PPARg_BLA_Agonist_ratio
+    unit: logit
+  - name: TOX21_PPARg_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_PPARg_BLA_antagonist_ratio
+    unit: logit
+  - name: TOX21_PPARg_BLA_antagonist_viability
+    unit: logit
+  - name: TOX21_TR_LUC_GH3_Agonist
+    unit: logit
+  - name: TOX21_TR_LUC_GH3_Antagonist
+    unit: logit
+  - name: TOX21_VDR_BLA_Agonist_viability
+    unit: logit
+  - name: TOX21_VDR_BLA_Antagonist_ch1
+    unit: logit
+  - name: TOX21_VDR_BLA_agonist_ch2
+    unit: logit
+  - name: TOX21_VDR_BLA_agonist_ratio
+    unit: logit
+  - name: TOX21_VDR_BLA_antagonist_ratio
+    unit: logit
+  - name: TOX21_VDR_BLA_antagonist_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p1_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p1_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p1_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p1_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p2_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p2_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p2_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p2_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p3_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p3_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p3_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p3_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p4_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p4_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p4_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p4_viability
+    unit: logit
+  - name: TOX21_p53_BLA_p5_ch1
+    unit: logit
+  - name: TOX21_p53_BLA_p5_ch2
+    unit: logit
+  - name: TOX21_p53_BLA_p5_ratio
+    unit: logit
+  - name: TOX21_p53_BLA_p5_viability
+    unit: logit
+  - name: Tanguay_ZF_120hpf_AXIS_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_ActivityScore
+    unit: logit
+  - name: Tanguay_ZF_120hpf_BRAI_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_CFIN_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_CIRC_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_EYE_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_JAW_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_MORT_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_OTIC_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_PE_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_PFIN_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_PIG_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_SNOU_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_SOMI_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_SWIM_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_TRUN_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_TR_up
+    unit: logit
+  - name: Tanguay_ZF_120hpf_YSE_up
+    unit: logit

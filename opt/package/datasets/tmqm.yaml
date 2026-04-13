@@ -1,0 +1,38 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-28M-ggd8iisr-tmQM/resolve/main/config.json
+# Balcells and Skjelstad. tmQM Dataset - Quantum Geometries and Properties of 86k Transition Metal Complexes. https://doi.org/10.1021/acs.jcim.0c01041
+name: tmQM
+source: tmQM benchmark https://doi.org/10.1021/acs.jcim.0c01041
+description: The tmQM dataset was used. It is a quantum mechanics dataset of 108,000 large transition organometallic compounds curated from the Cambridge Structural Database. tmQM provides quantum mechanical properties computed using DFT at the TPSSh-D3BJ/def2-SVP level using geometries optimized at the GFN2-xTB level. The dataset is of particular interest due to its expanded elemental and stereochemical diversity relative to other datasets.
+task_type: Multi-task regression
+task_description: quantum properties for organometallic compounds
+output_format: Regression predictions for 8 quantum mechanical properties
+output_description: Returns predictions for HOMO, LUMO, HOMO/LUMO gap, dipole moment, and natural charge
+loss_function: Mean Squared Error (MSE) Loss
+metrics: Mean Absolute Error (MAE) averaged across all 8 quantum mechanical properties
+split_type: random
+num_samples: 108000
+channels:
+  - name: Electronic_E
+    unit: hartree
+    description: Electronic energy
+  - name: Dispersion_E
+    unit: hartree
+    description: Dispersion energy correction
+  - name: Dipole_M
+    unit: debye
+    description: Dipole moment
+  - name: Metal_q
+    unit: elementary_charge
+    description: Partial charge on the metal center
+  - name: HL_Gap
+    unit: hartree
+    description: HOMO-LUMO gap
+  - name: HOMO_Energy
+    unit: hartree
+    description: HOMO energy
+  - name: LUMO_Energy
+    unit: hartree
+    description: LUMO energy
+  - name: Polarizability
+    unit: cubic bohr
+    description: Isotropic polarizability

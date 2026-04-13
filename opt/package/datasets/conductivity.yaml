@@ -1,0 +1,12 @@
+# Authenticated Hugging Face config for this model omits top-level channels: https://huggingface.co/mist-models/mist-conductivity-27.0M-2mpg8dcd/resolve/main/config.json
+# Output names below follow the packaged model card for the exported predict API.
+# Zhu et al. dataset source referenced by the model card: https://doi.org/10.1038/s41467-024-51653-7
+channels:
+  - name: ln conductivity
+    description: Natural logarithm of ionic conductivity in millisiemens per centimeter
+  - name: Ea
+    unit: kelvin
+    description: Pseudo-activation energy parameter in the VFT relation
+  - name: Tg
+    unit: kelvin
+    description: Vogel temperature parameter in the VFT relation

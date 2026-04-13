@@ -11,7 +11,7 @@ GIT_ROOT = realpath(joinpath(ROOTDIR, "..", ".."))
 fig_dir = joinpath(ROOTDIR, "fig")
 isdir(fig_dir) || mkdir(fig_dir)
 
-run_path = "/nfs/turbo/coe-venkvis/abhutani/electrolyte-fm/opt/screening/out/3e6b639f-6cd8-40a6-947f-62b238ab408d"
+run_path = "runs/screening/out/3e6b639f-6cd8-40a6-947f-62b238ab408d"
 df = ScreeningPlots.load_generated_molecules(run_path)
 
 # Rename DMSO_pKa to pKa_DMSO for consistency

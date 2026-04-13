@@ -1,0 +1,16 @@
+# Authenticated Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-26.9M-6hk5coof-dn/resolve/main/config.json
+# Laurence and Gal. Lewis Basicity and Affinity Scales: Data and Measurement. https://doi.org/10.1002/9780470681909
+name: BF₃ affinity
+source: 'Lewis Basicity and Affinity Scales: Data and Measurement, by  Christian Laurence, Jean-François Gal, DOI:10.1002/9780470681909'
+description: The BF₃ affinity dataset was used. The BF₃ affinity is a measure of a molecule's Lewis basicity and has been applied to electrolyte design for analyzing lithium-ion salt solubility and solvation environment. The MIST variant was fine-tuned on a dataset of 344 BF₃ affinity measurements of Lewis bases at 298 K and 1 atm.
+task_type: Regression
+task_description: BF₃ affinity
+output_format: Regression prediction for BF₃ affinity
+output_description: Returns predictions for BF₃ affinity
+loss_function: Mean Squared Error (MSE) Loss
+metrics: Root Mean Squared Error (RMSE)
+split_type: random
+num_samples: 344
+channels:
+  - name: BF3 affinity
+    description: BF3 affinity

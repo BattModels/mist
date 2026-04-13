@@ -1,5 +1,5 @@
 # QM9 Calculation Replication
-Scripts to reproduce the QM9 calculations from the dataset for arbitrary SMILES strings.
+Scripts to reproduce the [QM9](https://doi.org/10.1038/sdata.2014.22) calculations from the dataset for arbitrary SMILES strings.
 
 ## Installation
 

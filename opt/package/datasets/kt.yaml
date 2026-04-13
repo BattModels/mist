@@ -1,0 +1,21 @@
+# Authenticated Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-26.9M-0vxdbm36-kt/resolve/main/config.json
+# Kamlet-Taft parameter dataset reference from the packaged metadata: https://doi.org/10.1021/acscentsci.1c01151
+# Packaged config exposes only alpha and beta channels; pi* is not present in the shipped model config.
+name: Kamlet-Taft Parameters
+source: DOI 10.1021/acscentsci.1c01151
+description: The Kamlet-Taft solvatochromatic parameters dataset was used. Kamlet-Taft parameters are used to characterize solvent properties, particularly their ability to participate in hydrogen bonding and their polarizability. The three parameters are α (hydrogen bond acidity, the solvent's ability to donate a hydrogen bond), β (hydrogen bond basicity, the solvent's ability to accept a hydrogen bond) and π* (polarizability, the solvent's overall polarity). The fine-tuning dataset consisted of 182 Kamlet-Taft values measured using NMR.
+task_type: Multi-task regression
+task_description: Kamlet-Taft parameters
+output_format: Regression predictions for Kamlet-Taft parameters (α, β, π*)
+output_description: Returns predictions for α (H-bond acidity), β (H-bond basicity), and π* (polarity)
+loss_function: Mean Squared Error (MSE) Loss
+metrics: Root Mean Squared Error (RMSE) averaged across all three parameters
+split_type: random
+num_samples: 182
+channels:
+  - name: alpha
+    unit: dimensionless
+    description: Kamlet-Taft hydrogen bond donor
+  - name: beta
+    unit: dimensionless
+    description: Kamlet-Taft hydrogen bond acceptor

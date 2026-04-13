@@ -1,0 +1,69 @@
+# Hugging Face config for exact channel names: https://huggingface.co/mist-models/mist-28M-z8qo16uy-sider/resolve/main/config.json
+# Kuhn et al. The SIDER database of drugs and side effects. https://doi.org/10.1093/nar/gkv1075
+# MoleculeNet benchmark metadata: https://doi.org/10.1021/acs.jcim.7b00118
+name: SIDER
+source: MoleculeNet benchmark
+description: The SIDER (Side Effect Resource) dataset from MoleculeNet was used. It aggregates adverse drug reactions for 1,427 marketed drugs across 27 MedDRA side-effect terms. This is a multi-label binary-classification dataset.
+task_type: Multi-label binary classification
+task_description: adverse drug reactions
+output_format: Multi-label binary classification for 27 types of adverse drug reactions
+output_description: Returns unnormalized logits for 27 MedDRA side-effect terms
+loss_function: Binary Cross-Entropy Loss
+metrics: AUROC (Area Under the Receiver Operator Curve) averaged across all 27 tasks
+split_type: random
+num_samples: 1427
+channels:
+  - name: Hepatobiliary disorders
+    unit: logit
+  - name: Metabolism and nutrition disorders
+    unit: logit
+  - name: Product issues
+    unit: logit
+  - name: Eye disorders
+    unit: logit
+  - name: Investigations
+    unit: logit
+  - name: Musculoskeletal and connective tissue disorders
+    unit: logit
+  - name: Gastrointestinal disorders
+    unit: logit
+  - name: Social circumstances
+    unit: logit
+  - name: Immune system disorders
+    unit: logit
+  - name: Reproductive system and breast disorders
+    unit: logit
+  - name: Neoplasms benign, malignant and unspecified (incl cysts and polyps)
+    unit: logit
+  - name: General disorders and administration site conditions
+    unit: logit
+  - name: Endocrine disorders
+    unit: logit
+  - name: Surgical and medical procedures
+    unit: logit
+  - name: Vascular disorders
+    unit: logit
+  - name: Blood and lymphatic system disorders
+    unit: logit
+  - name: Skin and subcutaneous tissue disorders
+    unit: logit
+  - name: Congenital, familial and genetic disorders
+    unit: logit
+  - name: Infections and infestations
+    unit: logit
+  - name: Respiratory, thoracic and mediastinal disorders
+    unit: logit
+  - name: Psychiatric disorders
+    unit: logit
+  - name: Renal and urinary disorders
+    unit: logit
+  - name: Pregnancy, puerperium and perinatal conditions
+    unit: logit
+  - name: Ear and labyrinth disorders
+    unit: logit
+  - name: Cardiac disorders
+    unit: logit
+  - name: Nervous system disorders
+    unit: logit
+  - name: Injury, poisoning and procedural complications
+    unit: logit

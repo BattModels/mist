@@ -1,0 +1,18 @@
+# Published Hugging Face config has channels set to null: https://huggingface.co/mist-models/mist-28M-3xpfhv48-bbbp/resolve/main/config.json
+# Single-target name below follows the canonical MoleculeNet / DeepChem target column for BBBP.
+# MoleculeNet benchmark metadata for the BBBP task: https://doi.org/10.1021/acs.jcim.7b00118
+name: BBBP
+source: MoleculeNet benchmark
+description: The BBBP (Blood-Brain Barrier Penetration) dataset from MoleculeNet was used. It labels 2,039 compounds as penetrating or non-penetrating with respect to the blood-brain barrier. It is a single-task binary classification dataset focused on central nervous system delivery.
+task_type: Binary classification
+task_description: blood-brain barrier penetration
+output_format: Binary classification prediction
+output_description: Returns unnormalized logits for binary prediction for blood-brain barrier penetration
+loss_function: Binary Cross-Entropy Loss
+metrics: AUROC (Area Under the Receiver Operator Curve)
+split_type: scaffold
+num_samples: 2039
+channels:
+  - name: p_np
+    unit: logit
+    description: Penetrates the blood-brain barrier
