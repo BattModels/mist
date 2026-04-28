@@ -82,9 +82,10 @@ function write_scaling_param_table(df::DataFrame; sigdigits=3)
         )
         return get(named, (model, lr_model_size, geometric_penalty, harmonic_shape_penalty), nothing)
     end
-    df = transform(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(LatexCell∘model_name) => :model_name)
+    df = transform(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(model_name) => :model_name)
     subset!(df, :model_name => ByRow(!isnothing))
     sort!(df, :waic)
+    df.model_name = LatexCell.(df.model_name)
     round_sigfigs = ByRow(x -> round(x ; sigdigits))
     cols = [
         :model_name => "Model",
@@ -195,7 +196,7 @@ function figure_smoothed_scaling(df)
 end
 
 function summary_rows(df; sigdigits=3)
-    sort!(df, :n_smooth)
+    df = sort(df, :n_smooth)
     function model_name(model, lr_model_size, geometric_penalty, harmonic_shape_penalty)
         named = Dict(
             ("Penalized", :model_size, true, false) => "MIST, Penalized Scaling \\cref{eq:penalized_neural_scaling}",
