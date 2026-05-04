@@ -332,10 +332,19 @@ def tabulate_tokenizer(
     }
 
 
-def process_tokenizer(dataset_name: str, tokenizer: dict[str, str], args) -> dict:
+def process_tokenizer(
+    dataset_name: str,
+    tokenizer: dict[str, str],
+    tmqm_dataset: Optional[Path] = None,
+) -> dict:
+    """Process a single dataset for a single tokenizer.
+
+    NOTE: This function is executed in child processes when --workers is set.
+    Keep its signature/payload picklable.
+    """
     tok = load_tokenizer(tokenizer["name_or_path"])
-    if args.tmqm_dataset is not None:
-        DATASETS["tmQM"] = lambda: tmqm_dataset(args.tmqm_dataset)
+    if tmqm_dataset is not None:
+        DATASETS["tmQM"] = lambda: tmqm_dataset(tmqm_dataset)
 
     dataset = DATASETS[dataset_name]
     LOG.info("processing %s for %s", dataset_name, tokenizer["name"])
@@ -382,7 +391,12 @@ if __name__ == "__main__":
     datasets = args.dataset or DATASETS.keys()
     with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
         futures = {
-            executor.submit(process_tokenizer, dataset, tokenizer, args): dataset
+            executor.submit(
+                process_tokenizer,
+                dataset,
+                tokenizer,
+                args.tmqm_dataset,
+            ): dataset
             for dataset in datasets
         }
 
