@@ -56,10 +56,6 @@ function format_table(df; sigdigits=3)
     )
 end
 
-function estimate_brute_force(df::DataFrame)
-
-end
-
 function (@main)(ARGS=[])
     data = jldopen(ARGS[1], "r")
     model = data["model"]
