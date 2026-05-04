@@ -21,7 +21,7 @@ various additional analysis and downstream applications (See [`./opt`](./opt/) m
 2. Instantiate the environment: `uv sync`
 3. Use [`submit/submit.py`](./submit/submit.py) to submit a training job or checkout one of our applications in [`./opt`](./opt)
 
-> You may need to install [rust](https://www.rust-lang.org/tools/install) if pre-built wheels for [smirk](https://github.com/BattModels/smirk) are not available on [PyPi](https://pypi.org/project/smirk/).
+> You may need to install [rust](https://www.rust-lang.org/tools/install) if pre-built wheels for [smirk](https://github.com/BattModels/smirk) are not available on [PyPI](https://pypi.org/project/smirk/).
 > Feel free to [open an issue](https://github.com/BattModels/smirk/issues) to request additional pre-built wheels.
 
 ## Polaris
