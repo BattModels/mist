@@ -115,15 +115,14 @@ def get_model_type_from_path(path: Path) -> str:
         return "single"
 
 
-def check_multi_channel_labels(model, model_name: str):
+def check_multi_channel_labels(model_or_config, model_name: str):
     """Verify that multi-output models have channel labels."""
-    if "RobertaPreLayerNormModel" in type(model).__name__:
+    type_name = type(model_or_config).__name__
+    if "RobertaPreLayerNorm" in type_name:
         return
 
-    if not hasattr(model, "config"):
-        return
+    config = getattr(model_or_config, "config", model_or_config)
 
-    config = model.config
     if not hasattr(config, "task_network"):
         return
 
