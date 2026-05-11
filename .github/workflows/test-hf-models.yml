@@ -64,8 +64,7 @@ jobs:
           uv run --no-sync pytest opt/package/test_hf_org.py::${{ matrix.test-class }} \
             -v \
             --log-cli-level=INFO \
-            --durations=10 \
-            --maxfail=5
+            --durations=10
 
       - name: Upload test results
         if: always()
