@@ -20,6 +20,13 @@ on:
 jobs:
   test-models:
     runs-on: ubuntu-latest
+    env:
+      HF_HOME: ${{ runner.temp }}/huggingface
+      HF_HUB_CACHE: ${{ runner.temp }}/huggingface/hub
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      HF_HUB_DISABLE_XET: "1"
+      HF_MODULES_CACHE: ${{ runner.temp }}/huggingface/modules
+      WANDB_MODE: disabled
     strategy:
       fail-fast: false
       matrix:
@@ -48,11 +55,12 @@ jobs:
       - name: Install project dependencies
         run: uv sync --all-extras --dev
 
+      - name: Free package download cache
+        run: uv cache clean
+
       - name: Run tests
-        env:
-          WANDB_MODE: disabled
         run: |
-          uv run pytest opt/package/test_hf_org.py::${{ matrix.test-class }} \
+          uv run --no-sync pytest opt/package/test_hf_org.py::${{ matrix.test-class }} \
             -v \
             --log-cli-level=INFO \
             --durations=10 \
