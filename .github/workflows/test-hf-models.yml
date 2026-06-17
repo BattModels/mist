@@ -55,6 +55,7 @@ jobs:
 
       - name: Run tests
         env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_HOME: ${{ runner.temp }}/huggingface
           HF_HUB_CACHE: ${{ runner.temp }}/huggingface/hub
           HF_HUB_DISABLE_PROGRESS_BARS: "1"
