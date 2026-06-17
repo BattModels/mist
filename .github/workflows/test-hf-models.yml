@@ -2,7 +2,7 @@ name: Test HuggingFace Models
 
 on:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * 2,6'
   push:
     branches:
       - main
