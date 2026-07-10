@@ -131,4 +131,4 @@ We use [pre-commit](https://pre-commit.com) to preform various linting checks on
 2. Run pre-commit: `uv run pre-commit`
 3. Run before committing: `uv run pre-commit install --allow-missing-config`
 
-data-drop: https://doi.org/10.5281/zenodo.TBD
+data-drop: https://doi.org/10.5281/zenodo.17527148
