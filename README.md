@@ -12,7 +12,6 @@
 MIST is a family of molecular foundation models for molecular property prediction.
 The models were pre-trained on [Smirk 😏 tokenized](https://github.com/BattModels/smirk) SMILES strings from the [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) dataset using the Masked Language Modeling (MLM) objective, then fine-tuned for downstream prediction tasks.
 
-
 # Installation
 
 The following provides installation instructions for the top-level package (`electrolyte_fm`), optional add-ons for our
@@ -59,9 +58,9 @@ Same as above except:
 
 ## Hardware
 
-Generally, running the code here requires access to a GPUs and ideally an dedicated NVIDIA GPU cluster.
+Generally, running the code here requires access to GPUs and ideally a dedicated NVIDIA GPU cluster.
 However, much of the (non-training) code can be run on a single [NVIDIA A40 GPU](https://www.nvidia.com/en-us/data-center/a40/).
-Notable, for the [MIST-28M](https://huggingface.co/mist-models/mist-28M-ti624ev1) models CPU or MPS inference is viable.
+Notably, for the [MIST-28M](https://huggingface.co/mist-models/mist-28M-ti624ev1) model, CPU or MPS inference is viable.
 
 ## Software Dependencies
 
@@ -84,24 +83,24 @@ MIST has been tested on the following primary dependencies:
 
 ## Model Weights
 
-Model Weights can be retrieved from [Zenodo (Finetuned-Only)](data-drop) or [HuggingFace (Pretrained & Finetuned)](https://huggingface.co/mist-models).
+Model weights can be retrieved from [Zenodo (fine-tuned only)](data-drop) or [Hugging Face (pre-trained and fine-tuned)](https://huggingface.co/mist-models).
 
 ## Pretraining Dataset
 
 MIST was pre-trained on [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) as provided by Enamine.
-We are currently working to secure permission to publish a subset of that dataset, however MIST can be training on an collection of text files of [newline-delimited SMILES encoding](https://github.com/BattModels/smirk/blob/main/test/smiles.txt).
+We are currently working to secure permission to publish a subset of that dataset; however, MIST can be trained on a collection of text files of [newline-delimited SMILES](https://github.com/BattModels/smirk/blob/main/test/smiles.txt).
 We have uploaded an [example dataset to Zenodo](data-drop).
 
 ## Fine-Tuning Dataset
 
-All Fine-Tuning datasets are documented in [Supplementary Section C.1](https://arxiv.org/pdf/2510.18900).
+All fine-tuning datasets are documented in [Supplementary Section C.1](https://arxiv.org/pdf/2510.18900).
 Datasets that have not already been publicly released elsewhere can be found on [Zenodo](data-drop).
 
 # Demonstration Code
 
 Examples of using or training the MIST models can be found:
 
-- [Finetuning MIST](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/run_finetuning.ipynb)
+- [Fine-tuning MIST](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/run_finetuning.ipynb)
 - [Using MIST for Inference](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/molecular_property_prediction.ipynb)
 
 ## Submitting Jobs
@@ -118,7 +117,7 @@ See `submit/submit.py --help` for more info
 
 > Note: [./activate](./activate) is used to activate the python virtual environment *and* set various environment variables.
 
-Pre-training and finetuning parameters are document in [our paper's methods section](https://arxiv.org/abs/2510.18900).
+Pre-training and fine-tuning parameters are documented in [our paper's methods section](https://arxiv.org/abs/2510.18900).
 
 # Development
 
