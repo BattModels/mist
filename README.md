@@ -12,6 +12,7 @@
 MIST is a family of molecular foundation models for molecular property prediction.
 The models were pre-trained on [Smirk 😏 tokenized](https://github.com/BattModels/smirk) SMILES strings from the [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) dataset using the Masked Language Modeling (MLM) objective, then fine-tuned for downstream prediction tasks.
 
+
 # Installation
 
 The following provides installation instructions for the top-level package (`electrolyte_fm`), optional add-ons for our
@@ -43,7 +44,7 @@ uv sync
 ## Artemis
 
 Same as above except:
-1. Skip loading conda (just use uv)
+1. Skip loading conda (just use [uv](https://docs.astral.sh/uv))
 2. Ensure a module for CUDA@12.2 exists, may need to install with spack (make sure `buildable: True`)
 
 ## Apptainer
@@ -59,8 +60,8 @@ Same as above except:
 ## Hardware
 
 Generally, running the code here requires access to a GPUs and ideally an dedicated NVIDIA GPU cluster.
-However, much of the (non-training) code can be run on a single NVIDIA A40 GPU.
-Notable, for the [MIST-28M]() models CPU or MPS inference is viable.
+However, much of the (non-training) code can be run on a single [NVIDIA A40 GPU](https://www.nvidia.com/en-us/data-center/a40/).
+Notable, for the [MIST-28M](https://huggingface.co/mist-models/mist-28M-ti624ev1) models CPU or MPS inference is viable.
 
 ## Software Dependencies
 
@@ -77,16 +78,32 @@ MIST has been tested on the following primary dependencies:
 | NVIDIA cuBLAS | 12.8.3.14  |
 | NVIDIA cuDNN  |  9.7.0.66  |
 | NVIDIA NCCL   |   2.25.1   |
+| NVIDIA GPU    | A40, A100, H100 |
 | PyTorch       |    2.6     |
 
 
-## Installation Times
+## Model Weights
 
-Installing the virtual environment takes under a minute, although speeds depend highly on internet connectivity and uv's cache.
-Pulling the NVIDIA packages can easily add 5-10 minutes to a fresh install lacking a uv cache.
-Installing the julia environments typically take ~5 minutes, but limited hardware can take longer (e.g., GitHub Runners take ~18 minutes).
+Model Weights can be retrieved from [Zenodo (Finetuned-Only)]() or [HuggingFace (Pretrained & Finetuned)](https://huggingface.co/mist-models).
 
-# Submitting Jobs
+## Pretraining Dataset
+
+MIST was pre-trained on [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) as provided by Enamine.
+We are currently working to secure permission to publish a subset of that dataset, however MIST can be training on an collection of text files of [newline-delimited SMILES encoding](./electrolyte_fm/data_modules/roberta_dataset.py).
+
+## Fine-Tuning Dataset
+
+All Fine-Tuning datasets are documented in [Supplementary Section C.1](https://arxiv.org/pdf/2510.18900).
+Datasets that have not already been publicly released elsewhere can be found on [Zenodo]().
+
+# Demonstration Code
+
+Examples of using or training the MIST models can be found:
+
+- [Finetuning MIST](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/run_finetuning.ipynb)
+- [Using MIST for Inference](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/molecular_property_prediction.ipynb)
+
+## Submitting Jobs
 
 We use a python script ([`submit/submit.py`](./submit/submit.py)) to template training jobs for submission on HPC systems across multiple sites.
 Templates may need to be modified for your particular HPC cluster, but should provide a starting point.
@@ -99,6 +116,8 @@ source ./activate # Activate Environment
 See `submit/submit.py --help` for more info
 
 > Note: [./activate](./activate) is used to activate the python virtual environment *and* set various environment variables.
+
+Pre-training and finetuning parameters are document in [our paper's methods section](https://arxiv.org/abs/2510.18900).
 
 # Development
 
