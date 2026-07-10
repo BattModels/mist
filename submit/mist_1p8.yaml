@@ -1,0 +1,65 @@
+# Configuration Used for MIST-1.8B Training Run
+# A model-only config can be found here: https://huggingface.co/mist-models/mist-1.8B-dh61satt/blob/main/config.json
+#
+# A Note on Replication:
+# Some parameters (ie. env.NCCL_TOPO_FILE) are cluster specific. Others are
+# effectively performance only. For example, while the global effective batch
+# size (produce of nodes, gpus_per_node, batch_size and
+# accumulate_grad_batches) matters, how the work is split amongst GPUS is a
+# performance tuning knob. If you have smaller GPUS, try reducing the batch
+# size and increasing accumulate_grad_batches to match. Or if you don't have
+# that many GPUS reduce nodes and increase the batch_size /
+# accumulate_grad_batches to match.
+container: /lustre/fs0/awadell/sqsh-files/0535844560745234+mist+latest.sqsh
+env:
+  HF_HOME: ${PWD}/.cache/huggingface
+  JOBID: $SLURM_JOB_ID
+  MELLANOC_VISIBLE_DEVICES: all
+  NCCL_TOPO_FILE: /cm/shared/etc/ndv4-topo.xml
+  PMIX_MCA_gds: hash
+  TOKENIZER_PARALLELISM: "true"
+  TORCH_EXTENSIONS_DIR: ${PWD}/.cache/torch_extensions
+gpus_per_node: 8
+nodes: 4
+train:
+  data:
+    class_path: electrolyte_fm.data_modules.RobertaDataSet
+    init_args:
+      batch_size: 16
+      num_workers: 16
+      path: /lustre/fs0/awadell/realspace
+      tokenizer: smirk
+      val_batch_size: 32
+  model:
+    class_path: electrolyte_fm.models.RoBERTaPreLayerNorm
+    init_args:
+      hidden_size: 2304
+      intermediate_size: 9216
+      lr_schedule:
+        class_path: electrolyte_fm.utils.lr_schedule.RelativeCosineWarmup
+        init_args:
+          num_training_steps: 500000
+          num_warmup_steps: beta2
+      max_position_embeddings: 2048
+      num_attention_heads: 18
+      num_hidden_layers: 28
+      optimizer:
+        class_path: deepspeed.ops.lamb.FusedLamb
+        init_args:
+          betas:
+            - 0.87
+            - 0.997
+          lr: 0.0003
+          weight_decay: 0.01
+  tags:
+    - pretraining
+  trainer:
+    accumulate_grad_batches: 8
+    devices: 8
+    enable_progress_bar: false
+    limit_val_batches: 12
+    max_steps: 500000
+    num_nodes: 4
+    precision: bf16-true
+    val_check_interval: 800
+walltime: 14-0:0:0

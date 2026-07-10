@@ -85,13 +85,13 @@ MIST has been tested on the following primary dependencies:
 
 Model weights can be retrieved from [Zenodo (fine-tuned only)](data-drop) or [Hugging Face (pre-trained and fine-tuned)](https://huggingface.co/mist-models).
 
-## Pretraining Dataset
+## Pre-training Dataset
 
 MIST was pre-trained on [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) as provided by Enamine.
 We are currently working to secure permission to publish a subset of that dataset; however, MIST can be trained on a collection of text files of [newline-delimited SMILES](https://github.com/BattModels/smirk/blob/main/test/smiles.txt).
 We have uploaded an [example dataset to Zenodo](data-drop).
 
-## Fine-Tuning Dataset
+## Fine-Tuning Datasets
 
 All fine-tuning datasets are documented in [Supplementary Section C.1](https://arxiv.org/pdf/2510.18900).
 Datasets that have not already been publicly released elsewhere can be found on [Zenodo](data-drop).
@@ -118,6 +118,8 @@ See `submit/submit.py --help` for more info
 > Note: [./activate](./activate) is used to activate the python virtual environment *and* set various environment variables.
 
 Pre-training and fine-tuning parameters are documented in [our paper's methods section](https://arxiv.org/abs/2510.18900).
+The configuration for the [MIST-1.8B](./submit/mist_1p8.yaml) is provided for reference.
+Configurations for all other models, including our fine-tuning configs, are documented in [training logs](data-drop).
 
 # Development
 
