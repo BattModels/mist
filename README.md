@@ -54,6 +54,38 @@ Same as above except:
 
 > See [`submit/dgx.j2`](./submit/dgx.j2) or [`submit/delta.j2`](./submit/delta.j2) for a more complete example of using the container
 
+# System Requirements
+
+## Hardware
+
+Generally, running the code here requires access to a GPUs and ideally an dedicated NVIDIA GPU cluster.
+However, much of the (non-training) code can be run on a single NVIDIA A40 GPU.
+Notable, for the [MIST-28M]() models CPU or MPS inference is viable.
+
+## Software Dependencies
+
+All software dependencies can be found in the [pyproject.toml](./pyproject.toml) (python) or [Project.toml](./Project.toml) (julia) files.
+Specific versions are detailed in the [lock files](./uv.lock).
+
+MIST has been tested on the following primary dependencies:
+
+| Dependency    |  Versions  |
+| :------------ | :--------: |
+| Ubuntu        |   24.04    |
+| Python        | 3.12, 3.13 |
+| NVIDIA CUDA   | 12.8.0.038 |
+| NVIDIA cuBLAS | 12.8.3.14  |
+| NVIDIA cuDNN  |  9.7.0.66  |
+| NVIDIA NCCL   |   2.25.1   |
+| PyTorch       |    2.6     |
+
+
+## Installation Times
+
+Installing the virtual environment takes under a minute, although speeds depend highly on internet connectivity and uv's cache.
+Pulling the NVIDIA packages can easily add 5-10 minutes to a fresh install lacking a uv cache.
+Installing the julia environments typically take ~5 minutes, but limited hardware can take longer (e.g., GitHub Runners take ~18 minutes).
+
 # Submitting Jobs
 
 We use a python script ([`submit/submit.py`](./submit/submit.py)) to template training jobs for submission on HPC systems across multiple sites.
