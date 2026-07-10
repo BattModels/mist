@@ -84,17 +84,18 @@ MIST has been tested on the following primary dependencies:
 
 ## Model Weights
 
-Model Weights can be retrieved from [Zenodo (Finetuned-Only)]() or [HuggingFace (Pretrained & Finetuned)](https://huggingface.co/mist-models).
+Model Weights can be retrieved from [Zenodo (Finetuned-Only)](data-drop) or [HuggingFace (Pretrained & Finetuned)](https://huggingface.co/mist-models).
 
 ## Pretraining Dataset
 
 MIST was pre-trained on [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) as provided by Enamine.
-We are currently working to secure permission to publish a subset of that dataset, however MIST can be training on an collection of text files of [newline-delimited SMILES encoding](./electrolyte_fm/data_modules/roberta_dataset.py).
+We are currently working to secure permission to publish a subset of that dataset, however MIST can be training on an collection of text files of [newline-delimited SMILES encoding](https://github.com/BattModels/smirk/blob/main/test/smiles.txt).
+We have uploaded an [example dataset to Zenodo](data-drop).
 
 ## Fine-Tuning Dataset
 
 All Fine-Tuning datasets are documented in [Supplementary Section C.1](https://arxiv.org/pdf/2510.18900).
-Datasets that have not already been publicly released elsewhere can be found on [Zenodo]().
+Datasets that have not already been publicly released elsewhere can be found on [Zenodo](data-drop).
 
 # Demonstration Code
 
@@ -128,3 +129,5 @@ We use [pre-commit](https://pre-commit.com) to preform various linting checks on
 1. Install poetry (See above)
 2. Run pre-commit: `uv run pre-commit`
 3. Run before committing: `uv run pre-commit install --allow-missing-config`
+
+data-drop: https://doi.org/10.5281/zenodo.TBD
