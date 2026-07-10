@@ -100,8 +100,9 @@ Datasets that have not already been publicly released elsewhere can be found on 
 
 Examples of using or training the MIST models can be found:
 
-- [Fine-tuning MIST](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/run_finetuning.ipynb)
-- [Using MIST for Inference](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/molecular_property_prediction.ipynb)
+- [Fine-tuning MIST (42 minutes)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/run_finetuning.ipynb)
+- [MIST for Molecular Property Prediction (1 minute](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/molecular_property_prediction.ipynb)
+- [Predicting Molecular Scent with MIST (5 minute)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/olfaction_prediction.ipynb)
 
 ## Submitting Jobs
 
