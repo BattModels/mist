@@ -119,7 +119,7 @@ See `submit/submit.py --help` for more info
 > Note: [./activate](./activate) is used to activate the python virtual environment *and* set various environment variables.
 
 Pre-training and fine-tuning parameters are documented in [our paper's methods section](https://arxiv.org/abs/2510.18900).
-The configuration for the [MIST-1.8B](./submit/mist_1p8.yaml) is provided for reference.
+The configuration for the [MIST-1.8B](./submit/mist_1p8B.yaml) is provided for reference.
 Configurations for all other models, including our fine-tuning configs, are documented in [training logs](https://doi.org/10.5281/zenodo.17527148).
 
 # Development
