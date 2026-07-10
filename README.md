@@ -24,6 +24,14 @@ various additional analysis and downstream applications (See [`./opt`](./opt/) m
 > You may need to install [rust](https://www.rust-lang.org/tools/install) if pre-built wheels for [smirk](https://github.com/BattModels/smirk) are not available on [PyPI](https://pypi.org/project/smirk/).
 > Feel free to [open an issue](https://github.com/BattModels/smirk/issues) to request additional pre-built wheels.
 
+## Local
+
+1. Install [rust](https://www.rust-lang.org/tools/install) and [uv](https://docs.astral.sh/uv/getting-started/installation/)
+2. Run `uv sync`
+
+> Not all configurations will work locally. For example, pre-training configuration files typically use [DeepSpeed](https://www.deepspeed.ai/), which requires NVIDIA GPUs.
+> Some adaptation may be required to run outside of an NVIDIA GPU cluster.
+
 ## Polaris
 
 1. Install [rust](https://www.rust-lang.org/tools/install) and [uv](https://docs.astral.sh/uv/getting-started/installation/)
@@ -101,8 +109,8 @@ Datasets that have not already been publicly released elsewhere can be found on 
 Examples of using or training the MIST models can be found:
 
 - [Fine-tuning MIST (42 minutes)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/run_finetuning.ipynb)
-- [MIST for Molecular Property Prediction (1 minute](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/molecular_property_prediction.ipynb)
-- [Predicting Molecular Scent with MIST (5 minute)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/olfaction_prediction.ipynb)
+- [MIST for Molecular Property Prediction (1 minute)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/molecular_property_prediction.ipynb)
+- [Predicting Molecular Scent with MIST (5 minutes)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/olfaction_prediction.ipynb)
 
 ## Submitting Jobs
 
