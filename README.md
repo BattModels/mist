@@ -83,18 +83,18 @@ MIST has been tested on the following primary dependencies:
 
 ## Model Weights
 
-Model weights can be retrieved from [Zenodo (fine-tuned only)](data-drop) or [Hugging Face (pre-trained and fine-tuned)](https://huggingface.co/mist-models).
+Model weights can be retrieved from [Zenodo (fine-tuned only)](https://doi.org/10.5281/zenodo.17527148) or [Hugging Face (pre-trained and fine-tuned)](https://huggingface.co/mist-models).
 
 ## Pre-training Dataset
 
 MIST was pre-trained on [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) as provided by Enamine.
 We are currently working to secure permission to publish a subset of that dataset; however, MIST can be trained on a collection of text files of [newline-delimited SMILES](https://github.com/BattModels/smirk/blob/main/test/smiles.txt).
-We have uploaded an [example dataset to Zenodo](data-drop).
+We have uploaded an [example dataset to Zenodo](https://doi.org/10.5281/zenodo.17527148).
 
 ## Fine-Tuning Datasets
 
 All fine-tuning datasets are documented in [Supplementary Section C.1](https://arxiv.org/pdf/2510.18900).
-Datasets that have not already been publicly released elsewhere can be found on [Zenodo](data-drop).
+Datasets that have not already been publicly released elsewhere can be found on [Zenodo](https://doi.org/10.5281/zenodo.17527148).
 
 # Demonstration Code
 
@@ -119,7 +119,7 @@ See `submit/submit.py --help` for more info
 
 Pre-training and fine-tuning parameters are documented in [our paper's methods section](https://arxiv.org/abs/2510.18900).
 The configuration for the [MIST-1.8B](./submit/mist_1p8.yaml) is provided for reference.
-Configurations for all other models, including our fine-tuning configs, are documented in [training logs](data-drop).
+Configurations for all other models, including our fine-tuning configs, are documented in [training logs](https://doi.org/10.5281/zenodo.17527148).
 
 # Development
 
@@ -130,5 +130,3 @@ We use [pre-commit](https://pre-commit.com) to preform various linting checks on
 1. Install poetry (See above)
 2. Run pre-commit: `uv run pre-commit`
 3. Run before committing: `uv run pre-commit install --allow-missing-config`
-
-data-drop: https://doi.org/10.5281/zenodo.17527148
