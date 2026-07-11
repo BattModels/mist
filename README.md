@@ -24,6 +24,18 @@ various additional analysis and downstream applications (See [`./opt`](./opt/) m
 > You may need to install [rust](https://www.rust-lang.org/tools/install) if pre-built wheels for [smirk](https://github.com/BattModels/smirk) are not available on [PyPI](https://pypi.org/project/smirk/).
 > Feel free to [open an issue](https://github.com/BattModels/smirk/issues) to request additional pre-built wheels.
 
+Installation took under a minute on a MacBook Pro 2023. However, installation times depend heavily on internet connection and local `uv` cache.
+Pulling the NVIDIA packages can easily add 5-10 minutes without a `uv` cache.
+Installing the Julia environments (for example in `/opt`) can takes ~5 mins but may take longer on limited hardware (e.g. GitHub runners take ~18 mins).
+
+## Local
+
+1. Install [rust](https://www.rust-lang.org/tools/install) and [uv](https://docs.astral.sh/uv/getting-started/installation/)
+2. Run `uv sync`
+
+> Not all configurations will work locally. For example, pre-training configuration files typically use [DeepSpeed](https://www.deepspeed.ai/), which requires NVIDIA GPUs.
+> Some adaptation may be required to run outside of an NVIDIA GPU cluster.
+
 ## Polaris
 
 1. Install [rust](https://www.rust-lang.org/tools/install) and [uv](https://docs.astral.sh/uv/getting-started/installation/)
@@ -43,7 +55,7 @@ uv sync
 ## Artemis
 
 Same as above except:
-1. Skip loading conda (just use uv)
+1. Skip loading conda (just use [uv](https://docs.astral.sh/uv))
 2. Ensure a module for CUDA@12.2 exists, may need to install with spack (make sure `buildable: True`)
 
 ## Apptainer
@@ -54,7 +66,57 @@ Same as above except:
 
 > See [`submit/dgx.j2`](./submit/dgx.j2) or [`submit/delta.j2`](./submit/delta.j2) for a more complete example of using the container
 
-# Submitting Jobs
+# System Requirements
+
+## Hardware
+
+Generally, running the code here requires access to GPUs and ideally a dedicated NVIDIA GPU cluster.
+However, much of the (non-training) code can be run on a single [NVIDIA A40 GPU](https://www.nvidia.com/en-us/data-center/a40/).
+Notably, for the [MIST-28M](https://huggingface.co/mist-models/mist-28M-ti624ev1) model, CPU or MPS inference is viable.
+
+## Software Dependencies
+
+All software dependencies can be found in the [pyproject.toml](./pyproject.toml) (python) or [Project.toml](./Project.toml) (julia) files.
+Specific versions are detailed in the [lock files](./uv.lock).
+
+MIST has been tested on the following primary dependencies:
+
+| Dependency    |  Versions  |
+| :------------ | :--------: |
+| Ubuntu        |   24.04    |
+| Python        | 3.12, 3.13 |
+| NVIDIA CUDA   | 12.8.0.038 |
+| NVIDIA cuBLAS | 12.8.3.14  |
+| NVIDIA cuDNN  |  9.7.0.66  |
+| NVIDIA NCCL   |   2.25.1   |
+| NVIDIA GPU    | A40, A100, H100 |
+| PyTorch       |    2.6     |
+
+
+## Model Weights
+
+Model weights can be retrieved from [Zenodo (fine-tuned only)](https://doi.org/10.5281/zenodo.17527148) or [Hugging Face (pre-trained and fine-tuned)](https://huggingface.co/mist-models).
+
+## Pre-training Dataset
+
+MIST was pre-trained on [Enamine REAL Space](https://enamine.net/compound-collections/real-compounds/real-space-navigator) as provided by Enamine.
+We are currently working to secure permission to publish a subset of that dataset; however, MIST can be trained on a collection of text files of [newline-delimited SMILES](https://github.com/BattModels/smirk/blob/main/test/smiles.txt).
+We have uploaded an [example dataset to Zenodo](https://doi.org/10.5281/zenodo.17527148).
+
+## Fine-Tuning Datasets
+
+All fine-tuning datasets are documented in [Supplementary Section C.1](https://arxiv.org/pdf/2510.18900).
+Datasets that have not already been publicly released elsewhere can be found on [Zenodo](https://doi.org/10.5281/zenodo.17527148).
+
+# Demonstration Code
+
+Examples of using or training the MIST models can be found:
+
+- [Fine-tuning MIST (42 minutes)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/run_finetuning.ipynb)
+- [MIST for Molecular Property Prediction (1 minute)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/molecular_property_prediction.ipynb)
+- [Predicting Molecular Scent with MIST (5 minutes)](https://colab.research.google.com/github/BattModels/mist-demo/blob/main/tutorials/olfaction_prediction.ipynb)
+
+## Submitting Jobs
 
 We use a python script ([`submit/submit.py`](./submit/submit.py)) to template training jobs for submission on HPC systems across multiple sites.
 Templates may need to be modified for your particular HPC cluster, but should provide a starting point.
@@ -67,6 +129,10 @@ source ./activate # Activate Environment
 See `submit/submit.py --help` for more info
 
 > Note: [./activate](./activate) is used to activate the python virtual environment *and* set various environment variables.
+
+Pre-training and fine-tuning parameters are documented in [our paper's methods section](https://arxiv.org/abs/2510.18900).
+The configuration for the [MIST-1.8B](./submit/mist_1p8B.yaml) is provided for reference.
+Configurations for all other models, including our fine-tuning configs, are documented in [training logs](https://doi.org/10.5281/zenodo.17527148).
 
 # Development
 

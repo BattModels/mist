@@ -124,7 +124,7 @@ def rand_simplex(*dims) -> torch.Tensor:
     "config",
     [
         ExcessPhysicsModel.from_pretrained_encoder(
-            "ibm/MoLFormer-XL-both-10pct"
+            "mist-models/mist-28M-ti624ev1"
         ).config,
         ExcessPhysicsConfig(encoder=AutoConfig.for_model("roberta")),
     ],
