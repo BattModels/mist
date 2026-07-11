@@ -24,6 +24,10 @@ various additional analysis and downstream applications (See [`./opt`](./opt/) m
 > You may need to install [rust](https://www.rust-lang.org/tools/install) if pre-built wheels for [smirk](https://github.com/BattModels/smirk) are not available on [PyPI](https://pypi.org/project/smirk/).
 > Feel free to [open an issue](https://github.com/BattModels/smirk/issues) to request additional pre-built wheels.
 
+Installation took under a minute on a MacBook Pro 2023. However, installation times depend heavily on internet connection and local `uv` cache.
+Pulling the NVIDIA packages can easily add 5-10 minutes without a `uv` cache.
+Installing the Julia environments (for example in `/opt`) can takes ~5 mins but may take longer on limited hardware (e.g. GitHub runners take ~18 mins).
+
 ## Local
 
 1. Install [rust](https://www.rust-lang.org/tools/install) and [uv](https://docs.astral.sh/uv/getting-started/installation/)
