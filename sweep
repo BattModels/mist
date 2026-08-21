@@ -1,0 +1,52 @@
+#!/usr/bin/env python
+import json
+import subprocess
+from copy import deepcopy
+from pathlib import Path
+
+import _jsonnet as jsonnet
+import numpy as np
+
+from submit.submit import merge_config, parse_data, render, template_defaults
+
+template = "submit/artemis.j2"
+config_file = "BigSolDB"
+finetune_config = merge_config(
+    template_defaults(template), parse_data(Path(f"submit/{config_file}.jsonnet"))
+)
+
+ckpts = [
+    "mist-models/mist-28M-ti624ev1",
+    "mist-models/mist-1.8B-dh61satt",
+]
+
+
+# learning_rate_list = [2e-4, 1.5e-3, 2e-3]
+
+for freeze_encoder in [False]:
+    for bs in [
+        16,
+        32,
+        64,
+    ]:
+        for ckpt in ckpts:
+            for lr in [3e-5, 1.6e-4, 1e-3]:
+                for dropout in [0.1, 0.2]:
+                    script_config = template_defaults(template, True, True)
+                    script_config = merge_config(script_config, finetune_config)
+
+                    script_config["train"]["model"]["init_args"]["freeze_encoder"] = (
+                        freeze_encoder
+                    )
+                    script_config["train"]["model"]["init_args"]["dropout"] = dropout
+                    script_config["train"]["data"]["init_args"]["tokenizer"] = ckpt
+                    script_config["train"]["model"]["init_args"]["encoder_ckpt"] = ckpt
+                    script_config["train"]["model"]["init_args"]["optimizer"][
+                        "init_args"
+                    ]["lr"] = lr
+
+                    script_config["train"]["data"]["init_args"]["batch_size"] = bs
+                    script_config["train"]["data"]["init_args"]["val_batch_size"] = bs
+
+                    script = render(template, script_config)
+                    subprocess.run("bash", input=script + "\n", text=True)
