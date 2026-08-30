@@ -1,17 +1,18 @@
 {
   walltime: '4:00:00',
+  queue: 'venkvis-a100,venkvis-h100',
   nodes: 1,
   env: {
     TOKENIZERS_PARALLELISM: true,
   },
   train: {
-    tags: ['finetuning', 'bigsol', 'solubility'],
+    tags: ['finetuning', 'bigsol', 'response'],
     data: {
       class_path: 'electrolyte_fm.data_modules.CSVDataModule',
       init_args: {
-        path: 'BigSolDB_water_room_temp.csv',
+        path: 'BigSolDB_water_room_temp_unique.csv',
         smi_column: 'SMILES',
-        target_columns: ['Solubility'],
+        target_columns: ['logS'],
         encoding: 'smiles-kekule',
         batch_size: 32,
         val_batch_size: 64,
@@ -31,7 +32,6 @@
         output_size: std.length($.train.data.init_args.target_columns),
         target_columns: $.train.data.init_args.target_columns,
         transform: [
-          'log_transform',
           'standardize',
         ],
 

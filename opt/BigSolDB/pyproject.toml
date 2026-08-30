@@ -1,0 +1,11 @@
+[project]
+name = "bigsoldb"
+version = "0.1.0"
+description = "Token distribution of the BigSolDB finetuning set against the pretraining corpus"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "matplotlib~=3.9",
+    "pandas>=2.2.3",
+    "numpy>=2.2.4",
+    "typer>=0.9",
+]
