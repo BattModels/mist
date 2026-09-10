@@ -8,6 +8,14 @@ from torchmetrics import MetricCollection
 from ..utils.ckpt import SaveConfigWithCkpts
 
 
+def create_position_ids(
+    input_ids: torch.Tensor, token_padding_idx: int, position_padding_idx: int
+) -> torch.Tensor:
+    """Create positions without changing a pretrained positional offset."""
+    mask = input_ids.ne(token_padding_idx).to(dtype=torch.long)
+    return mask.cumsum(dim=-1) * mask + position_padding_idx
+
+
 def load_encoder(name_or_path: str, strict: bool = False):
     if Path(name_or_path).exists():
         return DeepSpeedMixin.load(name_or_path, strict=strict).get_encoder()
