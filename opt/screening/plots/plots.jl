@@ -20,7 +20,7 @@ using ScreeningPlots: searchfirst
 # MODEL_DIR: Path to the model checkpoints (to be released in data drop)
 ROOTDIR = realpath(joinpath(pkgdir(ScreeningPlots), ".."))
 GIT_ROOT = realpath(joinpath(ROOTDIR, "..", ".."))
-DATA_DIR = joinpath(GIT_ROOT, "data", "screening")
+DATA_DIR = joinpath(GIT_ROOT, "data", "screening", "electrochemical-thermal")
 MODEL_DIR = joinpath(GIT_ROOT, "data", "models")
 fig_dir = joinpath(ROOTDIR, "fig")
 isdir(fig_dir) || mkdir(fig_dir)
@@ -92,6 +92,9 @@ production_run_path = joinpath(DATA_DIR, "runs", prod_id)
 df_mol = ScreeningPlots.load_generated_molecules(production_run_path)
 prod_config = JSON.parsefile(joinpath(production_run_path, "config.json"))
 
+# DFT (qmist) ground truth for the generated molecules (conformer-search geometries)
+df_dft = ScreeningPlots.load_qmist_results(joinpath(production_run_path, "qm9_conf"))
+
 # Reference Molecules
 df_ref = DataFrame(CSV.File(joinpath(DATA_DIR, "electrolytes_predictons.csv")))
 df_mol.inchi_key = ScreeningPlots.inchi_key.(df_mol.smiles)
@@ -110,7 +113,7 @@ write(joinpath("fig", "pareto_front_table.tex"), table)
 trace, _ = ScreeningPlots.performance_trace(joinpath(production_run_path, "screen.jsonl"))
 trace = DataFrame(trace)
 with_theme(MISTStyle.theme()) do
-    f = ScreeningPlots.plot_pareto_front(df_mol, df_ref)
+    f = ScreeningPlots.plot_pareto_front(df_mol, df_ref; dft=df_dft)
     MISTStyle.savefig(joinpath("production" * "-" * prod_id), f)
 
     f = ScreeningPlots.plot_gen_trace(trace)
@@ -119,7 +122,7 @@ with_theme(MISTStyle.theme()) do
     f = ScreeningPlots.weak_scaling(subset(df, :duration => ByRow(<(400))))
     MISTStyle.savefig(joinpath("scaling" * "-" * prod_id), f)
 
-    f = ScreeningPlots.figure_screening(trace, df_mol, df_ref, df)
+    f = ScreeningPlots.figure_screening(trace, df_mol, df_ref, df; dft=df_dft)
     MISTStyle.savefig(joinpath("panel" * "-" * prod_id), f)
 
     # Verify qmist can reproduce QM9 calculations
@@ -205,13 +208,15 @@ odor_model = ScreeningPlots.load_mist_pretrained(joinpath(MODEL_DIR, "mist-26.9M
 df_odor = select(df_surprise, :smiles, :group)
 df_odor = innerjoin(df_odor, ScreeningPlots.predict_mist(odor_model, df_odor.smiles); on=:smiles)
 df_odor_counts = ScreeningPlots.odor_counts(subset(df_odor, :group => ByRow(!=("ChEMBL"))), odor_model)
-f = ScreeningPlots.figure_odor_counts(df_odor_counts)
-MISTStyle.savefig("screening_odors", f)
+with_theme(MISTStyle.theme()) do
+    ScreeningPlots.figure_odor_counts(df_odor_counts)
+end |> MISTStyle.savefig("screening_odors")
 
 # Screen for odorless
 df_so = innerjoin(df_surprise, df_odor; on=["smiles", "group"])
-f = ScreeningPlots.plot_pareto_front_scent(df_so, "odorless")
-MISTStyle.savefig("electrolyte_odorless", f)
+with_theme(MISTStyle.theme()) do
+    ScreeningPlots.plot_pareto_front_scent(df_so, "odorless")
+end |> MISTStyle.savefig("electrolyte_odorless")
 
 function figure_odor_filter(df_so, df_odor_counts)
     f = Figure(; size=(3inch, 3inch), figure_padding=(3pt, 3pt, 3pt, 3pt))
