@@ -239,7 +239,8 @@ end
 function figure_odor_counts(df::DataFrame)
     f = Figure(; size=(2inch, 3.25inch))
     figure_odor_counts!(f, df)
-    return resize_to_layout!(f)
+    resize_to_layout!(f)
+    return f
 end
 
 function figure_odor_counts!(f, df::DataFrame)
@@ -275,7 +276,7 @@ function figure_odor_counts!(f, df::DataFrame)
     return f
 end
 
-function plot_pareto_front_scent(f, df, scent)
+function plot_pareto_front_scent(df, scent)
     f = Figure(; size=(100, 203))
     f = plot_pareto_front_scent!(f, df, scent)
     resize_to_layout!(f)

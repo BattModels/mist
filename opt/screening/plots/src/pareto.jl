@@ -98,13 +98,13 @@ function weak_scaling!(f, df_speed)
     return f
 end
 
-function figure_screening(trace, case, ref, df_speed)
+function figure_screening(trace, case, ref, df_speed; dft=nothing)
     f = Figure(;
-        size=(3.42inch, 2.5inch),
+        size=(3.42inch, 2.7inch),
         figure_padding=(2, 2, 2, 5)
     )
     gl_perf = GridLayout(f[1, 1])
-    plot_pareto_front!(GridLayout(f[2, 1]), case, ref)
+    plot_pareto_front!(GridLayout(f[2, 1]), case, ref; dft)
     plot_gen_trace!(GridLayout(gl_perf[1, 1]), trace)
 
     gl = GridLayout(gl_perf[1, 2])
@@ -166,35 +166,48 @@ function label_electrolyte_pareto!(case)
     canidates = map(vcat, homo, gap, mp, bp)
     front = Metaheuristics.get_non_dominated_solutions(canidates)
     nidx = findall(in(front), canidates)
-    case = deepcopy(case)
     case.dominated .= true
     case.dominated[nidx] .= false
     sort!(case, :dominated; rev=true)
     return case
 end
 
-function plot_pareto_front(case, ref)
+function plot_pareto_front(case, ref; dft=nothing)
     f = Figure(; size=(210pt, 100pt), figure_padding=(1, 3, 1, 2))
-    plot_pareto_front!(f, case, ref)
+    plot_pareto_front!(f, case, ref; dft)
 end
-function plot_pareto_front!(f, case, ref)
+function plot_pareto_front!(f, case, ref; dft=nothing)
     mp_limits = extrema(vcat(case.mp, [0]))
     bp_limits = extrema(vcat(case.bp, [75]))
     pareto_kwargs = (;
         linewidth=1.5pt,
-        linestyle=:solid,
         alpha=0.7,
     )
 
     # Net non-dominated
-    label_electrolyte_pareto!(case)
-    @info "non-dominated" sort(case[nidx, :], :inchi_key)
-    front = map(front) do p
-        p[1] *= -1
-        p[2] *= -1
-        p
+    case = label_electrolyte_pareto(case)
+    n_front = count(.!case.dominated)
+    @info "non-dominated" sort(case[.!case.dominated, :], :inchi_key)
+    @info "non-dominated" n_front nrow(case) n_front / nrow(case)
+
+    # DFT (qmist) calculations, split into the generated and the reference molecules
+    has_ref_dft = false
+    if !isnothing(dft)
+        dft_gen = subset(dft, :inchi_key => ByRow(∈(Set(case.inchi_key))))
+        dft_homo = float.(dft_gen.homo) .* HARTREE_TO_EV
+        dft_gap = float.(dft_gen.gap) .* HARTREE_TO_EV
+        @info "DFT (qmist), generated" nrow(dft_gen) nrow(case) nrow(dft_gen) / nrow(case)
+
+        # Only the reference molecules the generator rediscovered were ever sent to DFT,
+        # so this front covers a subset of `ref` -- see the coverage logged below.
+        if "inchi_key" in names(ref)
+            dft_ref = subset(dft, :inchi_key => ByRow(∈(Set(ref.inchi_key))))
+            has_ref_dft = nrow(dft_ref) > 1
+            ref_dft_homo = float.(dft_ref.homo) .* HARTREE_TO_EV
+            ref_dft_gap = float.(dft_ref.gap) .* HARTREE_TO_EV
+            @info "DFT (qmist), reference" nrow(dft_ref) nrow(ref) nrow(dft_ref) / nrow(ref)
+        end
     end
-    @info "non-dominated" length(front) nrow(case) length(front) / nrow(case)
 
     ax = Axis(f[1, 1];
         limits=(mp_limits, bp_limits),
@@ -204,15 +217,18 @@ function plot_pareto_front!(f, case, ref)
     scatter_samples!(ax, case.mp, case.bp, case.dominated)
     stairs!(ax, get_pareto_front(ref.mp, ref.bp; ax);
         color=MISTStyle.UM_COLORS.maize,
+        linestyle=:solid,
         pareto_kwargs...
     )
     stairs!(ax, get_pareto_front(case.mp, case.bp; ax);
         color=MISTStyle.UM_COLORS.blue,
+        linestyle=:solid,
         pareto_kwargs...
     )
 
     ax = Axis(f[1, 2];
-        limits=((-10.5, -7), (5, 13)),
+        # Widen to fit the DFT cloud, which runs up/right of the MIST predictions
+        limits=isnothing(dft) ? ((-10.5, -7), (5, 13)) : ((-10.5, -5.5), (3.5, 13)),
         xlabel=L"HOMO (eV)$$",
         ylabel=L"Gap (eV)$$",
         xticks=WilkinsonTicks(5; k_max=7),
@@ -221,24 +237,64 @@ function plot_pareto_front!(f, case, ref)
     h, h_front = scatter_samples!(ax, case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV, case.dominated)
     h.label = "Generated"
     h_front.label = "On Pareto Front, Generated"
+    if !isnothing(dft)
+        h_dft = scatter!(ax, dft_homo, dft_gap;
+            marker=:utriangle,
+            color=MISTStyle.UM_COLORS.orange,
+            alpha=0.35,
+            markersize=3pt,
+            label="Generated, DFT",
+        )
+    end
+    # Colour encodes provenance (maize = reference, blue = generated); linestyle encodes the
+    # level of theory (solid = MIST prediction, dotted = DFT/qmist).
     h_ref_front = lines!(ax, get_pareto_front(ref.homo .* HARTREE_TO_EV, ref.gap .* HARTREE_TO_EV; ax);
         color=MISTStyle.UM_COLORS.maize,
+        linestyle=:solid,
         label="Ref. Pareto Front",
         pareto_kwargs...
     )
+    if has_ref_dft
+        h_ref_dft_front = lines!(ax, get_pareto_front(ref_dft_homo, ref_dft_gap; ax);
+            color=MISTStyle.UM_COLORS.maize,
+            linestyle=:dot,
+            label="Ref. Pareto Front, DFT",
+            pareto_kwargs...
+        )
+    end
     h_gen_front = stairs!(ax, get_pareto_front(case.homo .* HARTREE_TO_EV, case.gap .* HARTREE_TO_EV; ax);
         color=MISTStyle.UM_COLORS.blue,
+        linestyle=:solid,
         label="Generated Pareto Front",
         pareto_kwargs...
     )
+    if !isnothing(dft)
+        h_dft_front = stairs!(ax, get_pareto_front(dft_homo, dft_gap; ax);
+            color=MISTStyle.UM_COLORS.blue,
+            linestyle=:dot,
+            label="Generated Pareto Front, DFT",
+            pareto_kwargs...
+        )
+    end
     # Stairs! leaves linestyle unset...
     elems = [h, h_front,
         LineElement(; label=h_ref_front.label, linestyle=:solid, color=h_ref_front.color, linewidth=h_ref_front.linewidth),
         LineElement(; label=h_gen_front.label, linestyle=:solid, color=h_gen_front.color, linewidth=h_gen_front.linewidth),
     ]
+    if has_ref_dft
+        push!(elems, LineElement(; label=h_ref_dft_front.label, linestyle=:dot,
+            color=h_ref_dft_front.color, linewidth=h_ref_dft_front.linewidth))
+    end
+    if !isnothing(dft)
+        push!(elems,
+            MarkerElement(; label=h_dft.label, marker=:utriangle, color=MISTStyle.UM_COLORS.orange),
+            LineElement(; label=h_dft_front.label, linestyle=:dot, color=h_dft_front.color, linewidth=h_dft_front.linewidth),
+        )
+    end
     Legend(f[2, :], elems, MISTStyle.label.(elems);
         tellheight=true, tellwidth=true,
         orientation=:horizontal,
+        nbanks=isnothing(dft) ? 1 : 3,
     )
 
     return f
@@ -292,13 +348,25 @@ function save_pareto_front(df_mol)
 
     # Latex Table
     table = pretty_table(String, df_front[!, first.(columns)];
-        tf = LatexTableFormat(),
-        formatters=(fmt_lr,),
+        backend=:latex,
+        table_format=LatexTableFormat(;
+            # Rules only under the column labels, matching the old `hlines=[:header]`
+            horizontal_line_at_beginning=false,
+            horizontal_line_after_column_labels=true,
+            horizontal_lines_at_data_rows=:none,
+            horizontal_line_after_data_rows=false,
+        ),
+        formatters=[fmt_lr],
         alignment=[:c for idx in eachindex(columns)],
-        backend=Val(:latex),
-        hlines=[:header],
-        header=last.(columns),
-        table_type=:longtable,
+        column_labels=last.(columns),
     )
+    # PrettyTables v3 dropped `table_type=:longtable`, so promote the tabular by hand -- the
+    # front runs to dozens of rows and will not fit on a single page. `\endhead` repeats the
+    # column labels after each page break.
+    table = replace(table,
+        "\\begin{tabular}" => "\\begin{longtable}",
+        "\\end{tabular}" => "\\end{longtable}",
+    )
+    table = replace(table, "\\hline\n" => "\\hline\n  \\endhead\n"; count=1)
     return table, df_front
 end
