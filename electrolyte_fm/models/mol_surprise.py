@@ -1,6 +1,7 @@
 import torch
 from torch.nn import functional as F
-from transformers import AutoModelForMaskedLM, AutoConfig, DataCollatorWithPadding
+from transformers import AutoConfig, AutoModelForMaskedLM, DataCollatorWithPadding
+
 from ..utils.tokenizer import load_tokenizer
 
 
@@ -44,17 +45,15 @@ class MolSurpriseFM(torch.nn.Module):
                 per_token,
             ).to("cpu")
 
-    def embed(self, smiles: list[str]) -> torch.Tensor:
+    def embed(self, smiles: list[str], *, return_attention_mask: bool = False):
         batch = self.tokenizer(smiles, return_special_tokens_mask=True)
         batch = self.collate_fn(batch).to(self.encoder.device)
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
-        if hasattr(self.encoder, "roberta_prelayernorm"):
-            encoder = self.encoder.roberta_prelayernorm
-        else:
-            encoder = self.encoder.encoder
+        encoder = self.encoder.base_model
         with torch.inference_mode():
-            return encoder(input_ids, attention_mask=attention_mask).last_hidden_state
+            hidden = encoder(input_ids, attention_mask=attention_mask).last_hidden_state
+        return (hidden, attention_mask) if return_attention_mask else hidden
 
     @classmethod
     def from_checkpoint(cls, ckpt: str, **kwargs):
@@ -65,19 +64,21 @@ class MolSurpriseFM(torch.nn.Module):
         return cls(encoder, tokenizer, **kwargs)
 
     @classmethod
-    def from_pretrained(cls, name_or_path: str, dtype=None, **kwargs):
+    def from_pretrained(
+        cls, name_or_path: str, dtype=None, *, local_files_only=False, **kwargs
+    ):
         encoder = AutoModelForMaskedLM.from_pretrained(
             name_or_path,
             trust_remote_code=True,
-            # device_map="auto",
-            # torch_dtype="auto",
+            local_files_only=local_files_only,
+            **({"torch_dtype": dtype} if dtype is not None else {}),
         )
-        tokenizer = load_tokenizer(name_or_path)
+        tokenizer = load_tokenizer(name_or_path, local_files_only=local_files_only)
         return cls(encoder, tokenizer, **kwargs)
 
     @classmethod
     def from_untrained(cls, name_or_path: str, dtype=None, **kwargs):
         config = AutoConfig.from_pretrained(name_or_path, trust_remote_code=True)
-        encoder = AutoModelForMaskedLM.from_config(config)
+        encoder = AutoModelForMaskedLM.from_config(config, trust_remote_code=True)
         tokenizer = load_tokenizer(name_or_path)
         return cls(encoder, tokenizer, **kwargs)

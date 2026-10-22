@@ -34,8 +34,7 @@ function smiles_to_image(smi::String; img_size=(150, 150))
 end
 
 
-function predict_scent(branched::Bool = false)
-    model = DesignRules.load_huggingface_model("mist-models/mist-26.9M-48kpooqf-odour")
+function predict_scent(model, branched::Bool = false)
     df = branched ? DesignRules.branched_fragrance_compounds(5) :
                     DesignRules.fragrance_compounds(15)
 

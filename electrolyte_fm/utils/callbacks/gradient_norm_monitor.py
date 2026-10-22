@@ -1,5 +1,4 @@
 import lightning as L
-from deepspeed.utils import safe_get_full_grad
 from lightning.pytorch.callbacks import Callback
 
 
@@ -15,9 +14,23 @@ class GradientNormMonitor(Callback):
     ) -> None:
         # Compute the 2-norm for each layer
         # If using mixed precision, the gradients are unscaled here
+        # Avoid importing DeepSpeed at module import time: its compatibility
+        # probe requires nvcc, which is absent on runtime-only GPU nodes.
+        if "deepspeed" in trainer.strategy.__class__.__name__.lower():
+            from deepspeed.utils import safe_get_full_grad
+
+            gradients = (
+                (name, safe_get_full_grad(parameter))
+                for name, parameter in pl_module.model.named_parameters()
+            )
+        else:
+            gradients = (
+                (name, parameter.grad)
+                for name, parameter in pl_module.model.named_parameters()
+            )
         norms = {
-            f"grad_norm/{n}": safe_get_full_grad(p).norm(2)
-            for n, p in pl_module.model.named_parameters()
-            if safe_get_full_grad(p) is not None
+            f"grad_norm/{name}": gradient.norm(2)
+            for name, gradient in gradients
+            if gradient is not None
         }
         pl_module.log_dict(norms, on_step=True, logger=True, sync_dist=True)

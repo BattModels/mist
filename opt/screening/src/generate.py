@@ -7,8 +7,9 @@ from lightning.fabric import Fabric
 from torch import Tensor, nn
 from transformers import AutoModel
 
+from electrolyte_fm.models.prod_finetune import MISTFinetuned, MISTMultiTask
+
 from .hyperloglog import HyperLogLogSet
-from .prod_finetune import MISTFinetuned, MISTMultiTask
 
 
 class Critic(nn.Module, ABC):
@@ -337,18 +338,24 @@ def generate(fabric: Fabric, critics, mol_dataloader, equation_critics=None):
         # Synchronize generated cardinality
         last_sync += 1
         if last_sync >= 64:
-            generated_molecules, passing_molecules = sync_cardinality(
+            generated_molecules, passing_molecules, _ = sync_cardinality(
                 fabric, generated_molecules, passing_molecules
             )
 
             last_sync = 0
     logging.info("Rank %d: Finished", fabric.global_rank)
-    sync_cardinality(fabric, generated_molecules, passing_molecules)
+    # Wall-clock limits can end ranks on different batches. Finished ranks
+    # must still join periodic reductions until every rank has finished.
+    all_finished = False
+    while not all_finished:
+        generated_molecules, passing_molecules, all_finished = sync_cardinality(
+            fabric, generated_molecules, passing_molecules, finished=True
+        )
 
     return None
 
 
-def sync_cardinality(fabric, generated_molecules, passing_molecules):
+def sync_cardinality(fabric, generated_molecules, passing_molecules, finished=False):
     logging.debug("Synchronizing generated cardinality")
     generated_molecules = generated_molecules.reduce(fabric)
     passing_molecules = passing_molecules.reduce(fabric)
@@ -358,4 +365,7 @@ def sync_cardinality(fabric, generated_molecules, passing_molecules):
             "unique_molecules_world": len(generated_molecules),
         }
     )
-    return generated_molecules, passing_molecules
+    all_finished = fabric.all_reduce(
+        torch.tensor(int(finished), device=fabric.device), reduce_op="min"
+    ).item()
+    return generated_molecules, passing_molecules, bool(all_finished)

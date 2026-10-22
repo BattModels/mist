@@ -2,6 +2,7 @@ vendor/
 *.smi
 *.frag
 *.csv
+!lithium_air_reference_solvents.csv
 *.sqlite
 *.bin_cache
 models/

@@ -194,7 +194,7 @@ function simple_hydrocarbons(n::Int)
         [(; type="Alcohols", smi=alcohol(n)) for n in 1:n],
         [(; type="Aldehydes", smi=aldehyde(n)) for n in 1:n],
         [(; type="Nitrile", smi=nitrile(n)) for n in 1:n],
-        [(; type="Dinitriles", smi=dinitrile(n)) for n in 1:n],
+        [(; type="Dinitriles", smi=dinitrile(n)) for n in 2:n],
         [(; type="Amines", smi=amine(n)) for n in 1:n],
         [(; type="Carboxylic acids", smi=carboxylic_acid(n)) for n in 2:n],
         [(; type="Fluoroalkanes", smi=halide(n, "F")) for n in 2:n],

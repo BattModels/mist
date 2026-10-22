@@ -1,49 +1,45 @@
-function load_lithium_air_reference(csv_path::String, models_dir::String, equations_module)
-    cache_path = replace(csv_path, ".csv" => "_cached.csv")
-    if isfile(cache_path)
-        @info "Loading cached reference molecules from $cache_path"
-        df_ref = DataFrame(CSV.File(cache_path))
-        df_ref.smi = String.(df_ref.smi)
-        @info "Loaded $(nrow(df_ref)) reference molecules from cache"
-        return df_ref
-    end
-
-    @info "Cache not found, computing reference molecule properties..."
+function load_lithium_air_reference(csv_path::String, equations_module;
+                                  bp_model, mp_model, qm9_model,
+                                  pka_model, etn_model, kt_model,
+                                  cache_path=replace(csv_path, ".csv" => "_cached.csv"))
+    @info "Computing reference molecule properties..."
     df_ref = DataFrame(CSV.File(csv_path))
     df_ref.smi = String.(df_ref.smi)
     @info "Loaded $(nrow(df_ref)) reference molecules from CSV"
 
     torch = pyimport("torch")
-    cuda_available = pyconvert(Bool, torch.cuda.is_available())
 
-    mist_bp = load_mist_pretrained("mist-models/mist-26.9M-b302p09x-bp")
+    # Keep only one prediction model on the GPU at a time.
+    mist_bp = load_mist_pretrained(bp_model)
     df_pred = predict_mist(mist_bp, df_ref.smi)
     df_ref.bp = df_pred.bp
+    mist_bp.to("cpu")
 
-    mist_mp = load_mist_pretrained("mist-models/mist-26.9M-y3ge5pf9-mp")
+    mist_mp = load_mist_pretrained(mp_model)
     df_pred = predict_mist(mist_mp, df_ref.smi)
     df_ref.mp = df_pred.mp
+    mist_mp.to("cpu")
 
-    mist_pka = load_mist_pretrained("mist-models/mist-28M-6zlgl2qn-pKa")
+    mist_pka = load_mist_pretrained(pka_model)
     df_pred = predict_mist(mist_pka, df_ref.smi)
     df_ref.pKa_DMSO = df_pred.DMSO_pKa
+    mist_pka.to("cpu")
 
-    MISTMultiTask = pyimport("electrolyte_fm.models.prod_finetune").MISTMultiTask
-    mist_multi = MISTMultiTask.from_pretrained(
-        "../../../hf-models/mist-multi-28.2M-solvent-properties",
-        trust_remote_code=true
-    ).eval()
+    mist_multi = load_mist_pretrained(kt_model)
     preds = mist_multi.predict(PyList(df_ref.smi))
     df_ref.beta = pyconvert(Vector{Float64}, preds["beta"]["value"].numpy())
+    mist_multi.to("cpu")
     @info "Beta values range: $(extrema(df_ref.beta))"
 
-    mist_etn = load_mist_pretrained("mist-models/mist-27.1M-1gcxtg8y-ETN")
-    df_pred = predict_mist(mist_etn, df_ref.smi; batch_size=16, verbose=true)
+    mist_etn = load_mist_pretrained(etn_model)
+    df_pred = predict_mist(mist_etn, df_ref.smi; batch_size=16)
     df_ref.ETN = df_pred.ETN
+    mist_etn.to("cpu")
 
-    mist_homo = load_mist_pretrained("mist-models/mist-26.9M-kkgx0omx-qm9")
+    mist_homo = load_mist_pretrained(qm9_model)
     df_pred = predict_mist(mist_homo, df_ref.smi)
     df_ref.homo = df_pred.homo .* HARTREE_TO_EV  # Convert from Hartree to eV
+    mist_homo.to("cpu")
 
     beta_tensor = torch.tensor(df_ref.beta)
     etn_tensor = torch.tensor(df_ref.ETN)
@@ -100,9 +96,9 @@ function save_lithium_air_pareto_front(df_mol)
 
     table = pretty_table(String, df_front[!, first.(columns)];
         # header=last.(columns),
-        formatters=[fmt_lr],
+        formatters=(fmt_lr,),
         alignment=[:c for _ in columns],
-        backend=:latex,
+        backend=Val(:latex),
     )
     return table, df_front
 end
@@ -218,7 +214,7 @@ function plot_lithium_air_homo_pka(df, df_ref=nothing)
           color=:gray, rotation=π/2, align=(:right, :bottom))
     text!(ax, -5.0, 30; text=L"\text{pK}_a = 30",
         fontsize = 6,
-          color=:gray, align=(:let, :bottom))
+          color=:gray, align=(:left, :bottom))
 
     sc_gen = scatter!(ax, df.homo, df.pKa_DMSO;
         marker=:circle,

@@ -45,7 +45,7 @@ function format_table(df; sigdigits=3)
         subheader_envs=[],
     )
 
-    return pretty_table(df;
+    return pretty_table(String, df;
         tf,
         formatters=(fmt_lr,),
         alignment=:c,
@@ -57,6 +57,7 @@ function format_table(df; sigdigits=3)
 end
 
 function (@main)(ARGS=[])
+    1 <= length(ARGS) <= 2 || error("usage: campaign.jl CHAIN_FILE [OUTPUT_TEX]")
     data = jldopen(ARGS[1], "r")
     model = data["model"]
     df = DataFrame(observations(model))
@@ -67,5 +68,13 @@ function (@main)(ARGS=[])
     tokens_per_molecule = 69.2
     @info "Total Compute" sum(6.0 .* df.model_size .* df.data_size .* tokens_per_molecule)
 
-    print(format_table(df))
+    table = format_table(df)
+    close(data)
+    if length(ARGS) == 2
+        mkpath(dirname(ARGS[2]))
+        write(ARGS[2], table)
+    else
+        print(table)
+    end
+    return nothing
 end

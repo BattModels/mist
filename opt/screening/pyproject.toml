@@ -8,6 +8,7 @@ dependencies = [
     "accelerate>=1.7.0",
     "electrolyte_fm",
     "lightning>=2.5.1",
+    "openbabel-wheel==3.1.1.23",
     "pandas>=2.2.3",
     "rdkit>=2024.9.6",
     "torch>=2.6.0",

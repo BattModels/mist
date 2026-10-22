@@ -1,7 +1,9 @@
 import json
 import logging
+import shutil
 import time
 from itertools import takewhile
+from pathlib import Path
 
 START_TIME = time.perf_counter()
 
@@ -61,7 +63,9 @@ class FabricRankFilter(logging.Filter):
 
 def configure_logging(fabric, log_file, logger=None):
     logger = logger or logging.getLogger()
-    file_handler = logging.FileHandler(log_file)
+    log_file = Path(log_file)
+    # Appending from multiple nodes is not atomic on the shared filesystem.
+    file_handler = logging.FileHandler(rank_log_path(log_file, fabric.global_rank), mode="w")
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(JSONLineFormatter())
 
@@ -69,6 +73,22 @@ def configure_logging(fabric, log_file, logger=None):
     logger.setLevel(logging.INFO)
     logger.addFilter(FabricRankFilter(fabric))
     logger.addFilter(ElapsedTimeFilter())
+
+
+def rank_log_path(log_file, rank):
+    log_file = Path(log_file)
+    return log_file.with_name(f"{log_file.stem}.rank-{rank}{log_file.suffix}")
+
+
+def merge_rank_logs(log_file, world_size):
+    """Publish the trace after every rank has finished writing its own file."""
+    log_file = Path(log_file)
+    temporary = log_file.with_suffix(log_file.suffix + ".tmp")
+    with temporary.open("w") as output:
+        for rank in range(world_size):
+            with rank_log_path(log_file, rank).open() as source:
+                shutil.copyfileobj(source, output)
+    temporary.replace(log_file)
 
 
 def take_for_seconds(iterable, duration_sec):

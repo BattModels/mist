@@ -15,7 +15,7 @@ function predict_mist(model::Py, smi::Vector{String}; batch_size=32, encoding="s
     transcode = __data_utils[].MolEncoding(encoding)
     smi = map(x -> pyconvert(String, transcode(x)), smi)
     ds = Iterators.partition(smi, batch_size)
-    channels = pyconvert(Vector{String}, [chn["name"] for chn in model.channels])
+    channels = channel_names(model)
     out = Iterators.map(ds) do batch
         y = model.predict(PyList(batch); return_dict=false)
         yj = pyconvert(Matrix{Float64}, y)

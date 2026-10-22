@@ -1,11 +1,11 @@
 from pathlib import Path
 
 import torch
-from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoint
 from lightning.pytorch.loggers import WandbLogger
 from torchmetrics import MetricCollection
 
 from ..utils.ckpt import SaveConfigWithCkpts
+from .position_ids import create_position_ids  # Re-export for existing callers.
 
 
 def load_encoder(name_or_path: str, strict: bool = False):
@@ -27,6 +27,12 @@ class DeepSpeedMixin:
         return SaveConfigWithCkpts.load(checkpoint_dir, **kwargs)
 
     def load_state(self, checkpoint_dir):
+        # Importing DeepSpeed probes the local CUDA toolkit. Keep it lazy so
+        # inference and non-ZeRO training work on runtime-only GPU nodes.
+        from deepspeed.utils.zero_to_fp32 import (
+            get_fp32_state_dict_from_zero_checkpoint,
+        )
+
         print("Loading state for checkpoint:", checkpoint_dir)
 
         state = get_fp32_state_dict_from_zero_checkpoint(checkpoint_dir)

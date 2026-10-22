@@ -14,6 +14,7 @@ function load_generated_molecules(path)
     finally
         close(db)
     end
+    isempty(df) && throw(ArgumentError("No screened molecules in $file; a nonempty screening result is required for these figures."))
     cols = keys(JSON.parse(df[1, :props]))
     transform!(df, :props => ByRow(JSON.parse) => Symbol.(cols))
     select!(df, Not(:props))

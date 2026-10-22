@@ -1,10 +1,11 @@
 import json
+
 import torch
 from lightning.pytorch.cli import (
-    LightningCLI,
     LightningArgumentParser,
-    _InstantiatorFn,
+    LightningCLI,
     _get_module_type,
+    _InstantiatorFn,
 )
 
 
@@ -63,7 +64,15 @@ class MistLightningCLI(LightningCLI):
             help="Tags for WandB logger",
             default=[],
         )
-        parser.link_arguments("tags", "trainer.logger.init_args.tags")
+
+    def before_instantiate_classes(self):
+        # CSVLogger and disabled logging do not accept WandB's tags argument.
+        config = self.config
+        if config.get("subcommand"):
+            config = config[config.subcommand]
+        logger = config.trainer.logger
+        if getattr(logger, "class_path", "").endswith("WandbLogger"):
+            logger.init_args.tags = config.tags
 
     def _add_instantiators(self) -> None:
         self.config_dump = json.loads(

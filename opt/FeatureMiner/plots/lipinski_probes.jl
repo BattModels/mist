@@ -1,8 +1,10 @@
+#!/usr/bin/env -S uv run julia --project=@script --startup-file=no
 using Makie
 using DataFrames
 using GLM
 using StatsBase
-using JLD2: jldopen
+using JLD2: load
+using JLD2: jldsave
 using CategoricalArrays: categorical, levelcode
 using LinearAlgebra: norm, I
 using RegressionTables: regtable, LatexTable
@@ -10,8 +12,17 @@ using RegressionTables: regtable, LatexTable
 using FeatureMiner
 using MISTStyle
 
-function load_probes()
-    df =  DataFrame(jldopen("lipinski_probes_ti624ev1.jld2")["probes"])
+function load_probes(paths::Vector{String}; base)
+    frames = map(paths) do path
+        if isdir(path)
+            probes, _ = FeatureMiner.load_fitted_probes(path)
+            probes.encoder_id .= base
+            probes.encoder_dataset .= basename(dirname(path))
+            return probes
+        end
+        return DataFrame(load(path, "probes"))
+    end
+    df = vcat(frames...; cols=:union)
     df.encoder_id = categorical(df.encoder_id)
     ordered = ["pretrained", "tmQM"]
     dataset_order = setdiff(unique(df.encoder_dataset), ordered)
@@ -67,18 +78,18 @@ function figure_probe_similarity(df::DataFrame; model="dh61satti", dataset="pret
     return f
 end
 
-function figure_lipinski_probes(df::DataFrame)
+function figure_lipinski_probes(df::DataFrame; model, label)
     f = Figure(; size=(95, 122), figure_padding=(2, 4, 2, 2))
 
     # Select the best probe per location
     df = combine(groupby(df, [:encoder_dataset, :location, :layer])) do gdf
-        sort!(gdf, :val_loss; rev=true)
+        sort!(gdf, :val_loss)
         return gdf[1, :]
     end
 
     df = dropmissing(df)
     subset!(df,
-        :encoder_id => ByRow(==("ti624ev1")),
+        :encoder_id => ByRow(==(model)),
         :location => ByRow(in(["output", "intermediate", "attention"])),
     )
 
@@ -93,8 +104,8 @@ function figure_lipinski_probes(df::DataFrame)
     gl = GridLayout(f[1,1])
     ax = Axis(gl[2, 1];
         yticks=MISTStyle.categorical_ticks(df.encoder_dataset),
-        ylabel="MIST-28M Variant Probed",
-        xticks=2:2:8,
+        ylabel=label * " Variant Probed",
+        xticks=2:2:maximum(df.layer),
     )
 
     h = heatmap!(ax, auroc';
@@ -141,7 +152,7 @@ function figure_lipinski_probes(df::DataFrame)
     return f
 end
 
-function lipinski_fixed_effect(df)
+function lipinski_fixed_effect(df; output="lipinski.tex")
     contrasts = Dict(
         :encoder_dataset => EffectsCoding(; base="pretrained"),
         :location => EffectsCoding(; base="output"),
@@ -162,8 +173,7 @@ function lipinski_fixed_effect(df)
         @formula( auroc ~ 1 + encoder_dataset + location + layer), df, Normal(), LogitLink();
         contrasts,
     )
-    display(m)
-    open("lipinski.tex", "w") do fid
+    open(output, "w") do fid
         write(fid, regtable(m_all, m_layer, m_dataset, m_location;
             regression_statistics = [
                 Int∘nobs => "N",
@@ -176,16 +186,24 @@ function lipinski_fixed_effect(df)
 
         ) |> string)
     end
-    return m
+    return m_all
 end
 
-function all_plots()
-    df = load_probes()
-    figure_lipinski_probes(df) |> MISTStyle.savefig("lipinski_linear_probes")
-    for location in unique(df.location)
-        for encoder in unique(df.encoder_id)
-            fig = figure_probe_similarity(df; model=encoder, location=location)
-            MISTStyle.savefig("lipinski-probe-similarity-$encoder-$location", fig)
+function (@main)(args)
+    base = args[findfirst(==("--base"), args) + 1]
+    output = args[findfirst(==("--output-dir"), args) + 1]
+    paths = args[findfirst(==("--probes"), args) + 1:end]
+    df = load_probes(paths; base)
+    label = base == "mist-28m" ? "MIST-28M" : "MIST-1.8B"
+    mkpath(output)
+    jldsave(joinpath(output, "probes.jld2"); probes=df)
+    lipinski_fixed_effect(df; output=joinpath(output, "lipinski.tex"))
+    with_theme(MISTStyle.theme()) do
+        fig = figure_lipinski_probes(copy(df); model=base, label)
+        MISTStyle.savefig("lipinski_linear_probes", fig; fig_dir=output)
+        for location in unique(df.location)
+            fig = figure_probe_similarity(copy(df); model=base, location=location)
+            MISTStyle.savefig("lipinski-probe-similarity-$base-$location", fig; fig_dir=output)
         end
     end
 end

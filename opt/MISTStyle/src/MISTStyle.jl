@@ -22,8 +22,8 @@ function savefig(name::String, f::Figure; dpi=300, fig_dir="fig")
 end
 
 function savefig(name::String; kwargs...)
-    function curry_savefig(fig; kwargs...)
-        savefig(name, fig; kwargs...)
+    function curry_savefig(fig; overrides...)
+        savefig(name, fig; kwargs..., overrides...)
         return fig
     end
     return curry_savefig
@@ -122,8 +122,10 @@ function theme()
         rowgap=3pt,
         colgap=3pt,
         fonts=(;
-            regular="Times New Roman Regular",
-            bold="Times New Roman Bold",
+            # Use the scalable Times-compatible family directly: a Times name
+            # lookup can select an X11 bitmap font that Cairo renders blank.
+            regular="Nimbus Roman Regular",
+            bold="Nimbus Roman Bold",
         ),
         fontsize=8pt,
         size=(246, 152),
@@ -137,6 +139,7 @@ function theme()
         GLMakie=(; px_per_unit=4, scalefactor=4, focus_on_show=false),
         palette=(;
             color=CAT_COLORS,
+            patchcolor=CAT_COLORS,
             linestyle=[:solid, :dot, :dashdot],
         ),
         Lines=(;

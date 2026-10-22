@@ -1,0 +1,203 @@
+"""Olfaction analyses from reproducible splits and fitted model artifacts."""
+
+load("//config.pomset", "ENV", "OFFLINE_ENV", "GPU_ANALYSIS", "GPU_INFERENCE")
+load("//opt/benchmarks/workflow.pomset", "ODOUR_MODELS", "ODOUR_DATA", "BASE_MODELS", "OLFACTORY_MIXTURE_DATA", "OLFACTORY_MIXTURE_MODELS", openpom="ODOUR_SOURCE", BENCHMARK_ENV="environment")
+
+ROOT = Path("//results/olfaction")
+SUPPLIED = Path("//data/user/olfaction")
+CONTRACT = Path("//opt/package/datasets/odour.yaml")
+PYTHON = BENCHMARK_ENV.outputs.python
+OFFLINE = dict(OFFLINE_ENV, PYTHONPATH=Path("//"), JULIA_PYTHONCALL_EXE=PYTHON, UV_NO_SYNC="1")
+
+def public_file(name, url, directory, filename, digest, size):
+    return task(
+        name="olfaction-fetch-" + name,
+        cmd=[PYTHON, Path("//electrolyte_fm/utils/fetch_file.py"), url, directory / filename] + sh.args({
+            "sha256": digest,
+            "bytes": str(size),
+        }),
+        env=ENV,
+        executor=shell(),
+        output_dir=directory,
+        outputs={"data": Path(filename)},
+        validator=validate_checksums(),
+    )
+
+osmo = {}
+for key, filename, digest, size in [
+    ("gnn", "Data S5.csv", "88347b2d84e0f356241098b01a3961eb713d6df6e897181556e4c37d19f8e893", 277763),
+    ("identities", "Data S7.csv", "b256dcc7fc61bad2ff5ed2bb3330417fc333ad40e87bb65b6925b57ebf9b7113", 4554),
+    ("triplets", "triplets.csv", "ee3a04289bbbf97dd838df2b5f2f6b90b4edb43686bdd6c87475f59e38bc9cca", 409747),
+]:
+    osmo[key] = public_file(
+        "osmo-" + key,
+        "https://media.githubusercontent.com/media/osmoai/publications/5aa9d2cd06a9b4dcae8b5fce2ec5e5d0f763fbd8/lee_et_al_2023/data/" + filename.replace(" ", "%20"),
+        Path("//data/releases/osmo-5aa9d2cd"), filename, digest, size,
+    ).outputs.data
+
+julia = task(
+    name="olfaction-julia-environment",
+    cmd=["julia", "--project=.", "--startup-file=no", "-e", "using Pkg; Pkg.instantiate()"],
+    env=ENV,
+    executor=shell(),
+    outputs={"manifest": Path("Manifest.toml")},
+)
+
+def task_prefix(base):
+    return "olfaction-" if base == "mist-28m" else "olfaction-" + base + "-"
+
+mapping = task(
+    name="olfaction-redjade-identities",
+    cmd=[PYTHON, Path("./prepare.py"), "redjade"] + sh.args({
+        "public-mapping": osmo["identities"],
+        "mapping": Path("//data/user/o2-redjade-mapping.csv"),
+        "triplets": osmo["triplets"],
+        "output": ROOT / "redjade-mapping.csv",
+    }),
+    env=OFFLINE,
+    executor=shell(),
+    output_dir=ROOT,
+    outputs={"mapping": Path("redjade-mapping.csv")},
+    validator=validate_checksums(),
+)
+
+def prediction(base, name, source, output):
+    model = ODOUR_MODELS[base]
+    return task(
+        name=task_prefix(base) + name + "-predictions",
+        cmd=[PYTHON, Path("./prepare.py"), "predict"] + sh.args({
+            "model": model,
+            "input": source,
+            "contract": CONTRACT,
+            "output": output,
+        }),
+        env=OFFLINE,
+        resources=GPU_INFERENCE,
+        output_dir=ROOT / base,
+        outputs={"predictions": output},
+        validator=validate_checksums(),
+    )
+
+def plot(base, name, analysis, args, stems, inputs=[], resources=None, extra_outputs={}):
+    outputs = {stem.replace("-", "_") + "_" + ext: Path(stem + "." + ext) for stem in stems for ext in ["pdf", "png"]}
+    outputs.update(extra_outputs)
+    return task(
+        name=task_prefix(base) + name,
+        tags=tags("figures"),
+        cmd=["julia", "--project=.", "--startup-file=no", Path("./plots.jl")] + sh.args({
+            "analysis": analysis,
+            "output-dir": ROOT / base / "figures",
+        }) + args,
+        inputs=[julia.outputs.manifest] + inputs,
+        env=OFFLINE,
+        executor=shell() if resources == None else None,
+        resources=resources,
+        output_dir=ROOT / base / "figures",
+        outputs=outputs,
+        validator=validate_checksums(),
+    )
+
+
+def model_figures(base):
+    root = ROOT / base
+    prefix = task_prefix(base)
+    model = ODOUR_MODELS[base]
+    supplied_model = SUPPLIED if base == "mist-28m" else SUPPLIED / base
+    all_predictions = prediction(
+        base, "all-descriptors", openpom.outputs.data,
+        root / "tables" / "raw_prediction.csv",
+    )
+    test_predictions = prediction(base, "held-out", ODOUR_DATA.test, root / "held-out-logits.csv")
+    performance = task(
+        name=prefix + "performance-tables",
+        cmd=[PYTHON, Path("./prepare.py"), "performance"] + sh.args({
+            "train": ODOUR_DATA.train,
+            "test": ODOUR_DATA.test,
+            "predictions": test_predictions.outputs.predictions,
+            "contract": CONTRACT,
+            "output-dir": root / "tables",
+        }),
+        env=OFFLINE,
+        executor=shell(),
+        output_dir=root / "tables",
+        outputs={"descriptor_auroc": Path("dataset_size_auroc.csv"), "functional_groups": Path("functional_group_errors.csv")},
+        validator=validate_checksums(),
+    )
+    discontinuity = task(
+        name=prefix + "discontinuity-predictions",
+        cmd=[PYTHON, Path("./discontinuity_example.py")] + sh.args({
+            "model": model,
+            "output-dir": root / "tables",
+        }),
+        env=OFFLINE,
+        resources=GPU_INFERENCE,
+        output_dir=root / "tables",
+        outputs={"probabilities": Path("small_change_normalized_logits.csv"), "labels": Path("small_change.csv")},
+        validator=validate_checksums(),
+    )
+
+    overview = plot(
+        base, "overview", "overview", sh.args({"input-dir": root / "tables", "library": Path("./olfactory.jl")}), ["olfactory"],
+        inputs=[all_predictions.outputs.predictions,
+                performance.outputs.descriptor_auroc, performance.outputs.functional_groups,
+                discontinuity.outputs.probabilities],
+    )
+    dendrogram = plot(
+        base, "descriptor-clusters", "dendrogram", sh.args({"predictions": all_predictions.outputs.predictions, "library": Path("//opt/interp_embeddings/scent_dendrogram.jl")}),
+        ["olfaction-clusters"],
+    )
+
+    discordance = plot(
+        base, "discordance", "discordance",
+        sh.args({
+            "mapping": mapping.outputs.mapping,
+            "triplets": osmo["triplets"],
+            "gnn": osmo["gnn"],
+            "model": model,
+            "library": Path("./discordance.jl"),
+        }),
+        ["discordant", "struct_vs_perceptual_distance", "struct_vs_euclidean_distance_mist"],
+        resources=GPU_ANALYSIS,
+        extra_outputs={
+            "distances": Path("triad-distances.csv"), "logits": Path("prospective-logits.csv"),
+            "perceptual_pairs": Path("struct_vs_perceptual_distance.csv"),
+            "predicted_pairs": Path("struct_vs_euclidean_distance_mist.csv"),
+        },
+    )
+    geometry = plot(
+        base, "geometry", "geometry", sh.args({"input-dir": supplied_model / "geometry"}),
+        ["olfaction-hyperbolic", "betti_curve_euclidean", "betti_curve_hyperbolic"],
+    )
+    mixture_predictions = task(
+        name=prefix + "mixture-predictions",
+        cmd=[PYTHON, Path("./prepare.py"), "mixture"] + sh.args({
+            "checkpoint": OLFACTORY_MIXTURE_MODELS[base] / "model.ckpt",
+            "encoder": BASE_MODELS[base],
+            "split-dir": OLFACTORY_MIXTURE_DATA.outputs.dataset,
+            "output": root / "mixture-predictions.csv",
+        }),
+        inputs=[OLFACTORY_MIXTURE_MODELS[base]],
+        env=OFFLINE,
+        resources=GPU_INFERENCE,
+        output_dir=root,
+        outputs={"predictions": Path("mixture-predictions.csv")},
+        validator=validate_checksums(),
+    )
+    mixtures = plot(
+        base, "mixture-performance", "mixture", sh.args({"predictions": mixture_predictions.outputs.predictions}),
+        ["olfaction-mixtures"], extra_outputs={"metrics": Path("mixture-performance.csv")},
+    )
+
+    return {
+        "olfactory": overview.outputs.olfactory_pdf,
+        "olfaction-clusters": dendrogram.outputs.olfaction_clusters_pdf,
+        "discordant": discordance.outputs.discordant_pdf,
+        "olfaction-discordance": discordance.outputs.struct_vs_euclidean_distance_mist_pdf,
+        "olfaction-hyperbolic": geometry.outputs.olfaction_hyperbolic_pdf,
+        "olfaction-mixtures": mixtures.outputs.olfaction_mixtures_pdf,
+        "betti_curve_euclidean": geometry.outputs.betti_curve_euclidean_pdf,
+        "betti_curve_hyperbolic": geometry.outputs.betti_curve_hyperbolic_pdf,
+    }
+
+FIGURES_BY_MODEL = {base: model_figures(base) for base in BASE_MODELS}
+FIGURES = FIGURES_BY_MODEL["mist-28m"]

@@ -1,136 +1,98 @@
+"""Configure the existing probe trainer from model directories."""
+
+import argparse
 from pathlib import Path
-from copy import deepcopy
-import json
-import _jsonnet as jsonnet
-import subprocess
-from submit.submit import render
-from transformers import AutoConfig
 
-# jsonnet
-config = """
-function(
-    encoder_class,
-    encoder_path,
-    tokenizer="smirk",
-    encoding="smiles-kekule",
-    batch_size,
-    hidden_size,
-    intermediate_size,
-    n_layers,
-)
+import truststore
 
-{
-  nodes: 1,
-  gpus_per_node: 1,
-  container: '/nfs/turbo/coe-venkvis/mist/mist+pytorch+25.01+v4.sif',
-    walltime: "1:0:0",
-  env: {
-    JOBID: '$SLURM_JOB_ID',
-    TORCH_EXTENSIONS_DIR: '${PWD}/.cache/torch_extensions',
-    HF_HOME: '${PWD}/.cache/huggingface',
-    TOKENIZERS_PARALLELISM: true,
-  },
-  program: "-m electrolyte_fm.models.linear_probe",
-  stage: null,
-  train: {
-    trainer: {
-        max_epochs: 1000,
-    },
-    model: {
-        model: {
-        class_path: encoder_class,
-        init_args: {
-            name_or_path: encoder_path,
-        },
-        },
-        probes: {
-        class_path: 'electrolyte_fm.models.linear_probe.probe_everything',
-        init_args: {
-            hidden_size: std.parseInt(hidden_size),
-            intermediate_size: std.parseInt(intermediate_size),
-            features: 5,
-            n_layers: std.parseInt(n_layers),
-        },
-        },
-    },
-    data: {
-        class_path: 'electrolyte_fm.data_modules.lipinski_dataset.LipinskiDataModule',
-        init_args: {
-            path: "./lipinski",
-            tokenizer: tokenizer,
-            encoding: encoding,
-            num_workers: 16,
-            batch_size: std.parseInt(batch_size),
-            randomize: true,
-        },
-    },
-  },
-}
-"""
+truststore.inject_into_ssl()
 
-template = "submit/artemis.j2"
+from transformers import AutoConfig  # noqa: E402
+
+from electrolyte_fm.models.linear_probe import cli_main  # noqa: E402
 
 
-def submit(config: dict):
-    script = render(template, config)
-    print(script)
-    exit()
-    subprocess.run("sbatch", input=script, text=True)
-
-
-# Pretrained Models
-models = [
-    {
-        "encoder_path": "./models/mist-ti624ev1-moleculenet/pretrained",
-    }
-]
-models.extend(
-    [
-        {
-            "encoder_class": "__main__.encoder_from_finetuned",
-            "encoder_path": f"./models/mist-ti624ev1-moleculenet/{dataset}",
+def probe_config(
+    base_model,
+    model,
+    data,
+    output_dir,
+    batch_size=None,
+    max_steps=10_000,
+    max_epochs=-1,
+    max_time="00:07:30:00",
+    num_workers=4,
+):
+    """Configure the paper's probe fit using the acquired encoder's dimensions."""
+    snapshot = str(base_model)
+    if model:
+        tokenizer = str(model)
+        encoder = {
+            "class_path": "electrolyte_fm.models.linear_probe.encoder_from_finetuned",
+            "init_args": {"name_or_path": str(model), "tokenizer": tokenizer},
         }
-        for dataset in [
-            "bace",
-            "qm9",
-            "bbbp",
-            "muv",
-            "qm8",
-            "tmQM",
-            "clintox",
-        ]
-    ]
-)
-
-
-def get_mist_finetune_config(path):
-    config = json.loads(Path(path, "config.json").read_text())
-    return AutoConfig.for_model(config["encoder"]["model_type"]).from_dict(
-        config["encoder"]
-    )
-
-
-runs = []
-for model in models:
-    run = deepcopy(model)
-    default_encoder = "electrolyte_fm.utils.cli.mlm_from_pretrained"
-    run.setdefault("encoder_class", default_encoder)
-    run.setdefault("batch_size", 128)
-    if run["encoder_class"] == default_encoder:
-        model_config = AutoConfig.from_pretrained(
-            run["encoder_path"],
-            trust_remote_code=True,
-        )
     else:
-        model_config = get_mist_finetune_config(run["encoder_path"])
+        tokenizer = snapshot
+        encoder = {
+            "class_path": "electrolyte_fm.models.lm_finetuning.load_encoder",
+            "init_args": {"encoder": snapshot, "tokenizer": tokenizer},
+        }
+    if batch_size is None:
+        base_config = AutoConfig.from_pretrained(snapshot, local_files_only=True)
+        batch_size = 8 if base_config.hidden_size > 1024 else 128
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    output = str(Path(output_dir).resolve())
+    return {
+        "model": {
+            "model": encoder,
+            "probes": None,  # Infer all four hook shapes from the encoder.
+            "optimizer": {
+                "class_path": "torch.optim.AdamW",
+                "init_args": {"lr": 0.001},
+            },
+            "lr_schedule": None,
+        },
+        "data": {
+            "class_path": "electrolyte_fm.data_modules.lipinski_dataset.LipinskiDataModule",
+            "init_args": {
+                "path": str(data),
+                "tokenizer": tokenizer,
+                "batch_size": batch_size,
+                "num_workers": num_workers,
+                "encoding": "smiles-kekule",
+                "randomize": True,
+            },
+        },
+        "trainer": {
+            "max_steps": max_steps,
+            "max_epochs": max_epochs,
+            "max_time": max_time,
+            "devices": 1,
+            "enable_progress_bar": False,
+            "default_root_dir": output,
+            "logger": {
+                "class_path": "lightning.pytorch.loggers.CSVLogger",
+                "init_args": {"save_dir": output, "name": "metrics", "version": 0},
+            },
+        },
+    }
 
-    run["n_layers"] = model_config.num_hidden_layers
-    run["hidden_size"] = model_config.hidden_size
-    run["intermediate_size"] = model_config.intermediate_size
-    run_config = jsonnet.evaluate_snippet(
-        "snippet",
-        config,
-        tla_vars={k: str(v) for k, v in run.items()},
-    )
-    run_config = json.loads(run_config)
-    submit(run_config)
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base-model", type=Path, required=True)
+    parser.add_argument("--model", type=Path)
+    parser.add_argument("--data", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--batch-size", type=int)
+    parser.add_argument("--max-steps", type=int, default=10_000)
+    parser.add_argument("--max-epochs", type=int, default=-1)
+    parser.add_argument("--max-time", default="00:07:30:00")
+    parser.add_argument("--num-workers", type=int, default=4)
+    args = parser.parse_args()
+    cli_main(probe_config(**vars(args)))
+
+
+if __name__ == "__main__":
+    main()

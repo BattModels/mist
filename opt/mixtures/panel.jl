@@ -12,7 +12,7 @@ using Interpolations
 using Mixtures: Mixtures, clean_target_name, titlecase
 
 # Directory containing the data release files
-const DATA_DIR = realpath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
+const DATA_DIR = abspath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
 
 function label_smi(smi::AbstractString)
     known = Dict(
@@ -30,7 +30,7 @@ function label_smi(smi::AbstractString)
     return get(known, smi, smi)
 end
 
-function plot_experimental_data!(f, model; xaxisvisible=true)
+function plot_experimental_data!(f, model; xaxisvisible=true, data_dir=DATA_DIR)
     ax = Axis(f[1, 1];
         limits=((0, 1), (nothing, 0.13)),
         xlabel=L"x_1",
@@ -54,8 +54,8 @@ function plot_experimental_data!(f, model; xaxisvisible=true)
     end
 
     exp_dfs = [
-        DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "experimental_ACN_EGDA.csv"))) => "ACN & EGDA",
-        DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "experimental_ACN_BC.csv"))) => "ACN & BC",
+        DataFrame(CSV.File(joinpath(data_dir, "mixtures", "experimental_ACN_EGDA.csv"))) => "ACN & EGDA",
+        DataFrame(CSV.File(joinpath(data_dir, "mixtures", "experimental_ACN_BC.csv"))) => "ACN & BC",
     ]
 
     elems = PolyElement[]
@@ -141,7 +141,7 @@ function plot_excess_skewness!(f, df)
     return f
 end
 
-function plot_soap!(f)
+function plot_soap!(f; data_dir=DATA_DIR)
     x_min = 0.3
     x_max = 1.1
     y_min = 0.0
@@ -155,7 +155,7 @@ function plot_soap!(f)
         xtickformat = "{:.0%}",
         yticks = WilkinsonTicks(3; k_min = 3, k_max = 5),
     )
-    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
+    df = DataFrame(CSV.File(joinpath(data_dir, "mixtures", "soap_similarity.csv")))
 
     df[!, :abs_target] = abs.(
         df[!, :"excess molar volume [centimeter ** 3 / mole]"] ./
@@ -202,7 +202,7 @@ function plot_soap!(f)
     return f
 end
 
-function plot_soap_outliers!(f, model; xaxisvisible = true)
+function plot_soap_outliers!(f, model; xaxisvisible = true, data_dir=DATA_DIR)
     ax = Axis(f[1, 1];
         limits = ((0, 1), (-2.5, nothing)),
         xlabel = L"$x_1$",
@@ -221,7 +221,7 @@ function plot_soap_outliers!(f, model; xaxisvisible = true)
     df = Mixtures.evaluate_mixtures(model, mixtures; n = 50, gradients = false)
     df.x1 = first.(df.composition)
 
-    data = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "soap_similarity.csv")))
+    data = DataFrame(CSV.File(joinpath(data_dir, "mixtures", "soap_similarity.csv")))
     subset!(data, "temperature [kelvin]" => ByRow(==(298.15)))
     mix_elems = PolyElement[]
     for gdf in groupby(df, ["compounds"])
@@ -260,12 +260,16 @@ function plot_soap_outliers!(f, model; xaxisvisible = true)
     return f, ax
 end
 
-function plot_ionic_conductivity!(f)
+function plot_ionic_conductivity!(f; data_path=joinpath(DATA_DIR, "mixtures", "ionic_conductivity_curves.csv"), generated=false)
+
+    df = DataFrame(CSV.File(data_path))
+    generated || (df = df[1:2:end, :])
+    y_max = generated ? 1.05 * maximum(df.predictions) : 0.35
 
     cb = Colorbar(f[1, 2];
         label = L"Temperature (K)$$",
         colormap = MISTStyle.CONTINUOUS_COLORS,
-        colorrange = (240, 340),
+        colorrange = generated ? extrema(df.temperature) : (240, 340),
         vertical = true,
         tellheight = true,
         tellwidth = true,
@@ -273,8 +277,6 @@ function plot_ionic_conductivity!(f)
         flip_vertical_label = true,
     )
 
-    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "ionic_conductivity_curves.csv")))
-    df = df[1:2:end, :]
     salts = unique(df.salt_name)
     line_styles = [:solid, :dot]
     # Sort temperatures and build a continuous, dark‐cropped colormap
@@ -283,14 +285,13 @@ function plot_ionic_conductivity!(f)
     ax = Axis(f[1, 1];
         xlabel = L"x_{Li}",
         ylabel = L"$\sigma$ (mS/cm)",
-        limits = ((0, 0.20), (0, 0.35)),
+        limits = ((0, 0.20), (0, y_max)),
         yticksvisible = true,
         yticklabelsvisible = true,
     )
     x_min = 0.160369437447523
     x_max = 0.20
     y_min = 0.0
-    y_max = 0.35
     poly!(ax, Point2f[(x_min, y_min), (x_min, y_max), (x_max, y_max), (x_max, y_min)];
         color = MISTStyle.UM_COLORS.maize,
         alpha = 0.2,
@@ -316,7 +317,7 @@ function plot_ionic_conductivity!(f)
 end
 
 plot_thermal_alpha(model; kwargs...) = plot_thermal_alpha!(Figure(), model; kwargs...)
-function plot_thermal_alpha!(f, model; xaxisvisible = true)
+function plot_thermal_alpha!(f, model; xaxisvisible = true, data_dir=DATA_DIR)
     mixture_map = Dict(
         ["CC#N", "C(CO)O"] => "ACN+1,2-ED",     # Acetonitrile and 1,2-ethanediol
         ["CC#N", "CC(CO)O"] => "ACN+PEG",    # ACN and 1,2-propanediol
@@ -331,7 +332,7 @@ function plot_thermal_alpha!(f, model; xaxisvisible = true)
     @. df.alpha_excess = df.molar_volume_excess_dT / df.molar_volume
 
     # Parse reference data
-    ref = read(joinpath(DATA_DIR, "mixtures", "alpha_data.jsonc"), String)
+    ref = read(joinpath(data_dir, "mixtures", "alpha_data.jsonc"), String)
     ref = replace(ref, r"//.*" => "")
     ref = JSON.parse(ref)
     ref = Dict(x["mixture"] => x for x in ref)

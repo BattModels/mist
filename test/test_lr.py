@@ -1,4 +1,10 @@
-from electrolyte_fm.utils.lr_schedule import _get_cosine_relative_decay_with_warmup
+import pytest
+import torch
+
+from electrolyte_fm.utils.lr_schedule import (
+    RelativeCosineWarmup,
+    _get_cosine_relative_decay_with_warmup,
+)
 
 
 def test_cosine_rel():
@@ -26,3 +32,12 @@ def test_cosine_rel():
         num_warmup_steps=10,
         rel_decay=0.25,
     )
+
+
+def test_thawed_parameter_group_keeps_callback_rate():
+    optimizer = torch.optim.AdamW([torch.nn.Parameter(torch.ones(1))], lr=0.1)
+    scheduler = RelativeCosineWarmup(optimizer, 10, 2)
+    optimizer.add_param_group({"params": [torch.nn.Parameter(torch.ones(1))], "lr": 0.003})
+    optimizer.step()
+    scheduler.step()
+    assert scheduler.get_last_lr() == pytest.approx([0.05, 0.003])

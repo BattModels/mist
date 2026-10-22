@@ -116,11 +116,14 @@ end
 function eval_token_embeds(models; last_token=75, min_update=0.005)
     # Token movement during finetuning
     ref_emb, ref_tokens = token_embedding(models[1][2])
+    # Resolve small finetuning updates without Float32 cancellation.
+    ref_emb = Float64.(ref_emb)
     vecl2 = x -> norm.(eachrow(x))
     emb_distance = [vecl2(ref_emb)]
     emb_movement = []
     for model in last.((models[2:end]))
         emb, m_toks = token_embedding(model)
+        emb = Float64.(emb)
         @assert all(m_toks .== ref_tokens) "Tokens don't match"
         d = 1 .- map(cosine_similarity, eachrow(ref_emb), eachrow(emb))
         push!(emb_movement, d)
@@ -128,7 +131,11 @@ function eval_token_embeds(models; last_token=75, min_update=0.005)
     end
     emb_movement = reduce(hcat, emb_movement)
     emb_distance = reduce(hcat, emb_distance)
-    @assert 0 <= minimum(emb_movement) && maximum(emb_movement) <= 1 "Unexpected Cos. Dist. Range"
+    # Bound accumulated dot/norm roundoff by the embedding width.
+    roundoff = 4 * size(ref_emb, 2) * eps(Float64)
+    @assert -roundoff <= minimum(emb_movement) && maximum(emb_movement) <= 1 "Unexpected Cos. Dist. Range"
+    # Discard only rounding below the theoretical lower bound.
+    emb_movement = max.(emb_movement, 0.0)
     avg_update = vec(median(emb_movement, dims=2))
     sdx = sortperm(avg_update; rev=true)
     emb_movement = emb_movement[sdx, :]
@@ -155,11 +162,15 @@ function eval_token_embeds(models; last_token=75, min_update=0.005)
     return tokens, emb_movement, zip(model_labels, emb_distance)
 end
 
-function plot_token_tsne!(f, models; ax_per_row=4, tokens=nothing, colormap=token_colormap())
+function plot_token_tsne!(f, models; ax_per_row=4, tokens=nothing, colormap=token_colormap(), tsne_kwargs=(;), projection_dir=nothing)
     for (idx, (label, model)) in enumerate(models)
         emb, mtoks = token_embedding(model)
         emb = zscore(Float64.(emb); dims=2)
-        r = predict(fit(TSNE, emb'))
+        r = predict(fit(TSNE, emb'; tsne_kwargs...))
+        if !isnothing(projection_dir)
+            mkpath(projection_dir)
+            CSV.write(joinpath(projection_dir, label * ".csv"), DataFrame(token=mtoks, x=r[1, :], y=r[2, :]))
+        end
         rdx = fld(idx - 1, ax_per_row) + 1
         cdx = (idx - 1) % ax_per_row + 1
         ax = Axis(
@@ -183,16 +194,17 @@ function plot_token_tsne!(f, models; ax_per_row=4, tokens=nothing, colormap=toke
     return f
 end
 
-function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_size=(4.5inch, 2inch), min_update=0.005)
+function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_size=(360, 115), min_update=0.005, tsne_kwargs=(;), projection_dir=nothing, show_updates=true)
     f = Figure(;
-        size=(360, 115),
+        size=fig_size,
         figure_padding=(2, 2, 2, 3)
     )
     tokens, emb_movement, emb_distance = eval_token_embeds(models; last_token, min_update)
 
     # Token Movement
-    model_labels = first.(emb_distance)
-    ax = Axis(f[1, 2];
+    if show_updates
+        model_labels = first.(emb_distance)
+        ax = Axis(f[1, 2];
         yticks=token_ticks(tokens),
         xticklabelrotation=0.3,
         xticklabelsize=5pt,
@@ -204,11 +216,12 @@ function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_
     h = heatmap!(ax, emb_movement';
         colorrange=(min_update, 1),
         colorscale=log10,)
-    Colorbar(f[1, 3], h;
+        Colorbar(f[1, 3], h;
         ticks=LogTicks(WilkinsonTicks(3)),
         label="Cosine Distance from Pretrained",
         size=5pt,
-    )
+        )
+    end
 
     gl = GridLayout(f[1, 1])
     emb_models = isnothing(emb_models) ? length(models) : emb_models
@@ -238,12 +251,12 @@ function figure_token_embeddings(models; last_token=75, emb_models=nothing, fig_
         nbanks=2,
     )
     glt = GridLayout(gl[1,1])
-    plot_token_tsne!(glt, models[1:emb_models]; colormap)
+    plot_token_tsne!(glt, models[1:emb_models]; colormap, tsne_kwargs, projection_dir)
 
 
     rowgap!(f.layout, 3pt)
     colgap!(f.layout, 3pt)
-    colsize!(f.layout, 1, Relative(3 / 4))
+    show_updates && colsize!(f.layout, 1, Relative(3 / 4))
     resize_to_layout!(f)
     return f
 end

@@ -1,12 +1,12 @@
 using Makie
 using MISTStyle
-using PythonCall: pyimport
-using DataFrames: DataFrame, ByRow, transform, combine, groupby, subset!
+using PythonCall: pyimport, pyconvert, pyis, pybuiltins
+using DataFrames: DataFrame, ByRow, transform, combine, groupby, subset!, subset, nrow, dropmissing, dropmissing!
 using StatsBase: StatsBase, cor
-using CategoricalArrays: categorical, levelcode
+using CategoricalArrays: categorical, levelcode, levels
 using JSON: JSON
 
-ROOTDIR = strip(read(`git rev-parse --show-toplevel`, String))
+ROOTDIR = normpath(joinpath(@__DIR__, "..", ".."))
 DATA_DIR = joinpath(ROOTDIR, "data")
 HARTREE_TO_EV = 27.211_386_245_981
 
@@ -23,7 +23,7 @@ end
 function isomeric_smiles(smi::String)
     rdkit_chem = pyimport("rdkit.Chem")
     mol = rdkit_chem.MolFromSmiles(smi; sanitize=false)
-    isnothing(mol) && return smi
+    pyis(mol, pybuiltins.None) && return smi
     for atom in mol.GetAtoms()
         atom.SetChiralTag(rdkit_chem.ChiralType.CHI_UNSPECIFIED)
     end
@@ -69,7 +69,7 @@ function label_metal(smi)
     end
 end
 
-function figure_chn(df; chn=:HL_Gap)
+function _figure_chn(df; chn=:HL_Gap)
     df = transform(df,
         :smiles => ByRow(label_metal) => [:metal, :stero, :stero_id]
     )
@@ -144,7 +144,13 @@ function figure_chn(df; chn=:HL_Gap)
     return f
 end
 
-function figure_complexes(df, df_stero)
+function figure_chn(args...; kwargs...)
+    return with_theme(MISTStyle.theme()) do
+        _figure_chn(args...; kwargs...)
+    end
+end
+
+function _figure_complexes(df, df_stero)
     # transform!(df, :stero => ByRow(x -> uppercasefirst(x)) => :stero)
 
     df = transform(df,
@@ -243,6 +249,12 @@ function figure_complexes(df, df_stero)
     return f
 end
 
+function figure_complexes(args...; kwargs...)
+    return with_theme(MISTStyle.theme()) do
+        _figure_complexes(args...; kwargs...)
+    end
+end
+
 function figure_accuracy(df)
     df = transform(df, :smiles => ByRow(label_metal) => [:metal, :stero, :stero_id])
     subset!(df, :metal => ByRow(!isnothing), :stero => ByRow(!=("H")))
@@ -258,7 +270,7 @@ function figure_accuracy(df)
     return nothing
 end
 
-function figure_stero(df_mist)
+function _figure_stero(df_mist)
     f = Figure(; size=(160, 95))
     sort!(df_mist, :isomeric_smiles)
     df_mist = dropmissing(df_mist)
@@ -267,6 +279,7 @@ function figure_stero(df_mist)
     ax_args = (;
         xticks=WilkinsonTicks(3),
         yticks=WilkinsonTicks(3),
+        xautolimitmargin=(0.1, 0.2),
     )
     sargs = (;
         strokewidth=0.5pt,
@@ -325,4 +338,10 @@ function figure_stero(df_mist)
 
 
     return f
+end
+
+function figure_stero(args...; kwargs...)
+    return with_theme(MISTStyle.theme()) do
+        _figure_stero(args...; kwargs...)
+    end
 end

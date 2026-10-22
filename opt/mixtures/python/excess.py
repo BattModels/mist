@@ -1,4 +1,5 @@
 import itertools
+import json
 import torch
 from accelerate import Accelerator
 from pathlib import Path
@@ -169,7 +170,25 @@ def generate_simplex_grid(n, grid_size):
 
 
 def load_excess_model(ckpt):
+    if not Path(ckpt).exists():
+        raise FileNotFoundError(
+            f"Mixture model does not exist: {ckpt}. Supply a local released model "
+            "directory or the original paper checkpoint; model downloads belong "
+            "in the workflow's model staging task."
+        )
     if Path(ckpt).is_dir():
+        config = json.loads((Path(ckpt) / "config.json").read_text())
+        if config.get("model_type") == "mist_excess_physics":
+            from electrolyte_fm.models.prod_mixture import MISTExcessPhysics
+
+            model = MISTExcessPhysics.from_pretrained(ckpt, local_files_only=True)
+            # Released production configs omit labels; their three outputs keep
+            # the training model's density / volume / enthalpy ordering.
+            if not getattr(model.config, "target_columns", None):
+                if model.config.num_targets != len(_default_targets()):
+                    raise ValueError("Mixture model must declare its target_columns")
+                model.config.target_columns = _default_targets()
+            return model
         return ExcessPhysicsModel.from_pretrained(ckpt)
     return ExcessPhysicsLightningModel.load_from_checkpoint(ckpt).model
 

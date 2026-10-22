@@ -1,0 +1,12 @@
+{
+  "encoding": "smiles",
+  "pooling": "cls",
+  "projection_columns": "legacy_numeric",
+  "n_neighbors": 10,
+  "min_dist": 2,
+  "metric": "manhattan",
+  "seed": 42,
+  "tol_offset": 0.8,
+  "tol_scale": 0.02,
+  "umap_kwargs": {}
+}

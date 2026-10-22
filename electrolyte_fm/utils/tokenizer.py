@@ -344,11 +344,20 @@ def load_tokenizer(name: str, **kwargs) -> PreTrainedTokenizerBase:
         if Path(name).exists():
             name = str(Path(name).resolve())
 
-        tok_tf = AutoTokenizer.from_pretrained(
-            name,
-            trust_remote_code=True,
-            **kwargs,
-        )
+        try:
+            tok_tf = AutoTokenizer.from_pretrained(
+                name,
+                trust_remote_code=True,
+                **kwargs,
+            )
+        except OSError:
+            # Some Hub snapshots (notably ChemBERTa-3) publish a complete
+            # tokenizer.json but retain an auto_map to code absent from the
+            # pinned revision. Prefer the self-contained tokenizer artifact.
+            tokenizer_file = Path(name) / "tokenizer.json"
+            if not tokenizer_file.is_file():
+                raise
+            tok_tf = PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_file))
         ensure_special_tokens(tok_tf)
         return tok_tf
 

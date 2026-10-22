@@ -4,8 +4,12 @@ wandb/
 .conda/
 electrolyte-fm/
 lightning_logs/
+runs/
 .venv/
+build/
 data/
+/results/
+*.pomset.db
 
 # IDE settings
 .DS_Store
@@ -28,6 +32,7 @@ mist
 
 # Dataset
 .cache/
+.hf-cache/
 
 # Julia
 Manifest.toml
@@ -37,6 +42,8 @@ LocalPreferences.toml
 # Spack
 .spack-env/
 spack.lock
+
+.pomset/
 
 # Output files
 *.json

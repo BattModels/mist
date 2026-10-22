@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -205,6 +204,7 @@ def plot_decision_boundary_2d(
     """
     Fit an RBF SVM on 2D embedding and plot decision boundary.
     """
+    import matplotlib.pyplot as plt
     vis_clf = make_pipeline(
         StandardScaler(),
         SVC(kernel="linear", probability=True, gamma="scale", random_state=0),
@@ -358,10 +358,18 @@ def annotate_with_predictions(
 
 
 def linear_separability_diagnostics(
-    X: np.ndarray, y: np.ndarray, tol: float = 1e-6, margin: int = 1e6
+    X: np.ndarray,
+    y: np.ndarray,
+    tol: float = 1e-6,
+    margin: int = 1e6,
+    *,
+    classifier=None,
 ):
-    clf = SVC(kernel="linear", C=margin)  # large C ~ hard margin
-    clf.fit(X, y)
+    """Measure a fitted linear SVM, or fit the historical default when omitted."""
+    clf = classifier
+    if clf is None:
+        clf = SVC(kernel="linear", C=margin)  # large C ~ hard margin
+        clf.fit(X, y)
     w = clf.coef_[0]
     b = clf.intercept_[0]
 
@@ -394,22 +402,30 @@ def linear_separability_diagnostics(
     }
 
 
-def prepare_aromaticity_paper_example():
-    embedding_files = list(DATA_DIR.glob("compas_2/*.csv"))
-    filepath = embedding_files[3]
+def embedding_columns(frame):
+    """Read every numbered embedding dimension, independent of model width."""
+    columns = sorted((name for name in frame if str(name).isdigit()), key=int)
+    if not columns or [int(name) for name in columns] != list(range(len(columns))):
+        raise ValueError("Embedding columns must be contiguous dimensions 0..hidden_size-1")
+    return columns
+
+
+def prepare_aromaticity_paper_example(filepath=None):
+    if filepath is None:
+        embedding_files = list(DATA_DIR.glob("compas_2/*.csv"))
+        filepath = embedding_files[3]
     compas = pd.read_csv(filepath)
     antiaromatic = compas.cyclobutadiene.values > 0
-    hidden_size = 768
-    X = compas[[str(i) for i in range(hidden_size)]].values
+    X = compas[embedding_columns(compas)].values
     return X, antiaromatic
 
 
-def prepare_condensation_paper_example():
-    embedding_files = list(DATA_DIR.glob("compas/mean_compas_*.csv"))
-    filepath = embedding_files[-1]
+def prepare_condensation_paper_example(filepath=None):
+    if filepath is None:
+        embedding_files = list(DATA_DIR.glob("compas/mean_compas_*.csv"))
+        filepath = embedding_files[-1]
     compas = pd.read_csv(filepath)
-    hidden_size = 768
-    X = compas[[str(i) for i in range(hidden_size)]].values
+    X = compas[embedding_columns(compas)].values
     return X, compas["dataset"].values == 1
 
 

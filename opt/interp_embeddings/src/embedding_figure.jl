@@ -15,7 +15,7 @@ function figure_embedding()
     figure_embedding(df_benzene, df_condense)
 end
 
-function figure_embedding(df_benzene, df_condense)
+function figure_embedding(df_benzene, df_condense; panel_labels=("a)", "b)", "c)"))
 
     f = Figure(; size=(3inch, 2inch))
     gl = GridLayout(f[1, 1])
@@ -113,9 +113,9 @@ function figure_embedding(df_benzene, df_condense)
         halign=:right,
         tellheight=false,
     )
-    Label(gl[1, 1, TopLeft()], "a)"; padding=(0, 3, 0, 5), label_kwargs...)
-    Label(gl[2, 1, TopLeft()], "b)"; padding=(0, 3, 0, 5), label_kwargs...)
-    Label(f[1, 2, TopLeft()], "c)"; padding=(0, 3, 0, 5), label_kwargs...)
+    Label(gl[1, 1, TopLeft()], panel_labels[1]; padding=(0, 3, 0, 5), label_kwargs...)
+    Label(gl[2, 1, TopLeft()], panel_labels[2]; padding=(0, 3, 0, 5), label_kwargs...)
+    Label(f[1, 2, TopLeft()], panel_labels[3]; padding=(0, 3, 0, 5), label_kwargs...)
 
     return f
 end
@@ -202,21 +202,25 @@ function classify_decay_from_NZ(N::Real, Z::Real;
     end
 end
 
-function figure_isotopes_umap(n_neighbors::Int=10, min_dist::Real=2, metric::Symbol=:manhattan, seed::Int=42)
-
-    csv_path = "isotope_embeddings.csv"
+function figure_isotopes_umap(n_neighbors::Int=10, min_dist::Real=2, metric::Symbol=:manhattan, seed::Int=42;
+        csv_path="isotope_embeddings.csv", embedding_columns=nothing, coordinates_path=nothing,
+        tol_offset=0.8, tol_scale=0.02, umap_kwargs=NamedTuple())
     df = DataFrame(CSV.File(csv_path))
 
     # Labels from N/Z
     N = Float64.(coalesce.(df.neutrons, NaN))
     Z = Float64.(coalesce.(df.protons, NaN))
-    labels_raw = [classify_decay_from_NZ(N[i], Z[i]) for i in eachindex(N)]
+    labels_raw = [classify_decay_from_NZ(N[i], Z[i]; tol_offset, tol_scale) for i in eachindex(N)]
 
     # Embedding matrix: numeric columns excluding smiles/N/Z
     exclude = Set([:smiles, :neutrons, :protons])
     _is_numeric_col(col) = (eltype(col) <: Real) || (eltype(col) <: Union{Missing,Real})
-    embed_cols = [nm for nm in names(df) if nm ∉ exclude && _is_numeric_col(df[!, nm])]
+    embed_cols = isnothing(embedding_columns) ?
+        [nm for nm in names(df) if nm ∉ exclude && _is_numeric_col(df[!, nm])] :
+        String.(embedding_columns)
     isempty(embed_cols) && error("No numeric embedding columns found (after excluding smiles/N/Z).")
+    all(nm in names(df) && _is_numeric_col(df[!, nm]) for nm in embed_cols) ||
+        error("Every selected projection column must exist and be numeric")
 
     X = Matrix{Float64}(coalesce.(df[!, embed_cols], 0.0))
 
@@ -239,8 +243,13 @@ function figure_isotopes_umap(n_neighbors::Int=10, min_dist::Real=2, metric::Sym
     else
         Euclidean()
     end
-    Y = umap(Matrix(X'), 2; n_neighbors=n_neighbors, min_dist=min_dist, metric=metric_obj)
+    Y = umap(Matrix(X'), 2; n_neighbors=n_neighbors, min_dist=min_dist, metric=metric_obj, umap_kwargs...)
     Y = Matrix(Y')
+    if !isnothing(coordinates_path)
+        mkpath(dirname(coordinates_path))
+        CSV.write(coordinates_path, DataFrame(smiles=df.smiles, neutrons=N, protons=Z,
+                                             UMAP1=Y[:, 1], UMAP2=Y[:, 2], decay=String.(labels_raw)))
+    end
 
     canonical = [L"$\beta^+$", L"$\beta^-$", L"$\alpha$", "Stable", "Spontaneous Fission"]
     present = unique(labels_raw)

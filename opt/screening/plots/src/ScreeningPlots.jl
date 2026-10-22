@@ -8,7 +8,7 @@ using Metaheuristics: Metaheuristics
 using JSON: JSON
 using SQLite: SQLite
 using CSV: CSV
-using PythonCall: Py, PyList, pyimport, pyconvert
+using PythonCall: Py, PyList, pyimport, pyconvert, pyisinstance, pybuiltins
 using GLM: @formula, lm, glm, Normal, LogLink, coef
 using Format: format
 using Statistics: cor, mean, std
@@ -31,18 +31,18 @@ function __init__()
     __rdkit_chem[] = pyimport("rdkit.Chem")
     __mol_surprise[] = pyimport("electrolyte_fm.models.mol_surprise")
     __prod_finetune[] = pyimport("electrolyte_fm.models.prod_finetune")
-    __data_utils[] = pyimport("electrolyte_fm.data_modules.utils")
+    return __data_utils[] = pyimport("electrolyte_fm.data_modules.utils")
 end
 
 mae(x, y) = mean(x -> abs(-(x...)), zip(x, y))
 mae(x) = mean(abs, x)
 rmsd(x, y) = sqrt(mean(x -> -(x...)^2, zip(x, y)))
 
-default_device() = Sys.isbsd() ? "mps" : "cuda"
-function load_mist_pretrained(folder::String; device=default_device())
-    return __prod_finetune[].MISTFinetuned.from_pretrained(folder).to(device).eval()
+default_device() = get(ENV, "SCREENING_DEVICE", Sys.isbsd() ? "mps" : "cuda")
+function load_mist_pretrained(folder::String; device = default_device())
+    return __prod_finetune[].load_finetuned(folder; local_files_only = true).to(device).eval()
 end
-function load_mol_surprise(path::String; device=default_device())
+function load_mol_surprise(path::String; device = default_device())
     return __mol_surprise[].MolSurpriseFM.from_pretrained(path).to(device).eval()
 end
 
@@ -62,17 +62,17 @@ function canonicalize(smi::String)
 end
 
 function isomeric_smiles(smi::String)
-    mol = __rdkit_chem[].MolFromSmiles(smi; sanitize=false)
+    mol = __rdkit_chem[].MolFromSmiles(smi; sanitize = false)
     isnothing(mol) && return smi
     for atom in mol.GetAtoms()
         atom.SetChiralTag(__rdkit_chem[].ChiralType.CHI_UNSPECIFIED)
     end
 
-    return pyconvert(String, __rdkit_chem[].MolToSmiles(mol, isomericSmiles=true))
+    return pyconvert(String, __rdkit_chem[].MolToSmiles(mol, isomericSmiles = true))
 end
 
-function inchi_key(smi::String)
-    mol = __rdkit_chem[].MolFromSmiles(smi)
+function inchi_key(smi::AbstractString)
+    mol = __rdkit_chem[].MolFromSmiles(string(smi))
     @assert !isnothing(mol) lazy"Failed to parse SMILES: $smi"
     return pyconvert(String, __rdkit_chem[].MolToInchiKey(mol))
 end

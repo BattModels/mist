@@ -1,0 +1,151 @@
+"""Existing excess-mixture figures, with released replay and paper inputs explicit."""
+
+load("//config.pomset", "ENV", "OFFLINE_ENV", "SHARED_CPU", "GPU_ANALYSIS")
+load("//opt/benchmarks/workflow.pomset", "STRICT_MIXTURE_MODELS", "MIXTURE_MODELS",
+     database="MIXTURE_DATABASE")
+
+ROOT = Path("//results/mixtures")
+RELEASE = Path("//data/releases/zenodo-21302713")
+DATA_ROOT = RELEASE / "extracted"
+DATA = DATA_ROOT / "mixtures"
+
+environment = task(
+    name="mixtures-sync-environment",
+    cmd=["python3", Path("//electrolyte_fm/utils/sync_env.py")] + sh.args({
+        "project": Path("."),
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=ROOT / "environment",
+    outputs={"python": Path("//opt/mixtures/.venv/bin/python")},
+    validator=validate_checksums(),
+)
+OFFLINE = dict(OFFLINE_ENV, JULIA_PYTHONCALL_EXE=environment.outputs.python, UV_NO_SYNC="1",
+               MIXTURE_CODE_REVISION="local-model-figure-entrypoints-v1")
+julia = task(
+    name="mixtures-julia-environment",
+    cmd=["julia", "--project=.", "-e", "using Pkg; Pkg.instantiate()"],
+    requires=[environment],
+    env=OFFLINE,
+    executor=shell(),
+    outputs={"manifest": Path("Manifest.toml")},
+)
+
+database_table = task(
+    name="mixtures-export-database-table",
+    cmd=[environment.outputs.python, Path("./materialize_dataset.py"), "export"] + sh.args({
+        "source": database.outputs.dataset,
+        "output": ROOT / "database" / "excess-properties.csv",
+    }),
+    env=OFFLINE,
+    executor=shell(),
+    output_dir=ROOT / "database",
+    outputs={"table": Path("excess-properties.csv")},
+    validator=validate_checksums(),
+)
+
+release_data = task(
+    name="mixtures-materialize-paper-release",
+    cmd=[
+        environment.outputs.python,
+        Path("//electrolyte_fm/utils/fetch_datasets.py"),
+        "https://zenodo.org/api/records/21302713/files/mixtures.tar.xz/content",
+    ] + sh.args({
+        "archive": RELEASE / "mixtures.tar.xz",
+        "bytes": "21530544",
+        "md5": "ab43d843a7cfc163c8fd741a32eb4241",
+        "extract": DATA,
+        "strip-components": "1",
+        "required": [
+            "excess_v6.csv",
+            "excess_dataset_v6",
+            "soap_similarity.csv",
+            "solvent_rematch.json",
+            "experimental_ACN_BC.csv",
+            "experimental_ACN_EGDA.csv",
+        ],
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=DATA,
+    outputs={"mixtures": Path(".")},
+    validator=validate_checksums(),
+)
+
+FIGURES_BY_MODEL = {base: {} for base in MIXTURE_MODELS}
+
+def figure_task(base, name, analysis, filenames, args, inputs=[], gpu=False, directory=None):
+    output_dir = ROOT / base / (directory if directory != None else name)
+    outputs = {
+        filename + "_" + extension: Path(filename + "." + extension)
+        for filename in filenames
+        for extension in ["pdf", "png"]
+    }
+    if analysis == "parity":
+        outputs.update({"predictions": Path("predictions.jsonl"), "extrema": Path("composition-extrema.csv")})
+    rendered = task(
+        name="mixtures-" + ("" if base == "mist-28m" else base + "-") + name,
+        tags=tags("figures"),
+        cmd=["julia", "--startup-file=no", "--project=.", Path("./plots.jl")] + sh.args({
+            "analysis": analysis,
+            "output-dir": output_dir,
+        }) + args,
+        inputs=[julia.outputs.manifest] + inputs,
+        env=OFFLINE,
+        output_dir=output_dir,
+        outputs=outputs,
+        resources=GPU_ANALYSIS if gpu else SHARED_CPU,
+        validator=validate_checksums(),
+    )
+    for filename in filenames:
+        FIGURES_BY_MODEL[base][name + "/" + filename] = getattr(rendered.outputs, filename + "_pdf")
+    return rendered
+
+for base, model in MIXTURE_MODELS.items():
+    label = "Released MIST checkpoint" if base == "mist-28m" else "New MIST-1.8B random-split fit"
+    figure_task(base, "soap-correlation", "soap", ["soap-correlation"],
+                sh.args({"data-root": DATA_ROOT}), [release_data.outputs.mixtures])
+
+    # Historical Zenodo views are retained separately from the accepted HF source.
+    figure_task(base, "released-v6-dataset", "dataset", ["mixture-dataset"],
+                sh.args({"dataset": DATA / "excess_v6.csv", "label": "Released v6 mixture dataset"}), [release_data.outputs.mixtures])
+    figure_task(base, "released-v6-parity", "parity", ["excess-parity", "composition-extrema"],
+                sh.args({
+                    "model": model,
+                    "dataset": DATA / "excess_dataset_v6" / "k-compound-0",
+                    "label": label + " / v6 validation; paper lineage unverified",
+                }),
+                [release_data.outputs.mixtures], gpu=True)
+    figure_task(base, "released-outliers", "outliers", ["soap-outlier-curves"],
+                sh.args({
+                    "model": model,
+                    "data-root": DATA_ROOT,
+                    "label": label + "; paper lineage unverified",
+                }),
+                [release_data.outputs.mixtures], gpu=True)
+
+    # The HF card identifies zffffbex as a random-split model. Keep the native
+    # k-compound-0 validation evaluation: overlap with this checkpoint's training
+    # membership is unverified, so this is retrospective visualization, not a new
+    # sealed holdout estimate. A strict checkpoint remains a separate model.
+    figure_task(base, "paper-dataset", "dataset", ["mixture-dataset"],
+                sh.args({"dataset": database_table.outputs.table}), directory="dataset")
+    figure_task(base, "paper-parity", "parity", ["excess-parity", "composition-extrema"],
+                sh.args({"model": model, "dataset": database.outputs.dataset / "k-compound-0"}),
+                [database.outputs.dataset], gpu=True, directory="parity")
+    figure_task(base, "paper-outliers", "outliers", ["soap-outlier-curves"],
+                sh.args({"model": model, "data-root": DATA_ROOT}),
+                [release_data.outputs.mixtures], gpu=True, directory="outliers")
+    # Keep the established task tied to fold 0, and publish the other folds too.
+    # Never choose a fold using the experimental observations being plotted.
+    for fold, strict_model in STRICT_MIXTURE_MODELS[base].items():
+        name = "paper-experimental" if fold == 0 else "strict-fold-" + str(fold) + "-experimental"
+        figure_task(base, name, "experimental", ["experimental-repeats"],
+                    sh.args({"model": strict_model, "data-root": DATA_ROOT}),
+                    [release_data.outputs.mixtures], gpu=True,
+                    directory="strict-fold-" + str(fold) + "-experimental")
+    figure_task(base, "paper-thermal-expansion", "thermal", ["thermal-expansion"],
+                sh.args({"model": STRICT_MIXTURE_MODELS[base][0], "data-root": Path("//data/user")}), gpu=True,
+                directory="strict-fold-0-thermal-expansion")
+
+FIGURES = FIGURES_BY_MODEL["mist-28m"]

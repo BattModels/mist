@@ -20,11 +20,19 @@ from torchmetrics.regression import (
 from torchmetrics.regression.pearson import (
     _final_aggregation as final_pearson_aggregation,
 )
-from torchmetrics.wrappers import BootStrapper
+from torchmetrics.wrappers import BootStrapper, MultioutputWrapper
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
+from torchmetrics.wrappers.transformations import MetricInputTransformer
 
 """ Target Value to indicate missing data """
 IGNORE_INDEX = -100
+
+
+def _update_metric(metric, preds, targets, mask=None):
+    kwargs = {} if mask is None else {"mask": mask}
+    if isinstance(metric, Metric):
+        kwargs = metric._filter_kwargs(**kwargs)
+    metric.update(preds, targets, **kwargs)
 
 
 class SafeR2Score(R2Score):
@@ -45,6 +53,57 @@ class SafeR2Score(R2Score):
                 dtype=self.sum_error.dtype,
             )
         return super().compute()
+
+
+class MaskedRegressionMetric(MetricInputTransformer):
+    """Filter supplied label masks without treating any target value as missing."""
+
+    def __init__(self, metric):
+        super().__init__(metric)
+        self._metric_higher_is_better = metric.higher_is_better
+        self._metric_is_differentiable = metric.is_differentiable
+        self.average_outputs = False
+
+    @property
+    def higher_is_better(self):
+        return self._metric_higher_is_better
+
+    @property
+    def is_differentiable(self):
+        return self._metric_is_differentiable
+
+    def _wrap_transform(self, preds, targets, mask=None):
+        if mask is None:
+            mask = torch.ones_like(targets, dtype=torch.bool)
+        # R² averages independently calculated channel scores for matrix inputs.
+        if isinstance(self.wrapped_metric, SafeR2Score) and targets.ndim > 1:
+            self.wrapped_metric = MultioutputWrapper(
+                MaskedRegressionMetric(self.wrapped_metric),
+                targets.shape[-1],
+                remove_nans=False,
+            ).to(preds.device)
+            self.average_outputs = True
+        if isinstance(self.wrapped_metric, MultioutputWrapper):
+            return preds, targets, mask
+        return preds[mask], targets[mask]
+
+    def update(self, preds, targets, mask=None):
+        args = self._wrap_transform(preds, targets, mask)
+        if isinstance(self.wrapped_metric, MultioutputWrapper) or args[0].numel():
+            self.wrapped_metric.update(*args)
+
+    def compute(self):
+        value = super().compute()
+        return value.mean() if self.average_outputs else value
+
+    def forward(self, preds, targets, mask=None):
+        value = super().forward(preds, targets, mask)
+        return value.mean() if self.average_outputs else value
+
+
+class MaskedBootStrapper(BootStrapper):
+    def _filter_kwargs(self, **kwargs):
+        return self.metrics[0]._filter_kwargs(**kwargs)
 
 
 class HotellingTwoSample(Metric):
@@ -128,16 +187,27 @@ class OOVMetric(Metric):
         targets: torch.Tensor,
         input_ids: torch.IntTensor,
         is_oov: Optional[torch.BoolTensor] = None,
+        mask: torch.BoolTensor | None = None,
     ) -> None:
         assert input_ids.ndim == 2
         is_oov = (
             is_oov if is_oov is not None else (input_ids == self.unk_token_id).any(1)
         )
-        self.metrics["all"].update(preds, targets)
+        _update_metric(self.metrics["all"], preds, targets, mask)
         if is_oov.any():
-            self.metrics["oov"].update(preds[is_oov], targets[is_oov])
+            _update_metric(
+                self.metrics["oov"],
+                preds[is_oov],
+                targets[is_oov],
+                None if mask is None else mask[is_oov],
+            )
         if not is_oov.all():
-            self.metrics["non_oov"].update(preds[~is_oov], targets[~is_oov])
+            _update_metric(
+                self.metrics["non_oov"],
+                preds[~is_oov],
+                targets[~is_oov],
+                None if mask is None else mask[~is_oov],
+            )
 
     def compute(self):
         out = {}
@@ -327,18 +397,25 @@ def get_metric(name: str, task_type: str, **kwargs) -> Metric:
             assert len(target_channels) == kwargs["num_outputs"]
             assert kwargs["num_outputs"] >= 1
 
+        if task_type == "regression":
+            num_outputs = kwargs.pop("num_outputs")
+            metric = MultioutputWrapper(
+                get_metric(name.replace("-channel", ""), task_type, **kwargs),
+                num_outputs,
+                remove_nans=False,
+            )
+        else:
+            metric = get_metric(name.replace("-channel", ""), task_type, **kwargs)
         m = ClasswiseWrapper(
-            get_metric(
-                name.replace("-channel", ""),
-                task_type,
-                **kwargs,
-            ),
+            metric,
             labels=target_channels,
             prefix="",
         )
     else:
         raise ValueError(f"Unknown metric {name} for {task_type} tasks")
 
+    if task_type == "regression" and not name.endswith("-channel"):
+        m = MaskedRegressionMetric(m)
     m.name = name
 
     return m
@@ -372,14 +449,15 @@ def masked_metric_update(
     int_cast: bool = False,
 ):
     """Update metrics, masking out targets as needed"""
-    targets = targets.masked_fill(~(mask.to(dtype=bool)), IGNORE_INDEX)
+    mask = mask.to(dtype=bool)
+    targets = targets.masked_fill(~mask, IGNORE_INDEX)
     if int_cast:
         targets = targets.int()
     if isinstance(metrics, OOVMetric):
         assert input_ids is not None
-        metrics.update(preds, targets, input_ids, is_oov)
+        metrics.update(preds, targets, input_ids, is_oov, mask=mask)
     else:
-        metrics.update(preds, targets)
+        _update_metric(metrics, preds, targets, mask)
 
 
 class TokenCounter(Metric):
@@ -425,13 +503,13 @@ def bootstrap_collection(metrics: MetricCollection, **kwargs) -> MetricCollectio
                 mc[k] = v  # Don't bootstrap unsupported metrics
             else:
                 mc[k] = ClasswiseWrapper(
-                    BootStrapper(v.metric, **kwargs),
+                    MaskedBootStrapper(v.metric, **kwargs),
                     labels=v.labels,
                     prefix=v._prefix,
                     postfix=v._postfix,
                 )
         else:
-            mc[k] = BootStrapper(v, **kwargs)
+            mc[k] = MaskedBootStrapper(v, **kwargs)
 
     return MetricCollection(mc)
 

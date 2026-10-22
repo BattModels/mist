@@ -1,25 +1,55 @@
+# Configure TLS only at application startup, before HTTP clients are imported.
+if __name__ == "__main__":
+    import truststore
+
+    truststore.inject_into_ssl()
+
 import json
 import logging
 import os
 from datetime import timedelta
+from pathlib import Path
 
 import _jsonnet as jsonnet  # noqa: F401 Unused, but otherwise we get glibc errors on delta 🫠
 import torch
 from jsonargparse import lazy_instance
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
-from lightning.pytorch.cli import (
-    LightningArgumentParser,
-    LightningCLI,
-    _get_module_type,
-    _InstantiatorFn,
-)
+from lightning.pytorch.cli import LightningArgumentParser
 from lightning.pytorch.loggers import WandbLogger
 
 from electrolyte_fm.utils.callbacks import SpikeDetection, ThroughputMonitor
 from electrolyte_fm.utils.ckpt import SaveConfigWithCkpts
+from electrolyte_fm.utils.cli import MistLightningCLI
 
 
-class MyLightningCLI(LightningCLI):
+class MyLightningCLI(MistLightningCLI):
+    def _parse_ckpt_path(self) -> None:
+        """Preserve the saved model class when resuming, including on Lightning 2.5."""
+        subcommand = self.config.get("subcommand")
+        if not subcommand:
+            return
+        if self.config[subcommand].get("resume_from_config", False):
+            return
+        checkpoint = self.config[subcommand].get("ckpt_path")
+        if not checkpoint or not Path(checkpoint).is_file():
+            return
+        hparams = torch.load(checkpoint, weights_only=True, map_location="cpu").get(
+            "hyper_parameters", {}
+        )
+        hparams.pop("_instantiator", None)
+        if not hparams:
+            return
+        # Lightning's saved CLI parameters are flat with an internal class key;
+        # jsonargparse needs the class_path/dict_kwargs representation instead.
+        if "_class_path" in hparams:
+            hparams = {
+                "class_path": hparams.pop("_class_path"),
+                "dict_kwargs": hparams,
+            }
+        self.config = self.parser.parse_object(
+            {subcommand: {"model": hparams}}, self.config
+        )
+
     def before_fit(self):
         if self.trainer.logger is not None and hasattr(
             self.trainer.logger, "log_hyperparams"
@@ -35,13 +65,19 @@ class MyLightningCLI(LightningCLI):
             )
 
     def add_arguments_to_parser(self, parser: LightningArgumentParser) -> None:
+        super().add_arguments_to_parser(parser)
         parser.add_argument(
-            "--tags",
-            type=list,
-            help="Tags for WandB logger",
-            default=[],
+            "--default_callbacks",
+            type=bool,
+            default=True,
+            help="Include the entrypoint's default checkpoint and monitoring callbacks",
         )
-        parser.link_arguments("tags", "trainer.logger.init_args.tags")
+        parser.add_argument(
+            "--resume_from_config",
+            type=bool,
+            default=False,
+            help="Construct from the supplied config while restoring checkpoint training state",
+        )
 
         # WARN: electrolyte_fm.utils.SaveConfigWithCkpts with any new linked arguments
         # prefer apply_on parse over instantiate
@@ -51,25 +87,11 @@ class MyLightningCLI(LightningCLI):
             "data.vocab_size", "model.init_args.vocab_size", apply_on="instantiate"
         )
 
-    def _add_instantiators(self) -> None:
-        self.config_dump = json.loads(
-            self.parser.dump(
-                self.config, skip_link_targets=False, skip_none=False, format="json"
-            )
-        )
-        if "subcommand" in self.config:
-            self.config_dump = self.config_dump[self.config.subcommand]
-
-        self.parser.add_instantiator(
-            _InstantiatorFn(cli=self, key="model"),
-            _get_module_type(self._model_class),
-            subclasses=self.subclass_mode_model,
-        )
-        self.parser.add_instantiator(
-            _InstantiatorFn(cli=self, key="data"),
-            _get_module_type(self._datamodule_class),
-            subclasses=self.subclass_mode_data,
-        )
+    def before_instantiate_classes(self) -> None:
+        super().before_instantiate_classes()
+        config = self.config[self.subcommand] if self.subcommand else self.config
+        if not config.default_callbacks:
+            self.trainer_defaults["callbacks"] = []
 
 
 def cli_main(args=None):
@@ -77,7 +99,7 @@ def cli_main(args=None):
     val_loss_ckpt = ModelCheckpoint(
         filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.3f}",
         monitor=monitor,
-        save_top_k=2,
+        save_top_k=1,
         verbose=True,
         save_last="link",
         enable_version_counter=True,
@@ -89,7 +111,7 @@ def cli_main(args=None):
         monitor="step",
         verbose=True,
         mode="max",
-        save_top_k=2,
+        save_top_k=1,
         save_last=True,
         train_time_interval=timedelta(minutes=15),
         auto_insert_metric_name=False,
@@ -101,7 +123,7 @@ def cli_main(args=None):
         ModelCheckpoint(
             filename="epoch={epoch}-step={step}-val_loss={" + monitor + ":.2f}",
             monitor=monitor,
-            save_top_k=2,
+            save_top_k=1,
             verbose=True,
             save_last="link",
             enable_version_counter=True,
@@ -112,7 +134,7 @@ def cli_main(args=None):
             monitor="step",
             verbose=True,
             mode="max",
-            save_top_k=2,
+            save_top_k=1,
             save_last=False,
             train_time_interval=timedelta(minutes=30),
             auto_insert_metric_name=False,

@@ -1,5 +1,5 @@
-function hydrocarbon_trends(df; qm_model="")
-    f = Figure(size=(2.9inch, 2inch))
+function hydrocarbon_trends(df; qm_model="", paper_subset=false)
+    f = Figure(size=paper_subset ? (3inch, 2inch) : (7inch, 3.5inch), figure_padding=(6pt, 6pt, 4pt, 6pt))
 
     func_groups = [
         "Alkanes",
@@ -40,6 +40,7 @@ function hydrocarbon_trends(df; qm_model="")
         # :alpha_kt => L"KT $\alpha$",
         # :beta_kt => L"KT $\beta$",
     ]
+    paper_subset && (axes = axes[3:5])
     axes = map(enumerate(axes)) do (idx, (col, ylabel))
         is_last = idx == length(axes)
         col => Axis(gl_trends[idx, 1];
@@ -72,8 +73,12 @@ function hydrocarbon_trends(df; qm_model="")
     end
     Legend(gl_trends[end+1, 1], elems, label.(elems);
         nbanks=4,
-        tellheight=true, tellwidth=true,
+        tellheight=true, tellwidth=false,
     )
+    if paper_subset
+        resize_to_layout!(f)
+        return f
+    end
 
     # Design Rules
     gl_dr = GridLayout(f[1, 2])
@@ -106,11 +111,11 @@ function hydrocarbon_trends(df; qm_model="")
     df_except = subset(df, [:mp, :bp] => ByRow((mp, bp) -> mean(mp) > mean(bp)))
     @info "Exceptions to BP > MP" df_except[:, [:type, :smi, :mp, :bp]]
 
-    colgap!(f.layout, 5)
-    colsize!(f.layout, 1, Relative(2 / 3))
-    sublabel!(f[1, 1, TopLeft()], "a"; left=25)
-    sublabel!(gl_dr[1, 1, TopLeft()], "b"; left=3)
-    sublabel!(gl_dr[2, 1, TopLeft()], "c"; left=3)
+    colgap!(f.layout, 12pt)
+    colsize!(f.layout, 1, Relative(0.6))
+    sublabel!(gl_trends[1, 1, TopLeft()], "a"; left=25pt)
+    sublabel!(gl_dr[1, 1, TopLeft()], "b"; left=15pt)
+    sublabel!(gl_dr[2, 1, TopLeft()], "c"; left=15pt)
     resize_to_layout!(f)
 
     return f
@@ -118,14 +123,16 @@ end
 
 
 function electrolyte_trends(df)
-    f = Figure(size=(3.5inch, 1.7inch))
+    f = Figure(size=(7inch, 3inch))
     df = deepcopy(df)
 
     func_groups = [
         "Ethylene carbonate", "Carbonate ester", "Ester", "Ether",
         "Dicarbonate", "Alkane", "Alkene", "Arene",
     ]
-    subset!(df, :class => ByRow(in(func_groups)))
+    # Unclassified source molecules still receive predictions, but are not part
+    # of this functional-group comparison.
+    subset!(df, :class => ByRow(in(func_groups)); skipmissing=true)
     df.class = categorical(df.class; levels=func_groups)
 
 
@@ -154,7 +161,7 @@ function electrolyte_trends(df)
     color_elems = map(enumerate(func_groups)) do (idx, label)
         PolyElement(; color=MISTStyle.CAT_COLORS[idx], label)
     end
-    gl = GridLayout(f[1, 1]; default_colgap=3)
+    gl = GridLayout(f[1, 1]; default_colgap=7pt)
     Legend(f[1, 2],
         [marker_elems, color_elems],
         [label.(marker_elems), label.(color_elems)],
@@ -170,13 +177,13 @@ function electrolyte_trends(df)
 
     ax = Axis(gl[1, 2];
         ylabel=L"DN [kcal/mol, BF3]$$", xlabel=L"KT $\beta$",
-        limits=((0, nothing), nothing),
     )
-    beta_kt = 2 .* sigmoid.(mean.(df.beta_kt))
+    # Both benchmark releases and new heads already return physical KT values.
+    beta_kt = mean.(df.beta_kt)
     scatter!(ax, beta_kt, mean.(df.dn .* JOULES_TO_CALORIES); marker, color)
 
 
-    ax = Axis(gl[1, 3]; ylabel=L"$\mu$ [D]", xlabel=L"Minimum Partial Charge$$")
+    ax = Axis(gl[1, 3]; ylabel=L"DMSO $pK_a$", xlabel=L"Minimum Partial Charge$$")
     scatter!(ax, df.min_lowdin, mean.(df.pKa_kt); marker, color)
 
     ax = Axis(gl[2, 1]; xlabel=L"Boiling Point $[\degree C ]$", ylabel=L"Flash Point $[\degree C ]$")
@@ -224,7 +231,7 @@ function convert_units(y, col)
 end
 
 function figure_permutations(name_df::Pair...; name_df_order)
-    f = Figure(size=(3.42inch, 2inch), figure_padding=(2, 3, 2, 4))
+    f = Figure(size=(7inch, 3inch), figure_padding=(2, 6, 2, 4))
     gl_order = GridLayout(f[1, 1])
     gl_trends = GridLayout(f[1, 2])
 
@@ -328,6 +335,7 @@ function figure_permutations(name_df::Pair...; name_df_order)
 
     colsize!(gl_trends, 1, Relative(3 / 4))
     colgap!(gl_trends, 1, 2)
+    colsize!(f.layout, 1, Relative(1 / 3))
 
     figure_double_bond_loc!(gl_order, name_df...; name_df_order)
 
@@ -344,7 +352,9 @@ end
 
 function figure_double_bond_loc(name_df::Pair...; name_df_order)
     f = Figure(; size=(113, 136), figure_padding=(2,4,2,2))
-    return figure_double_bond_loc!(f, name_df...; name_df_order)
+    figure_double_bond_loc!(f.layout, name_df...; name_df_order)
+    resize_to_layout!(f)
+    return f
 end
 function figure_double_bond_loc!(f, name_df::Pair...; name_df_order)
     # Order Sensitivity
@@ -391,17 +401,6 @@ function figure_double_bond_loc!(f, name_df::Pair...; name_df_order)
     end
 
     linkyaxes!(axes...)
-    colgap!(f.layout, 1, 3)
-    colsize!(f.layout, 2, Relative(3 / 4))
-
-    sublabel!(gl_order[2, 1, TopLeft()], "a"; left=15)
-    sublabel!(gl_order[3, 1, TopLeft()], "b"; left=15)
-    sublabel!(gl_trends[1, 1, TopLeft()], "c"; left=10, up=5)
-    sublabel!(gl_trends[1, 2, TopLeft()], "d"; up=10, left=-5, tellwidth=false)
-
-    resize_to_layout!(f)
-
-
     return f
 end
 

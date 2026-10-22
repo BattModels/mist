@@ -1,3 +1,4 @@
+#!/usr/bin/env -S julia --project=@script --startup-file=no
 using Makie
 using DataFrames
 using GLM
@@ -64,6 +65,49 @@ function plot_auroc!(f, df)
     return f
 end
 
+function align_scores(left::DataFrame, right::DataFrame, source)
+    # Each task scores the same materialized rows. Joining on all common
+    # columns can silently discard conflicting/missing rows or multiply
+    # duplicates, changing the cohort used in the paper's comparisons.
+    for data in (left, right)
+        "row_id" in names(data) || error("Missing row_id in $source")
+        all(id -> id isa Integer && !(id isa Bool) && id >= 0, data.row_id) ||
+            error("Invalid row_id in $source")
+        allunique(data.row_id) || error("Duplicate row_id in $source")
+    end
+    isempty(left) && error("Empty score cohort in $source")
+    Set(left.row_id) == Set(right.row_id) || error("Score cohort differs in $source")
+    lookup = Dict(id => index for (index, id) in enumerate(right.row_id))
+    right = right[[lookup[id] for id in left.row_id], :]
+    common = intersect(names(left), names(right))
+    for column in common
+        isequal(left[!, column], right[!, column]) ||
+            error("Conflicting $column values in $source")
+    end
+    return hcat(left, select(right, Not(common)))
+end
+
+function load_scores(model_dirs, heuristics_dir, baseline_dirs=String[])
+    function merged(dataset)
+        model = JSON.parsefile(joinpath(first(model_dirs), dataset * ".json"))
+        heuristic = JSON.parsefile(joinpath(heuristics_dir, dataset, "scores.json"))
+        left, right = DataFrame(model["scores"]), DataFrame(heuristic["scores"])
+        df = align_scores(left, right, dataset * " heuristics")
+        auroc = merge(model["auroc"], heuristic["auroc"])
+        for directory in vcat(model_dirs[2:end], baseline_dirs)
+            baseline = JSON.parsefile(joinpath(directory, dataset * ".json"))
+            scores = DataFrame(baseline["scores"])
+            df = align_scores(df, scores, dataset * " model " * directory)
+            merge!(auroc, baseline["auroc"])
+        end
+        for col in names(df)
+            df[!, col] = [isnothing(value) ? missing : value for value in df[!, col]]
+        end
+        return (; score=df, auroc)
+    end
+    return (; crowd=merged("crowdsourced"), ba=merged("ba-sascorer"))
+end
+
 function load_scores()
     # Crowdsourced
     df_crowd = DataFrame(JSON.parsefile("crowdsourced.json")["scores"])
@@ -98,7 +142,7 @@ function model_score_grid(df::DataFrame, baseline::String; cmax=100)
     df = select(df, Not(baseline))
     models = names(df)
     models = filter(models) do m
-        m in ["stdevComplexity", "is_complex", "is_hard"] && return false
+        m in ["row_id", "stdevComplexity", "is_complex", "is_hard"] && return false
         return eltype(df[!, m]) <: Union{Integer, AbstractFloat, Union{Missing, <:AbstractFloat}}
     end
     models = DataFrame(map(label_model, models))
@@ -151,7 +195,7 @@ function model_score_grid(df::DataFrame, baseline::String; cmax=100)
     mfm = subset(models, :model => ByRow(m -> occursin("/", m)))
     mfm_models = unique(mfm.model)
     nrow = length(mfm_models)
-    ncol = ceil(Int, length(nrow) / nrow)
+    ncol = cld(size(mfm, 1), nrow)
     gl = GridLayout(f[2, 1], nrow, ncol)
     for (m, mfm_name) in enumerate(mfm_models)
         variants = subset(models, :model => ByRow(==(mfm_name)))
@@ -184,7 +228,7 @@ end
 
 function label_varient(variant)
     ut = variant.untrained ? "Untrained" : "Trained"
-    norm = variant.per_token ? "Per-Molecule" : "Per-Token"
+    norm = variant.per_token ? "Per-Token" : "Per-Molecule"
     encoding = Dict(
         "smiles" => "Smiles",
         "kekule" => "Kekule",
@@ -195,6 +239,8 @@ end
 
 function model_plot_names()
     return Dict(
+        "mist/mist-28m" => "MIST-28M",
+        "mist/mist-1p8b" => "MIST-1.8B",
         "seyonec/ChemBERTa-zinc-base-v1" => "ChemBERTa",
         "models/mist-ti624ev1" => "MIST-27M",
         "models/mist-4yzwys2z" => "MIST-228M",
@@ -226,7 +272,7 @@ function label_model(name::String)
 end
 
 
-function model_auroc(auroc::Dict)
+function model_auroc(auroc::Dict; base_model="models/mist-ti624ev1")
     df = stack(DataFrame(auroc); variable_name=:model, value_name=:auroc)
     subset!(df, :model => ByRow(x -> occursin("/", x)))
     @. df.untrained = occursin("untrained", df.model)
@@ -246,17 +292,16 @@ function model_auroc(auroc::Dict)
         m = replace(m, r"-+$" => "")
     end
 
-    # Fit linear model
-    lm(
-        @formula(auroc ~ untrained + per_token + encoding + model),
-        df;
-        contrasts = Dict(
+    contrasts = Dict(
             :untrained => EffectsCoding(; base=false),
             :per_token => EffectsCoding(; base=false),
             :encoding => EffectsCoding(; base="smiles"),
-            :model => EffectsCoding(; base="models/mist-ti624ev1"),
-        )
     )
+    if length(unique(df.model)) > 1
+        contrasts[:model] = EffectsCoding(; base=base_model)
+        return lm(@formula(auroc ~ untrained + per_token + encoding + model), df; contrasts)
+    end
+    return lm(@formula(auroc ~ untrained + per_token + encoding), df; contrasts)
 end
 
 function figure_interp_surprise(score, auroc, models; correlation=corspearman, size=(3.42inch, 1.76inch))
@@ -313,20 +358,23 @@ function figure_interp_surprise(score, auroc, models; correlation=corspearman, s
     return f
 end
 
-function create_figures()
+function create_figures(bases, model_dirs, heuristics_dir, output_dir; baseline_dirs=String[])
+    length(bases) == length(model_dirs) > 0 || error("Provide one --model-dir for each --base")
     main_models = [
         "SCScore" => "SCScore",
         "SAScore" => "SAScore",
         "smirk" => "Smirk",
         "ibm-research/MoLFormer-XL-both-10pct-smiles" => "MoLFormer",
         "seyonec/ChemBERTa-zinc-base-v1-smiles" => "ChemBERTa",
-        "models/mist-ti624ev1-smiles-kekule" => "MIST-27M",
-        "models/mist-4yzwys2z-smiles-kekule" => "MIST-228M",
-        "models/mist-1.8B-dh61satt-smiles-kekule" => "MIST-1.8B",
-        "models/mist-1.8B-dh61satt-untrained-smiles-kekule" => "MIST-1.8B, Untrained",
-        "models/mist-n2dkcidc-smiles-canonical" => "MIST-ZINC",
-        "assembly-index" => "Molecular Assembly",
     ]
+    for base in bases
+        label = model_plot_names()["mist/$base"]
+        append!(main_models, [
+            "mist/$base-smiles-kekule" => label,
+            "mist/$base-untrained-smiles-kekule" => label * ", Untrained",
+        ])
+    end
+    push!(main_models, "assembly-index" => "Molecular Assembly")
     all_models = [
         "molecular-weight" => "Molecular Weight",
         "BR-SAScore" => "BR-SAScore",
@@ -339,18 +387,24 @@ function create_figures()
     ]
 
     # Effect Model
-    o = load_scores()
-    m_crowd = model_auroc(o.crowd.auroc)
-    m_ba = model_auroc(o.ba.auroc)
+    o = load_scores(model_dirs, heuristics_dir, baseline_dirs)
+    for (_, dataset) in pairs(o)
+        required = first.(vcat(main_models, all_models))
+        absent = setdiff(required, names(dataset.score))
+        isempty(absent) || error("Missing molecular-surprise comparisons: $absent")
+    end
+    mkpath(output_dir)
+    m_crowd = model_auroc(o.crowd.auroc; base_model="mist/$(first(bases))")
+    m_ba = model_auroc(o.ba.auroc; base_model="mist/$(first(bases))")
     regtable(m_crowd, m_ba;
         render = LatexTable(),
-        file=joinpath(@__DIR__, "fig", "interp_surprise.tex"),
+        file=joinpath(output_dir, "interp_surprise.tex"),
         regression_statistics=[
              RegressionTables.Nobs,
              RegressionTables.DOF,
              RegressionTables.R2,
-             (m -> mae(residuals(m))) => "MAE",
-             (m -> rmsd(predict(m), response(m))) => "RMSE",
+             (m -> mean(abs, residuals(m))) => "MAE",
+             (m -> sqrt(mean(abs2, residuals(m)))) => "RMSE",
         ]
     )
 
@@ -381,12 +435,29 @@ function create_figures()
             if ds_name == "crowd"
                 models = vcat(["meanComplexity" => "Chemist"], models)
             end
-            figure_interp_surprise(ds.score, ds.auroc, models; kwargs...) |> savefig(filename)
+            fig = figure_interp_surprise(ds.score, ds.auroc, models; kwargs...)
+            MISTStyle.savefig(filename, fig; fig_dir=output_dir)
         end
 
-        model_score_grid(o.crowd.score, "meanComplexity") |> savefig("model_score_grid_crowd")
-        model_score_grid(o.crowd.score, "assembly-index") |> savefig("model_score_grid_crowd_ma")
-        model_score_grid(o.ba.score, "SAScore"; cmax=500) |> savefig("model_score_grid_ba")
-        model_score_grid(o.ba.score, "assembly-index"; cmax=500) |> savefig("model_score_grid_ba_ma")
+        for (name, df, baseline, cmax) in [
+            ("model_score_grid_crowd", o.crowd.score, "meanComplexity", 100),
+            ("model_score_grid_crowd_ma", o.crowd.score, "assembly-index", 100),
+            ("model_score_grid_ba", o.ba.score, "SAScore", 500),
+            ("model_score_grid_ba_ma", o.ba.score, "assembly-index", 500),
+        ]
+            MISTStyle.savefig(name, model_score_grid(df, baseline; cmax); fig_dir=output_dir)
+        end
+    end
+end
+
+function (@main)(args)
+    option(name) = args[findfirst(==(name), args) + 1]
+    options(name) = [args[i + 1] for i in eachindex(args) if args[i] == name]
+    bases = options("--base")
+    baseline_dirs = options("--baseline-dir")
+    output = option("--output-dir")
+    create_figures(bases, options("--model-dir"), option("--heuristics-dir"), output; baseline_dirs)
+    open(joinpath(output, "figures.json"), "w") do io
+        JSON.print(io, Dict("models" => bases, "figures" => filter(f -> endswith(f, ".pdf"), readdir(output))))
     end
 end

@@ -180,7 +180,13 @@ def evaluate(model, dataloader):
 
 
 def load_conductivity_model(ckpt):
-    return MISTIonicConductivity.from_pretrained(ckpt)
+    if not Path(ckpt).is_dir():
+        raise FileNotFoundError(
+            f"Ionic-conductivity model directory does not exist: {ckpt}. "
+            "Run the workflow's model staging task or supply the original "
+            "local model directory."
+        )
+    return MISTIonicConductivity.from_pretrained(ckpt, local_files_only=True)
 
 
 def evaluate_at_composition(model, mixture, composition):

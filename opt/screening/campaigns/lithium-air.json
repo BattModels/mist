@@ -1,0 +1,91 @@
+{
+  "generation": {
+    "db_path": "../../results/screening/zinc-fragments.sqlite",
+    "n_fragments": 1000,
+    "reference_fragments": "../../results/screening/references/lithium-air.frag",
+    "epoch_size": 1200,
+    "limit_db_fragments": null,
+    "limit_ref_fragments": null,
+    "batch_size": 768
+  },
+  "critics": [
+    {
+      "model_path": "bp",
+      "limits": {
+        "bp": [
+          75,
+          null
+        ]
+      },
+      "model_cls": "AutoModel"
+    },
+    {
+      "model_path": "mp",
+      "limits": {
+        "mp": [
+          null,
+          25
+        ]
+      },
+      "model_cls": "AutoModel"
+    },
+    {
+      "model_path": "pka",
+      "limits": {
+        "DMSO_pKa": [
+          30,
+          null
+        ]
+      },
+      "model_cls": "AutoModel"
+    },
+    {
+      "model_path": "etn",
+      "limits": {
+        "ETN": [
+          null,
+          null
+        ]
+      },
+      "model_cls": "AutoModel"
+    },
+    {
+      "model_path": "kt",
+      "limits": {
+        "beta": [
+          null,
+          null
+        ]
+      },
+      "model_cls": "AutoModel"
+    },
+    {
+      "model_path": "qm9",
+      "limits": {
+        "homo": [
+          null,
+          -0.25761274845140775
+        ]
+      },
+      "model_cls": "AutoModel"
+    }
+  ],
+  "equations": {
+    "module": "lithium_air_equations",
+    "critics": [
+      {
+        "function": "solution_mediated_reaction",
+        "inputs": [
+          "beta",
+          "ETN"
+        ],
+        "output": "delta_G_HA_sol",
+        "limits": [
+          -6.46,
+          -0.35
+        ]
+      }
+    ]
+  },
+  "limit_walltime": 27000
+}

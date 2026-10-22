@@ -1,0 +1,113 @@
+"""Ionic-conductivity main and SI figures using the existing model/plot code."""
+
+load("//config.pomset", "ENV", "SHARED_CPU", "GPU_ANALYSIS")
+load("//opt/benchmarks/workflow.pomset", "IONIC_MODELS", "IONIC_AEM_DATA")
+load("./workflow.pomset", "environment", "julia", "OFFLINE", "release_data", "DATA")
+
+ROOT = Path("//results/ionic-conductivity")
+
+released_model = task(
+    name="ionic-stage-released-model",
+    cmd=[
+        environment.outputs.python,
+        Path("//electrolyte_fm/utils/stage_hf.py"),
+        "mist-models/mist-conductivity-27.0M-2mpg8dcd",
+    ] + sh.args({
+        "revision": "61d2c23d7313f14d26a6890fca37cd5f9c4f180b",
+        "output": ROOT / "mist-28m" / "released-model" / "snapshot",
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=ROOT / "mist-28m" / "released-model",
+    outputs={"model": Path("snapshot")},
+    validator=validate_checksums(follow_symlinks=True),
+)
+
+models = dict(IONIC_MODELS)
+models["mist-28m"] = released_model.outputs.model
+FIGURES_BY_MODEL = {base: {} for base in models}
+
+def figure_task(base, name, analysis, filenames, args=[], inputs=[], infer=True, tables={}):
+    directory = "saved-curves" if name == "paper-main" else name
+    if base == "mist-1p8b" and directory.startswith("released-"):
+        directory = directory[len("released-"):]
+    output_dir = ROOT / base / directory
+    outputs = {
+        filename + "_" + extension: Path(filename + "." + extension)
+        for filename in filenames
+        for extension in ["pdf", "png"]
+    }
+    outputs.update(tables)
+    model_args = sh.args({"model": models[base]}) if infer else []
+    rendered = task(
+        name="ionic-" + (name if base == "mist-28m" else base + "-" + directory),
+        tags=tags("figures"),
+        cmd=["julia", "--startup-file=no", "--project=.", Path("./ionic_plots.jl")] + sh.args({
+            "analysis": analysis,
+            "output-dir": output_dir,
+        }) + model_args + args,
+        inputs=[julia.outputs.manifest] + inputs,
+        env=dict(OFFLINE, IONIC_CODE_REVISION="original-figure-entrypoints-v1"),
+        output_dir=output_dir,
+        outputs=outputs,
+        resources=GPU_ANALYSIS if infer else SHARED_CPU,
+        validator=validate_checksums(),
+    )
+    for filename in filenames:
+        FIGURES_BY_MODEL[base][filename] = getattr(rendered.outputs, filename + "_pdf")
+    return rendered
+
+for base in models:
+    prediction_dir = ROOT / base / "predictions"
+    predictions = task(
+        name="ionic-" + base + "-prediction-tables",
+        cmd=["julia", "--startup-file=no", "--project=.", Path("./ionic_plots.jl")] + sh.args({
+            "analysis": "tables",
+            "model": models[base],
+            "output-dir": prediction_dir,
+        }),
+        inputs=[julia.outputs.manifest],
+        env=OFFLINE,
+        output_dir=prediction_dir,
+        outputs={
+            "curves": Path("ionic_conductivity_curves.csv"),
+            "inference": Path("ionic_conductivity_inference.csv"),
+        },
+        resources=GPU_ANALYSIS,
+        validator=validate_checksums(),
+    )
+    figure_task(base, "paper-main", "main", ["ionic_prediction"],
+                sh.args({"data-csv": predictions.outputs.curves}), infer=False)
+    figure_task(base, "non-arrhenius", "non-arrhenius", ["non_arr_data"],
+                sh.args({"data-csv": IONIC_AEM_DATA.outputs.data}),
+                infer=False)
+    figure_task(base, "angell", "angell", ["angell-solvents"],
+                sh.args({"data-csv": predictions.outputs.inference}), infer=False)
+    figure_task(base, "released-composition-curves", "composition", [
+        "cond_curve_PC_EC_FEC", "cond_curve_PC_DEC_FEC", "cond_curve_EMC_EC_FEC", "cond_curve_PC_EMC_FEC",
+    ])
+    figure_task(base, "released-delta-ea", "delta-ea", ["delta_Ea"])
+    figure_task(base, "released-soap-correlation", "soap", ["soap_corr_T_298"],
+                sh.args({"similarity": DATA / "solvent_rematch.json"}), [release_data.outputs.mixtures])
+
+    for excess in [False, True]:
+        for parameter in ["Ea", "Tg"]:
+            for solvent in ["FEC", "EMC", "DEC", "DMC"]:
+                for salt in ["PF6", "TFSI"]:
+                    filename = ("excess_" if excess else "") + parameter + "_" + solvent + "_" + salt
+                    figure_task(base, "released-" + filename, "ternary", [filename], sh.args({
+                        "parameter": parameter,
+                        "solvent": solvent,
+                        "salt": salt,
+                        "excess": "true" if excess else "false",
+                    }))
+
+    for molarity in ["1.0", "0.8", "0.6", "0.4", "0.2"]:
+        figure_task(base, "released-molarity-" + molarity, "molarity", [
+            "gml_fit_" + molarity + "M", "descriptors_vs_T0_" + molarity + "M",
+        ], sh.args({"molarity": molarity}), tables={
+            "properties": Path("unary-properties.csv"),
+            "coefficients": Path("descriptor-coefficients.csv"),
+        })
+
+FIGURES = FIGURES_BY_MODEL["mist-28m"]

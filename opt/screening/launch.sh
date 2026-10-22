@@ -32,4 +32,4 @@ $(which apptainer) run \
 #     --trace=cuda,cudnn,cublas,nvtx \
 #     --cuda-memory-usage=true \
 #     --duration 120 \
-python screen.py --gpus-per-node ${SLURM_GPUS_PER_NODE:-1} --num-nodes ${SLURM_NNODES:-1} $@
+python screen.py "$@"

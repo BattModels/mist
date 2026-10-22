@@ -9,8 +9,9 @@ using Format: format
 using CategoricalArrays
 using HDF5
 using LinearAlgebra
+using Clustering
 
-const DATA_DIR = realpath(joinpath("..", "..", "data"))
+const DATA_DIR = get(ENV, "OLFACTION_DATA_DIR", joinpath(@__DIR__, "..", "..", "data"))
 
 function plot_count_corr!(f)
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "dataset_size_auroc.csv")))
@@ -46,7 +47,7 @@ function plot_functional_groups!(f)
     df = DataFrame(CSV.File(joinpath(DATA_DIR, "functional_group_errors.csv")))
     mean_error_count = Dict()
     for func_group in functional_groups
-        _df = subset(df, :functional_group => ByRow(fg -> occursin(func_group, fg)))
+        _df = subset(df, :functional_group => ByRow(fg -> occursin(func_group, coalesce(fg, ""))))
         count_ = length(_df[!, :functional_group])
         if count_> 0
             group_auroc = mean(_df[!, :auroc])
@@ -127,12 +128,10 @@ function plot_jaccard!(f)
     )
     hidedecorations!(ax)
     h = heatmap!(ax, Jd + mask; colormap=:lipari, colorrange=(0, maximum(Jd)))
-    Colorbar(f[1, 2];
+    Colorbar(f[1, 2], h;
         tickformat="{:.0%}",
         ticks=LinearTicks(6),
         label=L"$\Delta$ Jaccard Index",
-        colormap=h.colormap,
-        colorrange=h.colorrange,
         tellwidth=true
     )
     return f
@@ -155,11 +154,9 @@ function plot_phi!(f)
     )
     hidedecorations!(ax)
     h = heatmap!(ax, Jd + mask; colormap=:lipari, colorrange=(0, maximum(Jd)))
-    Colorbar(f[1, 2];
+    Colorbar(f[1, 2], h;
         ticks=LinearTicks(6),
         label=L"$\phi_{model} - \phi_{data}$",
-        colormap=h.colormap,
-        colorrange=h.colorrange,
         tellwidth=true
     )
     return f
@@ -200,11 +197,9 @@ function plot_logits!(f)
     )
     # hidedecorations!(ax)
     h = heatmap!(ax, C; colormap=:vik, colorrange=(-1, 1))
-    Colorbar(f[1, 1];
+    Colorbar(f[1, 1], h;
         ticks=LinearTicks(6),
         label="Correlation",
-        colormap=h.colormap,
-        colorrange=h.colorrange,
         vertical=false,
         tellwidth=true,
         tellheight=true
@@ -223,11 +218,9 @@ function plot_features!(f)
     S = triu(S, 1)
     hidedecorations!(ax)
     h = heatmap!(ax, S; colormap=:vik, colorrange=(-0.1, 0.1))
-    Colorbar(f[1, 2];
+    Colorbar(f[1, 2], h;
         ticks=LinearTicks(6),
         label="Feature Cos. Sim.",
-        colormap=h.colormap,
-        colorrange=h.colorrange,
         tellwidth=true
     )
     return f

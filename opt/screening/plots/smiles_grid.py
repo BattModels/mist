@@ -21,6 +21,7 @@ Notes:
 import argparse
 import base64
 import math
+import re
 import shutil
 import subprocess
 import sys
@@ -240,12 +241,13 @@ def collate_svgs_as_grid(
         parts.append(
             f"  <g>"
             f'    <rect x="2" y="2" rx="4" ry="4" width="{badge_w}" height="{label_font_size + 6}" fill="white" opacity="0.85" />'
-            f'    <text x="6" y="{2 + label_font_size}" font-size="{label_font_size}" font-family="Helvetica, Arial, sans-serif" text-anchor="start" fill="black">{escape_xml(str(label))}</text>'
+            f'    <text x="6" y="{2 + label_font_size}" font-size="{label_font_size}" font-family="Nimbus Roman, Times New Roman, Liberation Serif, Times, serif" text-anchor="start" fill="black">{escape_xml(str(label))}</text>'
             f"  </g>"
         )
         parts.append("</g>")
 
     parts.append("</svg>")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(parts), encoding="utf-8")
 
 
@@ -410,6 +412,15 @@ def main(argv: list[str]) -> int:
             label_box_h=args.label_box_h,
         )
         wrote_pages.append(out_path)
+
+    # A successful rerun owns this basename's pages. Do not leave older pages
+    # behind when the candidate list shrinks or changes to/from a single page.
+    owned_page = re.compile(
+        re.escape(args.grid_out.stem) + r"(?:_p\d{2,})?" + re.escape(args.grid_out.suffix)
+    )
+    for previous in args.grid_out.parent.iterdir():
+        if previous.is_file() and owned_page.fullmatch(previous.name) and previous not in wrote_pages:
+            previous.unlink()
 
     print(f"Wrote {len(svg_paths)} molecule SVGs to: {out_dir}")
     if len(wrote_pages) == 1:

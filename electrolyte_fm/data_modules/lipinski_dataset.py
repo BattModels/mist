@@ -31,18 +31,38 @@ class LipinskiDataModule(PropertyPredictionDataModule):
         assert self.encoding != MolEncoding.SELFIES
 
     def _get_dataset(self) -> AbstractDataset:
-        return load_dataset(
+        files = {
+            split: sorted(
+                str(path) for path in (self.path / "data" / split).glob("*.arrow")
+            )
+            for split in ("train", "validation", "test")
+        }
+        for split in ("train", "validation"):
+            if not files[split]:
+                raise FileNotFoundError(
+                    f"Missing Lipinski {split} split at {self.path}"
+                )
+        ds = load_dataset(
             "arrow",
             name=str(self.path.name),
-            data_files={
-                "train": str(self.path.joinpath("data/train/*.arrow")),
-                "validation": str(self.path.joinpath("data/validation/*.arrow")),
-                "test": str(self.path.joinpath("data/test/*.arrow")),
-            },
+            data_files={split: paths for split, paths in files.items() if paths},
             keep_in_memory=False,
             streaming=True,
-            save_infos=False,
-        )  # type: ignore
+        )
+        # The paper's released Arrow archive spells these columns "lipinki".
+        # Normalize names only: keep its original labels and split membership.
+        return ds.__class__(
+            {
+                split: dataset.rename_columns(
+                    {
+                        name: name.replace("lipinki", "lipinski", 1)
+                        for name in dataset.column_names
+                        if name == "lipinki" or name.startswith("lipinki_")
+                    }
+                )
+                for split, dataset in ds.items()
+            }
+        )
 
 
 def get_molnet_dataset(name: str):

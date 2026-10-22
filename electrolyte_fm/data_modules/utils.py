@@ -87,6 +87,15 @@ class MolEncoding(Enum):
         assert False, "Not Reachable, missing Enum Branch"
 
 
+def deterministic_evaluation_encoding(encoding: str | MolEncoding) -> MolEncoding:
+    """Canonicalize atom order without changing the declared SMILES dialect."""
+    encoding = MolEncoding(encoding)
+    # Raw SMILES has no formatting constraint beyond its molecular graph, so
+    # deterministic evaluation uses aromatic canonical SMILES.  Kekulé and
+    # SELFIES retain their declared dialect-specific deterministic encoders.
+    return MolEncoding.CANONICAL_SMILES if encoding == MolEncoding.SMILES else encoding
+
+
 def filter_invalid_smi(
     ds: AbstractDataset, input_column: str, max_procs: int = 20, **kwargs
 ) -> AbstractDataset:

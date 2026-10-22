@@ -11,5 +11,5 @@ RegressionTables = "d519eb52-b820-54da-95a6-98e1306fdade"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [sources]
-FeatureMiner = {path = "../"}
+FeatureMiner = {path = ".."}
 MISTStyle = {path = "../../MISTStyle"}

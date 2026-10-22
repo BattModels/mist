@@ -1,0 +1,893 @@
+"""Acquire and test the MIST-28M/MIST-1.8B MoleculeNet grid."""
+
+load("//config.pomset", "JOB_WALLTIME", "job_resources", SHARED_ENV="ENV", SHARED_OFFLINE="OFFLINE_ENV")
+
+# uv resolves this relative to --project, matching sync_env.py's environment.
+ENV = dict(SHARED_ENV, UV_PROJECT_ENVIRONMENT=".venv")
+OFFLINE = dict(SHARED_OFFLINE, UV_PROJECT_ENVIRONMENT=".venv")
+
+load("//opt/sterochemistry/workflow.pomset", TMQM_MODELS="MIST_MODELS")
+
+ROOT = Path("//results/benchmarks/mist-validation")
+REGISTRY_PATH = Path("./registry.yaml")
+TASK_DEFINITIONS = Path("//submit/moleculenet_tasks.libsonnet")
+REGISTRY = REGISTRY_PATH.read_yaml()
+# Keep the original arrays and their recorded items unchanged. Pomset rejects
+# changes to existing array items, so each new recipe gets a companion array.
+SWEEP_RECIPES = [
+    {"suffix": "", "directory": "sweep", "args": []},
+    {
+        "suffix": "-betas-0p87-0p997",
+        "directory": "sweep-betas-0p87-0p997",
+        "args": ["--betas", "0.87", "0.997", "--warmup-steps", "beta2"],
+    },
+]
+# Selene's standard QoS allows eight hours. Leave fifteen minutes for model
+# selection/export after fitting. The reduced grid gets new array identities
+# because Pomset retains the canceled 15-rate arrays' original items.
+def moleculenet_recipes(base_key):
+    return [
+        {
+            "suffix": "-randomized-" + mode + "-lr8" + recipe["suffix"],
+            "directory": "sweep-randomized-" + mode + "-lr8" + recipe["suffix"],
+            "args": recipe["args"] + [
+                "--encoding", "smiles", "--randomize",
+                "--freeze-encoder" if mode == "frozen" else "--no-freeze-encoder",
+            ],
+            "learning_rates": REGISTRY["expanded_learning_rates"][base_key],
+            "max_time": "00:07:45:00",
+        }
+        for mode in ["frozen", "unfrozen"]
+        for recipe in SWEEP_RECIPES
+    ]
+APPLICATION_FILES = {
+    "fp": "fp_db_filtered.csv",
+    "dn": "dn.csv",
+}
+GPU = job_resources(
+    cpus_per_task=16,
+    gpus_per_node=1,
+    memory_per_node="120GiB",
+    walltime=JOB_WALLTIME,
+)
+TEST_GPU = job_resources(
+    cpus_per_task=8, gpus_per_node=1, memory_per_node="64GiB", walltime="3h"
+)
+
+
+def sync_environment():
+    return task(
+        name="benchmark-sync-environment",
+        cmd=[Path("//electrolyte_fm/utils/sync_env.py")] + sh.args({
+            "project": Path("."),
+        }),
+        env=ENV,
+        executor=shell(),
+        working_directory=Path("."),
+        output_dir=ROOT / "environment",
+        outputs={
+            "receipt": Path("receipt.json"),
+            "python": Path("//opt/benchmarks/.venv/bin/python"),
+        },
+        validator=validate_checksums(),
+    )
+
+
+def benchmark_command(module):
+    # Tasks require the synced environment and run from the repository root.
+    return [
+        "uv", "run", "--no-sync", "--offline", "--project", Path("."),
+        "-m", "opt.benchmarks.scripts." + module,
+    ]
+
+
+def validate_canonical(environment):
+    return task(
+        name="benchmark-validate-canonical-tasks",
+        requires=[environment],
+        cmd=benchmark_command("validate_registry") + [REGISTRY_PATH] + sh.args({
+            "task-definitions": TASK_DEFINITIONS,
+        }),
+        env=ENV,
+        executor=shell(),
+        working_directory=Path("//"),
+        output_dir=Path("//submit"),
+        outputs={"tasks": Path("moleculenet_tasks.libsonnet")},
+        validator=validate_checksums(),
+    )
+
+
+def find_case(base_key, dataset_key):
+    matches = [
+        case
+        for case in REGISTRY["cases"]
+        if case.get("canonical_task") == dataset_key
+        and case["base"] == base_key
+        and case.get("target_subset") == None
+        and case.get("variant") == None
+    ]
+    if len(matches) != 1:
+        fail("expected one acquisition for " + base_key + "/" + dataset_key)
+    return matches[0]
+
+
+def find_dataset_case(dataset_key):
+    return [
+        case
+        for case in REGISTRY["cases"]
+        if case.get("canonical_task") == dataset_key
+        and case.get("target_subset") == None
+    ][0]
+
+
+def find_application_case(base_key, dataset_key):
+    matches = [
+        case
+        for case in REGISTRY["cases"]
+        if case.get("canonical_task") == None
+        and case["dataset"] == dataset_key
+        and case["base"] == base_key
+    ]
+    if len(matches) != 1:
+        fail("expected one application acquisition for " + base_key + "/" + dataset_key)
+    return matches[0]
+
+
+def stage_base(base_key, canonical, environment, base=None):
+    base = REGISTRY["base_models"][base_key] if base == None else base
+    # A compatibility-specific snapshot needs its own durable task/output
+    # identity; a changed command alone may reuse a prior successful output.
+    stage_key = base.get("stage_key", base_key)
+    return task(
+        name="benchmark-stage-" + stage_key,
+        cmd=[environment.outputs.python, Path("//electrolyte_fm/utils/stage_hf.py"), base["id"]] + sh.args({
+            "revision": base["revision"],
+            "output": ROOT / "bases" / stage_key / "model",
+        }),
+        inputs=[canonical.outputs.tasks],
+        env=ENV,
+        executor=shell(),
+        working_directory=Path("."),
+        output_dir=ROOT / "bases" / stage_key,
+        outputs={"model": Path("model")},
+        restartable=True,
+        max_attempts=3,
+        validator=validate_checksums(follow_symlinks=True),
+    )
+
+
+def materialize_dataset(dataset_key, case, canonical):
+    dataset_path = Path("//data/moleculenet") / dataset_key
+    return task(
+        name="benchmark-" + dataset_key + "-materialize-split",
+        requires=[environment],
+        cmd=benchmark_command("materialize_moleculenet") + sh.args({
+            "dataset": dataset_key,
+            "task-definitions": canonical.outputs.tasks,
+            "output-dir": dataset_path,
+        }),
+        env=ENV,
+        executor=shell(),
+        working_directory=Path("//"),
+        output_dir=dataset_path,
+        outputs={
+            "train": Path("train.csv"),
+            "validation": Path("validation.csv"),
+            "test": Path("test.csv"),
+            "protocol": Path("protocol.json"),
+        },
+        restartable=True,
+        max_attempts=3,
+        validator=validate_checksums(),
+    )
+
+
+def materialize_application_dataset(dataset_key, case, canonical):
+    dataset_path = Path(case["path"])
+    source_args = sh.args({"source-dir": Path("//data/releases/screening-heads-public")})
+    if dataset_key in APPLICATION_FILES:
+        source_args = sh.args({"source": Path("//data/benchmarks/sources") / APPLICATION_FILES[dataset_key]})
+    return task(
+        name="benchmark-" + dataset_key + "-materialize-application-split",
+        requires=[environment],
+        cmd=benchmark_command("materialize_application") + sh.args({
+            "dataset": dataset_key,
+        })
+        + source_args
+        + sh.args({
+            "odour-schema": Path("//opt/package/datasets/odour.yaml"),
+            "output-dir": dataset_path,
+        }),
+        inputs=[canonical.outputs.tasks] + ([ODOUR_SOURCE.outputs.data] if dataset_key == "odour" else []),
+        env=ENV,
+        executor=shell(),
+        working_directory=Path("//"),
+        output_dir=dataset_path,
+        outputs={
+            "train": Path("train.csv"),
+            "validation": Path("validation.csv"),
+            "test": Path("test.csv"),
+            "protocol": Path("protocol.json"),
+        },
+        restartable=True,
+        max_attempts=3,
+        validator=validate_checksums(),
+    )
+
+
+def stage_release(base_key, dataset_key, case, canonical):
+    cell_root = ROOT / base_key / dataset_key
+    return task(
+        name="benchmark-stage-release-" + base_key + "-" + dataset_key,
+        cmd=[
+            environment.outputs.python,
+            Path("//electrolyte_fm/utils/stage_hf.py"),
+            case["release"]["id"],
+        ] + sh.args({
+            "revision": case["release"]["revision"],
+            "output": cell_root / "model" / "snapshot",
+        }),
+        inputs=[canonical.outputs.tasks],
+        env=ENV,
+        executor=shell(),
+        working_directory=Path("."),
+        output_dir=cell_root / "model",
+        outputs={"model": Path("snapshot")},
+        restartable=True,
+        max_attempts=3,
+        validator=validate_checksums(follow_symlinks=True),
+    )
+
+
+def sweep_outputs(sweeps):
+    """Keep cells and model artifacts aligned across every recipe."""
+    return {
+        "cell": [cell for sweep in sweeps for cell in sweep.outputs.cell],
+        "model": [model for sweep in sweeps for model in sweep.outputs.model],
+    }
+
+
+def sweep_learning_rates(base_key, dataset_key, case, base, dataset, canonical, fit_args=[], expanded=False):
+    cell_root = ROOT / base_key / dataset_key
+    sweeps = [
+        screening_sweep(base_key, dataset_key, case, base, dataset, canonical, cell_root, recipe, fit_args)
+        for recipe in SWEEP_RECIPES + (moleculenet_recipes(base_key) if expanded else [])
+    ]
+    return sweep_outputs(sweeps)
+
+
+def screening_sweep(base_key, dataset_key, case, base, dataset, canonical, cell_root, recipe, fit_args):
+    sweep_root = cell_root / recipe["directory"]
+    return task(
+        name="benchmark-" + base_key + "-" + dataset_key + "-lr-sweep-bounded" + recipe["suffix"],
+        tags=tags("training"),
+        requires=[environment],
+        cmd=benchmark_command("train_screening_head") + sh.args({
+            "task": case["key"],
+            "registry": REGISTRY_PATH,
+            "task-definitions": canonical.outputs.tasks,
+            "dataset": Path(case["path"]) if case.get("path") else Path("//data/moleculenet") / dataset_key,
+            "model": base.outputs.model,
+            "learning-rate": array.item["value"],
+            "batch-size": case["microbatch"],
+            "effective-batch-size": case["effective_batch"],
+            "max-time": recipe.get("max_time", "00:05:45:00"),
+            "output-dir": sweep_root / array.item["name"],
+        }) + fit_args + recipe["args"],
+        inputs=[
+            dataset.outputs.train,
+            dataset.outputs.validation,
+            dataset.outputs.protocol,
+        ],
+        env=OFFLINE,
+        executor=array(items=recipe.get("learning_rates", REGISTRY["learning_rates"])),
+        working_directory=Path("//"),
+        output_dir=sweep_root / array.item["name"],
+        outputs={"cell": Path("cell.json"), "model": Path("model")},
+        resources=GPU,
+        restartable=True,
+        max_attempts=2,
+        validator=validate_checksums(follow_symlinks=True),
+    )
+
+
+def score_test(base_key, dataset_key, case, source, dataset, canonical):
+    if case["release"] != None:
+        source_args = sh.args({"model": source.outputs.model})
+    else:
+        source_args = (
+            ["--cells"] + source["cell"] + ["--models"] + source["model"]
+        )
+    cell_root = ROOT / base_key / dataset_key
+    return task(
+        name="benchmark-" + base_key + "-" + dataset_key + "-test",
+        requires=[environment],
+        cmd=benchmark_command("score_test")
+        + source_args
+        + sh.args({
+            "registry": REGISTRY_PATH,
+            "task-definitions": canonical.outputs.tasks,
+            "case": case["key"],
+            "test-csv": dataset.outputs.test,
+            "output-dir": cell_root / "test",
+        }),
+        env=OFFLINE,
+        working_directory=Path("//"),
+        output_dir=cell_root / "test",
+        outputs={
+            "metrics": Path("metrics.json"),
+            "selection": Path("selection.json"),
+            "model": Path("model"),
+        },
+        resources=TEST_GPU,
+        validator=validate_checksums(follow_symlinks=True),
+        restartable=True,
+        max_attempts=3,
+    )
+
+
+def benchmark_report(tests):
+    return dict(
+        name="validation-benchmark-report",
+        requires=[environment],
+        cmd=benchmark_command("collate_validation") + [
+            "--registry",
+            REGISTRY_PATH,
+            "--tests",
+        ]
+        + tests
+        + sh.args({
+            "output-dir": ROOT / "report",
+        }),
+        env=ENV,
+        executor=shell(),
+        working_directory=Path("//"),
+        output_dir=ROOT / "report",
+        outputs={
+            "json": Path("validation-benchmarks.json"),
+            "test_csv": Path("benchmark-tests.csv"),
+            "test_latex": Path("benchmark-tests.tex"),
+            "classification_csv": Path("molnet_classification.csv"),
+            "classification_latex": Path("molnet_classification.tex"),
+            "regression_csv": Path("molnet_regression.csv"),
+            "regression_latex": Path("molnet_regression.tex"),
+        },
+        validator=validate_checksums(),
+    )
+
+
+def moleculenet_seed_report(base_key, dataset_key, case, base, dataset, sweep, canonical):
+    # Changed selection requires fresh tasks; checksum-valid historical seed
+    # reports cannot stand in for the expanded search's winner.
+    seed_root = ROOT / base_key / dataset_key / "seeds-expanded"
+    common = sh.args({
+        "task": case["key"],
+        "registry": REGISTRY_PATH,
+        "task-definitions": canonical.outputs.tasks,
+        "dataset": Path("//data/moleculenet") / dataset_key,
+        "test-csv": dataset.outputs.test,
+    })
+    seed42 = task(
+        name="benchmark-" + base_key + "-" + dataset_key + "-seed42-losses-expanded",
+        requires=[environment],
+        cmd=benchmark_command("moleculenet_seeds") + ["seed42"]
+        + common + ["--cells"] + sweep["cell"]
+        + ["--models"] + sweep["model"]
+        + sh.args({
+            "output-dir": seed_root / "42",
+        }),
+        inputs=[dataset.outputs.train, dataset.outputs.validation, dataset.outputs.protocol],
+        env=OFFLINE,
+        working_directory=Path("//"),
+        output_dir=seed_root / "42",
+        outputs={"losses": Path("losses.json"), "selection": Path("selection.json")},
+        resources=TEST_GPU,
+        restartable=True,
+        max_attempts=3,
+        validator=validate_checksums(),
+    )
+    repeats = task(
+        name="benchmark-" + base_key + "-" + dataset_key + "-additional-seeds-expanded",
+        tags=tags("training"),
+        requires=[environment],
+        cmd=benchmark_command("moleculenet_seeds") + ["fit"]
+        + common + sh.args({
+            "selection": seed42.outputs.selection,
+            "model": base.outputs.model,
+            "seed": array.item,
+            "batch-size": case["microbatch"],
+            "effective-batch-size": case["effective_batch"],
+            "output-dir": seed_root / array.item,
+        }),
+        inputs=[dataset.outputs.train, dataset.outputs.validation, dataset.outputs.protocol],
+        env=OFFLINE,
+        executor=array(items=["43", "44", "45", "46"]),
+        working_directory=Path("//"),
+        output_dir=seed_root / array.item,
+        outputs={"losses": Path("losses.json")},
+        resources=GPU,
+        restartable=True,
+        max_attempts=2,
+        validator=validate_checksums(),
+    )
+    return task(
+        name="benchmark-" + base_key + "-" + dataset_key + "-seed-uncertainty-expanded",
+        requires=[environment],
+        cmd=benchmark_command("moleculenet_seeds") + ["summarize",
+             "--losses", seed42.outputs.losses]
+        + repeats.outputs.losses + sh.args({
+            "output": seed_root / "losses.json",
+        }),
+        env=ENV,
+        # Selene requires a GPU in standard allocations, including this short
+        # collation job. Scheduler dependencies avoid a frontend controller.
+        resources=job_resources(cpus_per_task=1, gpus_per_node=1, memory_per_node="4GiB", walltime="10min"),
+        working_directory=Path("//"),
+        output_dir=seed_root,
+        outputs={"losses": Path("losses.json")},
+        validator=validate_checksums(),
+    )
+
+
+environment = sync_environment()
+canonical = validate_canonical(environment)
+bases = {
+    base_key: stage_base(base_key, canonical, environment)
+    for base_key in REGISTRY["base_models"]
+}
+BASE_MODELS = {key: value.outputs.model for key, value in bases.items()}
+SURPRISE_BASELINES = {}
+for key, model in REGISTRY["surprise_baselines"].items():
+    staged = stage_base("surprise-" + key, canonical, environment, base=model)
+    SURPRISE_BASELINES[key] = {"id": model["id"], "model": staged.outputs.model}
+datasets = {
+    dataset_key: materialize_dataset(
+        dataset_key,
+        find_dataset_case(dataset_key),
+        canonical,
+    )
+    for dataset_key in REGISTRY["datasets"]
+}
+tests = []
+MOLECULENET_MODELS = {}
+MOLECULENET_SEED_LOSSES = {}
+for base_key in REGISTRY["base_models"]:
+    MOLECULENET_MODELS[base_key] = {}
+    MOLECULENET_SEED_LOSSES[base_key] = {}
+    for dataset_key in REGISTRY["datasets"]:
+        case = find_case(base_key, dataset_key)
+        dataset = datasets[dataset_key]
+        fit_case = dict(case,
+            microbatch=case.get("microbatch", "16" if base_key == "mist-28m" else "1"),
+            effective_batch=case.get("effective_batch", "128"),
+        )
+        seed_sweep = sweep_learning_rates(
+            base_key, dataset_key, fit_case, bases[base_key], dataset, canonical,
+            expanded=True,
+        )
+        if case["release"] != None:
+            source = stage_release(base_key, dataset_key, case, canonical)
+        else:
+            source = seed_sweep
+        tested = score_test(
+            base_key,
+            dataset_key,
+            case,
+            source,
+            dataset,
+            canonical,
+        )
+        if case["release"] != None:
+            MOLECULENET_MODELS[base_key][dataset_key] = source.outputs.model
+        else:
+            MOLECULENET_MODELS[base_key][dataset_key] = tested.outputs.model
+        tests.append(tested.outputs.metrics)
+        # Released heads remain available to model consumers. New uncertainty
+        # measurements use a seed-42 sweep from the same pretrained base.
+        seed_report = moleculenet_seed_report(
+            base_key, dataset_key, fit_case, bases[base_key], dataset, seed_sweep, canonical
+        )
+        MOLECULENET_SEED_LOSSES[base_key][dataset_key] = seed_report.outputs.losses
+
+# The 28M token panels use a released ToxCast head. Fit the corresponding 1.8B
+# head through the same canonical split and validation-selected LR sweep.
+toxcast_case = find_case("mist-1p8b", "toxcast")
+toxcast_data = materialize_dataset("toxcast", toxcast_case, canonical)
+toxcast_fit = sweep_learning_rates(
+    "mist-1p8b", "toxcast", toxcast_case, bases["mist-1p8b"], toxcast_data, canonical,
+)
+TOXCAST_MODELS = {
+    "mist-1p8b": score_test(
+        "mist-1p8b", "toxcast", toxcast_case, toxcast_fit, toxcast_data, canonical,
+    ).outputs.model,
+}
+
+ODOUR_SOURCE = task(
+    name="benchmark-odour-source",
+    cmd=[environment.outputs.python, Path("//electrolyte_fm/utils/fetch_file.py"),
+         "https://raw.githubusercontent.com/BioMachineLearning/openpom/5434c4b7badebca8e7d180aa34d2f787402121ee/openpom/data/curated_datasets/curated_GS_LF_merged_4983.csv",
+         Path("//data/releases/screening-heads-public/curated_GS_LF_merged_4983.csv")]
+        + sh.args({"sha256": "0c18b6e9f0f99b772203ba4da30a96b3d60db700349376cbafe23512a9baa704", "bytes": 1647971}),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//data/releases/screening-heads-public"),
+    outputs={"data": Path("curated_GS_LF_merged_4983.csv")},
+    validator=validate_checksums(),
+)
+
+APPLICATION_HEADS = ["bp", "mp", "odour", "pka", "etn", "kt", "dn", "fp"]
+application_datasets = {
+    dataset_key: materialize_application_dataset(
+        dataset_key,
+        find_application_case("mist-1p8b", dataset_key),
+        canonical,
+    )
+    for dataset_key in APPLICATION_HEADS
+}
+APPLICATION_MODELS = {}
+for base_key in REGISTRY["base_models"]:
+    APPLICATION_MODELS[base_key] = {}
+    for dataset_key in APPLICATION_HEADS:
+        case = find_application_case(base_key, dataset_key)
+        dataset = application_datasets[dataset_key]
+        if case["release"] != None:
+            source = stage_release(base_key, dataset_key, case, canonical)
+        else:
+            source = sweep_learning_rates(
+                base_key, dataset_key, case, bases[base_key], dataset, canonical
+            )
+        tested = score_test(
+            base_key,
+            dataset_key,
+            case,
+            source,
+            dataset,
+            canonical,
+        )
+        if case["release"] != None:
+            APPLICATION_MODELS[base_key][dataset_key] = source.outputs.model
+        else:
+            APPLICATION_MODELS[base_key][dataset_key] = tested.outputs.model
+        tests.append(tested.outputs.metrics)
+
+# Olfaction figures use heads trained on the declared seed-42 split. The
+# released 28M head has unknown split membership; retain it for existing
+# applications and fit a fresh head for held-out olfaction analysis.
+ODOUR_DATA = application_datasets["odour"].outputs
+odour_case = dict(find_application_case("mist-28m", "odour"),
+                  microbatch="16", effective_batch="128")
+odour_sweep = sweep_learning_rates(
+    "mist-28m", "odour", odour_case, bases["mist-28m"],
+    application_datasets["odour"], canonical,
+)
+odour_selected = task(
+    name="benchmark-mist-28m-odour-seed42-selection",
+    requires=[environment],
+    working_directory=Path("//"),
+    cmd=benchmark_command("select_model") + ["--cells"]
+        + odour_sweep["cell"] + ["--models"] + odour_sweep["model"]
+        + sh.args({"output-dir": ROOT / "mist-28m/odour-seed42"}),
+    env=OFFLINE,
+    executor=shell(),
+    output_dir=ROOT / "mist-28m/odour-seed42",
+    outputs={"model": Path("model"), "selection": Path("selection.json")},
+    validator=validate_checksums(follow_symlinks=True),
+)
+ODOUR_MODELS = {
+    "mist-28m": odour_selected.outputs.model,
+    "mist-1p8b": APPLICATION_MODELS["mist-1p8b"]["odour"],
+}
+
+ISOTOPE_DATA = task(
+    name="benchmark-isotopes-materialize",
+    requires=[environment],
+    working_directory=Path("//"),
+    cmd=benchmark_command("materialize_isotopes") + sh.args({
+        "source": Path("//data/releases/isotopes-wolfram-1.0.0/Radioactive-Isotope-Half-Lives.json"),
+        "source-url": "https://www.wolframcloud.com/download/59368163-54cb-4881-97bb-0ee26df191c7?filename=Radioactive-Isotope-Half-Lives.json",
+        "sha256": "ecab89819c24167c830bf7c98ff5b44596a1655e0080b2154d6a2ba621618df8",
+        "output-dir": Path("//data/isotopes/wolfram-seed42"),
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//data/isotopes/wolfram-seed42"),
+    outputs={"source": Path("//data/releases/isotopes-wolfram-1.0.0/Radioactive-Isotope-Half-Lives.json"),
+             "cohort": Path("cohort.csv"), "train": Path("train.csv"),
+             "validation": Path("validation.csv"), "test": Path("test.csv"),
+             "protocol": Path("protocol.json")},
+    validator=validate_checksums(),
+)
+ISOTOPE_MODELS = {}
+for base_key, base in bases.items():
+    case = find_application_case(base_key, "isotopes")
+    fitted = sweep_learning_rates(
+        base_key, "isotopes", case, base, ISOTOPE_DATA, canonical,
+        fit_args=sh.args({"max-steps": "5000", "val-check-interval": "100"}),
+    )
+    tested = score_test(base_key, "isotopes", case, fitted, ISOTOPE_DATA, canonical)
+    ISOTOPE_MODELS[base_key] = tested.outputs.model
+    tests.append(tested.outputs.metrics)
+
+DESIGN_QM9_MODELS = {
+    "mist-28m": {"randomized": MOLECULENET_MODELS["mist-28m"]["qm9"]},
+    "mist-1p8b": {"baseline": MOLECULENET_MODELS["mist-1p8b"]["qm9"]},
+}
+for case in REGISTRY["cases"]:
+    if case.get("variant") != None:
+        key = case["key"]
+        base_key = case["base"]
+        source = sweep_learning_rates(
+            base_key, key, case, bases[base_key], datasets["qm9"], canonical
+        )
+        tested = score_test(
+            base_key, key, case, source, datasets["qm9"], canonical
+        )
+        DESIGN_QM9_MODELS[base_key][case["variant"]] = tested.outputs.model
+        tests.append(tested.outputs.metrics)
+
+pubchem_case = find_application_case("mist-28m", "pubchemqc")
+pubchem = task(
+    name="benchmark-pubchemqc-materialize",
+    requires=[environment],
+    working_directory=Path("//"),
+    cmd=benchmark_command("materialize_pubchemqc") + sh.args({
+        "dataset": Path(pubchem_case["path"]),
+        "output": ROOT / "pubchemqc" / "dataset",
+        "provenance": ROOT / "pubchemqc" / "receipt.json",
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=ROOT / "pubchemqc",
+    outputs={"dataset": Path("dataset"), "provenance": Path("receipt.json")},
+    validator=validate_checksums(follow_symlinks=True),
+)
+PUBCHEMQC_MODELS = {}
+for base_key, base in bases.items():
+    case = find_application_case(base_key, "pubchemqc")
+    cell_root = ROOT / base_key / "pubchemqc"
+    sweeps = []
+    for recipe in SWEEP_RECIPES:
+        fitted = task(
+            name="benchmark-" + base_key + "-pubchemqc-lr-sweep-bounded" + recipe["suffix"],
+            tags=tags("training"),
+            requires=[environment],
+            working_directory=Path("//"),
+            cmd=benchmark_command("partial_charge") + ["fit"] + sh.args({
+                "task": case["key"],
+                "model": base.outputs.model,
+                "dataset": pubchem.outputs.dataset,
+                "learning-rate": array.item["value"],
+                "batch-size": case["microbatch"],
+                "gradient-accumulation": case["gradient_accumulation"],
+                "output-dir": cell_root / recipe["directory"] / array.item["name"],
+            }) + recipe["args"],
+            env=OFFLINE,
+            executor=array(items=REGISTRY["learning_rates"]),
+            resources=GPU,
+            output_dir=cell_root / recipe["directory"] / array.item["name"],
+            outputs={"cell": Path("cell.json"), "model": Path("model")},
+            restartable=True,
+            max_attempts=2,
+            validator=validate_checksums(follow_symlinks=True),
+        )
+        sweeps.append(fitted)
+    sweep = sweep_outputs(sweeps)
+    tested = task(
+        name="benchmark-" + base_key + "-pubchemqc-test",
+        working_directory=Path("//"),
+        cmd=benchmark_command("partial_charge") + ["evaluate"]
+        + ["--cells"]
+        + sweep["cell"]
+        + ["--models"]
+        + sweep["model"]
+        + sh.args({
+            "task": case["key"],
+            "base": base_key,
+            "dataset": pubchem.outputs.dataset,
+            "output-dir": cell_root / "test",
+        }),
+        requires=[base, environment],
+        env=OFFLINE,
+        resources=TEST_GPU,
+        output_dir=cell_root / "test",
+        outputs={
+            "selection": Path("selection.json"),
+            "metrics": Path("metrics.json"),
+            "model": Path("model"),
+        },
+        validator=validate_checksums(follow_symlinks=True),
+    )
+    PUBCHEMQC_MODELS[base_key] = tested.outputs.model
+    tests.append(tested.outputs.metrics)
+
+BENCHMARK_REPORT = task(**benchmark_report(tests))
+
+# Shared mixture inputs retain their existing task names.
+# Fitting and plotting consume the same immutable published split directories.
+MIXTURE_DATABASE = task(
+    name="mixtures-stage-database",
+    cmd=[environment.outputs.python, Path("//opt/mixtures/materialize_dataset.py"), "stage"] + sh.args({
+        "output": Path("//data/mixtures-workflow/excess-properties"),
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//data/mixtures-workflow"),
+    outputs={"dataset": Path("excess-properties")},
+    validator=validate_checksums(follow_symlinks=True),
+)
+MIXTURE_RELEASED_MODEL = task(
+    name="mixtures-stage-released-model",
+    cmd=[
+        environment.outputs.python,
+        Path("//electrolyte_fm/utils/stage_hf.py"),
+        "mist-models/mist-mixtures-zffffbex",
+    ] + sh.args({
+        "revision": "cb54e41fa6c477e705419232752971e4463cd699",
+        "output": Path("//results/mixtures/mist-28m/released-model/snapshot"),
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//results/mixtures/mist-28m/released-model"),
+    outputs={"model": Path("snapshot")},
+    validator=validate_checksums(follow_symlinks=True),
+)
+
+def fit_mixture(base, split, directory, name):
+    output = ROOT / base / directory
+    return task(
+        name="benchmark-" + base + "-mixtures-" + name,
+        tags=tags("training"),
+        requires=[environment],
+        working_directory=Path("//"),
+        cmd=benchmark_command("train_mixture") + sh.args({
+            "dataset": MIXTURE_DATABASE.outputs.dataset / split,
+            "model": BASE_MODELS[base],
+            "architecture": MIXTURE_RELEASED_MODEL.outputs.model,
+            "output-dir": output,
+        })
+            + (sh.args({"split-policy": "random"}) if split == "random" else [])
+            + (sh.args({
+                "batch-size": "1",
+                "accumulate-grad-batches": "16",
+                "val-batch-size": "4",
+                "val-check-interval": "1600",
+                "precision": "bf16-mixed",
+            }) if base == "mist-1p8b" else []),
+        inputs=[MIXTURE_DATABASE.outputs.dataset],
+        env=OFFLINE,
+        resources=GPU,
+        output_dir=output,
+        outputs={"model": Path("model"), "training": Path("training.json")},
+        restartable=True,
+        max_attempts=3,
+        validator=validate_checksums(follow_symlinks=True),
+    )
+
+MIXTURE_MODELS = {"mist-28m": MIXTURE_RELEASED_MODEL.outputs.model}
+MIXTURE_MODELS["mist-1p8b"] = fit_mixture(
+    "mist-1p8b", "random", "mixtures-random", "random",
+).outputs.model
+STRICT_MIXTURE_MODELS = {base: {} for base in BASE_MODELS}
+for base in BASE_MODELS:
+    for fold in range(5):
+        STRICT_MIXTURE_MODELS[base][fold] = fit_mixture(
+            base, "k-compound-strict-" + str(fold),
+            "mixtures-strict/fold-" + str(fold), "strict-" + str(fold),
+        ).outputs.model
+
+# The same pinned AEM observations feed the figures and the prepared seed-42 split.
+IONIC_AEM_DATA = task(
+    name="ionic-stage-aem-data",
+    cmd=[
+        environment.outputs.python,
+        Path("//electrolyte_fm/utils/fetch_file.py"),
+        "https://raw.githubusercontent.com/BattModels/DiffMix-NatCommData/a3651ba671d2e54ed3a16f27d7d334a3339b7f54/training_data/published_AEM_data.csv",
+        Path("//data/external/DiffMix-NatCommData/training_data/published_AEM_data.csv"),
+    ] + sh.args({
+        "bytes": "3309104",
+        "sha256": "2f44ba6e69c07bbee4c914afa5b47ad9ae2b0769eb951b22330f4ecf3a244c7f",
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//data/external/DiffMix-NatCommData/training_data"),
+    outputs={"data": Path("published_AEM_data.csv")},
+    validator=validate_checksums(),
+)
+
+ionic_dataset = task(
+    name="benchmark-ionic-conductivity-materialize-split",
+    requires=[environment],
+    working_directory=Path("//"),
+    cmd=benchmark_command("materialize_conductivity") + sh.args({
+        "source": IONIC_AEM_DATA.outputs.data,
+        "output-dir": Path("//data/ionic-conductivity-1p8b/replacement-seed42"),
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//data/ionic-conductivity-1p8b"),
+    outputs={"dataset": Path("replacement-seed42")},
+    validator=validate_checksums(),
+)
+ionic_1p8b = task(
+    name="benchmark-mist-1p8b-ionic-conductivity-fit",
+    tags=tags("training"),
+    requires=[environment],
+    working_directory=Path("//"),
+    cmd=benchmark_command("train_conductivity") + sh.args({
+        "dataset": ionic_dataset.outputs.dataset,
+        "model": BASE_MODELS["mist-1p8b"],
+        "output-dir": ROOT / "mist-1p8b/ionic-conductivity",
+    }),
+    env=OFFLINE,
+    resources=GPU,
+    output_dir=ROOT / "mist-1p8b/ionic-conductivity",
+    outputs={"model": Path("model"), "training": Path("training.json")},
+    restartable=True,
+    # The full 100,000-step fit spans about 17 eight-hour allocations on Chicoma.
+    max_attempts=24,
+    validator=validate_checksums(follow_symlinks=True),
+)
+IONIC_MODELS = {"mist-1p8b": ionic_1p8b.outputs.model}
+
+# Public, unaugmented olfactory-mixture observations. CID zeroes are padding.
+OLFACTORY_RELEASE = "https://raw.githubusercontent.com/Satarifard/CWYK-Olfboost/d1779fc9c632e279aed80ae2c945031a8dbf6080/"
+olfactory_sources = {}
+for key, relative, digest, size in [
+    ("definitions", "augmentation/Mixure_Definitions_Original.csv", "46d8fcc54bd08aedd366271a4f54fbfa35e8cb21e2a15b00b4c00dc8bed15ba6", 141855),
+    ("annotations", "augmentation/gt_with_dataset_Original.csv", "3990217f0136adf3826044126949d9df48443b54e533204d47b18765cdc68502", 23736),
+    ("identities", "odor-pair-model/CID_SMILES.csv", "70c8a56299139b824d35636f28f78b8b97d74df39142a13da25b489592bc5c98", 13047),
+]:
+    directory = Path("//data/releases/olfboost-d1779fc9")
+    filename = key + ".csv"
+    olfactory_sources[key] = task(
+        name="benchmark-olfactory-mixtures-fetch-" + key,
+        cmd=[environment.outputs.python, Path("//electrolyte_fm/utils/fetch_file.py"),
+             OLFACTORY_RELEASE + relative, directory / filename] + sh.args({
+            "sha256": digest, "bytes": size,
+        }),
+        env=ENV,
+        executor=shell(),
+        output_dir=directory,
+        outputs={"data": Path(filename)},
+        validator=validate_checksums(),
+    ).outputs.data
+
+OLFACTORY_MIXTURE_DATA = task(
+    name="benchmark-olfactory-mixtures-materialize-split",
+    requires=[environment],
+    working_directory=Path("//"),
+    cmd=benchmark_command("materialize_olfactory_mixtures")
+        + sh.args(dict(olfactory_sources, **{
+            "seed": 42,
+            "output-dir": Path("//data/olfactory-mixtures/seed42"),
+        })),
+    env=OFFLINE,
+    executor=shell(),
+    output_dir=Path("//data/olfactory-mixtures"),
+    outputs={"dataset": Path("seed42")},
+    validator=validate_checksums(),
+)
+OLFACTORY_MIXTURE_MODELS = {}
+for base in BASE_MODELS:
+    output = ROOT / base / "olfactory-mixtures"
+    fitted = task(
+        name="benchmark-" + base + "-olfactory-mixtures-fit",
+        tags=tags("training"),
+        requires=[environment],
+        working_directory=Path("//"),
+        cmd=benchmark_command("train_olfactory_mixtures") + sh.args({
+            "dataset": OLFACTORY_MIXTURE_DATA.outputs.dataset,
+            "model": BASE_MODELS[base],
+            "output-dir": output,
+            "precision": "bf16-mixed" if base == "mist-1p8b" else "32-true",
+            "optimizer-offload": base == "mist-1p8b",
+        }),
+        env=OFFLINE,
+        resources=GPU,
+        output_dir=output,
+        outputs={"model": Path("model"), "training": Path("training.json")},
+        restartable=True,
+        max_attempts=24,
+        validator=validate_checksums(),
+    )
+    OLFACTORY_MIXTURE_MODELS[base] = fitted.outputs.model

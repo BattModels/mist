@@ -21,6 +21,21 @@ class ProgressiveThawing(BaseFinetuning):
         self.lr_initial = float(lr_initial)
         self.lr_decay = float(lr_decay)
 
+    def state_dict(self):
+        return {**super().state_dict(), "current_stage": self.current_stage,
+                "lr_scale": self.lr_scale.copy()}
+
+    def load_state_dict(self, state_dict):
+        super().load_state_dict(state_dict)
+        self.current_stage = state_dict.get("current_stage", 0)
+        self.lr_scale = state_dict.get("lr_scale", [0])
+
+    def on_fit_start(self, trainer, pl_module):
+        super().on_fit_start(trainer, pl_module)
+        for patterns in self.stages[:self.current_stage]:
+            for _, module in self.matching_modules(pl_module, patterns):
+                self.make_trainable(module)
+
     def setup(self, trainer, pl_module, stage) -> None:
         if not hasattr(pl_module, "encoder"):
             pl_module.configure_model()

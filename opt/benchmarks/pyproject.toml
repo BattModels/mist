@@ -1,0 +1,8 @@
+[project]
+name = "mist-screening-benchmarks"
+version = "0.1.0"
+requires-python = ">=3.10,<3.14"
+dependencies = ["electrolyte-fm", "pandas>=2.2", "pyyaml>=6", "beautifulsoup4>=4.12", "openpyxl>=3.1"]
+
+[tool.uv.sources]
+electrolyte-fm = { path = "../..", editable = true }

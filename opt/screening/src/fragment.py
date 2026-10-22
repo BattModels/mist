@@ -1,14 +1,16 @@
 import csv
+import logging
 import sqlite3
 import subprocess
-import logging
+import sys
+from itertools import islice
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from itertools import islice
 
 import typer
 
 cli = typer.Typer()
+logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,45 +30,51 @@ def batched(iterable, n, *, strict=False):
 def fragment_smi(
     file,
     frag_file: str | None = None,
-    w: int = 150,
     smi_column: str = "smi",
     name_column: str | None = None,
     num_passes: int = 1,
+    fragmenter: Path | None = None,
+    interpreter: str = sys.executable,
 ):
     # Delay import to reduce startup time
     frag_file = frag_file or "fragments.smi"
+    Path(frag_file).parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile() as outfile:
         with (
             open(file, "r", newline="") as infile,
             open(outfile.name, "w", newline="") as outfile,
         ):
             name_column = name_column or "name"
-            fieldnames = (
-                None if str(file).endswith(".csv") else [smi_column, name_column]
-            )
-            delimiter = "," if str(file).endswith(".csv") else "\t"
-            reader = csv.DictReader(infile, fieldnames, delimiter=delimiter)
+            if str(file).endswith(".csv"):
+                reader = csv.DictReader(infile)
+            else:
+                reader = (
+                    {
+                        smi_column: fields[0],
+                        name_column: fields[1] if len(fields) > 1 else fields[0],
+                    }
+                    for line in infile
+                    if (fields := line.strip().split(maxsplit=1))
+                )
             writer = csv.writer(outfile, delimiter="\t")
             # Write filtered rows
             for row in reader:
                 writer.writerow(
-                    [row[smi_column], row.get(name_column, row[smi_column])]
+                    [row[smi_column], row.get(name_column) or row[smi_column]]
                 )
 
         subprocess.run(
             [
-                Path(__file__).parent.parent.joinpath(
-                    "vendor", "FASMIFRA", "bin", "fasmifra_fragment.py"
-                ),
+                interpreter,
+                fragmenter,
                 "-i",
                 outfile.name,
-                "-w",
-                str(w),
                 "-o",
                 str(frag_file),
                 "-n",
                 str(num_passes),
-            ]
+            ],
+            check=True,
         )
     return frag_file
 
@@ -80,7 +88,7 @@ def store_fragments_in_sqlite(folder):
     def extract_fragments(folder_path):
         folder = Path(folder_path)
         for file_path in folder.glob("*.frag"):
-            logging.info("processing %s", file_path)
+            logger.info("processing %s", file_path)
             with file_path.open("r", encoding="utf-8") as f:
                 for line in f:
                     if line.strip():  # skip empty lines
@@ -89,9 +97,8 @@ def store_fragments_in_sqlite(folder):
     # Create table if it doesn't exist
     c.execute("""
         CREATE TABLE IF NOT EXISTS fragments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fragment TEXT UNIQUE
-        )
+            fragment TEXT PRIMARY KEY
+        ) WITHOUT ROWID
     """)
 
     # Insert patterns, ignoring duplicates

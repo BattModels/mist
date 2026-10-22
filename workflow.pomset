@@ -1,0 +1,23 @@
+load(
+    "opt/benchmarks/workflow.pomset",
+    BENCHMARK_TASKS="POMSET_TASKS",
+)
+load(
+    "opt/screening/workflow.pomset",
+    SCREENING_TASKS="POMSET_TASKS",
+)
+load(
+    "opt/sterochemistry/workflow.pomset",
+    STEREOCHEMISTRY_TASKS="POMSET_TASKS",
+)
+load("opt/synth_access/workflow.pomset", SYNTH_ACCESS_TASKS="POMSET_TASKS")
+load("opt/design/workflow.pomset", DESIGN_TASKS="POMSET_TASKS")
+load("opt/FeatureMiner/workflow.pomset", FEATURE_MINER_TASKS="POMSET_TASKS")
+load("opt/mixtures/workflow.pomset", MIXTURE_TASKS="POMSET_TASKS")
+load("opt/mixtures/ionic_workflow.pomset", IONIC_TASKS="POMSET_TASKS")
+load("opt/olfactory/workflow.pomset", OLFACTION_TASKS="POMSET_TASKS")
+load("opt/interp_embeddings/workflow.pomset", EMBEDDING_TASKS="POMSET_TASKS")
+load("opt/BayesianScaling/workflow.pomset", SCALING_TASKS="POMSET_TASKS")
+load("opt/pretraining/workflow.pomset", PRETRAINING_TASKS="POMSET_TASKS")
+load("opt/isotopes/workflow.pomset", ISOTOPE_TASKS="POMSET_TASKS")
+load("opt/sterochemistry/paper_workflow.pomset", TMQM_PAPER_TASKS="POMSET_TASKS")

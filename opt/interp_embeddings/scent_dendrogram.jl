@@ -22,13 +22,15 @@ function load_logits(csv_path::AbstractString)
 end
 
 
-function corr_distance_scents(X::AbstractMatrix)
+function corr_distance_scents(X::AbstractMatrix; metric=:correlation)
+    metric in (:correlation, :paper) || error("Unknown correlation distance: $metric")
     n_scents = size(X, 2)
     D = zeros(Float64, n_scents, n_scents)
 
     for i in 1:n_scents, j in (i + 1):n_scents
         corr_val = cor(X[:, i], X[:, j])
         distance = 1.0 - (isfinite(corr_val) ? corr_val : 0.0)
+        metric == :paper && (distance = sqrt(max(0.0, 2.0 * distance)))
         D[i, j] = D[j, i] = distance
     end
 
@@ -126,7 +128,6 @@ function add_leaf_labels!(ax, node_angles, leaf_names, leaf_colors, label_radius
             rotation = rotation,
             align = align,
             color = col,
-            font = "Helvetica",
             fontsize = label_size)
     end
     return nothing
@@ -172,7 +173,7 @@ function plot_radial_dendrogram(D::AbstractMatrix, scent_names::Vector{<:Abstrac
     if k !== nothing
         lids = cutree(H, k = k)
 
-        palette = to_colormap(:tab10, 13)
+        palette = Makie.resample_cmap(:tab10, 13)
         cmap = Dict(cid => palette[mod1(i, length(palette))] for (i, cid) in enumerate(unique(lids)))
         leaf_colors = [cmap[c] for c in lids]
 
@@ -207,9 +208,12 @@ function plot_radial_dendrogram(D::AbstractMatrix, scent_names::Vector{<:Abstrac
     return fig, ax, H, leaf_colors
 end
 
-csv_path = "raw_prediction.csv"
-df, X, scent_names = load_logits(csv_path)
-D = corr_distance_scents(X)
-fig, ax, H, colors = plot_radial_dendrogram(D, scent_names; linkage = :complete, k = 12, figsize = (510, 500))
-outpath = replace(csv_path, r"\.csv$" => "_radial_dendrogram.pdf")
-save(outpath, fig)
+if abspath(PROGRAM_FILE) == @__FILE__
+    csv_path = isempty(ARGS) ? "raw_prediction.csv" : ARGS[1]
+    outpath = length(ARGS) < 2 ? replace(csv_path, r"\.csv$" => "_radial_dendrogram.pdf") : ARGS[2]
+    df, X, scent_names = load_logits(csv_path)
+    D = corr_distance_scents(X)
+    fig, ax, H, colors = plot_radial_dendrogram(D, scent_names; linkage = :complete, k = 12, figsize = (510, 500))
+    mkpath(dirname(outpath))
+    save(outpath, fig)
+end

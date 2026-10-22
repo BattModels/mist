@@ -1,0 +1,438 @@
+schema_version: 1
+provenance:
+  paper_values: data/paper-source/main.tex
+  reproduced_release_metrics: runs/released-checkpoint-scores/scores.csv
+  note: Paper-table rows reproduce the manuscript validation values; acquired-model rows are reported separately and never silently substituted.
+base_models:
+  mist-28m:
+    id: mist-models/mist-28M-ti624ev1
+    revision: bfeebb7a2619a61d321de922b66376f5cb682eef
+  mist-1p8b:
+    id: mist-models/mist-1.8B-dh61satt
+    revision: ed6df0875e4425ede9b12019bbd8c2a3c439052d
+datasets: [bbbp, hiv, bace, tox21, clintox, sider, esol, freesolv, lipo, qm8, qm9, muv]
+surprise_baselines:
+  molformer:
+    id: ibm-research/MoLFormer-XL-both-10pct
+    stage_key: surprise-molformer-transformers-v4
+    # Upstream's compat-v4 revision; the model.safetensors weights are identical
+    # to 361063d0ad524ef77cf39b08469f6be770dc550f (sha256: 0795977fe7192c4a...).
+    revision: 7b12d946c181a37f6012b9dc3b002275de070314
+  chemberta:
+    id: seyonec/ChemBERTa-zinc-base-v1
+    revision: 761d6a18cf99db371e0b43baf3e2d21b3e865a20
+learning_rates:
+  - name: "2e-7"
+    value: "2e-7"
+  - name: "6e-7"
+    value: "6e-7"
+  - name: "2e-6"
+    value: "2e-6"
+  - name: "6e-6"
+    value: "6e-6"
+  - name: "2e-5"
+    value: "2e-5"
+  - name: "6e-5"
+    value: "6e-5"
+  - name: 1p6e-4
+    value: "1.6e-4"
+# Eight logarithmically spaced rates per base, including both endpoints.
+# Original items above stay unchanged for selection from completed work.
+expanded_learning_rates:
+  mist-28m:
+    - {name: "1e-5", value: "1e-5"}
+    - {name: 2p3535469e-5, value: "2.3535469e-5"}
+    - {name: 5p539183e-5, value: "5.539183e-5"}
+    - {name: 1p3036727e-4, value: "1.3036727e-4"}
+    - {name: 3p0682548e-4, value: "3.0682548e-4"}
+    - {name: 7p2212816e-4, value: "7.2212816e-4"}
+    - {name: 1p6995625e-3, value: "1.6995625e-3"}
+    - {name: "4e-3", value: "4e-3"}
+  mist-1p8b:
+    - {name: "1e-5", value: "1e-5"}
+    - {name: 1p9306977e-5, value: "1.9306977e-5"}
+    - {name: 3p7275937e-5, value: "3.7275937e-5"}
+    - {name: 7p1968567e-5, value: "7.1968567e-5"}
+    - {name: 1p3894955e-4, value: "1.3894955e-4"}
+    - {name: 2p6826958e-4, value: "2.6826958e-4"}
+    - {name: 5p1794747e-4, value: "5.1794747e-4"}
+    - {name: "1e-3", value: "1e-3"}
+cases:
+  # Additional interpretation head; the 24-pair MoleculeNet seed grid is unchanged.
+  - {key: toxcast-1p8b, canonical_task: toxcast, base: mist-1p8b, path: ../../data/moleculenet/toxcast, microbatch: "1", effective_batch: "128", release: null}
+  # New fits on the accepted available Wolfram cohort. Keep the original two
+  # scaled half-life targets and 5,000-step budget; use benchmark LR selection.
+  - {key: isotopes-28m, dataset: isotopes, path: ../../data/isotopes/wolfram-seed42, targets: [half_life, log_time], split: wolfram-seed42, task: regression, metric: rmse, metrics: [mae, mae-channel, r2-channel], encoding: smiles, unit: coefficient/exponent, table: isotope_heads, base: mist-28m, microbatch: "16", effective_batch: "16", release: null}
+  - {key: isotopes-1p8b, dataset: isotopes, path: ../../data/isotopes/wolfram-seed42, targets: [half_life, log_time], split: wolfram-seed42, task: regression, metric: rmse, metrics: [mae, mae-channel, r2-channel], encoding: smiles, unit: coefficient/exponent, table: isotope_heads, base: mist-1p8b, microbatch: "4", effective_batch: "16", release: null}
+  # No published token-level MIST charge head was found; train on the recovered
+  # JCIM2017 corpus, not the chemically different later PM6 release.
+  - {key: pubchemqc-28m, dataset: pubchemqc, path: ../../data/pubchemqc/pubchemqc_jcim2017-split-v2, targets: [partial-charge-mulliken, hs_partial-charge-mulliken, partial-charge-lowdin, hs_partial-charge-lowdin], split: recovered-jcim2017, task: token-regression, metric: mae, unit: e, table: partial_charge, base: mist-28m, microbatch: "32", effective_batch: "128", gradient_accumulation: "4", release: null}
+  - {key: pubchemqc-1p8b, dataset: pubchemqc, path: ../../data/pubchemqc/pubchemqc_jcim2017-split-v2, targets: [partial-charge-mulliken, hs_partial-charge-mulliken, partial-charge-lowdin, hs_partial-charge-lowdin], split: recovered-jcim2017, task: token-regression, metric: mae, unit: e, table: partial_charge, base: mist-1p8b, microbatch: "4", effective_batch: "32", gradient_accumulation: "8", release: null}
+  - {key: muv-28m, canonical_task: muv, base: mist-28m, release: {id: mist-models/mist-28M-yr1urd2c-muv, revision: 333919d2d7232bc931731e0ecdb3ecf728ecaf01, validation_value: null}}
+  - {key: muv-1p8b, canonical_task: muv, path: ../../data/moleculenet/muv, base: mist-1p8b, microbatch: "4", effective_batch: "32", release: null}
+  - {key: qm9-baseline-28m, canonical_task: qm9, variant: baseline, randomize: false, path: ../../data/moleculenet/qm9, base: mist-28m, microbatch: "16", effective_batch: "16", release: null}
+  - {key: qm9-randomized-1p8b, canonical_task: qm9, variant: randomized, randomize: true, path: ../../data/moleculenet/qm9, base: mist-1p8b, microbatch: "4", effective_batch: "32", release: null}
+  # The source CSVs for these heads must be supplied under the materializer's
+  # data/benchmarks/sources; BF3 affinity is not the Gutmann DN scale.
+  - {key: dn-28m, dataset: dn, path: ../../data/screening-heads/supplied-seed42/dn, targets: [BF3 affinity], split: supplied-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: kJ/mol, table: design_heads, base: mist-28m, release: {id: mist-models/mist-26.9M-6hk5coof-dn, revision: fe2532a82ec917d334baf62a768a593e46acd32e, validation_value: null}}
+  - {key: fp-28m, dataset: fp, path: ../../data/screening-heads/supplied-seed42/fp, targets: [fp], split: supplied-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: degC, table: design_heads, base: mist-28m, release: {id: mist-models/mist-26.9M-cyuo2xb6-fp, revision: c2752d79f5df4bd53294f700a0c680b7e1b8c457, validation_value: null}}
+  - {key: dn-1p8b, dataset: dn, path: ../../data/screening-heads/supplied-seed42/dn, targets: [BF3 affinity], split: supplied-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: kJ/mol, table: design_heads, base: mist-1p8b, microbatch: "4", effective_batch: "8", release: null}
+  - {key: fp-1p8b, dataset: fp, path: ../../data/screening-heads/supplied-seed42/fp, targets: [fp], split: supplied-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: degC, table: design_heads, base: mist-1p8b, microbatch: "4", effective_batch: "32", release: null}
+  - {key: bp-28m, dataset: bp, path: ../../data/screening-heads/replacement-seed42/bp, targets: [bp], split: replacement-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: degC, table: screening_heads, base: mist-28m, release: {id: mist-models/mist-26.9M-b302p09x-bp, revision: f9114f4f05fbb3b7ed7b8670beb1423dafb32e26, validation_value: null}}
+  - {key: mp-28m, dataset: mp, path: ../../data/screening-heads/replacement-seed42/mp, targets: [mp], split: replacement-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: degC, table: screening_heads, base: mist-28m, release: {id: mist-models/mist-26.9M-y3ge5pf9-mp, revision: ae459f28196ff2d5fde11583f4de13c0239b4631, validation_value: null}}
+  - {key: odour-28m, dataset: odour, path: ../../data/screening-heads/replacement-seed42/odour, targets_from: ../../opt/package/datasets/odour.yaml, split: public-openpom-seed42, task: binary, metric: auroc, metrics: [auroc], unit: logit, table: screening_heads, base: mist-28m, release: {id: mist-models/mist-26.9M-48kpooqf-odour, revision: df1faedc10d99b46c97d26de99b9c01e84f29906, validation_value: null}}
+  - {key: pka-28m, dataset: pka, path: ../../data/screening-heads/replacement-seed42/pka, targets: [DMSO_pKa], split: replacement-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: pKa, table: screening_heads, base: mist-28m, release: {id: mist-models/mist-28M-6zlgl2qn-pKa, revision: b28eacb7bcaf460195c44312a4b546985c9f3d27, validation_value: null}}
+  - {key: etn-28m, dataset: etn, path: ../../data/screening-heads/replacement-seed42/etn, targets: [ETN], split: replacement-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: dimensionless, table: screening_heads, base: mist-28m, release: {id: mist-models/mist-27.1M-1gcxtg8y-ETN, revision: c67d2c38336abf56a4117ae4560f5f2ef0d2884f, validation_value: null}}
+  - {key: kt-28m, dataset: kt, path: ../../data/screening-heads/replacement-seed42/kt, targets: [alpha, beta], split: replacement-seed42, task: regression, metric: rmse, metrics: [rmse, mae], unit: dimensionless, table: screening_heads, base: mist-28m, release: {id: mist-models/mist-28M-solvent-properties, revision: bcb86b6b8b3fed5dadc6677d2de79cca0020f747, validation_value: null, compatibility: alpha_beta_component_in_six_channel_multitask_bundle}}
+  - {key: bbbp-28m, canonical_task: bbbp, base: mist-28m, release: {id: mist-models/mist-28M-3xpfhv48-bbbp, revision: f8867105652658ea6d0233aafa24a020a5ed1b21, validation_value: 0.998295}}
+  - {key: hiv-28m, canonical_task: hiv, base: mist-28m, release: {id: mist-models/mist-28M-8fh43gke-hiv, revision: d68d5b6c5abbdaf4145aa4d2026318c2108fa7d5, validation_value: 0.876446}}
+  - {key: bace-28m, canonical_task: bace, base: mist-28m, release: {id: mist-models/mist-28M-8loj3bab-bace, revision: b2e9d87f6970e1a164bdbff4fdb21922c3ca4a93, validation_value: 0.933685}}
+  - {key: tox21-28m, canonical_task: tox21, base: mist-28m, release: {id: mist-models/mist-28M-kw4ks27p-tox21, revision: 5eef66e410a59708b133b22c4562416cc2f05819, validation_value: 0.812477}}
+  - {key: clintox-28m, canonical_task: clintox, base: mist-28m, release: {id: mist-models/mist-28M-97vfcykk-clintox, revision: 93a276d0cb3e4918e22773965fd44a8cc0f651f2, validation_value: 0.998188}}
+  - {key: sider-28m, canonical_task: sider, base: mist-28m, release: {id: mist-models/mist-28M-z8qo16uy-sider, revision: 28ceeee92e66d33ac8ec06e4c15a1aa8ebcafbce, validation_value: 0.584281}}
+  - {key: esol-28m, canonical_task: esol, base: mist-28m, release: {id: mist-models/mist-28M-kcwb9le5-esol, revision: e62653622a4a5efc951128c3652d8850d76f7379, validation_value: 0.635331}}
+  - {key: freesolv-28m, canonical_task: freesolv, base: mist-28m, release: {id: mist-models/mist-28M-0uiq7o7m-freesolv, revision: e38d8a35b3ef273a2ca8ec9c2ff8d014f0033682, validation_value: 0.287676}}
+  - {key: lipo-28m, canonical_task: lipo, base: mist-28m, release: {id: mist-models/mist-28M-xzr5ulva-lipo, revision: ad071251a575a850895e6018ecce382a33cda47c, validation_value: 0.730558}}
+  - {key: qm8-28m, canonical_task: qm8, base: mist-28m, release: {id: mist-models/mist-28M-gzwqzpcr-qm8, revision: 1af94460e96bcfeb796d475c3feadb55e241aa37, validation_value: 0.00979512}}
+  - {key: qm9-28m, canonical_task: qm9, base: mist-28m, release: {id: mist-models/mist-26.9M-kkgx0omx-qm9, revision: 65ceeed479609e9dcaef04e687556e2b39e25f23, validation_value: 3.782}}
+  - key: bbbp
+    canonical_task: bbbp
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-fbdn8e35-bbbp
+      revision: 15773eab5cd6bb9a6de9f7e55643e0ae16beee08
+      validation_value: 0.974425
+  - key: hiv
+    canonical_task: hiv
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-1a4puhg2-hiv
+      revision: db87e162b1cc143a9e6d273b2d5f5efc8ffe5d87
+      validation_value: 0.683431
+  - key: bace
+    canonical_task: bace
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-m50jgolp-bace
+      revision: e55a29814a08b0dea84e2dde34c5cf4272610517
+      validation_value: 0.850
+  - key: clintox
+    canonical_task: clintox
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-lu1l5ieh-clintox
+      revision: fabddd4cac8b6894c1db077cf28a49be37841b69
+      validation_value: 0.998
+  - key: sider
+    canonical_task: sider
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-l1wfo7oa-sider
+      revision: 5f1aa0c7e3c227f1e623f160694295b181866d91
+      validation_value: 0.828
+  - key: esol
+    canonical_task: esol
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-hxiygjsm-esol
+      revision: 492b867c874317c7b91aca36774561e701400280
+      validation_value: 0.776685
+  - key: freesolv
+    canonical_task: freesolv
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-iwqj2cld-freesolv
+      revision: 7576ca249b027b1e1f1a92af29894e7f41874a08
+      validation_value: 0.338475
+  - key: lipo
+    canonical_task: lipo
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-jvt4azpz-lipo
+      revision: abb0fc0a34bc6047b1fcd23b9cbca58ab4735c9b
+      validation_value: 0.714384
+  - key: qm8
+    canonical_task: qm8
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-8nd1ot5j-qm8
+      revision: 3cd8c8844b0618111d14f18977976d8566b1293b
+      validation_value: 0.010026
+  - key: qm9-all
+    canonical_task: qm9
+    path: ../../data/moleculenet/qm9
+    base: mist-1p8b
+    microbatch: "1"
+    effective_batch: "128"
+    release: null
+  - key: qm9-gap
+    canonical_task: qm9
+    target_subset: [gap]
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-kayun6v3-gap
+      revision: 78cc9589afb0474c1535de6b1e89aad19d5f3e93
+      validation_value: 0.00578612
+  - key: qm9-homo
+    canonical_task: qm9
+    target_subset: [homo]
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-jmjosq12-homo
+      revision: 1bfe81e2b7dfcef35712b47cd783b7ac0847e939
+      validation_value: 0.00373568
+  - key: qm9-lumo
+    canonical_task: qm9
+    target_subset: [lumo]
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-n14wshc9-lumo
+      revision: 193d1c62a4adc34ab71c94882c4ca8245dbb3d90
+      validation_value: 0.004562091139219824
+  - key: tox21
+    canonical_task: tox21
+    base: mist-1p8b
+    release:
+      id: mist-models/mist-1.8B-uop1z0dc-tox21
+      revision: da3ab8111dcfc2f347635af73eb4e7e2264377ad
+      validation_value: 0.840
+      bootstrap_std: 0.013
+  - key: bp
+    dataset: bp
+    path: ../../data/screening-heads/replacement-seed42/bp
+    targets:
+      - bp
+    task: regression
+    metrics: [rmse, mae]
+    split: replacement-seed42
+    metric: rmse
+    unit: degC
+    table: screening_heads
+    base: mist-1p8b
+    microbatch: "1"
+    effective_batch: "16"
+    release: null
+  - key: odour
+    dataset: odour
+    path: ../../data/screening-heads/replacement-seed42/odour
+    targets_from: ../../opt/package/datasets/odour.yaml
+    split: public-openpom-seed42
+    task: binary
+    metric: auroc
+    metrics: [auroc]
+    unit: logit
+    table: screening_heads
+    base: mist-1p8b
+    microbatch: "1"
+    effective_batch: "128"
+    release: null
+  - key: mp
+    dataset: mp
+    path: ../../data/screening-heads/replacement-seed42/mp
+    targets:
+      - mp
+    task: regression
+    metrics: [rmse, mae]
+    split: replacement-seed42
+    metric: rmse
+    unit: degC
+    table: screening_heads
+    base: mist-1p8b
+    microbatch: "1"
+    effective_batch: "32"
+    release: null
+  - key: pka
+    dataset: pka
+    path: ../../data/screening-heads/replacement-seed42/pka
+    targets:
+      - DMSO_pKa
+    task: regression
+    metrics: [rmse, mae]
+    split: replacement-seed42
+    metric: rmse
+    unit: pKa
+    table: screening_heads
+    base: mist-1p8b
+    microbatch: "1"
+    effective_batch: "8"
+    release: null
+  - key: etn
+    dataset: etn
+    path: ../../data/screening-heads/replacement-seed42/etn
+    targets:
+      - ETN
+    task: regression
+    metrics: [rmse, mae]
+    split: replacement-seed42
+    metric: rmse
+    unit: dimensionless
+    table: screening_heads
+    base: mist-1p8b
+    microbatch: "1"
+    effective_batch: "8"
+    release: null
+  - key: kt
+    dataset: kt
+    path: ../../data/screening-heads/replacement-seed42/kt
+    targets:
+      - alpha
+      - beta
+    task: regression
+    metrics: [rmse, mae]
+    split: replacement-seed42
+    metric: rmse
+    unit: dimensionless
+    table: screening_heads
+    base: mist-1p8b
+    microbatch: "1"
+    effective_batch: "32"
+    release: null
+paper_tables:
+  molnet_classification:
+    label: tab:molnet_class_bench
+    metric: auroc
+    direction: higher
+    columns:
+      - BBBP
+      - HIV
+      - BACE
+      - Tox21
+      - ClinTox
+      - SIDER
+    rows:
+      - model: MIST-28M (unfrozen)
+        provenance: paper_reported_validation
+        values:
+          - 0.967
+          - 0.838
+          - 0.881
+          - 0.844
+          - 0.999
+          - 0.827
+        std:
+          - 0.014
+          - 0.001
+          - 0.034
+          - 0.013
+          - 0.001
+          - 0.012
+      - model: MIST-28M (frozen)
+        provenance: paper_reported_validation
+        values:
+          - 0.956
+          - 0.809
+          - 0.839
+          - 0.855
+          - 0.987
+          - 0.823
+        std:
+          - 0.015
+          - 0.021
+          - 0.035
+          - 0.011
+          - 0.003
+          - 0.008
+      - model: MIST-1.8B (unfrozen)
+        provenance: paper_reported_validation
+        values:
+          - 0.971
+          - 0.838
+          - 0.850
+          - 0.840
+          - 0.998
+          - 0.828
+        std:
+          - 0.013
+          - 0.002
+          - 0.036
+          - 0.013
+          - 0.009
+          - 0.011
+      - model: MIST-1.8B (frozen)
+        provenance: paper_reported_validation
+        values:
+          - 0.970
+          - 0.728
+          - 0.837
+          - 0.851
+          - 0.998
+          - 0.784
+        std:
+          - 0.020
+          - 0.021
+          - 0.034
+          - 0.012
+          - 0.011
+          - 0.013
+  molnet_regression:
+    label: tab:molnet_reg_bench
+    metric:
+      - rmse
+      - rmse
+      - rmse
+      - mae
+      - mae
+    direction: lower
+    columns:
+      - ESOL
+      - FreeSolv
+      - Lipo
+      - QM8
+      - QM9
+    rows:
+      - model: MIST-28M (unfrozen)
+        provenance: paper_reported_validation
+        values:
+          - 0.632
+          - 0.249
+          - 0.699
+          - 0.0089
+          - 3.782
+        std:
+          - 0.062
+          - 0.032
+          - 0.031
+          - 0.0003
+          - 0.057
+      - model: MIST-28M (frozen)
+        provenance: paper_reported_validation
+        values:
+          - 0.859
+          - 0.350
+          - 0.945
+          - 0.0206
+          - 15.610
+        std:
+          - 0.057
+          - 0.045
+          - 0.032
+          - 0.0004
+          - 0.190
+      - model: MIST-1.8B (unfrozen)
+        provenance: paper_reported_validation
+        values:
+          - 0.664
+          - 0.275
+          - 0.507
+          - 0.0103
+          - 1.766
+        std:
+          - 0.066
+          - 0.035
+          - 0.031
+          - 0.0003
+          - 0.324
+      - model: MIST-1.8B (frozen)
+        provenance: paper_reported_validation
+        values:
+          - 0.781
+          - 0.277
+          - 0.863
+          - 0.0190
+          - 5.499
+        std:
+          - 0.082
+          - 0.034
+          - 0.035
+          - 0.0003
+          - 0.199

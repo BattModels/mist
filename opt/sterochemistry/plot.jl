@@ -1,3 +1,4 @@
+#!/usr/bin/env -S julia --project=@script --startup-file=no
 using Makie
 using MISTStyle
 using JSON: JSON
@@ -61,7 +62,7 @@ DEFAULT_CHANNELS = [
     "HL_Gap" => L"$$Gap\n(eV)",
 ]
 
-function plot_results(df, channels=DEFAULT_CHANNELS)
+function _plot_results(df, channels=DEFAULT_CHANNELS)
     f = Figure(; size=(4inch, 3inch))
 
     local h
@@ -117,6 +118,12 @@ function plot_results(df, channels=DEFAULT_CHANNELS)
     return f
 end
 
+function plot_results(args...; kwargs...)
+    return with_theme(MISTStyle.theme()) do
+        _plot_results(args...; kwargs...)
+    end
+end
+
 function plot_all()
     files = [
         "results_auto.json" => "auto",
@@ -141,10 +148,93 @@ function plot_all()
                 end
             end
 
-            with_theme(MISTStyle.theme()) do
-                plot_results(df)
-            end |> MISTStyle.savefig("metallic_pah_$(label)_$(loc)")
+            fig = plot_results(dfp)
+            MISTStyle.savefig("metallic_pah_$(label)_$(loc)", fig)
         end
     end
     return nothing
+end
+
+function benchmark_args(args)
+    metrics_flag = findfirst(==("--metrics"), args)
+    output_flag = findfirst(==("--output-dir"), args)
+    if isnothing(metrics_flag) || isnothing(output_flag) || output_flag <= metrics_flag + 1
+        error("usage: plot.jl --metrics METRICS... --output-dir DIRECTORY")
+    end
+    return args[metrics_flag+1:output_flag-1], args[output_flag+1]
+end
+
+function latex_escape(value)
+    return replace(string(value), "\\" => "\\textbackslash{}", "_" => "\\_", "&" => "\\&", "%" => "\\%")
+end
+
+function benchmark_bar(records, field, ylabel, name, output_dir)
+    with_theme(MISTStyle.theme()) do
+        labels = string.(getindex.(records, "model"))
+        values = Float64.(getindex.(records, field))
+        f = Figure(; size=(7inch, 4inch))
+        ax = Axis(f[1, 1]; ylabel, xticks=(eachindex(labels), labels), xticklabelrotation=π / 7)
+        barplot!(ax, eachindex(values), values; color=eachindex(values), colormap=MISTStyle.CAT_COLORS)
+        MISTStyle.savefig(name, f; fig_dir=output_dir)
+    end
+    return nothing
+end
+
+function save_benchmark_plots(records, output_dir; prefix="")
+    coverage = [merge(record, Dict("coverage_percent" => 100 * record["coverage_fraction"])) for record in records]
+    benchmark_bar(records, "mean_target_r2", "Mean validation-selected test R²",
+        joinpath(prefix, "r2-comparison"), output_dir)
+    benchmark_bar(coverage, "coverage_percent", "tmQM test coverage (%)",
+        joinpath(prefix, "coverage"), output_dir)
+    return nothing
+end
+
+function plot_model_benchmark(args=ARGS)
+    metric_files, output_dir = benchmark_args(args)
+    records = [JSON.parsefile(path) for path in metric_files]
+    all(get(record, "status", nothing) == "sealed_test_complete" for record in records) ||
+        error("incomplete held-out result")
+    length(records) == length(unique(getindex.(records, "model"))) || error("duplicate model result")
+    length(records) == length(unique(getindex.(records, "label"))) || error("duplicate model label")
+    sort!(records; by=record -> record["model"])
+    mkpath(output_dir)
+
+    unified = Dict(
+        "schema_version" => 1,
+        "status" => "complete",
+        "dataset" => "tmQM",
+        "selection_split" => "validation",
+        "test_access" => "once after selection",
+        "models" => records,
+    )
+    open(joinpath(output_dir, "results.json"), "w") do io
+        JSON.print(io, unified, 2)
+        println(io)
+    end
+
+    open(joinpath(output_dir, "results.tex"), "w") do io
+        println(io, "\\begin{tabular}{lrr}")
+        println(io, "\\toprule")
+        println(io, raw"Model & Mean test $R^2$ & Coverage (\%) \\\\")
+        println(io, "\\midrule")
+        for record in records
+            model = latex_escape(record["model"])
+            r2 = round(Float64(record["mean_target_r2"]); digits=4)
+            coverage = round(100 * Float64(record["coverage_fraction"]); digits=1)
+            println(io, model, " & ", r2, " & ", coverage, raw" \\\\")
+        end
+        println(io, "\\bottomrule")
+        println(io, "\\end{tabular}")
+    end
+
+    save_benchmark_plots(records, output_dir)
+    for record in records
+        save_benchmark_plots([record], output_dir; prefix=joinpath("models", record["label"]))
+    end
+    return nothing
+end
+
+function (@main)(args)
+    plot_model_benchmark(args)
+    return 0
 end

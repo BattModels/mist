@@ -71,17 +71,18 @@ function model_summary(files)
     return DataFrame(rows)
 end
 
+function model_name(model, lr_model_size, geometric_penalty, harmonic_shape_penalty)
+    named = Dict(
+        ("Penalized", :model_size, true, false) => "Penalized, Baseline",
+        ("Penalized", :d_model, true, false) => "Penalized, \\(\\eta_{\\star} = f(d_{\\text{model}})\\)",
+        ("Penalized", :model_size, true, true) => "\\stacked{Penalized, Harmonic}{Shape Penalty}",
+        ("Penalized", :model_size, false, true) => "Penalized, Additive",
+        ("Chinchilla", nothing, nothing, nothing) => "No Penalties",
+    )
+    return get(named, (model, lr_model_size, geometric_penalty, harmonic_shape_penalty), nothing)
+end
+
 function write_scaling_param_table(df::DataFrame; sigdigits=3)
-    function model_name(model, lr_model_size, geometric_penalty, harmonic_shape_penalty)
-        named = Dict(
-            ("Penalized", :model_size, true, false) => "Penalized, Baseline",
-            ("Penalized", :d_model, true, false) => "Penalized, \\(\\eta_{\\star} = f(d_{\\text{model}})\\)",
-            ("Penalized", :model_size, true, true) => "\\stacked{Penalized, Harmonic}{Shape Penalty}",
-            ("Penalized", :model_size, false, true) => "Penalized, Additive",
-            ("Chinchilla", nothing, nothing, nothing) => "No Penalties",
-        )
-        return get(named, (model, lr_model_size, geometric_penalty, harmonic_shape_penalty), nothing)
-    end
     df = transform(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(model_name) => :model_name)
     subset!(df, :model_name => ByRow(!isnothing))
     sort!(df, :waic)
@@ -153,7 +154,7 @@ function figure_smoothed_scaling(df)
     transform!(df, [:model, :lr_model_size, :geometric_penalty, :harmonic_shape_penalty] => ByRow(model_name) => :model_name)
     df = subset(df, :model_name => ByRow(!isnothing), :file => ByRow(endswith("gamma")))
 
-    f = Figure(; size=(5inch, 3inch))
+    f = Figure(; size=(5inch, 3inch), figure_padding=(2pt, 12pt, 2pt, 2pt))
     ax_waic = Axis(f[1, 1];
         limits=(extrema(df.n_smooth), nothing),
         xlabel="Validation Observation Averaged Over",
@@ -181,13 +182,20 @@ function figure_smoothed_scaling(df)
     linewidth=1pt
     for gdf in groupby(df, :model_name)
         @info first(gdf.model_name)
-        lines!(ax_waic, gdf.n_smooth, gdf.waic; label=first(gdf.model_name), linewidth)
-        lines!(ax_mape, gdf.n_smooth, gdf.mape; label=first(gdf.model_name), linewidth)
-        lines!(ax_rho, gdf.n_smooth, gdf.spearman; label=first(gdf.model_name), linewidth)
+        # Table labels contain manuscript-only TeX macros; use readable labels
+        # in the figure without changing the model families or plotted values.
+        label = replace(first(gdf.model_name),
+            "\\stacked{Penalized, Harmonic}{Shape Penalty}" => "Penalized, Harmonic Shape",
+            "Penalized, \\(\\eta_{\\star} = f(d_{\\text{model}})\\)" => "Penalized, Width-Based LR",
+        )
+        lines!(ax_waic, gdf.n_smooth, gdf.waic; label, linewidth)
+        lines!(ax_mape, gdf.n_smooth, gdf.mape; label, linewidth)
+        lines!(ax_rho, gdf.n_smooth, gdf.spearman; label, linewidth)
     end
 
     Legend(f[4, 1], ax_rho;
         orientation=:horizontal,
+        nbanks=3,
         tellwidth=false,
         tellheight=true,
     )
@@ -195,7 +203,7 @@ function figure_smoothed_scaling(df)
     return f
 end
 
-function summary_rows(df; sigdigits=3)
+function summary_rows(df; sigdigits=3, output_dir="fig")
     df = sort(df, :n_smooth)
     function model_name(model, lr_model_size, geometric_penalty, harmonic_shape_penalty)
         named = Dict(
@@ -218,7 +226,7 @@ function summary_rows(df; sigdigits=3)
         u = round(u; sigdigits)
         return "\\ci{$μ}{$l}{$u}"
     end
-    open(joinpath("fig", "scaling_summary_rows.tex"), "w") do io
+    open(joinpath(output_dir, "scaling_summary_rows.tex"), "w") do io
         for model in eachrow(df)
             row = [
                 model.model_name,
@@ -235,11 +243,21 @@ function summary_rows(df; sigdigits=3)
 end
 
 function (@main)(ARGS)
-    df = model_summary(BayesianScaling.find("out", r"dec-3-.*chains.jld2"))
+    length(ARGS) <= 2 || error("usage: param_table.jl [CHAIN_ROOT [OUTPUT_DIR]]")
+    chains_dir = isempty(ARGS) ? "out" : ARGS[1]
+    output_dir = length(ARGS) == 2 ? ARGS[2] : "fig"
+    isdir(chains_dir) || error("Released scaling chains are missing: $chains_dir")
+    files = BayesianScaling.find(chains_dir, r"dec-3-.*chains.jld2")
+    isempty(files) && error("No released factorial scaling chains found in $chains_dir")
+    df = model_summary(files)
+    mkpath(output_dir)
+    with_theme(MISTStyle.theme()) do
+        figure_smoothed_scaling(copy(df))
+    end |> MISTStyle.savefig("sweep_smoothing"; fig_dir=output_dir)
     subset!(df, :n_smooth => ByRow(==(1)), :file => ByRow(endswith("gamma")))
     table = write_scaling_param_table(df)
-    open(joinpath("fig", "param_table.tex"), "w") do io
+    open(joinpath(output_dir, "param_table.tex"), "w") do io
         write(io, table)
     end
-    summary_rows(df)
+    summary_rows(df; output_dir)
 end

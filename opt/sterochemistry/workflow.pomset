@@ -1,0 +1,340 @@
+"""Model -> LR array -> validation selection -> held-out test -> report."""
+
+load(
+    "//config.pomset",
+    "JOB_WALLTIME",
+    "job_resources",
+    CACHE_ENV="ENV",
+    BASE_OFFLINE_ENV="OFFLINE_ENV",
+)
+
+ROOT = Path("//results/properties/tmqm/model-benchmark")
+DATA = Path("//data/tmqm-paper-release")
+DATA_ARCHIVE = Path("//data/releases/zenodo-13761263/tmQM.tar.gz")
+DATA_URL = "https://zenodo.org/records/13761263/files/tmQM.tar.gz?download=1"
+OFFLINE_ENV = dict(
+    BASE_OFFLINE_ENV,
+    # Imported model code is outside the command script's content fingerprint.
+    # Advance this marker whenever those inference/training semantics change.
+    TMQM_CODE_REVISION="fixed-positional-ids-v1",
+)
+REPORT_ENV = CACHE_ENV
+
+MODELS = [
+    {
+        "key": "mist-28m",
+        "model": "mist-models/mist-28M-ti624ev1",
+        "revision": "bfeebb7a2619a61d321de922b66376f5cb682eef",
+        "batch_size": 16,
+    },
+    {
+        "key": "mist-1p8b",
+        "model": "mist-models/mist-1.8B-dh61satt",
+        "revision": "ed6df0875e4425ede9b12019bbd8c2a3c439052d",
+        "batch_size": 1,
+    },
+    {
+        "key": "molformer",
+        "model": "ibm/MoLFormer-XL-both-10pct",
+        "revision": "7b12d946c181a37f6012b9dc3b002275de070314",
+        "batch_size": 8,
+    },
+    {
+        "key": "chemberta-v1",
+        "model": "seyonec/ChemBERTa-zinc-base-v1",
+        "revision": "761d6a18cf99db371e0b43baf3e2d21b3e865a20",
+        "batch_size": 16,
+    },
+    {
+        "key": "chemberta-v2",
+        "model": "DeepChem/ChemBERTa-77M-MTR",
+        "revision": "66b895cab8adebea0cb59a8effa66b2020f204ca",
+        "batch_size": 16,
+    },
+    {
+        "key": "chemberta-v3",
+        "model": "DeepChem/MoLFormer-c3-1.1B",
+        "revision": "9f1b9ea3590833bd0ea1a70e789c5d3da11ba7ed",
+        "batch_size": 8,
+    },
+    {
+        "key": "chemberta-100m",
+        "model": "DeepChem/ChemBERTa-100M-MLM",
+        "revision": "f5c45f44d3061f0346888f5c09db17ec1146d29d",
+        "batch_size": 16,
+    },
+    {
+        "key": "selformer",
+        "model": "HUBioDataLab/SELFormer",
+        "revision": "177d98b158e999a6cb7fc9743dbfe1e8a17c57e5",
+        "batch_size": 16,
+    },
+    {
+        "key": "selformer-lite",
+        "model": "HUBioDataLab/SELFormer-Lite",
+        "revision": "9cb00ca24cdd7211da74b1708f5999dd56dcfcbd",
+        "batch_size": 16,
+    },
+    {
+        "key": "selfies-ted",
+        "model": "ibm-research/materials.selfies-ted",
+        "revision": "55e83392264cb998f7aa5014847df29868aefeb8",
+        "batch_size": 8,
+    },
+]
+LRS = [
+    {"label": "lr-1e-05", "lr": 0.00001},
+    {"label": "lr-3e-05", "lr": 0.00003},
+    {"label": "lr-1e-04", "lr": 0.0001},
+    {"label": "lr-1p6e-04", "lr": 0.00016},
+]
+GPU = job_resources(
+    cpus_per_task=16, gpus_per_node=1, memory_per_node="64GiB", walltime=JOB_WALLTIME
+)
+TEST_GPU = job_resources(
+    cpus_per_task=16, gpus_per_node=1, memory_per_node="64GiB", walltime="3h"
+)
+test_metrics = []
+report_predictions = []
+MIST_MODELS = {}
+report_outputs = {
+    "json": Path("results.json"),
+    "latex": Path("results.tex"),
+    "r2_web": Path("r2-comparison.png"),
+    "r2_figure": Path("r2-comparison.pdf"),
+    "coverage_web": Path("coverage.png"),
+    "coverage_figure": Path("coverage.pdf"),
+}
+report_labels = ["mist-28m-release"]
+for model in MODELS:
+    report_labels.append(model["key"])
+for label in report_labels:
+    report_outputs[label + "-r2-web"] = Path("models") / label / "r2-comparison.png"
+    report_outputs[label + "-r2-figure"] = Path("models") / label / "r2-comparison.pdf"
+    report_outputs[label + "-coverage-web"] = Path("models") / label / "coverage.png"
+    report_outputs[label + "-coverage-figure"] = Path("models") / label / "coverage.pdf"
+
+environment = task(
+    name="tmqm-sync-environment",
+    cmd=["python3", Path("//electrolyte_fm/utils/sync_env.py")] + sh.args({
+        "project": Path("."),
+    }),
+    executor=shell(),
+    working_directory=Path("."),
+    output_dir=ROOT / "environment",
+    outputs={
+        "receipt": Path("receipt.json"),
+        "python": Path("//opt/sterochemistry/.venv/bin/python"),
+    },
+    validator=validate_checksums(),
+)
+
+chemberta_v3_remote_code = task(
+    name="tmqm-chemberta-v3-remote-code",
+    cmd=[
+        environment.outputs.python,
+        Path("//electrolyte_fm/utils/stage_hf.py"),
+        "ibm/MoLFormer-XL-both-10pct",
+    ] + sh.args({
+        "revision": "7b12d946c181a37f6012b9dc3b002275de070314",
+        "allow-pattern": "*.py",
+        "output": ROOT / "chemberta-v3" / "remote-code" / "snapshot",
+    }),
+    env=CACHE_ENV,
+    executor=shell(),
+    working_directory=Path("."),
+    output_dir=ROOT / "chemberta-v3" / "remote-code",
+    outputs={"model": Path("snapshot")},
+    validator=validate_checksums(follow_symlinks=True),
+)
+
+paper_release = task(
+    name="tmqm-materialize-paper-release",
+    cmd=[environment.outputs.python, Path("//electrolyte_fm/utils/fetch_datasets.py"), DATA_URL] + sh.args({
+        "archive": DATA_ARCHIVE,
+        "bytes": "401650891",
+        "md5": "e06483086d6a6474fae81b7492859d1f",
+        "extract": DATA,
+        "strip-components": "2",
+        "required": ["dataset_dict.json", "train", "validation", "test"],
+    }),
+    executor=shell(),
+    working_directory=Path("."),
+    output_dir=DATA,
+    outputs={
+        "receipt": Path("fetch-receipt.json"),
+        "dataset_dict": Path("dataset_dict.json"),
+        "train": Path("train"),
+        "validation": Path("validation"),
+        "test": Path("test"),
+    },
+    validator=validate_checksums(),
+)
+
+released_model = task(
+    name="tmqm-mist-28m-release-model",
+    cmd=[
+        environment.outputs.python,
+        Path("//electrolyte_fm/utils/stage_hf.py"),
+        "mist-models/mist-28M-ggd8iisr-tmQM",
+    ] + sh.args({
+        "revision": "e0587490dd35dd11c0bbba35f6a485b8eaa74479",
+        "output": ROOT / "mist-28m-release" / "model" / "snapshot",
+    }),
+    env=CACHE_ENV,
+    executor=shell(),
+    working_directory=Path("."),
+    output_dir=ROOT / "mist-28m-release" / "model",
+    outputs={"model": Path("snapshot")},
+    validator=validate_checksums(follow_symlinks=True),
+)
+released_test = task(
+    name="tmqm-mist-28m-release-test",
+    cmd=[environment.outputs.python, Path("./scripts/test_tmqm_selected.py")] + sh.args({
+        "model": "mist-models/mist-28M-ggd8iisr-tmQM",
+        "label": "mist-28m-release",
+        "model-dir": released_model.outputs.model,
+        "dataset": DATA,
+        "output-dir": ROOT / "mist-28m-release" / "test",
+    }),
+    inputs=[
+        paper_release.outputs.dataset_dict,
+        paper_release.outputs.test,
+    ],
+    env=OFFLINE_ENV,
+    working_directory=Path("."),
+    output_dir=ROOT / "mist-28m-release" / "test",
+    outputs={
+        "metrics": Path("metrics.json"),
+        "predictions": Path("predictions.jsonl"),
+    },
+    resources=TEST_GPU,
+    validator=validate_checksums(),
+    restartable=True,
+    max_attempts=3,
+)
+MIST_MODELS["mist-28m"] = released_model.outputs.model
+test_metrics.append(released_test.outputs.metrics)
+report_predictions.append(released_test.outputs.predictions)
+
+for model in MODELS:
+    model_root = ROOT / model["key"]
+    staged = task(
+        name="tmqm-" + model["key"] + "-model",
+        cmd=[
+            environment.outputs.python,
+            Path("//electrolyte_fm/utils/stage_hf.py"),
+            model["model"],
+        ] + sh.args({
+            "revision": model["revision"],
+            "output": model_root / "model" / "snapshot",
+        }),
+        env=CACHE_ENV,
+        executor=shell(),
+        working_directory=Path("."),
+        output_dir=model_root / "model",
+        outputs={"model": Path("snapshot")},
+        validator=validate_checksums(follow_symlinks=True),
+    )
+    model_directory = staged.outputs.model
+    if model["key"] == "chemberta-v3":
+        packaged = task(
+            name="tmqm-chemberta-v3-package-model",
+            cmd=[environment.outputs.python, Path("./scripts/package_chemberta_v3.py")] + sh.args({
+                "model": staged.outputs.model,
+                "code": chemberta_v3_remote_code.outputs.model,
+                "output": model_root / "portable-model",
+            }),
+            env=OFFLINE_ENV,
+            executor=shell(),
+            output_dir=model_root,
+            outputs={"model": Path("portable-model")},
+            validator=validate_checksums(follow_symlinks=True),
+        )
+        model_directory = packaged.outputs.model
+    sweep = task(
+        name="tmqm-" + model["key"] + "-lr-sweep",
+        tags=tags("training"),
+        cmd=[environment.outputs.python, Path("./scripts/train_tmqm_lr_cell.py")] + sh.args({
+            "model": model["model"],
+            "model-dir": model_directory,
+            "learning-rate": array.item["lr"],
+            "batch-size": model["batch_size"],
+            "dataset": DATA,
+            "output-dir": model_root / "sweep" / array.item["label"],
+        }),
+        inputs=[
+            paper_release.outputs.dataset_dict,
+            paper_release.outputs.train,
+            paper_release.outputs.validation,
+        ],
+        env=OFFLINE_ENV,
+        executor=array(items=LRS),
+        working_directory=Path("."),
+        output_dir=model_root / "sweep" / array.item["label"],
+        outputs={"cell": Path("cell.json"), "run": Path("metrics/version_0")},
+        resources=GPU,
+        validator=validate_checksums(),
+        restartable=True,
+        max_attempts=3,
+    )
+    test_outputs = {
+        "selection": Path("selection.json"),
+        "metrics": Path("metrics.json"),
+        "predictions": Path("predictions.jsonl"),
+    }
+    export_args = []
+    if model["key"] in ["mist-28m", "mist-1p8b"]:
+        test_outputs["model"] = Path("model")
+        export_args = sh.args({"export-model": True})
+    tested = task(
+        name="tmqm-" + model["key"] + "-test-best",
+        cmd=[
+            environment.outputs.python,
+            Path("./scripts/test_tmqm_selected.py"),
+            "--cells",
+        ]
+        + sweep.outputs.cell
+        + ["--runs"]
+        + sweep.outputs.run
+        + export_args
+        + sh.args({
+            "model-dir": model_directory,
+            "label": model["key"],
+            "dataset": DATA,
+            "output-dir": model_root / "test",
+        }),
+        inputs=[
+            paper_release.outputs.dataset_dict,
+            paper_release.outputs.test,
+        ],
+        env=OFFLINE_ENV,
+        working_directory=Path("."),
+        output_dir=model_root / "test",
+        outputs=test_outputs,
+        resources=TEST_GPU,
+        validator=validate_checksums(),
+        restartable=True,
+        max_attempts=2,
+    )
+    test_metrics.append(tested.outputs.metrics)
+    if model["key"] == "mist-1p8b":
+        MIST_MODELS[model["key"]] = tested.outputs.model
+    report_predictions.append(tested.outputs.predictions)
+
+STEREOCHEMISTRY_REPORT = task(
+    name="tmqm-model-benchmark-report",
+    tags=tags("figures"),
+    cmd=[Path("./plot.jl"), "--metrics"]
+    + test_metrics
+    + sh.args({
+        "output-dir": ROOT / "report",
+    }),
+    inputs=report_predictions,
+    env=REPORT_ENV,
+    executor=shell(),
+    working_directory=Path("."),
+    output_dir=ROOT / "report",
+    outputs=report_outputs,
+    validator=validate_checksums(),
+)

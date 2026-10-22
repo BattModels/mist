@@ -1,0 +1,142 @@
+"""Fit and analyse the paper's Lipinski probes for both MIST model sizes."""
+
+load("//config.pomset", "OFFLINE_ENV", "GPU_ANALYSIS")
+
+load(
+    "//opt/benchmarks/workflow.pomset",
+    "BASE_MODELS",
+    "MOLECULENET_MODELS",
+    "TMQM_MODELS",
+)
+
+ROOT = Path("//results/FeatureMiner")
+environment = task(
+    name="feature-miner-sync-environment",
+    cmd=["python3", Path("//electrolyte_fm/utils/sync_env.py")] + sh.args({
+        "project": Path("."),
+    }),
+    executor=shell(),
+    output_dir=ROOT / "environment",
+    outputs={
+        "receipt": Path("receipt.json"),
+        "python": Path("//opt/FeatureMiner/.venv/bin/python"),
+    },
+    validator=validate_checksums(),
+)
+OFFLINE = dict(
+    OFFLINE_ENV,
+    JULIA_PYTHONCALL_EXE=environment.outputs.python,
+    UV_NO_SYNC="1",
+)
+JULIA_OFFLINE = dict(
+    OFFLINE,
+    JULIA_PYTHONCALL_EXE=environment.outputs.python.relative_to(Path("//opt/FeatureMiner/plots"), walk_up=True),
+)
+julia = task(
+    name="feature-miner-julia-environment",
+    cmd=[
+        "uv",
+        "run",
+        "julia",
+        "--project=plots",
+        "-e",
+        "using Pkg; Pkg.instantiate()",
+    ],
+    requires=[environment],
+    env=JULIA_OFFLINE,
+    executor=shell(),
+    output_dir=Path("plots"),
+    outputs={"manifest": Path("Manifest.toml")},
+)
+data = task(
+    name="feature-miner-materialize-data",
+    cmd=[environment.outputs.python, Path("scripts/materialize_data.py")] + sh.args({
+        "output-dir": ROOT / "data",
+    }),
+    executor=shell(),
+    output_dir=ROOT / "data",
+    outputs={"receipt": Path("receipt.json"), "data": Path("data")},
+    validator=validate_checksums(),
+)
+ARTIFACTS = {base: {} for base in BASE_MODELS}
+for base, base_model in BASE_MODELS.items():
+    models = dict(MOLECULENET_MODELS[base])
+    models["tmQM"] = TMQM_MODELS[base]
+    probe_datasets = ["bace", "qm9", "bbbp", "muv", "qm8", "tmQM", "clintox"]
+    cells = [
+        {
+            "dataset": key,
+            "model": models[key],
+        }
+        for key in probe_datasets
+    ]
+    fitted = task(
+        name="feature-miner-" + base + "-head-probes",
+        tags=tags("training"),
+        cmd=[environment.outputs.python, Path("./submit_linear_probes.py")] + sh.args({
+            "base-model": base_model,
+            "model": array.item["model"],
+            "data": ROOT / "data",
+            "output-dir": ROOT / base / array.item["dataset"],
+        }),
+        inputs=[data.outputs.data] + [models[key] for key in probe_datasets],
+        env=OFFLINE,
+        executor=array(items=cells),
+        output_dir=ROOT / base / array.item["dataset"],
+        outputs={"checkpoints": Path("checkpoints"), "summary": Path("fit.pt")},
+        resources=GPU_ANALYSIS,
+        validator=validate_checksums(),
+    )
+    pretrained = task(
+        name="feature-miner-" + base + "-pretrained-probes",
+        tags=tags("training"),
+        cmd=[environment.outputs.python, Path("./submit_linear_probes.py")] + sh.args({
+            "base-model": base_model,
+            "data": ROOT / "data",
+            "output-dir": ROOT / base / "pretrained",
+        }),
+        inputs=[data.outputs.data],
+        env=OFFLINE,
+        output_dir=ROOT / base / "pretrained",
+        outputs={"checkpoints": Path("checkpoints"), "summary": Path("fit.pt")},
+        resources=GPU_ANALYSIS,
+        validator=validate_checksums(),
+    )
+    figure_outputs = {
+        "pdf": Path("lipinski_linear_probes.pdf"),
+        "png": Path("lipinski_linear_probes.png"),
+        "table": Path("lipinski.tex"),
+        "data": Path("probes.jld2"),
+    }
+    for location in ["output", "attention", "intermediate", "output.dense"]:
+        for extension in ["pdf", "png"]:
+            figure_outputs[location + "_" + extension] = Path(
+                "lipinski-probe-similarity-" + base + "-" + location + "." + extension
+            )
+    plotted = task(
+        name="feature-miner-" + base + "-plots",
+        tags=tags("figures"),
+        cmd=[Path("./plots/lipinski_probes.jl")]
+        + [
+            "--base",
+            base,
+            "--output-dir",
+            ROOT / base / "fig",
+            "--probes",
+            pretrained.outputs.checkpoints,
+        ]
+        + fitted.outputs.checkpoints,
+        inputs=[
+            julia.outputs.manifest,
+            pretrained.outputs.summary,
+        ]
+        + fitted.outputs.summary,
+        env=JULIA_OFFLINE,
+        executor=shell(),
+        output_dir=ROOT / base / "fig",
+        outputs=figure_outputs,
+        validator=validate_checksums(),
+    )
+    ARTIFACTS[base]["lipinski_linear_probes"] = plotted.outputs.pdf
+    for location in ["output", "attention", "intermediate", "output.dense"]:
+        ARTIFACTS[base]["lipinski-probe-similarity-" + base + "-" + location] = getattr(plotted.outputs, location + "_pdf")

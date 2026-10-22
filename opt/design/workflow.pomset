@@ -1,0 +1,123 @@
+"""Reuse the chemical-trend and olfaction figures for both benchmark model families."""
+
+load("//config.pomset", "OFFLINE_ENV", "GPU_ANALYSIS", "GPU_INFERENCE")
+
+load(
+    "//opt/benchmarks/workflow.pomset",
+    BASE_MODELS="BASE_MODELS",
+    APPLICATION_MODELS="APPLICATION_MODELS",
+    DESIGN_QM9_MODELS="DESIGN_QM9_MODELS",
+    PUBCHEMQC_MODELS="PUBCHEMQC_MODELS",
+)
+
+ROOT = Path("//results/design")
+environment = task(
+    name="design-sync-environment",
+    cmd=["python3", Path("//electrolyte_fm/utils/sync_env.py")] + sh.args({
+        "project": Path("."),
+    }),
+    executor=shell(),
+    output_dir=ROOT / "environment",
+    outputs={
+        "receipt": Path("receipt.json"),
+        "python": Path("//opt/design/.venv/bin/python"),
+    },
+    validator=validate_checksums(),
+)
+OFFLINE = dict(
+    OFFLINE_ENV,
+    JULIA_PYTHONCALL_EXE=environment.outputs.python,
+    UV_PROJECT_ENVIRONMENT=".venv",
+    UV_NO_SYNC="1",
+)
+julia = task(
+    name="design-julia-environment",
+    cmd=["uv", "run", "julia", "--project=.", "-e", "using Pkg; Pkg.instantiate()"],
+    requires=[environment],
+    env=OFFLINE,
+    executor=shell(),
+    outputs={"manifest": Path("Manifest.toml")},
+)
+ANALYSES = {
+    "hydrocarbons": ["baseline", "randomized", "mp", "bp", "fp"],
+    "permutations": ["baseline", "randomized"],
+    "olfaction": ["odour"],
+    "electrolytes": ["baseline", "randomized", "kt", "pka", "dn", "bp", "mp", "fp"],
+}
+FIGURES = {
+    "hydrocarbons": [
+        variant + "-hydrocarbons" for variant in ["baseline", "randomized"]
+    ]
+    + [
+        variant + "-omega-" + str(omega) + "-saturated-fats"
+        for variant in ["baseline", "randomized"]
+        for omega in [3, 6, 9]
+    ],
+    "permutations": ["permutations", "double_bond_loc"],
+    "olfaction": ["olfaction-trends", "branched-olfaction"],
+    "electrolytes": ["electrolytes"],
+}
+ARTIFACTS = {base: {} for base in BASE_MODELS}
+for base in BASE_MODELS:
+    charges = task(
+        name="design-" + base + "-partial-charges",
+        requires=[environment],
+        working_directory=Path("//"),
+        cmd=[
+            "uv", "run", "--no-sync", "--offline", "--project", Path("."),
+            "-m", "opt.benchmarks.scripts.partial_charge", "predict",
+        ] + sh.args({
+            "model": PUBCHEMQC_MODELS[base],
+            "molecules": Path("./electrolytes.csv"),
+            "output-dir": ROOT / base / "charges",
+        }),
+        env=OFFLINE,
+        output_dir=ROOT / base / "charges",
+        outputs={
+            "predictions": Path("electrolytes.jsonl"),
+            "receipt": Path("receipt.json"),
+        },
+        resources=GPU_INFERENCE,
+        validator=validate_checksums(),
+    )
+    models = dict(APPLICATION_MODELS[base])
+    models.update(DESIGN_QM9_MODELS[base])
+    for analysis, heads in ANALYSES.items():
+        args = []
+        for head in heads:
+            args += ["--model", head, models[head]]
+        if analysis == "electrolytes":
+            args += sh.args({"charges": charges.outputs.predictions})
+        outputs = {
+            name + "_" + extension: Path(name + "." + extension)
+            for name in FIGURES[analysis]
+            for extension in ["pdf", "png"]
+        }
+        outputs["report"] = Path("report.json")
+        if analysis == "hydrocarbons":
+            outputs.update({"paper_hydrocarbons_" + extension: Path("paper-hydrocarbons." + extension)
+                            for extension in ["pdf", "png"]})
+        if analysis == "electrolytes":
+            outputs["predictions"] = Path("electrolytes_predictions.csv")
+        plotted = task(
+            name="design-" + base + "-" + analysis,
+            tags=tags("figures"),
+            cmd=[Path("./plots.jl")]
+            + sh.args({
+                "base": base,
+                "analysis": analysis,
+                "inputs": Path("."),
+                "output-dir": ROOT / base / analysis,
+            })
+            + args,
+            inputs=[julia.outputs.manifest],
+            env=OFFLINE,
+            output_dir=ROOT / base / analysis,
+            outputs=outputs,
+            resources=GPU_ANALYSIS,
+            validator=validate_checksums(),
+        )
+        for stem in FIGURES[analysis]:
+            ARTIFACTS[base][stem] = getattr(plotted.outputs, stem + "_pdf")
+        if analysis == "hydrocarbons":
+            ARTIFACTS[base]["paper-hydrocarbons"] = plotted.outputs.paper_hydrocarbons_pdf

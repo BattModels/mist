@@ -11,10 +11,9 @@ using Mixtures: Mixtures
 using Printf
 using ColorSchemes
 using Combinatorics
-using CategoricalArrays: categorical, levelcode
+using CategoricalArrays: categorical, levelcode, levels
 
-const DATA_DIR = realpath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
-const similarity_data = JSON.parsefile(joinpath(DATA_DIR, "mixtures", "solvent_rematch.json"))
+const DATA_DIR = abspath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
 const solvents = [
     ["CC1COC(=O)O1", "O=C1OCCO1", "O=C1OCC(F)O1"],
     ["CC1COC(=O)O1", "CCOC(=O)OCC", "O=C1OCC(F)O1"],
@@ -221,12 +220,51 @@ function plot_delta_Ea()
 end
 
 
-function plot_angell_solvents()
-    df = DataFrame(CSV.File(joinpath(DATA_DIR, "mixtures", "ionic_conductivity_inference.csv")))
+"""Generate the main and Angell panel tables on explicit, reproducible grids."""
+function conductivity_tables(model)
+    curves = DataFrame(salt_name=String[], temperature=Float64[], composition=Float64[],
+                       predictions=Float64[], Solvent=String[])
+    # The existing composition helper varies salt in the first (PC) solvent;
+    # EC and FEC are zero-weight placeholders required by the model interface.
+    for salt in salts, temperature in 260:20:340
+        mixture = Dict("solvents" => first(solvents), "temperature" => temperature,
+                       "salt" => [salt, "[Li+]"])
+        composition, conductivity = Mixtures.conductivity_composition_curve(model, mixture; n=50)
+        for (fraction, log_conductivity) in zip(composition, conductivity)
+            push!(curves, ("Li" * label_smi(salt), temperature, fraction,
+                           exp(log_conductivity), "PC"))
+        end
+    end
+
+    inference = DataFrame("Solvent" => String[], "salt_name" => String[], "molarity" => Float64[],
+                          "temperature" => Float64[], "composition" => Float64[], "Tg" => Float64[],
+                          "Tg/T" => Float64[], "conductivity" => Float64[])
+    # Reuse the unary descriptor analysis's six solvents and 1 M convention.
+    # "Tg" is the model's historical name for the VFT T0 parameter, not an
+    # independently measured glass-transition temperature.
+    salt = label_smi("PF6"; input="acr")
+    for solvent in ["FEC", "PC", "EMC", "EC", "DEC", "DMC"]
+        fraction = Mixtures.molarity_to_mole_fraction(solvent; molarity=1.0)
+        components = [label_smi(solvent; input="acr"), "CC1COC(=O)O1", "O=C1OCCO1"]
+        for temperature in 260:5:340
+            mixture = Dict("solvents" => components, "temperature" => temperature,
+                           "salt" => [salt, "[Li+]"])
+            prediction = Mixtures.evaluate_at_composition(model, mixture, [1 - fraction, 0.0, 0.0, fraction])
+            push!(inference, (solvent, "LiPF6", 1.0, temperature, fraction,
+                              prediction["Tg"], prediction["Tg"] / temperature,
+                              prediction["conductivity"]))
+        end
+    end
+    return curves, inference
+end
+
+
+function plot_angell_solvents(; data_path=joinpath(DATA_DIR, "mixtures", "ionic_conductivity_inference.csv"), generated=false)
+    df = DataFrame(CSV.File(data_path))
     fig = Figure(size = (53mm, 32mm), figure_padding = (2, 2, 2, 2))
 
     ax = Axis(fig[1, 1],
-        xlabel = L"T_g/T",
+        xlabel = generated ? L"T_0/T" : L"T_g/T",
         ylabel = L"ln $\sigma$",
     )
 
@@ -390,7 +428,8 @@ function calculate_maximum_relative_excess(model, temperature, solvents)
 end
 
 
-function plot_soap_similarity_correlation!(f, model, temperature)
+function plot_soap_similarity_correlation!(f, model, temperature;
+    similarity_data=JSON.parsefile(joinpath(DATA_DIR, "mixtures", "solvent_rematch.json")))
 
     xlabel = "REMatch Similarity"
     ax_Ea = Axis(f[1, 1]; limits = (nothing, (0.0, 0.18)),

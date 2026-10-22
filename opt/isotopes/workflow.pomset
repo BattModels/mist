@@ -1,0 +1,48 @@
+"""Isotope embedding panel from the accepted cohort and newly selected fits for both model sizes."""
+
+load("//config.pomset", "OFFLINE_ENV", "GPU_INFERENCE", "SHARED_CPU")
+load("//opt/benchmarks/workflow.pomset", "ISOTOPE_DATA", "ISOTOPE_MODELS", BENCHMARK_ENV="environment")
+load("//opt/interp_embeddings/workflow.pomset", "julia")
+
+ROOT = Path("//results/isotopes")
+PROTOCOL = Path("./protocol.json")
+OFFLINE = dict(OFFLINE_ENV, PYTHONPATH=Path("//"))
+
+def model_figures(base, model):
+    root = ROOT / base
+    prefix = "isotopes-paper-" if base == "mist-28m" else "isotopes-" + base + "-"
+    embeddings = task(
+        name=prefix + "embeddings",
+        cmd=[BENCHMARK_ENV.outputs.python, Path("./prepare.py")] + sh.args({
+            "cohort": ISOTOPE_DATA.outputs.cohort,
+            "model": model,
+            "protocol": PROTOCOL,
+            "output": root / "isotope_embeddings.csv",
+        }),
+        env=OFFLINE,
+        output_dir=root,
+        outputs={"embeddings": Path("isotope_embeddings.csv")},
+        resources=GPU_INFERENCE,
+        validator=validate_checksums(),
+    )
+    figure = task(
+        name=prefix + "figure",
+        tags=tags("figures"),
+        cmd=["julia", "--project=.", "--startup-file=no", Path("./plots.jl")] + sh.args({
+            "embeddings": embeddings.outputs.embeddings,
+            "protocol": PROTOCOL,
+            "output-dir": root / "figure",
+        }),
+        inputs=[julia.outputs.manifest],
+        working_directory=Path("//opt/interp_embeddings"),
+        env=OFFLINE,
+        output_dir=root / "figure",
+        outputs={"pdf": Path("isotope_clusters.pdf"), "png": Path("isotope_clusters.png"),
+                 "projection": Path("isotope-projection.csv")},
+        resources=SHARED_CPU,
+        validator=validate_checksums(),
+    )
+    return {"isotope_clusters": figure.outputs.pdf}
+
+FIGURES_BY_MODEL = {base: model_figures(base, model) for base, model in ISOTOPE_MODELS.items()}
+FIGURES = FIGURES_BY_MODEL["mist-28m"]

@@ -1,32 +1,33 @@
 function load_fitted_probes(ckpt_dir)
     probes = []
-    local ckpt_meta
+    ckpt_meta = nothing
     for ckpt in readdir(ckpt_dir; join=true)
-        @info realpath(ckpt)
-        if !startswith(basename(ckpt), "star")
-            _, ckpt_meta = load_linear_probes(ckpt)
-            continue
-        end
-        m = match(r"layer-(\d+)-([\w\-]+?)--.*?--loss-([\d\.]+)--auroc-([\d\.]+)\.ckpt$", basename(ckpt))
+        endswith(ckpt, ".ckpt") || continue
+        startswith(basename(ckpt), "star") || continue
+        m = match(r"layer-(\d+)-([\w\-]+?)--.*?--loss-([-+\d.eE]+)--auroc-([-+\d.eE]+)(?:-v\d+)?\.ckpt$", basename(ckpt))
+        isnothing(m) && error("Unrecognized probe checkpoint: $ckpt")
         layer = parse(Int, m[1]) + 1
-        location = m[2]
-        val_loss = parse(Float64, m[3])
-        auroc = parse(Float64, m[4])
-        try
-            ckpt_probes, ckpt_meta = load_linear_probes(ckpt)
-            push!(probes, (;
-                ckpt_probes[layer]...,
-                location,
-                auroc,
-                val_loss
-            ))
-        catch e
-            e isa InterruptException && rethrow()
-            @error "failed to load $ckpt" e catch_backtrace()
-            continue
-        end
+        ckpt_probes, ckpt_meta = load_linear_probes(ckpt)
+        # All-hook checkpoints contain several probes per layer. Match the
+        # selected hook, not its layer number as an index into that list.
+        probe = only(filter(p -> p.layer == layer && replace(p.location, "." => "-") == m[2], ckpt_probes))
+        push!(probes, (;
+            probe...,
+            val_loss=isfinite(probe.val_loss) ? probe.val_loss : parse(Float64, m[3]),
+            auroc=isfinite(probe.auroc) ? probe.auroc : parse(Float64, m[4]),
+        ))
     end
-    return DataFrame(probes), ckpt_meta
+    isempty(probes) && error("No fitted probes found in $ckpt_dir")
+    df = DataFrame(probes)
+    summary_path = joinpath(dirname(ckpt_dir), "fit.pt")
+    if isfile(summary_path)
+        summary = pyimport("torch").load(summary_path; map_location="cpu", weights_only=true)
+        df.training_steps .= pyconvert(Int, summary["training_steps"])
+        df.requested_steps .= pyconvert(Int, summary["requested_steps"])
+        df.step_budget_reached .= pyconvert(Bool, summary["step_budget_reached"])
+    end
+    sort!(df, [:location, :layer])
+    return df, ckpt_meta
 end
 
 cosine_similarity(a::Vector, b::Vector) = dot(a, b) / (norm(a) * norm(b))

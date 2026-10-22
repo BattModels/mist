@@ -8,9 +8,11 @@ function pubchem_from_jsonl(file::String)
             mulliken = Float64[]
             for atom in mol["atoms"]
                 push!(lowdin, atom["properties"]["partial-charge-lowdin"])
-                push!(lowdin, atom["properties"]["hs_partial-charge-lowdin"])
                 push!(mulliken, atom["properties"]["partial-charge-mulliken"])
-                push!(mulliken, atom["properties"]["hs_partial-charge-mulliken"])
+                if atom["hs-count"] > 0
+                    push!(lowdin, atom["properties"]["hs_partial-charge-lowdin"])
+                    push!(mulliken, atom["properties"]["hs_partial-charge-mulliken"])
+                end
             end
             push!(rows, (;
                 smi=mol["smi"],

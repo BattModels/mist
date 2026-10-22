@@ -1,7 +1,8 @@
 function predict(smi::Vector{String}, model::Py)
-    model = model.to("mps")
+    model = model.to(inference_device())
     model.eval()
     py_out = model.predict(PyList(smi))
+    model.to("cpu")
     out = Dict{String,Vector{Float64}}()
     for (k, v) in py_out.items()
         out[pyconvert(String, k)] = pyconvert(valtype(out), v["value"])
@@ -23,7 +24,7 @@ function embed(smi::Vector{String}, model::Py)
 end
 
 function predict_monte(smi::Vector{String}, model::Py; n=10)
-    model = model.to("mps")
+    model = model.to(inference_device())
     model = model.train()
     results = Dict()
     py_smi = PyList(smi)
@@ -39,6 +40,7 @@ function predict_monte(smi::Vector{String}, model::Py; n=10)
             end
         end
     end
+    model.to("cpu")
 
     # Compute statistics
     summary = Dict()
@@ -52,6 +54,13 @@ function predict_monte(smi::Vector{String}, model::Py; n=10)
 end
 
 encoding_variants(smi::String, n::Int=100) = unique(encode(smi; encoding="smiles", random=true) for _ in 1:n)
+
+function inference_device()
+    torch = @pyconst(pyimport("torch"))
+    pyconvert(Bool, torch.cuda.is_available()) && return "cuda"
+    pyconvert(Bool, torch.backends.mps.is_available()) && return "mps"
+    return "cpu"
+end
 
 function sample_encodings(smi::String, model::Py; n=100)
     smi_variants = encoding_variants(smi, n)

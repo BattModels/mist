@@ -9,9 +9,14 @@ from lightning.pytorch.loggers import WandbLogger
 from torch import nn
 from torch.nn import functional as F
 
-from electrolyte_fm.utils.metrics import get_metrics, OrthoProcrustes
-from electrolyte_fm.models.normalize import AbstractNormalizer, IdentityTransform
 from electrolyte_fm.data_modules import pubchem_qc
+from electrolyte_fm.models.model_utils import create_position_ids
+from electrolyte_fm.models.normalize import AbstractNormalizer, IdentityTransform
+from electrolyte_fm.utils.metrics import (
+    OrthoProcrustes,
+    get_metrics,
+    masked_metric_update,
+)
 
 
 def masked_mse_loss(
@@ -142,6 +147,7 @@ class TokenLevelPredictor(pl.LightningModule):
         freeze_encoder: bool | str = False,
         lr_schedule: LRSchedulerCallable | None = None,
         metrics: list[str] = ["mae-channel", "rmse-channel"],
+        sequence_loss_weight: float = 1.0,
     ):
         super().__init__()
 
@@ -153,7 +159,8 @@ class TokenLevelPredictor(pl.LightningModule):
         self.token_transform = token_transform or IdentityTransform()
 
         self.token_targets = []
-        for target in token_targets or pubchem_qc.DEFAULT_TOKEN_TARGETS:
+        self.atomic_targets = token_targets or pubchem_qc.DEFAULT_TOKEN_TARGETS
+        for target in self.atomic_targets:
             self.token_targets.extend([target, f"hs_{target}"])
 
         self.optimizer = optimizer
@@ -161,6 +168,7 @@ class TokenLevelPredictor(pl.LightningModule):
         self.freeze_encoder = freeze_encoder
         self.distance_matrix_loss = distance_matrix_loss
         self.procrustes_loss = procrustes_loss
+        self.sequence_loss_weight = sequence_loss_weight
         self.save_hyperparameters(ignore=["seq_targets", "token_targets"])
 
         self._setup_metrics(metrics)
@@ -217,18 +225,20 @@ class TokenLevelPredictor(pl.LightningModule):
 
         # Sequence Transform
         ds_seq = ds.select_columns(["target", "target_mask"])
-        self.seq_transform.leader_fit(
-            ds_seq, self.global_rank, self.trainer.strategy.broadcast
-        )
+        if not isinstance(self.seq_transform, IdentityTransform):
+            self.seq_transform.leader_fit(
+                ds_seq, self.global_rank, self.trainer.strategy.broadcast
+            )
 
         # Token Transform
         ds_token = ds.select_columns(["token_target", "token_target_mask"])
         ds_token = ds_token.rename_columns(
             {"token_target": "target", "token_target_mask": "target_mask"}
         )
-        self.token_transform.leader_fit(
-            ds_token, self.global_rank, self.trainer.strategy.broadcast
-        )
+        if not isinstance(self.token_transform, IdentityTransform):
+            self.token_transform.leader_fit(
+                ds_token, self.global_rank, self.trainer.strategy.broadcast
+            )
         logging.info(
             {
                 "seq_transform": self.seq_transform.state_dict(),
@@ -236,8 +246,19 @@ class TokenLevelPredictor(pl.LightningModule):
             }
         )
 
+    def _encode(self, input_ids, attention_mask=None):
+        kwargs = {}
+        config = self.encoder.config
+        if hasattr(config, "position_padding_idx"):
+            kwargs["position_ids"] = create_position_ids(
+                input_ids, config.pad_token_id, config.position_padding_idx
+            )
+        return self.encoder(
+            input_ids, attention_mask=attention_mask, **kwargs
+        ).last_hidden_state
+
     def forward(self, input_ids, attention_mask=None):
-        hs = self.encoder(input_ids, attention_mask).last_hidden_state
+        hs = self._encode(input_ids, attention_mask)
         y_mol = self.seq_transform.forward(self.seq_network(hs))
         y_token = self.token_transform.forward(self.token_network(hs))
 
@@ -247,9 +268,7 @@ class TokenLevelPredictor(pl.LightningModule):
         return y_mol, y_token
 
     def forward_with_loss(self, batch):
-        hs = self.encoder(
-            batch["input_ids"], attention_mask=batch["attention_mask"]
-        ).last_hidden_state
+        hs = self._encode(batch["input_ids"], batch["attention_mask"])
         y_mol_raw = self.seq_network(hs)
         y_hat_token = self.token_network(hs)
 
@@ -261,7 +280,7 @@ class TokenLevelPredictor(pl.LightningModule):
             self.seq_transform.inverse(batch["target"]),
             batch["target_mask"],
         )
-        loss = loss_seq
+        loss = self.sequence_loss_weight * loss_seq
 
         # Treat the final 3 channels as atomic coordinates
         if self.distance_matrix_loss:
@@ -318,10 +337,18 @@ class TokenLevelPredictor(pl.LightningModule):
             on_epoch=True,
         )
 
-        self.val_metrics["seq"].update(out["sequence"], batch["target"])
-        self.val_metrics["token"].update(
-            out["token"][batch["token_target_mask"]],
-            batch["token_target"][batch["token_target_mask"]],
+        masked_metric_update(
+            self.val_metrics["seq"],
+            out["sequence"],
+            batch["target"],
+            batch["target_mask"],
+        )
+        channels = len(self.token_targets)
+        masked_metric_update(
+            self.val_metrics["token"],
+            out["token"][..., :channels].reshape(-1, channels),
+            batch["token_target"][..., :channels].reshape(-1, channels),
+            batch["token_target_mask"][..., :channels].reshape(-1, channels),
         )
 
         return out
@@ -329,13 +356,14 @@ class TokenLevelPredictor(pl.LightningModule):
     def on_validation_epoch_end(self):
         for mc in self.val_metrics.values():
             self.log_dict(mc.compute(), on_step=False, on_epoch=True)
+            mc.reset()
 
     def predict_step(self, batch):
         y, y_token = self.forward(**batch)
         out = []
         tokenizer = self.trainer.datamodule.tokenizer
         seq_targets = self.seq_targets
-        token_targets = self.token_targets
+        token_targets = self.atomic_targets
         for bdx in range(y.shape[0]):
             mol = pubchem_qc.mol_from_prediction(
                 batch["input_ids"][bdx],
@@ -553,13 +581,15 @@ class TokenLevelDist(TokenLevelPredictor):
 
 
 def predict(argv):
-    import sys
     import argparse
     import json
+    import sys
     from itertools import chain
-    from electrolyte_fm.models.token_level import TokenLevelDist
-    from electrolyte_fm.data_modules.predict_dataset import PredictDataModule
+
     from lightning.pytorch import Trainer
+
+    from electrolyte_fm.data_modules.predict_dataset import PredictDataModule
+    from electrolyte_fm.models.token_level import TokenLevelDist
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-size", type=int, default=256)
@@ -586,8 +616,8 @@ def predict(argv):
 
 
 if __name__ == "__main__":
-    import sys
     import logging
+    import sys
     from datetime import timedelta
     from os import environ
     from typing import Union

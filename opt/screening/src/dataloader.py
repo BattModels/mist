@@ -123,7 +123,7 @@ class DatabaseFragmentDataset(FragmentDataset):
         db_path: Union[str, Path],
         n_fragments: int = 1000,
         ref_frag_file: Optional[Union[str, Path]] = None,
-        limit_db_fragments: Optional[int] = None,
+        limit_db_fragments: Optional[Union[int, float]] = None,
         limit_ref_fragments: Optional[int] = None,
         **kwargs,
     ):
@@ -132,12 +132,21 @@ class DatabaseFragmentDataset(FragmentDataset):
         self.n_fragments = n_fragments
 
         conn = sqlite3.connect(db_path, timeout=30)
-        self.max_id = conn.execute("SELECT MAX(id) FROM fragments").fetchone()[0]
+        # Fragmentation finalizes a dense, index-free rowid table for sampling.
+        self.max_rowid = conn.execute("SELECT MAX(rowid) FROM fragments").fetchone()[0]
+        conn.close()
         if limit_db_fragments:
             assert 0 < limit_db_fragments
-            self.max_id = min(self.max_id, limit_db_fragments)
+            limit = (
+                int(self.max_rowid * limit_db_fragments)
+                if limit_db_fragments < 1
+                else int(limit_db_fragments)
+            )
+            self.max_rowid = min(self.max_rowid, limit)
+        if not self.max_rowid or not 0 < min(n_fragments, 10_000) <= self.max_rowid:
+            raise ValueError("Fragment sample exceeds the available inventory")
         logging.info(
-            {"message": "found db fragments", "unique": self.max_id, "path": db_path}
+            {"message": "found db fragments", "unique": self.max_rowid, "path": db_path}
         )
 
         # Get unique fragments from ref_frag_file, if provided
@@ -167,10 +176,10 @@ class DatabaseFragmentDataset(FragmentDataset):
         remaining = self.n_fragments
         while remaining >= 1:
             k = min(remaining, 10_000)
-            random_ids = random.sample(range(1, self.max_id), k=k)
+            random_ids = random.sample(range(1, self.max_rowid + 1), k=k)
             placeholders = ",".join("?" for _ in random_ids)
             cursor = conn.execute(
-                f"SELECT fragment FROM fragments WHERE id IN ({placeholders})",
+                f"SELECT fragment FROM fragments WHERE rowid IN ({placeholders})",
                 random_ids,
             )
             for (pattern,) in cursor.fetchall():

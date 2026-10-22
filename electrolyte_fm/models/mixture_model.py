@@ -1,3 +1,4 @@
+import json
 from itertools import chain
 from pathlib import Path
 from typing import List, Optional, Union
@@ -67,7 +68,11 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
         self.transform = AbstractNormalizer.get(transform, self.output_size).eval()
 
         # Load Encoder Model
-        if Path(encoder_ckpt).exists():
+        hf_config = Path(encoder_ckpt, "config.json")
+        local_hf = hf_config.is_file() and bool(
+            json.loads(hf_config.read_text()).get("model_type")
+        )
+        if Path(encoder_ckpt).exists() and not local_hf:
             self.encoder = DeepSpeedMixin.load(encoder_ckpt).get_encoder()
         else:
             from transformers import AutoModel
@@ -75,6 +80,7 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
             self.encoder = AutoModel.from_pretrained(
                 encoder_ckpt,
                 trust_remote_code=True,
+                local_files_only=local_hf,
             )
 
         # Validate the vocab size

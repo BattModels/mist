@@ -1,4 +1,4 @@
-import ast
+import json
 from pathlib import Path
 from itertools import chain
 from typing import List, Optional, Tuple, Union
@@ -11,6 +11,7 @@ from torch.utils.data import default_collate, DataLoader
 from transformers import DataCollatorWithPadding, PreTrainedModel
 
 from ..utils.tokenizer import load_tokenizer
+from ..utils.mixture_splits import split_files
 from .utils import MolEncoding, stack_columns, collate_target
 from .property_prediction_dataset import PropertyPredictionDataModule
 
@@ -172,8 +173,9 @@ class ComponentDataModule(LightningDataModule):
         self.train_dataset: Dataset = ds["train"].shuffle()
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
+        sample_size = min(10000, len(ds["train"])) if isinstance(ds["train"], Dataset) else 10000
         self.target_dataset = (
-            ds["train"].take(10000).select_columns(["target", "target_mask"])
+            ds["train"].take(sample_size).select_columns(["target", "target_mask"])
         )
 
     def collator(self, batch):
@@ -309,12 +311,13 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
         self.target_dataset = ds["train"].select_columns(norm_columns)
 
     @torch.no_grad()
-    def collate_fn(self, batch):
+    def collate_fn(self, batch, randomize: bool | None = None):
+        randomize = self.randomize if randomize is None else randomize
         mix1_data = encode_and_tokenize_variable_mixture(
             [obs["compounds_mix1"] for obs in batch],
             tokenizer=self.tokenize,
             encoding=self.encoding,
-            randomize=self.randomize,
+            randomize=randomize,
             token_collator=self.token_collator,
             include_encoding=self.include_encoding,
         )
@@ -323,7 +326,7 @@ class MultiMixtureDataModule(PropertyPredictionDataModule):
             [obs["compounds_mix2"] for obs in batch],
             tokenizer=self.tokenize,
             encoding=self.encoding,
-            randomize=self.randomize,
+            randomize=randomize,
             token_collator=self.token_collator,
             include_encoding=self.include_encoding,
         )
@@ -385,11 +388,7 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
         ds = load_dataset(
             "arrow",
             name=self.path.name,
-            data_files={
-                "train": str(self.path.joinpath("train/*.arrow")),
-                "validation": str(self.path.joinpath("validation/*.arrow")),
-                "test": str(self.path.joinpath("test/*.arrow")),
-            },
+            data_files=split_files(self.path),
             keep_in_memory=False,
             streaming=True,
             save_infos=False,
@@ -477,7 +476,7 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
         self.target_dataset = ds["train"].select_columns(norm_columns)
 
     @torch.no_grad()
-    def collate_fn(self, batch):
+    def collate_fn(self, batch, randomize: bool | None = None):
         out = {
             k: default_collate([obs[k] for obs in batch])
             for k in batch[0].keys()
@@ -488,7 +487,7 @@ class ComponentDataModuleFast(PropertyPredictionDataModule):
                 [obs["compounds"] for obs in batch],
                 tokenizer=self.tokenize,
                 encoding=self.encoding,
-                randomize=self.randomize,
+                randomize=self.randomize if randomize is None else randomize,
                 token_collator=self.token_collator,
                 include_encoding=self.include_encoding,
             )
@@ -573,7 +572,7 @@ def encode_and_tokenize_variable_mixture(
     attention_mask = torch.zeros(
         (B, max_N, seq_len), dtype=toks["attention_mask"].dtype
     )
-    component_mask = torch.zeros((B, max_N), dtype=torch.bool)
+    component_mask = torch.ones((B, max_N), dtype=torch.bool)
 
     start_idx = 0
     for b, n_comp in enumerate(component_counts):
@@ -597,8 +596,14 @@ def encode_and_tokenize_variable_mixture(
 
 def ensure_list_format(row: dict, mix1_col: str, mix2_col: str):
     def to_list(value):
-        if not isinstance(value, str):
-            return ast.literal_eval(value)
+        if isinstance(value, str):
+            value = json.loads(value)
+        if (
+            not isinstance(value, list)
+            or not value
+            or not all(isinstance(smi, str) and smi for smi in value)
+        ):
+            raise ValueError("Mixture components must be a nonempty list of SMILES")
         return value
 
     return {

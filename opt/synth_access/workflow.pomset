@@ -1,0 +1,177 @@
+"""Synthetic accessibility and molecular-surprise analysis for both MIST sizes."""
+
+load(
+    "//config.pomset",
+    "ENV",
+    "JOB_WALLTIME",
+    "SHARED_CPU",
+    "GPU_ANALYSIS",
+    "job_resources",
+    OFFLINE="OFFLINE_ENV",
+)
+
+load(
+    "//opt/benchmarks/workflow.pomset",
+    BASE_MODELS="BASE_MODELS",
+    SURPRISE_BASELINES="SURPRISE_BASELINES",
+)
+
+ROOT = Path("//results/synth_access")
+FIGURES = [
+    "interp_surprise_" + prefix + dataset + "_" + correlation
+    for prefix in ["", "all_"]
+    for dataset in ["crowd", "ba"]
+    for correlation in ["spearman", "pearson", "cosine"]
+] + [
+    "model_score_grid_" + dataset + suffix
+    for dataset in ["crowd", "ba"]
+    for suffix in ["", "_ma"]
+]
+FIGURE_OUTPUTS = {
+    name + "_" + extension: Path(name + "." + extension)
+    for name in FIGURES
+    for extension in ["pdf", "png"]
+}
+FIGURE_OUTPUTS.update(
+    {"table": Path("interp_surprise.tex"), "figures": Path("figures.json")}
+)
+environment = task(
+    name="synth-access-sync-environment",
+    cmd=["python3", Path("//electrolyte_fm/utils/sync_env.py")] + sh.args({
+        "project": Path("."),
+        "bindgen-headers": True,
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=ROOT / "environment",
+    outputs={
+        "receipt": Path("receipt.json"),
+        "python": Path("//opt/synth_access/.venv/bin/python"),
+    },
+    validator=validate_checksums(),
+)
+julia = task(
+    name="synth-access-julia-environment",
+    cmd=["julia", "--project=.", "-e", "using Pkg; Pkg.instantiate()"],
+    env=ENV,
+    requires=[environment],
+    executor=shell(),
+    outputs={"manifest": Path("Manifest.toml")},
+)
+data = task(
+    name="synth-access-materialize-inputs",
+    cmd=[environment.outputs.python, Path("main.py")] + sh.args({
+        "prepare": True,
+        "data-dir": ROOT / "data",
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=ROOT / "data",
+    outputs={
+        "receipt": Path("receipt.json"),
+        "ba": Path("ba-sascorer"),
+        "crowd": Path("crowdsourced"),
+    },
+    validator=validate_checksums(),
+)
+heuristics = task(
+    name="synth-access-heuristics",
+    cmd=[environment.outputs.python, Path("main.py")] + sh.args({
+        "data-dir": ROOT / "data",
+        "dataset": array.item["dataset"],
+        "output-format": ROOT / "heuristics" / array.item["dataset"] / "scores.json",
+        "metric": [
+            "SAScore",
+            "SCScore",
+            "SyBA",
+            "BR-SAScore",
+            "smirk",
+            "smirk-kekule",
+            "smirk-canonical",
+            "molecular-weight",
+            "assembly-index",
+        ],
+    }),
+    inputs=[data.outputs.ba, data.outputs.crowd],
+    env=OFFLINE,
+    executor=array(
+        items=[{"dataset": name} for name in ["ba-sascorer", "crowdsourced"]]
+    ),
+    output_dir=ROOT / "heuristics" / array.item["dataset"],
+    outputs={"scores": Path("scores.json")},
+    resources=SHARED_CPU,
+)
+baseline_scores = []
+baseline_args = []
+for key, model in SURPRISE_BASELINES.items():
+    evaluated = task(
+        name="synth-access-" + key + "-surprise",
+        cmd=[
+            environment.outputs.python,
+            Path("main.py"),
+            "--data-dir",
+            ROOT / "data",
+            "--model",
+            model["id"],
+            model["model"],
+            "--output-format",
+            ROOT / "baselines" / key / "{dataset}.json",
+        ],
+        inputs=[data.outputs.ba, data.outputs.crowd],
+        env=OFFLINE,
+        output_dir=ROOT / "baselines" / key,
+        outputs={"ba": Path("ba-sascorer.json"), "crowd": Path("crowdsourced.json")},
+        resources=job_resources(
+            cpus_per_task=8,
+            gpus_per_node=1,
+            memory_per_node="32GiB",
+            walltime=JOB_WALLTIME,
+        ),
+        validator=validate_checksums(),
+    )
+    baseline_scores += [evaluated.outputs.ba, evaluated.outputs.crowd]
+    baseline_args += sh.args({"baseline-dir": ROOT / "baselines" / key})
+model_scores = []
+model_args = []
+for base, model in BASE_MODELS.items():
+    evaluated = task(
+        name="synth-access-" + base + "-surprise",
+        cmd=[
+            environment.outputs.python,
+            Path("main.py"),
+            "--data-dir",
+            ROOT / "data",
+            "--model",
+            "mist/" + base,
+            model,
+            "--output-format",
+            ROOT / base / "{dataset}.json",
+        ],
+        inputs=[data.outputs.ba, data.outputs.crowd],
+        env=OFFLINE,
+        output_dir=ROOT / base,
+        outputs={"ba": Path("ba-sascorer.json"), "crowd": Path("crowdsourced.json")},
+        resources=GPU_ANALYSIS,
+        validator=validate_checksums(),
+    )
+    model_scores += [evaluated.outputs.ba, evaluated.outputs.crowd]
+    model_args += sh.args({"base": base, "model-dir": ROOT / base})
+
+plotted = task(
+    name="synth-access-plots",
+    tags=tags("figures"),
+    cmd=[Path("./plot.jl")]
+    + sh.args({
+        "heuristics-dir": ROOT / "heuristics",
+        "output-dir": ROOT / "fig",
+    })
+    + model_args
+    + baseline_args,
+    inputs=[julia.outputs.manifest] + model_scores + heuristics.outputs.scores + baseline_scores,
+    env=OFFLINE,
+    executor=shell(),
+    output_dir=ROOT / "fig",
+    outputs=FIGURE_OUTPUTS,
+    validator=validate_checksums(),
+)
+ARTIFACTS = {stem: getattr(plotted.outputs, stem + "_pdf") for stem in FIGURES}

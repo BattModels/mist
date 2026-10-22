@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import rdkit.Chem as Chem
 import rdkit.Chem.AllChem as AllChem
+from rdkit import DataStructs
 import json
 import gzip
 import six
@@ -28,13 +29,17 @@ def sigmoid(x):
 
 
 def download_model(path: Path, url: str = None) -> Path:
+    import ssl
     from urllib.request import urlopen
+
+    import truststore
 
     url = (
         url
         or "https://github.com/connorcoley/scscore/raw/refs/heads/master/models/full_reaxys_model_1024bool/model.ckpt-10654.as_numpy.json.gz"
     )
-    with urlopen(url) as fid:
+    context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    with urlopen(url, context=context) as fid:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as out:
             out.write(fid.read())
@@ -81,12 +86,15 @@ class SCScorer:
         else:
             if mol is None:
                 return np.zeros((self.FP_len,), dtype=np.float32)
-            return np.array(
-                AllChem.GetMorganFingerprintAsBitVect(
-                    mol, self.FP_rad, nBits=self.FP_len, useChirality=True
-                ),
-                dtype=bool,
+            fingerprint = AllChem.GetMorganFingerprintAsBitVect(
+                mol, self.FP_rad, nBits=self.FP_len, useChirality=True
             )
+            # NumPy's direct conversion of RDKit ExplicitBitVect can segfault
+            # with newer NumPy releases. Use RDKit's supported conversion and
+            # preserve the original boolean fingerprint supplied to the model.
+            values = np.zeros(self.FP_len, dtype=np.int8)
+            DataStructs.ConvertToNumpyArray(fingerprint, values)
+            return values.astype(bool)
 
     def smi_to_fp(self, smi):
         if not smi:

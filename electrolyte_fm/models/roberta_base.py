@@ -2,10 +2,12 @@ import torch
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from lightning.pytorch.loggers import WandbLogger
-from transformers import RobertaConfig, RobertaForMaskedLM
+from transformers import RobertaConfig, RobertaForMaskedLM, PreTrainedTokenizerBase
+
+from electrolyte_fm.utils.tokenizer import load_tokenizer
 
 from ..utils.metrics import TokenCounter
-from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin
+from .model_utils import CanSkip, DeepSpeedMixin, LoggingMixin, create_position_ids
 
 
 class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
@@ -26,6 +28,7 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
         enable_token_counter: bool = True,
+        tokenizer: str | None = None,
     ) -> None:
         super().__init__()
         self.optimizer = optimizer
@@ -49,9 +52,40 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
             type_vocab_size=1,
         )
 
+        if tokenizer:
+            self.configure_tokenizer(tokenizer)
+
     def configure_model(self):
         if not hasattr(self, "model"):
             self.model = RobertaForMaskedLM(config=self.config)
+            self._configure_embedding_padding(self.model.roberta)
+
+    def configure_tokenizer(self, tokenizer: str | PreTrainedTokenizerBase):
+        tokenizer = (
+            load_tokenizer(tokenizer) if isinstance(tokenizer, str) else tokenizer
+        )
+        self.config.position_padding_idx = getattr(
+            self.config, "position_padding_idx", self.config.pad_token_id
+        )
+        if hasattr(self, "model") and self.config.vocab_size != len(tokenizer):
+            self.model.resize_token_embeddings(len(tokenizer))
+
+        # set the config to match the tokenizer
+        self.config.vocab_size = len(tokenizer)
+        for token in ["pad_token_id", "bos_token_id", "eos_token_id"]:
+            token_id = getattr(tokenizer, token, None)
+            if token_id is not None:
+                setattr(self.config, token, token_id)
+        if hasattr(self, "model"):
+            self._configure_embedding_padding(self.model.roberta)
+
+    def _configure_embedding_padding(self, encoder):
+        position_padding_idx = getattr(
+            self.config, "position_padding_idx", self.config.pad_token_id
+        )
+        encoder.embeddings.padding_idx = position_padding_idx
+        encoder.embeddings.position_embeddings.padding_idx = position_padding_idx
+        encoder.embeddings.word_embeddings.padding_idx = self.config.pad_token_id
 
     def get_encoder(self):
         if not hasattr(self, "model"):
@@ -59,6 +93,14 @@ class RoBERTa(LightningModule, DeepSpeedMixin, LoggingMixin, CanSkip):
         return self.model.roberta
 
     def forward(self, batch, **kwargs):  # type: ignore[override]
+        if "position_ids" not in kwargs and hasattr(
+            self.config, "position_padding_idx"
+        ):
+            kwargs["position_ids"] = create_position_ids(
+                batch["input_ids"],
+                self.config.pad_token_id,
+                self.config.position_padding_idx,
+            )
         out = self.model(
             batch["input_ids"],
             labels=batch["labels"],

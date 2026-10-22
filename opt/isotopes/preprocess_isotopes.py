@@ -167,9 +167,10 @@ def get_protons_neutrons(row: str):
     return pd.Series({"neutrons": neutrons, "protons": protons})
 
 
-if __name__ == "__main__":
+def read_isotopes(path):
+    """Apply the original suffix filter, preserving source order and targets."""
     results = []
-    with open("Radioactive-Isotope-Half-Lives.json", "r") as f:
+    with open(path, "r") as f:
         records = json.load(f)
     for r in records[1][1:]:
         name = r[1][-1][1:-1]
@@ -180,4 +181,9 @@ if __name__ == "__main__":
     df = pd.DataFrame.from_records(results)
     df["smiles"] = df.name.apply(isotope_to_smiles)
     df[["neutrons", "protons"]] = df.apply(get_protons_neutrons, axis=1)
+    return df
+
+
+if __name__ == "__main__":
+    df = read_isotopes("Radioactive-Isotope-Half-Lives.json")
     df.to_csv("isotope_half_lives.csv")

@@ -1,0 +1,73 @@
+"""Pretraining SI: released transfer measurements and original supplied traces."""
+
+load("//config.pomset", "ENV", "SHARED_CPU")
+load("//opt/BayesianScaling/workflow.pomset", SCALING_RELEASE="released")
+load("//opt/benchmarks/workflow.pomset", PYTHON_ENV="environment")
+
+ROOT = Path("//results/pretraining")
+ORIGINAL = Path("//data/user/pretraining")
+PAPER_ARCHIVE = task(
+    name="pretraining-source-archive",
+    cmd=[
+        PYTHON_ENV.outputs.python,
+        Path("//electrolyte_fm/utils/fetch_file.py"),
+        "https://arxiv.org/src/2510.18900v3",
+        Path("//data/paper-source/2510.18900.tar"),
+    ] + sh.args({
+        "bytes": "21506625",
+        "sha256": "82e4af73525de5f4a196e36da205edee3e0977c0b1ffb734812247b6b7c014c7",
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//data/paper-source"),
+    outputs={"archive": Path("2510.18900.tar")},
+    validator=validate_checksums(),
+)
+julia = task(
+    name="pretraining-julia-environment",
+    cmd=["julia", "--startup-file=no", "--project=.", "-e", "using Pkg; Pkg.instantiate()"],
+    env=ENV,
+    executor=shell(),
+    outputs={"manifest": Path("Manifest.toml")},
+    validator=validate_checksums(),
+)
+
+FIGURES = {}
+def figure_task(analysis, source, stem, extra=[], tables=[]):
+    outputs = {"pdf": Path(stem + ".pdf"), "png": Path(stem + ".png")}
+    for table in tables if tables else [stem]:
+        outputs[table] = Path(table + ".csv")
+    plotted = task(
+        name="pretraining-" + analysis,
+        tags=tags("figures"),
+        cmd=["julia", "--startup-file=no", "--project=.", Path("plots.jl"),
+             analysis, source, ROOT / analysis] + extra,
+        inputs=[julia.outputs.manifest],
+        env=ENV,
+        output_dir=ROOT / analysis,
+        outputs=outputs,
+        resources=SHARED_CPU,
+        validator=validate_checksums(),
+    )
+    FIGURES[stem] = plotted.outputs.pdf
+    return plotted
+
+transfer = figure_task("transfer", SCALING_RELEASE.outputs.pretraining_advantage, "transfer_adv")
+gas = figure_task("gas", ORIGINAL / "gas_throughput.csv", "mist_paper_gas")
+instability = figure_task("instability", ORIGINAL / "training_loss.csv", "spiking_lambdas",
+    extra=[ORIGINAL / "lambda_max.csv"], tables=["training_loss", "lambda_max"])
+ablation = figure_task("ablation", ORIGINAL / "ablation.csv", "ablation")
+
+# This is a static explanatory drawing, preserved from the published source.
+# Experimental figures above are regenerated from observations, not copied PDFs.
+schematic = task(
+    name="pretraining-scaling-schematic",
+    tags=tags("figures"),
+    cmd=["python3", Path("extract_schematic.py"),
+         PAPER_ARCHIVE.outputs.archive, ROOT / "schematic" / "scaling_workflow.pdf"],
+    executor=shell(),
+    output_dir=ROOT / "schematic",
+    outputs={"pdf": Path("scaling_workflow.pdf")},
+    validator=validate_checksums(),
+)
+FIGURES["scaling_workflow"] = schematic.outputs.pdf

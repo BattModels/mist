@@ -69,3 +69,9 @@ class RelativeCosineWarmup(LambdaLR):
             num_cycles=num_cycles,
         )
         super().__init__(optimizer, lr_lambda, last_epoch)
+
+    def get_lr(self):
+        scheduled = super().get_lr()
+        # ProgressiveThawing sets the rates of groups added after construction.
+        # Newer PyTorch requires a rate for every group; preserve those values.
+        return scheduled + [group["lr"] for group in self.optimizer.param_groups[len(scheduled):]]

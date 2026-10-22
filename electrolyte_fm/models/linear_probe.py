@@ -1,14 +1,28 @@
+# Configure TLS before model/tokenizer clients are imported by the CLI.
+if __name__ == "__main__":
+    import truststore
+
+    truststore.inject_into_ssl()
+
 import logging
-from typing import Iterable, Dict, Any, Callable, Optional
 from collections import defaultdict
-from jsonargparse import lazy_instance
+from collections.abc import Callable, Iterable
+from fnmatch import fnmatchcase
+from pathlib import Path
+from typing import Any
+
+import lightning.pytorch as pl
 import torch
+from jsonargparse import lazy_instance
+from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
 from torch import nn
 from torch.nn import functional as F
-import lightning.pytorch as pl
-from lightning.pytorch.cli import OptimizerCallable, LRSchedulerCallable
-from fnmatch import fnmatchcase
 from torchmetrics import AUROC
+
+from electrolyte_fm.models.model_utils import create_position_ids
+from electrolyte_fm.utils.cli import MistLightningCLI
+
+logger = logging.getLogger(__name__)
 
 
 def per_layer_probe(
@@ -26,7 +40,7 @@ def probe_everything(
     hidden_size: int,
     features: int,
     n_layers: int,
-    intermediate_size: Optional[int] = None,
+    intermediate_size: int | None = None,
 ):
     probes = {}
     intermediate_size = intermediate_size or hidden_size
@@ -40,30 +54,42 @@ def probe_everything(
     return probes
 
 
-ProbeConfigCallable = Callable[Any, dict[str, nn.Module]]
+ProbeConfigCallable = Callable[..., dict[str, nn.Module]]
 
 
 class LightningProbe(pl.LightningModule):
     def __init__(
         self,
         model: nn.Module,
-        probes: ProbeConfigCallable = per_layer_probe,
+        probes: ProbeConfigCallable | None = None,
         optimizer: OptimizerCallable = torch.optim.AdamW,
         lr_schedule: LRSchedulerCallable | None = None,
     ):
         super().__init__()
 
         self.model = model.requires_grad_(False)
+        if probes is None:
+            config = self.model.config
+            probes = probe_everything(
+                config.hidden_size,
+                5,
+                config.num_hidden_layers,
+                config.intermediate_size,
+            )
+        elif callable(probes):
+            probes = probes()
         self.optimizer = optimizer
         self.lr_schedule = lr_schedule
-        self.save_hyperparameters()
+        # The CLI records constructor descriptions; never pickle the frozen
+        # encoder or another copy of the probes into every checkpoint.
+        self.save_hyperparameters(ignore=["model", "probes"])
         self.hookpoints = self._identify_hookpoints(probes.keys())
         assert len(self.hookpoints) > 0
 
         # Setup probes
         self._probes = nn.ModuleList(probes.values())
         self._probe_points = list(probes.keys())
-        self._hooks_installed = dict()
+        self._hooks_installed = {}
         self._activations = {}
 
         # Add metrics
@@ -79,7 +105,7 @@ class LightningProbe(pl.LightningModule):
         # Don't save the model, it is not being trained
         return {k: v for k, v in super().state_dict().items() if "model" not in k}
 
-    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         state_dict = checkpoint["state_dict"]
         # Remove hooks from model (not picklable))
         for hook in state_dict.pop("_hooks_installed", {}).values():
@@ -91,6 +117,11 @@ class LightningProbe(pl.LightningModule):
 
         # Don't save activations
         state_dict.pop("_activations", None)
+        checkpoint["probe_metrics"] = {
+            key: float(value)
+            for key, value in self.trainer.callback_metrics.items()
+            if key.startswith("val/")
+        }
 
     def named_probes(self):
         yield from zip(self._probe_points, self._probes)
@@ -113,7 +144,7 @@ class LightningProbe(pl.LightningModule):
                 self._hooks_installed[name] = self.model.get_submodule(
                     name
                 ).register_forward_hook(hook)
-                logging.debug("Installed hook for %s", name)
+                logger.debug("Installed hook for %s", name)
 
         return self._activations
 
@@ -124,7 +155,6 @@ class LightningProbe(pl.LightningModule):
                 output = output[0]
             assert isinstance(output, torch.Tensor)
             results[name] = output[:, 0, :].detach()
-            return None
 
         return hook
 
@@ -132,7 +162,7 @@ class LightningProbe(pl.LightningModule):
         self.model.eval()
         activations = self._install_hooks()
         with torch.no_grad():
-            self.model(*args, **kwargs)
+            self._encode(*args, **kwargs)
         out = defaultdict(dict)
         for name, probe in self.named_probes():
             for hook in self.hookpoints:
@@ -142,11 +172,19 @@ class LightningProbe(pl.LightningModule):
 
         return out
 
+    def _encode(self, input_ids, **kwargs):
+        config = getattr(self.model, "config", None)
+        if "position_ids" not in kwargs and hasattr(config, "position_padding_idx"):
+            kwargs["position_ids"] = create_position_ids(
+                input_ids, config.pad_token_id, config.position_padding_idx
+            )
+        return self.model(input_ids, **kwargs)
+
     def forward_fit(self, batch: dict):
         self.model.eval()
         activations = self._install_hooks()
         target = batch.pop("target")
-        self.model(batch["input_ids"], attention_mask=batch["attention_mask"])
+        self._encode(batch["input_ids"], attention_mask=batch["attention_mask"])
         loss = []
         out = {}
         for name, probe in self.named_probes():
@@ -209,23 +247,22 @@ class LightningProbe(pl.LightningModule):
         return optimizer
 
 
-if __name__ == "__main__":
-    from jsonargparse import lazy_instance
-    from lightning.pytorch.loggers import WandbLogger
+def encoder_from_finetuned(
+    name_or_path: str, tokenizer: str | None = None
+) -> nn.Module:
+    """Reuse the production loader for released and Lightning task checkpoints."""
+    from .prod_finetune import load_finetuned
+
+    return load_finetuned(name_or_path, tokenizer=tokenizer).encoder
+
+
+def cli_main(args=None):
     from lightning.pytorch.callbacks import ModelCheckpoint
-    from electrolyte_fm.utils.cli import MistLightningCLI
-
-    logging.basicConfig(level=logging.INFO)
-
-    def encoder_from_finetuned(name_or_path: str) -> nn.Module:
-        from .prod_finetune import MISTFinetuned
-
-        model = MISTFinetuned.from_pretrained(name_or_path)
-        print(model.encoder)
-        return model.encoder
+    from lightning.pytorch.loggers import WandbLogger
 
     cli = MistLightningCLI(
         LightningProbe,
+        args=args,
         save_config_callback=None,
         seed_everything_default=42,
         trainer_defaults={
@@ -233,12 +270,23 @@ if __name__ == "__main__":
                 WandbLogger, project="linear-probes", save_code=True
             ),
             "max_epochs": 1000,
+            "precision": (
+                "bf16-mixed"
+                if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+                else "32-true"
+            ),
         },
         parser_kwargs={"parser_mode": "jsonnet"},
         run=False,
     )
     trainer: pl.Trainer = cli.trainer
     model: LightningProbe = cli.model
+    # Retain the loader description for provenance, never the encoder object.
+    model.hparams["model"] = cli.config_dump["model"]["model"]
+    # Replace Lightning's implicit aggregate checkpoint with one per probe.
+    trainer.callbacks = [
+        c for c in trainer.callbacks if not isinstance(c, ModelCheckpoint)
+    ]
     ckpts = []
     for probe, _ in model.named_probes():
         probe_name = probe.replace(".", "-").replace("*", "star")
@@ -246,8 +294,10 @@ if __name__ == "__main__":
         auroc = f"val/{probe}-auroc"
         ckpts.append(
             ModelCheckpoint(
+                dirpath=Path(trainer.default_root_dir) / "checkpoints",
                 monitor=monitor,
                 save_top_k=1,
+                save_last=False,
                 save_weights_only=True,
                 auto_insert_metric_name=False,
                 filename=probe_name
@@ -261,3 +311,24 @@ if __name__ == "__main__":
     trainer.callbacks.extend(ckpts)
 
     trainer.fit(model, cli.datamodule)
+    if not all(callback.best_model_path for callback in ckpts):
+        raise RuntimeError(
+            "Training finished without a validated checkpoint for every probe"
+        )
+    # Small run metadata only; probe tensors stay in Lightning checkpoints and
+    # the existing Julia loader writes their analysis to JLD2.
+    torch.save(
+        {
+            "training_steps": trainer.global_step,
+            "requested_steps": trainer.max_steps,
+            "step_budget_reached": trainer.max_steps > 0
+            and trainer.global_step >= trainer.max_steps,
+        },
+        Path(trainer.default_root_dir) / "fit.pt",
+    )
+    return cli
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    cli_main()

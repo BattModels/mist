@@ -1,0 +1,55 @@
+"""Original tmQM application panels from the released model and validation split."""
+
+load("//config.pomset", "ENV", "OFFLINE_ENV", "SHARED_CPU", "GPU_INFERENCE")
+load("./workflow.pomset", "environment", "paper_release", "released_model", "DATA")
+
+ROOT = Path("//results/properties/tmqm/paper")
+OFFLINE = dict(OFFLINE_ENV, JULIA_PYTHONCALL_EXE=environment.outputs.python, PYTHONPATH=Path("//"))
+
+julia = task(
+    name="tmqm-paper-julia-environment",
+    cmd=["julia", "--project=.", "--startup-file=no", "-e", "using Pkg; Pkg.instantiate()"],
+    env=ENV,
+    executor=shell(),
+    outputs={"manifest": Path("Manifest.toml")},
+)
+predictions = task(
+    name="tmqm-paper-validation-predictions",
+    cmd=[
+        environment.outputs.python,
+        Path("./predict_tmqm.py"),
+        released_model.outputs.model,
+        DATA,
+    ] + sh.args({
+        "split": "validation",
+        "output": ROOT / "validation-predictions.jsonl",
+    }),
+    inputs=[paper_release.outputs.validation],
+    env=OFFLINE,
+    output_dir=ROOT,
+    outputs={"predictions": Path("validation-predictions.jsonl")},
+    resources=GPU_INFERENCE,
+    validator=validate_checksums(),
+)
+figures = task(
+    name="tmqm-paper-figures",
+    tags=tags("figures"),
+    cmd=["julia", "--startup-file=no", "--project=.", Path("./paper_plots.jl")] + sh.args({
+        "predictions": predictions.outputs.predictions,
+        "output-dir": ROOT / "figures",
+    }),
+    inputs=[julia.outputs.manifest],
+    env=OFFLINE,
+    output_dir=ROOT / "figures",
+    outputs={
+        "tmQM_pdf": Path("tmQM.pdf"), "tmQM_png": Path("tmQM.png"),
+        "gaps_pdf": Path("tmQM-isomer-gaps.pdf"), "gaps_png": Path("tmQM-isomer-gaps.png"),
+        "complexes_pdf": Path("tmQM-complexes.pdf"), "complexes_png": Path("tmQM-complexes.png"),
+        "pairs": Path("stereoisomer-pairs.jsonl"), "examples": Path("annotated-examples.jsonl"),
+    },
+    resources=SHARED_CPU,
+    validator=validate_checksums(),
+)
+FIGURES = {"tmQM": figures.outputs.tmQM_pdf,
+           "tmQM-isomer-gaps": figures.outputs.gaps_pdf,
+           "tmQM-complexes": figures.outputs.complexes_pdf}

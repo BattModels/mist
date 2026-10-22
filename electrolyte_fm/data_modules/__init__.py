@@ -1,7 +1,7 @@
 from .molnet_dataset import MolNetDataModule
 from .property_prediction_dataset import PropertyPredictionDataModule
 from .roberta_dataset import RobertaDataSet
-from .tmqm_dataset import tmQMDataModule
+from .tmqm_dataset import tmQMDataModule, tmQMTrainValidationDataModule
 from .mixture_dataset import (
     ComponentDataModule,
     ComponentDataModuleFast,

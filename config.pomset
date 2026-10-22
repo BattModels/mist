@@ -1,0 +1,48 @@
+"""Shared workflow cache paths, environments, and reusable allocations."""
+
+HOSTNAME = (sysinfo()["hostname"] or "").split(".")[0]
+
+# Paths retain this module's origin when loaded by workflows under opt/.
+CACHE = Path("./.cache")
+ENV = {
+    "HF_HOME": CACHE / "huggingface",
+    "XDG_CACHE_HOME": CACHE,
+    "UV_CACHE_DIR": CACHE / "uv",
+    "UV_PYTHON_INSTALL_DIR": CACHE / "python",
+    # The trailing separator retains Julia's bundled system depots, but not
+    # ~/.julia: all new packages, artifacts, and compiled caches stay here.
+    "JULIA_DEPOT_PATH": CACHE / "julia:",
+    # uv is native; Python downloaders use truststore at their entrypoints.
+    "UV_SYSTEM_CERTS": "true",
+}
+if HOSTNAME.startswith("ch-") or HOSTNAME.startswith("nid"):
+    # Python/Rust extensions do not need the Cray MPI compiler wrappers.
+    ENV.update(CC="gcc", CXX="g++")
+OFFLINE_ENV = dict(ENV, HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1")
+
+JOB_WALLTIME = "8h"
+
+def job_resources(**options):
+    """Apply cluster defaults on both frontends and compute nodes."""
+    gpu = any([options.get(key) for key in ["gpus", "gpus_per_node", "gpus_per_task"]])
+    defaults = {}
+    if HOSTNAME.startswith("ch-") or HOSTNAME.startswith("nid"):
+        defaults = dict(
+            account="y26_artimis-fmod_g" if gpu else "y26_artimis_ddc",
+            queue="gpu" if gpu else "standard",
+        )
+    elif HOSTNAME.startswith("se-") or (HOSTNAME.startswith("se") and HOSTNAME[2:].isdigit()):
+        defaults = dict(account="y26_artimis-fmod_g", queue="standard")
+    return resources(**dict(defaults, **options))
+
+# Tags select targets, including prerequisites: sync completed prerequisites
+# before submitting a batch on the other site.
+SHARED_CPU = job_resources(
+    cpus_per_task=16, memory_per_node="32GiB", walltime=JOB_WALLTIME
+)
+GPU_ANALYSIS = job_resources(
+    cpus_per_task=8, gpus_per_node=1, memory_per_node="96GiB", walltime=JOB_WALLTIME
+)
+GPU_INFERENCE = job_resources(
+    cpus_per_task=4, gpus_per_node=1, memory_per_node="64GiB", walltime="2h"
+)

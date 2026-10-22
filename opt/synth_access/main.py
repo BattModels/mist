@@ -1,37 +1,46 @@
+# Configure TLS only at application startup, before HTTP clients are imported.
+if __name__ == "__main__":
+    import truststore
+
+    truststore.inject_into_ssl()
+
 import argparse
 import functools
 import gzip
 import json
 import logging
 import multiprocessing
+from collections.abc import Callable
 from os import environ
 from pathlib import Path
+from queue import Empty
 from time import perf_counter
-from typing import Callable, Optional
+from typing import Optional
 
+import accelerate
 import torch
-import accelerate  # noqa: F401
 from assembly_theory import molecular_assembly
 from BRSAScore import SAScorer as BRSAScorer
-from datasets import Dataset, load_dataset
+from datasets import Dataset, load_dataset, load_from_disk
 from rdkit import Chem, rdBase
-from rdkit.Contrib.SA_Score import sascorer
 from rdkit.Chem.Descriptors import MolWt
+from rdkit.Contrib.SA_Score import sascorer
 from sklearn.metrics import roc_auc_score
-from syba.syba import SybaClassifier
 from smirk import SmirkTokenizerFast
+from syba.syba import SybaClassifier
 from vendor.scscore.scscore import SCScorer
 
-from electrolyte_fm.models.mol_surprise import MolSurpriseFM
 from electrolyte_fm.data_modules.utils import MolEncoding, encode_molecules
+from electrolyte_fm.models.mol_surprise import MolSurpriseFM
 from electrolyte_fm.utils.cache import cached_download, extract_file
 
 # Suppress DeprecationWarnings for MorganGenerator
 rdBase.DisableLog("rdApp.warning")
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-NUM_PROCS = int(environ.get("SLURM_CPUS_PER_TASK", 4))
+NUM_PROCS = int(environ.get("SLURM_CPUS_PER_TASK", "4"))
 
 
 def timeout(seconds):
@@ -42,7 +51,7 @@ def timeout(seconds):
                 try:
                     result = func(*args, **kwargs)
                     q.put(result)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - forward child failures to the parent
                     q.put(e)
 
             q = multiprocessing.Queue()
@@ -53,12 +62,22 @@ def timeout(seconds):
             if p.is_alive():
                 p.terminate()
                 p.join()
-                logging.warning(
+                logger.warning(
                     f"Function '{func.__name__}' timed out after {seconds} seconds with args={args}, kwargs={kwargs}"
                 )
                 return None
 
-            result = q.get()
+            try:
+                result = q.get(timeout=1)
+            except Empty:
+                logger.warning(
+                    "Worker for %s exited without a result (exit %s)",
+                    func.__name__,
+                    p.exitcode,
+                )
+                return None
+            finally:
+                q.close()
             if isinstance(result, Exception):
                 raise result
             return result
@@ -68,7 +87,7 @@ def timeout(seconds):
     return decorator
 
 
-def sascore(smiles: str) -> Optional[float]:
+def sascore(smiles: str) -> float | None:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
@@ -92,7 +111,7 @@ def syba_scorer():
 
 
 @timeout(30)  # molecular_assembly (v0.2.0) timeout flag doesn't timeout
-def molecular_assembly_timeout(smi: str) -> Optional[int]:
+def molecular_assembly_timeout(smi: str) -> int | None:
     mol = Chem.MolFromSmiles(smi)
     will_error = [
         "CC(C)(C)OC(=O)CCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCOCCO",  # Panics in isomorphism.rs
@@ -101,9 +120,9 @@ def molecular_assembly_timeout(smi: str) -> Optional[int]:
         return None
     try:
         return molecular_assembly(mol)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a failed heuristic is recorded as missing
         # Catch panics
-        logging.error("molecular assembly threw an error for %s: %s", smi, e)
+        logger.error("molecular assembly threw an error for %s: %s", smi, e)
         return None
 
 
@@ -130,6 +149,7 @@ def map_batchsize_finder(ds, f, batch_size: int = 64, **kwargs):
                 return ds.map(f, batch_size=batch_size, **kwargs)
         except torch.cuda.OutOfMemoryError:
             batch_size = batch_size // 2
+            torch.cuda.empty_cache()
 
     raise RuntimeError("Failed to find a batch size that doesn't cause an OOM")
 
@@ -137,10 +157,11 @@ def map_batchsize_finder(ds, f, batch_size: int = 64, **kwargs):
 def eval_fm_model(
     metric_name: str, model: MolSurpriseFM, ds: Dataset, target: str | None = None
 ):
-    model = model.to("cuda")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = model.to(device)
     model = model.eval()
-    runtime = dict()
-    auroc_stats = dict()
+    runtime = {}
+    auroc_stats = {}
     for encoding in ["smiles", "smiles-kekule", "smiles-canonical"]:
         for per_token in [False, True]:
             name = f"{metric_name}-{encoding}"
@@ -149,8 +170,8 @@ def eval_fm_model(
 
             start = perf_counter()
 
-            def scorer(x: str):
-                return model.score(x, per_token=per_token)  # noqa: F821
+            def scorer(x, name=name, per_token=per_token, model=model):
+                return {name: model.score(x, per_token=per_token).tolist()}
 
             ds = map_batchsize_finder(
                 ds,
@@ -196,7 +217,7 @@ def evaluate_dataset(
         num_proc=NUM_PROCS,
     )
 
-    stats = {"auroc": {}} if target is not None else {}
+    stats = {"auroc": {}}
     stats["time"] = {}
     for name, metric in metrics.items():
         if isinstance(metric, str):
@@ -205,7 +226,7 @@ def evaluate_dataset(
                 ("-untrained", MolSurpriseFM.from_untrained),
             ]:
                 ds, metric_runtime, metric_auroc = eval_fm_model(
-                    metric + suffix,
+                    name + suffix,
                     init_model(metric),
                     ds,
                     target,
@@ -225,11 +246,11 @@ def evaluate_dataset(
                 input_columns = "smiles"
 
             ds = ds.map(
-                lambda x: {name: metric(x)},
+                lambda x, name=name, metric=metric: {name: metric(x)},
                 input_columns=input_columns,
                 batched=False,
                 desc=name,
-                num_proc=NUM_PROCS,
+                num_proc=1 if name == "assembly-index" else NUM_PROCS,
             )
             stats["time"][name] = perf_counter() - start
             if target:
@@ -238,24 +259,39 @@ def evaluate_dataset(
                 )
                 stats["auroc"][name] = roc_auc_score(ds_auroc[target], ds_auroc[name])
 
-    # Score Molecules
-    df = ds.to_pandas()
-    stats["scores"] = df.to_dict("records")
+    # Arrow retains a timed-out heuristic as None. A pandas round trip would
+    # change it to NaN, which is invalid JSON and breaks the Julia report.
+    stats["scores"] = ds.to_list()
 
     return stats
 
 
-if __name__ == "__main__":
+def main():
     p = argparse.ArgumentParser()
     p.add_argument("--metric", type=str, action="append", default=None)
     p.add_argument("--skip-metric", type=str, action="append", default=None)
     p.add_argument("--output-format", type=str, default="{dataset}.json")
+    p.add_argument("--data-dir", type=Path)
+    p.add_argument("--prepare", action="store_true")
+    p.add_argument(
+        "--model", nargs=2, action="append", default=[], metavar=("NAME", "MODEL_DIR")
+    )
+    p.add_argument("--dataset", choices=["ba-sascorer", "crowdsourced"])
     args = p.parse_args()
+    torch.manual_seed(42)
 
-    syba = syba_scorer()
-    scscore = SCScorer().restore()
-    scscore.restore()
-    ba_sascorer = BRSAScorer()
+    selected_metrics = set(args.metric or [])
+
+    def need(name):
+        return (
+            args.prepare
+            or (not selected_metrics and not args.model)
+            or name in selected_metrics
+        )
+
+    syba = syba_scorer() if need("SyBA") else None
+    scscore = SCScorer().restore() if need("SCScore") else None
+    ba_sascorer = BRSAScorer() if need("BR-SAScore") else None
     smirk = SmirkTokenizerFast()
     metrics = {
         "SAScore": sascore,
@@ -271,9 +307,12 @@ if __name__ == "__main__":
         "assembly-index": molecular_assembly_timeout,
     }
 
-    for file in Path("models").iterdir():
+    for file in Path("models").iterdir() if Path("models").is_dir() else []:
         if file.is_dir():
             metrics[file.name] = str(file)
+
+    if args.model:
+        metrics = dict(args.model)
 
     # Uncomment to just run assembly-index
     if args.metric is not None:
@@ -282,33 +321,55 @@ if __name__ == "__main__":
     if args.skip_metric is not None:
         for metric in args.skip_metric:
             metrics.pop(metric, None)
-    logging.info("Evaluating: %s", ",".join(metrics.keys()))
+    logger.info("Evaluating: %s", ",".join(metrics.keys()))
 
-    # BA-SAScore's Dataset
-    ds = load_dataset(
-        "csv",
-        name="BA-SAScore",
-        data_files=[
-            "https://raw.githubusercontent.com/snu-micc/BR-SAScore/refs/heads/main/data/test_set.csv"
-        ],
-    )
-    ds = ds["train"]
-    ds = ds.map(lambda x: {"is_hard": x["accessibility"] == "hs"}, batched=False)
-    ds = ds.select_columns(["smiles", "is_hard"])
+    sources = {
+        # Retained in the pinned scorer fork after removal from upstream main.
+        "ba-sascorer": "https://raw.githubusercontent.com/awadell1/BR-SAScore/464a26335b44d93e216d56d239dc3e942d563d46/data/test_set.csv",
+        # The same public ACS object served by Figshare file 3917065. Some HPC
+        # networks reset connections to Figshare's redirector, but allow S3.
+        "crowdsourced": "https://s3-eu-west-1.amazonaws.com/pstorage-acs-6854636/3917065/ci5001778_si_001.txt",
+    }
+    for dataset, url in sources.items():
+        if args.dataset and args.dataset != dataset:
+            continue
+        path = args.data_dir / dataset if args.data_dir else None
+        if path is not None and path.is_dir():
+            # These small source datasets are checksum-validated workflow
+            # artifacts. In-memory loading prevents Dataset.map/filter from
+            # publishing mutable cache files alongside their source shards.
+            ds = load_from_disk(str(path), keep_in_memory=True)
+        else:
+            if args.data_dir and not args.prepare:
+                raise FileNotFoundError(
+                    f"Materialize the dataset before compute: {path}"
+                )
+            ds = load_dataset("csv", data_files=url, split="train")
+            if dataset == "ba-sascorer":
+                ds = ds.map(lambda x: {"is_hard": x["accessibility"] == "hs"})
+                ds = ds.select_columns(["smiles", "is_hard"])
+            else:
+                ds = ds.select_columns(["SMILES", "meanComplexity", "stdevComplexity"])
+                ds = ds.rename_column("SMILES", "smiles")
+                ds = ds.map(lambda x: {"is_complex": x["meanComplexity"] > 2.85})
+            if path is not None:
+                ds.save_to_disk(str(path))
+        if args.prepare:
+            continue
+        if "row_id" not in ds.column_names:
+            ds = ds.add_column("row_id", list(range(len(ds))))
+        target = "is_hard" if dataset == "ba-sascorer" else "is_complex"
+        stats = evaluate_dataset(metrics, ds, target=target)
+        output = Path(args.output_format.format(dataset=dataset))
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(stats, indent=2, allow_nan=False) + "\n")
+    if args.prepare:
+        if args.data_dir is None:
+            p.error("--prepare requires --data-dir")
+        (args.data_dir / "receipt.json").write_text(
+            json.dumps(sources, indent=2) + "\n"
+        )
 
-    stats = evaluate_dataset(metrics, ds, target="is_hard", smi_column="smiles")
-    with open(args.output_format.format(dataset="ba-sascorer"), "w") as fid:
-        json.dump(stats, fid, indent=4)
 
-    # Modeling a Crowdsourced Definition of Molecular Complexity
-    ds = load_dataset(
-        "csv",
-        name="figshare_3917065",
-        data_files=["https://ndownloader.figstatic.com/files/3917065"],
-    )
-    ds = ds["train"]
-    ds = ds.select_columns(["SMILES", "meanComplexity", "stdevComplexity"])
-    ds = ds.map(lambda x: {"is_complex": x["meanComplexity"] > 2.85}, batched=False)
-    stats = evaluate_dataset(metrics, ds, target="is_complex", smi_column="SMILES")
-    with open(args.output_format.format(dataset="crowdsourced"), "w") as fid:
-        json.dump(stats, fid, indent=4)
+if __name__ == "__main__":
+    main()

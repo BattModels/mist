@@ -187,14 +187,10 @@ function plot_pareto_front!(f, case, ref)
     )
 
     # Net non-dominated
-    label_electrolyte_pareto!(case)
+    case = label_electrolyte_pareto(case)
+    nidx = findall(!, case.dominated)
     @info "non-dominated" sort(case[nidx, :], :inchi_key)
-    front = map(front) do p
-        p[1] *= -1
-        p[2] *= -1
-        p
-    end
-    @info "non-dominated" length(front) nrow(case) length(front) / nrow(case)
+    @info "non-dominated" length(nidx) nrow(case) length(nidx) / nrow(case)
 
     ax = Axis(f[1, 1];
         limits=(mp_limits, bp_limits),

@@ -14,15 +14,11 @@ function Makie.plot!(plt::Quadrant)
     p = lift(quadpoints, limits, plt[:x], plt[:y], plt[:quad])
     poly!(plt, p; color=plt[:color], Makie.shared_attributes(plt, Poly)...)
 
-    attrs = Makie.shared_attributes(plt, HLines)
-    attrs[:color] = plt[:linecolor]
-    attrs[:alpha] = plt[:linealpha]
-    hlines!(plt, plt[:y]; attrs...)
+    hlines!(plt, plt[:y]; Makie.shared_attributes(plt, HLines)...,
+        color=plt[:linecolor], alpha=plt[:linealpha])
 
-    attrs = Makie.shared_attributes(plt, VLines)
-    attrs[:color] = plt[:linecolor]
-    attrs[:alpha] = plt[:linealpha]
-    vlines!(plt, plt[:x]; linewidth=5pt, attrs...)
+    vlines!(plt, plt[:x]; Makie.shared_attributes(plt, VLines)...,
+        linewidth=5pt, color=plt[:linecolor], alpha=plt[:linealpha])
 
     return plt
 end

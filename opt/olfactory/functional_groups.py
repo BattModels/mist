@@ -27,8 +27,6 @@ functional_group_smarts = {
     "aqueous": "[OH2]",
     "salt": "[+1,+2,+3].[-1,-2,-3]",
 }
-print(list(functional_group_smarts.keys()))
-
 # Compile SMARTS into RDKit molecules
 functional_group_mols = {
     name: Chem.MolFromSmarts(smarts) for name, smarts in functional_group_smarts.items()

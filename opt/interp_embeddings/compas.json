@@ -1,0 +1,21 @@
+{
+  "repository": "https://gitlab.com/porannegroup/compas",
+  "revision": "72e61e3d2bb1a22ecc333ad0e12b92b6ae6b6a04",
+  "files": {
+    "compas1": {
+      "path": "COMPAS-1/compas-1D_cam-b3lyp_aug-cc-pvdz.csv",
+      "sha256": "c5e521d65d9c7f9df0e5eb4cadd93818a5f5d354f6a043e7046c87c1cf66be85",
+      "bytes": 1998889
+    },
+    "compas2": {
+      "path": "COMPAS-2/compas-2D.parquet",
+      "sha256": "46ddd9c9e063094f2e33b442d690a529a34dc454dc7df4e7e84752bf5bad1b50",
+      "bytes": 20561700
+    },
+    "compas3": {
+      "path": "COMPAS-3/compas-3D.csv",
+      "sha256": "cb63bf51317fc1e735635a32e3ff2a0611a6010242656e26a144bc734a160741",
+      "bytes": 1620909
+    }
+  }
+}

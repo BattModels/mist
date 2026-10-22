@@ -15,6 +15,7 @@ dependencies = [
     "scikit-learn>=1.7.1",
     "tenacity>=9.1.2",
     "tqdm>=4.67.1",
+    "truststore>=0.10",
     "typer>=0.17.4",
 ]
 

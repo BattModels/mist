@@ -26,8 +26,9 @@ function canonicalize(smi::String)
 end
 
 function load_model(model_path="mist-models/mist-26.9M-48kpooqf-odour")
-    transformers, torch = pyimport("transformers"), pyimport("torch")
-    model = transformers.AutoModel.from_pretrained(model_path; trust_remote_code=true)
+    isdir(model_path) || error("Supply a staged local odour model directory: $model_path")
+    loader, torch = pyimport("electrolyte_fm.models.prod_finetune"), pyimport("torch")
+    model = loader.load_finetuned(model_path; local_files_only=true)
     model.eval()
     device = pyconvert(Bool, torch.cuda.is_available()) ? torch.device("cuda") :
              pyconvert(Bool, torch.backends.mps.is_available()) ? torch.device("mps") : torch.device("cpu")
@@ -35,10 +36,11 @@ function load_model(model_path="mist-models/mist-26.9M-48kpooqf-odour")
 end
 
 function load_code_to_smiles(label_path="../../osmo_data/safe_to_share.csv",
-                              anchor_path="../../osmo_data/anchor_labels.json")
+                              anchor_path=nothing)
     labels = DataFrame(CSV.File(label_path))
-    merge!(Dict(zip(labels[!, "Sample Identifier"], labels.SMILES)),
-           JSON3.read(read(anchor_path, String), Dict{String,String}))
+    mapping = Dict(zip(labels[!, "Sample Identifier"], labels.SMILES))
+    isnothing(anchor_path) || merge!(mapping, JSON3.read(read(anchor_path, String), Dict{String,String}))
+    return mapping
 end
 
 function get_olfactory_profiles(model, smiles_list::Vector{String}; batch_size=32, mc_iterations=10)
@@ -51,7 +53,7 @@ function get_olfactory_profiles(model, smiles_list::Vector{String}; batch_size=3
         for i in 1:batch_size:length(kekule_smiles)
             output = model.predict(pylist(kekule_smiles[i:min(i+batch_size-1, end)]))
             isnothing(channel_names) && (channel_names = sort(collect(pyconvert(Vector{String}, output.keys()))))
-            push!(all_logits, reduce(hcat, [pyconvert(Vector{Float64}, output[ch]["value"]) for ch in channel_names]))
+            push!(all_logits, reduce(hcat, [pyconvert(Vector{Float64}, output[ch]["value"].tolist()) for ch in channel_names]))
         end
         push!(mc_logits, vcat(all_logits...))
     end
@@ -62,8 +64,9 @@ function get_olfactory_profiles(model, smiles_list::Vector{String}; batch_size=3
 end
 
 function validate_triplet_predictions(label_path="../../osmo_data/safe_to_share.csv",
-                                       anchor_path="../../osmo_data/anchor_labels.json",
-                                       molecule_path="../../osmo_data/Data S5.csv")
+                                       anchor_path=nothing,
+                                       molecule_path="../../osmo_data/Data S5.csv";
+                                       model_path="mist-models/mist-26.9M-48kpooqf-odour")
     df = DataFrame(CSV.File(molecule_path))
     code_to_smiles = load_code_to_smiles(label_path, anchor_path)
     df.smiles = [get(code_to_smiles, code, missing) for code in df[!, "RedJade Code"]]
@@ -72,7 +75,7 @@ function validate_triplet_predictions(label_path="../../osmo_data/safe_to_share.
     rename!(df, :Jasmine => :jasmin)
     rename!(df, [col => lowercase(string(col)) for col in names(df)])
 
-    model = load_model()
+    model = load_model(model_path)
     all_logits, _, channel_names = get_olfactory_profiles(model, df.smiles)
 
     mist_pred_full = DataFrame(all_logits, channel_names)
@@ -177,7 +180,7 @@ function plot_metric_panel!(ax, metric_data, metric)
     ax.spinewidth, ax.xgridvisible, ax.ygridvisible = 0.8, false, false
 end
 
-function plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="Euclidean Distance (MIST)")
+function plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="Euclidean Distance (MIST)", output_dir="fig")
     unique_triads = unique([(t[1], t[2], t[3]) for t in triples])
     colors = distinguishable_colors(length(unique_triads), [RGB(1,1,1), RGB(0,0,0)], dropseed=true)
     markers = [:circle, :rect, :diamond, :utriangle, :dtriangle, :star5, :hexagon, :cross, :xcross]
@@ -189,7 +192,7 @@ function plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="
     csv_data = NamedTuple[]
 
     with_theme(MISTStyle.theme()) do
-        fig = Figure(size=(55mm, 50mm), padding=(4,4,4,4))
+        fig = Figure(size=(55mm, 50mm), figure_padding=(4,4,4,4))
         ax = Axis(fig[1,1]; xlabel="Structural Distance",
                   ylabel=normalize ? "Normalized $metric" : metric, aspect=1,
                   limits = ( (0.3, 1),  (0.3, 1)))
@@ -220,27 +223,34 @@ function plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="
                         MarkerElement(color=:gray, marker=:circle, strokewidth=0.6, strokecolor=:black, markersize=3)],
                    [ "Perceptually Similar", "Structurally Similar"]; position=:rb, padding=(1,1,1,1))
 
-        MISTStyle.savefig("struct_vs_$(lowercase(replace(metric, ' ' => '_', '(' => "", ')' => "")))", fig)
+        MISTStyle.savefig("struct_vs_$(lowercase(replace(metric, ' ' => '_', '(' => "", ')' => "")))", fig; fig_dir=output_dir)
     end
 
     csv_df = DataFrame(csv_data)
-    CSV.write("fig/struct_vs_$(lowercase(replace(metric, ' ' => '_', '(' => "", ')' => ""))).csv", csv_df)
+    CSV.write(joinpath(output_dir, "struct_vs_$(lowercase(replace(metric, ' ' => '_', '(' => "", ')' => ""))).csv"), csv_df)
     @info "Saved $(nrow(csv_df)) points"
 end
 
 function plot_discordance(label_path="../../osmo_data/safe_to_share.csv",
                           triplets_path="../../osmo_data/triplets.csv",
-                          anchor_path="../../osmo_data/anchor_labels.json")
+                          anchor_path=nothing;
+                          molecule_path="../../osmo_data/Data S5.csv",
+                          model_path="mist-models/mist-26.9M-48kpooqf-odour",
+                          output_dir="fig")
     code_to_smiles = Dict(k => kekulize(v) for (k, v) in load_code_to_smiles(label_path, anchor_path))
 
     triplets = DataFrame(CSV.File(triplets_path))
+    required_codes = union(triplets[!, "RedJade Code A"], triplets[!, "RedJade Code B"])
+    missing_codes = setdiff(required_codes, keys(code_to_smiles))
+    isempty(missing_codes) || error("Missing RedJade identities: $(join(sort(missing_codes), ", "))")
+    mkpath(output_dir)
     triplets[!, "Perceptual Distance"] ./= 100
     filter!(row -> row.roleA == "anchor", triplets)
 
     triplets_mean = combine(groupby(triplets, ["RedJade Code A", "RedJade Code B", "roleB"]),
                             names(triplets, Real) .=> mean .=> names(triplets, Real))
 
-    mist_pred_full, mist_pred, gnn_pred = validate_triplet_predictions()
+    mist_pred_full, mist_pred, gnn_pred = validate_triplet_predictions(label_path, anchor_path, molecule_path; model_path)
     triplets_mean = compute_distance_metrics(triplets_mean, code_to_smiles, mist_pred_full, mist_pred, gnn_pred)
 
     distances = ["Structural Distance", "Perceptual Distance", "Predicted Label Distance (GNN)",
@@ -248,6 +258,8 @@ function plot_discordance(label_path="../../osmo_data/safe_to_share.csv",
 
     triples = load_triplets(triplets)
     triples_df = build_triples_dataframe(triples, triplets_mean, distances)
+    CSV.write(joinpath(output_dir, "triad-distances.csv"), triples_df)
+    CSV.write(joinpath(output_dir, "prospective-logits.csv"), mist_pred_full)
 
     with_theme(MISTStyle.theme()) do
         fig = Figure(size=(150mm, 75mm))
@@ -270,9 +282,9 @@ function plot_discordance(label_path="../../osmo_data/safe_to_share.csv",
         for (i, label) in enumerate('a':'e')
             sublabel!(gl[div(i-1,3)+1, mod1(i,3), TopLeft()], string(label); left=15pt)
         end
-        MISTStyle.savefig("discordant", fig)
+        MISTStyle.savefig("discordant", fig; fig_dir=output_dir)
     end
 
-    plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="Perceptual Distance")
-    plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="Euclidean Distance (MIST)")
+    plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="Perceptual Distance", output_dir)
+    plot_struct_vs_perceptual(triples_df, triples, code_to_smiles; metric="Euclidean Distance (MIST)", output_dir)
 end

@@ -27,6 +27,7 @@ from .mixture_model import TemperatureCondition
 from .pairwise_fusion import pairwise_fusion
 from .prod_finetune import (
     build_encoder_from_dict,
+    encoder_config,
     annotate_prediction,
     maybe_get_annotated_channels,
 )
@@ -47,6 +48,11 @@ def resolve_tokenizer(self, tokenizer=None):
             self.name_or_path, use_fast=True, trust_remote_code=True
         )
     except Exception:
+        if self.config.tokenizer_class in {"SmirkTokenizer", "SmirkTokenizerFast"}:
+            # Earlier released mixture checkpoints contain all model weights
+            # but no tokenizer files. Their Smirk vocabulary ships in the
+            # package, so loading them does not need a second HF repository.
+            return SmirkTokenizerFast()
         return AutoTokenizer.from_pretrained(
             self.config._name_or_path, use_fast=True, trust_remote_code=True
         )
@@ -86,7 +92,7 @@ class MISTIonicConductivity(PreTrainedModel):
             raise ValueError(f"Unknown task_network type: {tn_type}")
 
         self.n_components = int(config.n_components)
-        self.tokenizer = resolve_tokenizer()
+        self.tokenizer = resolve_tokenizer(self)
         self.post_init()
 
     @classmethod
@@ -108,7 +114,7 @@ class MISTIonicConductivity(PreTrainedModel):
             )
 
         cfg = MISTIonicConductivityConfig(
-            encoder=encoder.config.to_dict(),
+            encoder=encoder_config(encoder),
             task_network=tn,
             n_components=n_components,
             tokenizer_class=(
@@ -329,7 +335,7 @@ class MISTExcessPhysics(PreTrainedModel):
         self.transform = Standardize(num_outputs=config.num_targets)
         self.excess_transform = Standardize(num_outputs=config.num_targets)
 
-        self.tokenizer = resolve_tokenizer()
+        self.tokenizer = resolve_tokenizer(self)
         self.post_init()
 
     @classmethod
@@ -571,7 +577,7 @@ class MISTMixtures(PreTrainedModel):
         else:
             self.temperature_condition = config.temperature_condition
 
-        self.tokenizer = resolve_tokenizer()
+        self.tokenizer = resolve_tokenizer(self)
         self.post_init()
 
     @classmethod

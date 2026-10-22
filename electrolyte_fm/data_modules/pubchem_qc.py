@@ -1,22 +1,24 @@
 import json
 import logging
-import traceback
+import os
 import re
+import traceback
 from asyncio import Semaphore
 from collections import defaultdict
+from enum import IntEnum, auto
 from pathlib import Path
 from statistics import mean
+from threading import RLock
 from typing import Optional
-from enum import IntEnum, auto
 
 import torch
-from torch.nn import functional as F
-from torch.utils.data import DataLoader
-from torch.nn.utils.rnn import pad_sequence
-from transformers import DataCollatorWithPadding
-from datasets import Dataset, load_dataset
+from datasets import Dataset, IterableDatasetDict, load_dataset
 from lightning import LightningDataModule
 from rdkit import Chem
+from torch.nn import functional as F
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader
+from transformers import DataCollatorWithPadding
 
 from electrolyte_fm.utils.tokenizer import load_tokenizer
 
@@ -37,6 +39,23 @@ DEFAULT_SEQ_TARGETS = [
 DEFAULT_TOKEN_TARGETS = ["partial-charge-mulliken", "partial-charge-lowdin"]
 
 
+# Streaming Arrow shards may be prefetched by several threads in one loader
+# worker. Fast tokenizers mutate truncation/padding state even for a single
+# encode, so concurrent calls on the shared tokenizer can raise "Already borrowed".
+# Synchronize only tokenizer access; leave shard iteration, mapping and shuffling
+# unchanged. This module-level lock is not serialized with datasets or workers.
+_TOKENIZER_LOCK = RLock()
+
+
+def _reset_tokenizer_lock():
+    global _TOKENIZER_LOCK
+    _TOKENIZER_LOCK = RLock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_tokenizer_lock)
+
+
 class PubChemQC(LightningDataModule):
     def __init__(
         self,
@@ -47,6 +66,8 @@ class PubChemQC(LightningDataModule):
         prefetch_factor: Optional[int] = None,
         val_batch_size: Optional[int] = None,
         randomize: bool = True,
+        evaluation_randomize: bool | None = None,
+        smear_hydrogens: bool = False,
         include_3d: bool | str = False,
         include_topo_dist: bool = False,
         include_topo_diameter: bool = False,
@@ -61,6 +82,10 @@ class PubChemQC(LightningDataModule):
         self.tokenizer = load_tokenizer(tokenizer)
         self.vocab_size = len(self.tokenizer)
         self.randomize = randomize
+        # Preserve legacy callers; new workflows explicitly disable augmentation
+        # on validation/test so LR comparisons use stable token annotations.
+        self.evaluation_randomize = evaluation_randomize
+        self.smear_hydrogens = smear_hydrogens
         self.include_3d = include_3d
         self.include_topo_dist = include_topo_dist
         self.include_topo_diameter = include_topo_diameter
@@ -76,7 +101,7 @@ class PubChemQC(LightningDataModule):
 
     @property
     def dataset(self):
-        if hasattr(self, "__dataset"):
+        if hasattr(self, "_PubChemQC__dataset"):
             return self.__dataset
 
         self.__dataset = self._get_dataset()
@@ -108,19 +133,30 @@ class PubChemQC(LightningDataModule):
             async with sem:
                 return collate_partial_charges(x, **kwargs)
 
-        ds = ds.map(
-            async_partial_charges,
-            batched=False,
-            fn_kwargs={
-                "tokenizer": self.tokenizer,
-                "randomize": self.randomize,
-                "include_3d": self.include_3d,
-                "seq_targets": self.seq_targets,
-                "token_targets": self.token_targets,
-                "labeler": TokenLabeler(self.tokenizer),
-                "include_topo_dist": self.include_topo_dist,
-                "include_topo_diameter": self.include_topo_diameter,
-            },
+        kwargs = {
+            "tokenizer": self.tokenizer,
+            "include_3d": self.include_3d,
+            "seq_targets": self.seq_targets,
+            "token_targets": self.token_targets,
+            "labeler": TokenLabeler(self.tokenizer),
+            "include_topo_dist": self.include_topo_dist,
+            "include_topo_diameter": self.include_topo_diameter,
+            "smear_hydrogens": self.smear_hydrogens,
+        }
+        ds = IterableDatasetDict(
+            {
+                name: split.map(
+                    async_partial_charges,
+                    batched=False,
+                    fn_kwargs={
+                        **kwargs,
+                        "randomize": self.randomize
+                        if name == "train" or self.evaluation_randomize is None
+                        else self.evaluation_randomize,
+                    },
+                )
+                for name, split in ds.items()
+            }
         )
         cols = [
             "input_ids",
@@ -144,12 +180,13 @@ class PubChemQC(LightningDataModule):
         self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")
 
     def collate_fn(self, batch):
-        output = self.token_collator(
-            [
-                {"input_ids": x["input_ids"], "attention_mask": x["attention_mask"]}
-                for x in batch
-            ]
-        )
+        with _TOKENIZER_LOCK:
+            output = self.token_collator(
+                [
+                    {"input_ids": x["input_ids"], "attention_mask": x["attention_mask"]}
+                    for x in batch
+                ]
+            )
         targets = ["target", "target_mask"]
         if self.include_topo_diameter:
             targets.append("topo_diameter")
@@ -237,6 +274,7 @@ def collate_partial_charges(
     include_topo_dist: bool = False,
     include_topo_diameter: bool = False,
     labeler: "TokenLabeler | None" = None,
+    smear_hydrogens: bool = False,
 ):
     mol = construct_mol(
         atomic_numbers=row["atomic-numbers"],
@@ -245,6 +283,10 @@ def collate_partial_charges(
         bond_orders=row["bond-order"],
     )
     mol = add_atomic_properties(mol, {k: row[k] for k in token_targets})
+    if smear_hydrogens:
+        mol = smear_hydrogen_targets(mol, token_targets)
+        if mol is None:
+            raise ValueError("Cannot construct hydrogen-averaged charge labels")
 
     # Annotate tokens with data
     # Log any errors before rethrowing
@@ -293,9 +335,12 @@ def collate_partial_charges(
 
 
 def _best_effort_sanitize(mol: Chem.Mol) -> int:
+    # CleanupChirality removes tetrahedral tags from atoms not marked sp3.
+    # Molecules decoded with sanitize=False have unspecified hybridization;
+    # establish it before cleanup so charge serialization preserves identity.
     sanitize_ops = (
         Chem.rdmolops.SANITIZE_CLEANUPCHIRALITY
-        | Chem.rdmolops.SANITIZE_SETAROMATICITY
+        | Chem.rdmolops.SANITIZE_SETHYBRIDIZATION
         | Chem.rdmolops.SANITIZE_CLEANUP
         | Chem.rdmolops.SANITIZE_SETAROMATICITY
     )
@@ -522,7 +567,9 @@ def annotated_tokens(
 
     smi = Chem.MolToSmiles(mol, canonical=False, doRandom=doRandom)
     smi_order = [int(c) for c in mol.GetProp("_smilesAtomOutputOrder")[1:-1].split(",")]
-    token_out = tokenizer.encode_plus(smi, **(tokenizer_kwargs or {}))
+    with _TOKENIZER_LOCK:
+        token_out = tokenizer.encode_plus(smi, **(tokenizer_kwargs or {}))
+        labeler = labeler or TokenLabeler(tokenizer)
     input_ids = token_out["input_ids"]
     n_features = 2 * len(targets)
     y = []
@@ -533,7 +580,6 @@ def annotated_tokens(
     atom_indices = []
 
     conf = mol.GetConformer()
-    labeler = labeler or TokenLabeler(tokenizer)
     prior_atom = None
     for idx, token_type in enumerate(labeler(input_ids)):
         y_atom = []
@@ -662,7 +708,7 @@ def mol_from_prediction(
         assert token_targets is not None
         assert y_token.shape[-1] == 2 * len(token_targets) + 3
     else:
-        return mol
+        assert y_token.shape[-1] == 2 * len(token_targets)
 
     # Annotate atoms from prediction
     conf = Chem.Conformer(mol.GetNumAtoms())
@@ -681,7 +727,8 @@ def mol_from_prediction(
                 atom.SetDoubleProp(target, y_token[idx, 2 * tdx].item())
                 atom.SetDoubleProp(f"hs_{target}", y_token[idx, 2 * tdx + 1].item())
 
-    mol.AddConformer(conf)
+    if include_3d:
+        mol.AddConformer(conf)
 
     return mol
 

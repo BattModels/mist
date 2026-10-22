@@ -1,0 +1,195 @@
+"""Paper token embeddings and PAH projections from explicit local model artifacts."""
+
+load("//config.pomset", "ENV", "OFFLINE_ENV", "GPU_INFERENCE", "SHARED_CPU")
+load("//opt/benchmarks/workflow.pomset", "BASE_MODELS", "MOLECULENET_MODELS", "TMQM_MODELS", "TOXCAST_MODELS", BENCHMARK_ENV="environment")
+
+ROOT = Path("//results/interpretability")
+PYTHON = BENCHMARK_ENV.outputs.python
+OFFLINE = dict(OFFLINE_ENV, PYTHONPATH=Path("//"))
+
+julia = task(
+    name="embeddings-julia-environment",
+    cmd=["julia", "--project=.", "--startup-file=no", "-e", "using Pkg; Pkg.instantiate()"],
+    env=ENV,
+    executor=shell(),
+    outputs={"manifest": Path("Manifest.toml")},
+)
+toxcast = task(
+    name="embeddings-stage-toxcast-28m",
+    cmd=[
+        PYTHON,
+        Path("//electrolyte_fm/utils/stage_hf.py"),
+        "mist-models/mist-28M-ttqcvt6fs-toxcast",
+    ] + sh.args({
+        "revision": "e2728a5218fa2bc426b7cac83228510d7c97fa6c",
+        "output": ROOT / "mist-28m" / "toxcast-model",
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=ROOT / "mist-28m",
+    outputs={"model": Path("toxcast-model")},
+    validator=validate_checksums(follow_symlinks=True),
+)
+
+COMPAS = Path("./compas.json").read_json()
+COMPAS_ROOT = Path("//data/releases/compas-" + COMPAS["revision"][:8])
+sources = {}
+for key, spec in COMPAS["files"].items():
+    filename = spec["path"].split("/")[-1]
+    sources[key] = task(
+        name="embeddings-fetch-" + key,
+        cmd=[
+            PYTHON, Path("//electrolyte_fm/utils/fetch_file.py"),
+            COMPAS["repository"] + "/-/raw/" + COMPAS["revision"] + "/" + spec["path"],
+            COMPAS_ROOT / key / filename,
+        ] + sh.args({"sha256": spec["sha256"], "bytes": spec["bytes"]}),
+        env=ENV,
+        executor=shell(),
+        output_dir=COMPAS_ROOT / key,
+        outputs={"data": Path(filename)},
+        validator=validate_checksums(),
+    ).outputs.data
+
+COHORT_ROOT = Path("//data/interpretability/pah")
+cohorts = task(
+    name="embeddings-prepare-pah-cohorts",
+    cmd=[PYTHON, Path("./prepare_cohorts.py")] + sh.args(dict(sources, **{
+        "output-dir": COHORT_ROOT, "seed": 42, "per-class": 1000,
+        "validation-fraction": 0.2,
+    })),
+    env=OFFLINE,
+    executor=shell(),
+    output_dir=COHORT_ROOT,
+    outputs={
+        "aromaticity": Path("aromaticity.csv"),
+        "condensation": Path("condensation.csv"),
+        "aromaticity_settings": Path("aromaticity-settings.json"),
+        "condensation_settings": Path("condensation-settings.json"),
+        "provenance": Path("provenance.json"),
+    },
+    validator=validate_checksums(),
+)
+
+def token_figures(base):
+    root = ROOT / base
+    prefix = "embeddings-" if base == "mist-28m" else "embeddings-" + base + "-"
+    models = [
+        ("Pretrained", BASE_MODELS[base]),
+        ("tmQM", TMQM_MODELS[base]),
+        ("FreeSolv", MOLECULENET_MODELS[base]["freesolv"]),
+        ("QM9", MOLECULENET_MODELS[base]["qm9"]),
+        ("QM8", MOLECULENET_MODELS[base]["qm8"]),
+        ("Lipo", MOLECULENET_MODELS[base]["lipo"]),
+        ("ToxCast", toxcast.outputs.model if base == "mist-28m" else TOXCAST_MODELS[base]),
+        ("BACE", MOLECULENET_MODELS[base]["bace"]),
+        ("ESOL", MOLECULENET_MODELS[base]["esol"]),
+        ("HIV", MOLECULENET_MODELS[base]["hiv"]),
+        ("Tox21", MOLECULENET_MODELS[base]["tox21"]),
+        ("SIDER", MOLECULENET_MODELS[base]["sider"]),
+        ("MUV", MOLECULENET_MODELS[base]["muv"]),
+        ("BBBP", MOLECULENET_MODELS[base]["bbbp"]),
+    ]
+    tokens = {}
+    for label, model in models:
+        extracted = task(
+            name=prefix + "extract-tokens-" + label.lower(),
+            cmd=[PYTHON, Path("./prepare.py"), "tokens"] + sh.args({
+                "model": model,
+                "fallback-tokenizer": BASE_MODELS[base] / "tokenizer.json",
+                "output-dir": root / "tokens" / label,
+            }),
+            inputs=[BASE_MODELS[base]],
+            env=OFFLINE,
+            executor=shell(),
+            output_dir=root / "tokens" / label,
+            outputs={"tokens": Path(".")},
+            validator=validate_checksums(),
+        )
+        tokens[label] = extracted.outputs.tokens
+
+    figures = {}
+    for analysis, stem, model_count, directory in [
+        ("token-main", "token_embeddings_updates", 8, "token-updates"),
+        ("token-paper", "token_embeddings_paper", 8, "token-embeddings"),
+        ("token-si", "token_embeddings_updates_si", len(models), "all-token-updates"),
+    ]:
+        args = []
+        for label, model in models[:model_count]:
+            args += ["--model", label, tokens[label]]
+        plotted = task(
+            name=prefix + analysis,
+            tags=tags("figures"),
+            cmd=["julia", "--project=.", "--startup-file=no", Path("./plots.jl")] + sh.args({
+                "analysis": analysis,
+                "output-dir": root / directory,
+            }) + args,
+            inputs=[julia.outputs.manifest],
+            env=OFFLINE,
+            resources=SHARED_CPU,
+            output_dir=root / directory,
+            outputs={"pdf": Path(stem + ".pdf"), "png": Path(stem + ".png"), "coordinates": Path("tsne")},
+            validator=validate_checksums(),
+        )
+        figures[stem] = plotted.outputs.pdf
+
+    return figures
+
+def pah_figures(base):
+    root = ROOT / base
+    prefix = "embeddings-" if base == "mist-1p8b" else "embeddings-" + base + "-"
+    tables = {}
+    for panel, filename in [("aromaticity", "interp_benzene.csv"), ("condensation", "interp_condensed.csv")]:
+        cohort = getattr(cohorts.outputs, panel)
+        encoded = task(
+            name=prefix + "encode-" + panel,
+            cmd=[PYTHON, Path("./prepare.py"), "encode"] + sh.args({
+                "panel": panel, "cohort": cohort, "model": BASE_MODELS[base],
+                "output": root / panel / "embeddings.npz",
+            }),
+            env=OFFLINE,
+            resources=GPU_INFERENCE,
+            output_dir=root / panel,
+            outputs={"embeddings": Path("embeddings.npz")},
+            validator=validate_checksums(),
+        )
+        projected = task(
+            name=prefix + "project-" + panel,
+            cmd=[PYTHON, Path("./prepare.py"), "analyze"] + sh.args({
+                "panel": panel, "cohort": cohort, "embeddings": encoded.outputs.embeddings,
+                "settings": getattr(cohorts.outputs, panel + "_settings"), "output-dir": root / panel,
+            }),
+            env=OFFLINE,
+            resources=SHARED_CPU,
+            output_dir=root / panel,
+            outputs={"coordinates": Path(filename), "validation": Path("svm-validation.csv"), "metrics": Path("svm-metrics.json")},
+            validator=validate_checksums(),
+        )
+        tables[panel] = projected.outputs.coordinates
+    pah = task(
+        name=prefix + "pah-figures",
+        tags=tags("figures"),
+        cmd=["julia", "--project=.", "--startup-file=no", Path("./plots.jl")] + sh.args({
+            "analysis": "pah",
+            "aromaticity": tables["aromaticity"],
+            "condensation": tables["condensation"],
+            "output-dir": root / "pah",
+        }),
+        inputs=[julia.outputs.manifest],
+        env=OFFLINE,
+        executor=shell(),
+        output_dir=root / "pah",
+        outputs={"pdf": Path("interp_embeddings.pdf"), "png": Path("interp_embeddings.png"),
+                 "paper_pdf": Path("interp_embeddings_paper.pdf"), "paper_png": Path("interp_embeddings_paper.png")},
+        validator=validate_checksums(),
+    )
+    return {"interp_embeddings": pah.outputs.pdf, "interp_embeddings_paper": pah.outputs.paper_pdf}
+
+FIGURES_BY_MODEL = {}
+for base in BASE_MODELS:
+    FIGURES_BY_MODEL[base] = token_figures(base)
+    FIGURES_BY_MODEL[base].update(pah_figures(base))
+
+# Preserve the original assembly choices and existing task identities.
+FIGURES = dict(FIGURES_BY_MODEL["mist-28m"])
+for stem in ["interp_embeddings", "interp_embeddings_paper"]:
+    FIGURES[stem] = FIGURES_BY_MODEL["mist-1p8b"][stem]

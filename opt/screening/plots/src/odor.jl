@@ -17,7 +17,10 @@ function evaluate_odor(model::Py, smiles::Vector{String}; batch_size=32, filter_
 end
 
 """ Return the names of the channels in the MIST model"""
-channel_names(model::Py) = pyconvert(Vector{String}, [chn["name"] for chn in model.channels])
+channel_names(model::Py) = [
+    pyconvert(String, pyisinstance(chn, pybuiltins.str) ? chn : chn["name"])
+    for chn in model.channels
+]
 
 filter_non_active(df::DataFrame, odor_model::Py; kwargs...) = filter_non_active(df, channel_names(odor_model); kwargs...)
 
@@ -34,7 +37,7 @@ function filter_non_active(df::DataFrame, odor_columns=Not("smiles"); limit=noth
 end
 
 function count_active(df, odor_model::Py)
-    scents = pyconvert(Vector{String}, [chn["name"] for chn in odor_model.channels])
+    scents = channel_names(odor_model)
     n = Dict()
     for scent in scents
         n[scent] = count(df[!, scent] .> 0)
@@ -239,7 +242,8 @@ end
 function figure_odor_counts(df::DataFrame)
     f = Figure(; size=(2inch, 3.25inch))
     figure_odor_counts!(f, df)
-    return resize_to_layout!(f)
+    resize_to_layout!(f)
+    return f
 end
 
 function figure_odor_counts!(f, df::DataFrame)
@@ -275,7 +279,7 @@ function figure_odor_counts!(f, df::DataFrame)
     return f
 end
 
-function plot_pareto_front_scent(f, df, scent)
+function plot_pareto_front_scent(df, scent)
     f = Figure(; size=(100, 203))
     f = plot_pareto_front_scent!(f, df, scent)
     resize_to_layout!(f)

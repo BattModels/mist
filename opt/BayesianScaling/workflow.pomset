@@ -1,0 +1,108 @@
+"""Replay the native main/SI scaling figures from released posterior chains."""
+
+load("//config.pomset", "ENV", "SHARED_CPU")
+load("//opt/benchmarks/workflow.pomset", PYTHON_ENV="environment")
+
+ROOT = Path("//results/scaling")
+RELEASE = Path("//data/releases/zenodo-21302713")
+DATA = RELEASE / "extracted" / "scaling"
+BASELINE = "dec-3-sweep-smoothed-1.0--geometric-shape-gamma"
+RUNS = [
+    "dec-3-sweep-smoothed-" + smooth + "--" + family + prior
+    for smooth in ["1.0", "1000.0", "10000.0", "100000.0", "1.0e6"]
+    for family in [
+        "additive-penalty", "baseline", "geometric-shape", "hoffman",
+        "lr-d-model", "lr-d-geom-model",
+    ]
+    for prior in ["", "-gamma"]
+] + ["hoffmann", "hoffmann--tuned-runs"]
+
+released = task(
+    name="scaling-materialize-release",
+    cmd=[
+        PYTHON_ENV.outputs.python,
+        Path("//electrolyte_fm/utils/fetch_datasets.py"),
+        "https://zenodo.org/api/records/21302713/files/scaling.tar.gz/content",
+    ] + sh.args({
+        "archive": RELEASE / "scaling.tar.gz",
+        "bytes": "55985697",
+        "md5": "11f7522707c417063d6a3436b87dd3b3",
+        "extract": DATA,
+        "strip-components": "1",
+        "required": ["mist_pretraining_advantage.csv"] + ["chains/" + run + "/chains.jld2" for run in RUNS],
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=DATA,
+    outputs={
+        "chains": Path("chains"),
+        "pretraining_advantage": Path("mist_pretraining_advantage.csv"),
+    },
+    validator=validate_checksums(),
+)
+
+julia = task(
+    name="scaling-julia-environment",
+    cmd=["julia", "--startup-file=no", "--project=plots", "-e", "using Pkg; Pkg.instantiate()"],
+    env=ENV,
+    executor=shell(),
+    outputs={"manifest": Path("plots/Manifest.toml")},
+    validator=validate_checksums(),
+)
+
+figures = task(
+    name="scaling-paper-figures",
+    tags=tags("figures"),
+    cmd=[
+        "julia", "--startup-file=no", "--project=plots", Path("plots/paper.jl"),
+        released.outputs.chains, ROOT / "figures",
+    ],
+    inputs=[julia.outputs.manifest],
+    env=ENV,
+    output_dir=ROOT / "figures",
+    outputs={"scaling_panel_baseline_pdf": Path("scaling_panel_baseline.pdf")},
+    resources=SHARED_CPU,
+    validator=validate_checksums(),
+)
+
+summary = task(
+    name="scaling-parameter-tables-and-smoothing",
+    tags=tags("figures"),
+    cmd=[
+        "julia", "--startup-file=no", "--project=plots", Path("plots/param_table.jl"),
+        released.outputs.chains, ROOT / "summary",
+    ],
+    inputs=[julia.outputs.manifest],
+    env=ENV,
+    output_dir=ROOT / "summary",
+    outputs={
+        "parameters": Path("param_table.tex"),
+        "exponents": Path("scaling_summary_rows.tex"),
+        "smoothing_pdf": Path("sweep_smoothing.pdf"),
+        "smoothing_png": Path("sweep_smoothing.png"),
+    },
+    resources=SHARED_CPU,
+    validator=validate_checksums(),
+)
+
+campaign = task(
+    name="scaling-campaign-table",
+    cmd=[
+        "julia", "--startup-file=no", "--project=plots", Path("plots/campaign.jl"),
+        released.outputs.chains / BASELINE / "chains.jld2", ROOT / "campaign" / "scaling_campaign.tex",
+    ],
+    inputs=[julia.outputs.manifest, released.outputs.chains],
+    env=ENV,
+    output_dir=ROOT / "campaign",
+    outputs={"table": Path("scaling_campaign.tex")},
+    resources=SHARED_CPU,
+    validator=validate_checksums(),
+)
+
+FIGURES = {"scaling_panel_baseline": figures.outputs.scaling_panel_baseline_pdf}
+TABLES = {
+    "parameters": summary.outputs.parameters,
+    "exponents": summary.outputs.exponents,
+    "campaign": campaign.outputs.table,
+}
+CHAINS = released.outputs.chains

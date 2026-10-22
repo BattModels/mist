@@ -1,20 +1,25 @@
+if __name__ == "__main__":
+    import truststore
+
+    truststore.inject_into_ssl()
+
 import json
-import sys
 import logging
+import os
+import sys
+from itertools import islice
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
-from itertools import islice
 
 import torch._dynamo
-
 import typer
 import yaml
 from lightning.fabric import Fabric
 from src.database import dump_to_sqlite_threaded
 from src.dataloader import DatabaseFragmentDataset
-from src.generate import OracleCritic, EquationCritic, generate
-from src.utils import configure_logging, take_for_seconds
+from src.generate import EquationCritic, OracleCritic, generate
+from src.utils import configure_logging, merge_rank_logs, take_for_seconds
 
 torch._dynamo.config.suppress_errors = True
 
@@ -46,14 +51,13 @@ def load_config(path: Path):
 def main(
     config_path: Path = Path("config.yaml"),
     run_name: Optional[str] = None,
-    gpus_per_node: Optional[int] = None,
-    num_nodes: int = 1,
     precision: str = "bf16",
     out_dir: Path = Path("out"),
 ):
+    gpus_per_node = os.environ.get("SLURM_GPUS_PER_NODE")
     fabric = Fabric(
-        devices=gpus_per_node or "auto",
-        num_nodes=num_nodes,
+        devices=int(gpus_per_node) if gpus_per_node else "auto",
+        num_nodes=int(os.environ.get("SLURM_NNODES", "1")),
         precision=precision,
     )
     fabric.launch()
@@ -117,6 +121,10 @@ def main(
         ),
         out_dir.joinpath(f"rank_{fabric.global_rank}.sqlite"),
     )
+    logging.shutdown()
+    fabric.barrier("screening-complete")
+    if fabric.global_rank == 0:
+        merge_rank_logs(out_dir / "screen.jsonl", fabric.world_size)
 
 
 if __name__ == "__main__":

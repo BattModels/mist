@@ -597,7 +597,7 @@ function figure_bayesian_panel(data;
     return f
 end
 
-function plot_model(model; avg_seq_length, kwargs...)
+function plot_model(model; avg_seq_length, output_dir="fig", kwargs...)
     @info "plotting $model"
     run_name = basename(model)
     data = jldopen(joinpath(model, "chains.jld2"), "r")
@@ -605,11 +605,11 @@ function plot_model(model; avg_seq_length, kwargs...)
         suffix = avg_seq_length != 1 ? "-token-cost" : ""
         with_theme(MISTStyle.theme()) do
             figure_bayesian(data; avg_seq_length, kwargs...)
-        end |> MISTStyle.savefig("bayesian-$(run_name)$(suffix)")
+        end |> MISTStyle.savefig("bayesian-$(run_name)$(suffix)"; fig_dir=output_dir)
 
         with_theme(MISTStyle.theme()) do
             plot_prediction_intervals(data["model"], data["chains"])
-        end |> MISTStyle.savefig("parity-$run_name")
+        end |> MISTStyle.savefig("parity-$run_name"; fig_dir=output_dir)
 
     finally
         close(data)
@@ -627,20 +627,25 @@ function plot_all(dir; kwargs...)
 end
 
 function (@main)(ARGS=[])
+    1 <= length(ARGS) <= 2 || error("usage: paper.jl CHAIN_ROOT [OUTPUT_DIR]")
     chains_dir = ARGS[1]
-    @assert isdir(chains_dir)
+    output_dir = length(ARGS) == 2 ? ARGS[2] : "fig"
+    isdir(chains_dir) || error("Released scaling chains are missing: $chains_dir")
+    baseline = joinpath(chains_dir, "dec-3-sweep-smoothed-1.0--geometric-shape-gamma", "chains.jld2")
+    isfile(baseline) || error("Released baseline chain is missing: $baseline")
 
     # SI figures
-    plot_all(chains_dir)
+    plot_all(chains_dir; output_dir)
 
     # Panel figure
-    data = jldopen(joinpath(chains_dir, "dec-3-sweep-smoothed-1.0--geometric-shape-gamma", "chains.jld2"), "r")
-    with_theme(MISTStyle.theme()) do
-        figure_bayesian_panel(data; avg_seq_length=1.0)
-    end |> MISTStyle.savefig("scaling_panel_baseline")
-    with_theme(MISTStyle.theme()) do
-        figure_bayesian_panel(data; avg_seq_length=AVG_SEQ_LENGTH)
-    end |> MISTStyle.savefig("scaling_panel_baseline-token-cost")
+    jldopen(baseline, "r") do data
+        with_theme(MISTStyle.theme()) do
+            figure_bayesian_panel(data; avg_seq_length=1.0)
+        end |> MISTStyle.savefig("scaling_panel_baseline"; fig_dir=output_dir)
+        with_theme(MISTStyle.theme()) do
+            figure_bayesian_panel(data; avg_seq_length=AVG_SEQ_LENGTH)
+        end |> MISTStyle.savefig("scaling_panel_baseline-token-cost"; fig_dir=output_dir)
+    end
 
     return nothing
 end

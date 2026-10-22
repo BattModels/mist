@@ -8,7 +8,7 @@ IGNORE_INDEX = -100
 AutoTokenizer.register("SmirkTokenizer", fast_tokenizer_class=SmirkTokenizerFast)
 
 
-def build_encoder(enc_dict: Dict[str, Any]):
+def build_encoder(enc_dict: dict):
     mtype = enc_dict.get("model_type")
     if mtype:
         base = MODEL_TYPE_ALIASES.get(mtype, mtype)

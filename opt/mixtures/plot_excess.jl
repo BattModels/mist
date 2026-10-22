@@ -10,7 +10,7 @@ using JSON: JSON
 
 using Mixtures: Mixtures, clean_target_name
 
-const DATA_DIR = realpath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
+const DATA_DIR = abspath(joinpath(pkgdir(Mixtures), "..", "..", "data"))
 
 markers_labels = [
     (:circle, ":circle"),
@@ -84,7 +84,7 @@ end
 
 
 function parity_plots(df, model)
-    targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
+    targets = Mixtures.excess_target_names(model)
     compounds = unique(Iterators.flatten(df.compounds))
 
     mixture_selection = Observable((first(compounds), first(compounds), 293.15))
@@ -186,7 +186,7 @@ function lift_points(df, x, y)
 end
 
 function plot_mixture(df, model)
-    targets = clean_target_name.(pyconvert(Vector{String}, model.config.target_columns))
+    targets = Mixtures.excess_target_names(model)
 
     f = Figure()
     gl = GridLayout(f[1, 1])

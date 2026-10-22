@@ -42,7 +42,7 @@ def cached_github_archive(repo, commit, file):
     return cached_path
 
 
-def cached_download(url: str, path: Path, disable_ssl=False) -> Path:
+def cached_download(url: str, path: Path) -> Path:
     path = Path(path)
     cache = Path(__file__).parent.parent.parent.joinpath(".cache")
     cached_file = cache.joinpath(path)
@@ -51,11 +51,9 @@ def cached_download(url: str, path: Path, disable_ssl=False) -> Path:
         import ssl
         import urllib.request
 
-        ctx = (
-            ssl.create_default_context()
-            if not disable_ssl
-            else ssl._create_unverified_context()
-        )
+        import truststore
+
+        ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 
         user_agent = "Wget/1.19.5"  # Pretend to be wget
         req = urllib.request.Request(url, headers={"User-Agent": user_agent})

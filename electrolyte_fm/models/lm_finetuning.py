@@ -15,7 +15,12 @@ from ..utils.metrics import (
     masked_metric_update,
 )
 from ..utils.tokenizer import load_tokenizer
-from .model_utils import DeepSpeedMixin, record_loss_summary_stats, record_summary_stats
+from .model_utils import (
+    DeepSpeedMixin,
+    create_position_ids,
+    record_loss_summary_stats,
+    record_summary_stats,
+)
 from .normalize import AbstractNormalizer
 from .prediction_task_head import PredictionTaskHead
 
@@ -24,28 +29,66 @@ def load_encoder(
     encoder: str | Path | torch.nn.Module,
     load_weights: bool = True,
     max_position_embeddings: Optional[int] = None,
+    tokenizer: str | None = None,
+    configure_tokenizer: bool = True,
     strict: bool = False,
 ) -> torch.nn.Module:
     if isinstance(encoder, torch.nn.Module):
-        return encoder
-
-    config_path = Path(encoder).parent.parent.joinpath("config.json")
-    hparams_path = Path(encoder).parent.parent.joinpath("model_hparams.json")
-    if Path(encoder).exists() and hparams_path.is_file() and config_path.is_file():
-        if load_weights is False:
-            return SaveConfigWithCkpts.instantiate(
-                hparams_path, max_position_embeddings
-            ).get_encoder()
-        else:
-            return DeepSpeedMixin.load(
-                encoder, max_position_embeddings=max_position_embeddings, strict=strict
-            ).get_encoder()
+        loaded_encoder = encoder
     else:
-        from transformers import AutoModel
+        config_path = Path(encoder).parent.parent.joinpath("config.json")
+        hparams_path = Path(encoder).parent.parent.joinpath("model_hparams.json")
+        if Path(encoder).exists() and hparams_path.is_file() and config_path.is_file():
+            if load_weights is False:
+                loaded_encoder = SaveConfigWithCkpts.instantiate(
+                    hparams_path, max_position_embeddings
+                ).get_encoder()
+            else:
+                loaded_encoder = DeepSpeedMixin.load(
+                    encoder,
+                    max_position_embeddings=max_position_embeddings,
+                    strict=strict,
+                ).get_encoder()
+        else:
+            from transformers import AutoConfig, AutoModel
 
-        return AutoModel.from_pretrained(
-            encoder, trust_remote_code=True, add_pooling_layer=False
-        )
+            config = AutoConfig.from_pretrained(encoder, trust_remote_code=True)
+            model_kwargs = {}
+            if config.model_type in {"bert", "roberta"}:
+                model_kwargs["add_pooling_layer"] = False
+            loaded_encoder = AutoModel.from_pretrained(
+                encoder,
+                trust_remote_code=True,
+                config=config,
+                **model_kwargs,
+            )
+
+    if tokenizer is not None and configure_tokenizer:
+        tok = load_tokenizer(tokenizer)
+        embeddings = getattr(loaded_encoder, "embeddings", None)
+        position_embeddings = getattr(embeddings, "position_embeddings", None)
+        if position_embeddings is not None:
+            position_padding_idx = position_embeddings.padding_idx
+            loaded_encoder.config.position_padding_idx = position_padding_idx
+        loaded_encoder.config.vocab_size = len(tok)
+        loaded_encoder.config.pad_token_id = tok.pad_token_id
+        for name in ("bos_token_id", "eos_token_id"):
+            token_id = getattr(tok, name, None)
+            if token_id is not None:
+                setattr(loaded_encoder.config, name, token_id)
+        if loaded_encoder.get_input_embeddings().num_embeddings != len(tok):
+            loaded_encoder.resize_token_embeddings(len(tok))
+        input_embeddings = loaded_encoder.get_input_embeddings()
+        input_embeddings.padding_idx = tok.pad_token_id
+        if embeddings is not None:
+            word_embeddings = getattr(embeddings, "word_embeddings", None)
+            if word_embeddings is not None:
+                word_embeddings.padding_idx = tok.pad_token_id
+            if position_embeddings is not None:
+                embeddings.padding_idx = position_padding_idx
+                position_embeddings.padding_idx = position_padding_idx
+
+    return loaded_encoder
 
 
 def is_pure_int(value):
@@ -87,6 +130,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
         self.freeze_encoder = freeze_encoder
         self.from_pretrained = from_pretrained
         self.max_position_embeddings = max_position_embeddings
+        self.tokenizer = tokenizer or encoder_ckpt
 
         if self.task == "binary":
             self.lossfn = torch.nn.BCEWithLogitsLoss(reduction="none")
@@ -112,7 +156,7 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             metrics = bootstrap_collection(metrics, num_bootstraps=n)
 
         if track_oov:
-            unk_token_id = load_tokenizer(tokenizer or encoder_ckpt).unk_token_id
+            unk_token_id = load_tokenizer(self.tokenizer).unk_token_id
             self.train_metrics = OOVMetric(metrics.clone(prefix="train/"), unk_token_id)
             self.val_metrics = OOVMetric(metrics.clone(prefix="val/"), unk_token_id)
             self.test_metrics = OOVMetric(metrics.clone(prefix="test/"), unk_token_id)
@@ -122,11 +166,15 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
             self.test_metrics = metrics.clone(prefix="test/")
 
     def configure_model(self):
+        # Older training constructors only recorded the tokenizer in hparams.
+        if not hasattr(self, "tokenizer"):
+            self.tokenizer = self.hparams.get("tokenizer") or self.encoder_ckpt
         if not hasattr(self, "encoder"):
             self.encoder = load_encoder(
                 self.encoder_ckpt,
                 load_weights=self.from_pretrained,
                 max_position_embeddings=self.max_position_embeddings,
+                tokenizer=self.tokenizer,
             )
             self.task_network = PredictionTaskHead(
                 embed_dim=self.encoder.config.hidden_size,
@@ -153,6 +201,14 @@ class LMFinetuning(LightningModule, DeepSpeedMixin):
 
     # type: ignore[override]
     def forward(self, batch, transform=True, **kwargs):
+        if "position_ids" not in kwargs and hasattr(
+            self.encoder.config, "position_padding_idx"
+        ):
+            kwargs["position_ids"] = create_position_ids(
+                batch["input_ids"],
+                self.encoder.config.pad_token_id,
+                self.encoder.config.position_padding_idx,
+            )
         hs = self.encoder(
             batch["input_ids"],
             attention_mask=batch["attention_mask"],

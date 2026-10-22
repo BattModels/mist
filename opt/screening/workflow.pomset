@@ -1,0 +1,525 @@
+"""Prepare fragments, screen with benchmark models, and analyze the results."""
+
+load("//config.pomset", "CACHE", "ENV", "JOB_WALLTIME", "OFFLINE_ENV", "job_resources")
+load(
+    "//opt/benchmarks/workflow.pomset",
+    "BASE_MODELS",
+    "APPLICATION_MODELS",
+    "MOLECULENET_MODELS",
+)
+
+ROOT = Path("//results/screening")
+OFFLINE = dict(OFFLINE_ENV, PYTHONPATH=Path("//"))
+JOB = dict(walltime=JOB_WALLTIME)
+MODELS = {
+    family: dict(APPLICATION_MODELS[family], qm9=MOLECULENET_MODELS[family]["qm9"])
+    for family in BASE_MODELS
+}
+PRODUCTION = {
+    "batch_size": 768,
+    "n_fragments": 1000,
+    "epoch_size": 1200,
+    "limit_db_fragments": None,
+    "seconds": 27000,  # Leave 30 minutes for startup and final synchronization.
+}
+
+# Preparation shared by production screening and scaling measurements.
+environment = task(
+    name="screening-python-environment",
+    cmd=["uv", "sync"] + sh.args({
+        "frozen": True,
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path(".venv"),
+    outputs={"python": Path("bin/python"), "obabel": Path("bin/obabel")},
+)
+# PythonCall resolves relative executables from the Julia project directory.
+JULIA_PYTHON = environment.outputs.python.relative_to(
+    environment.output_dir.parent / "plots", walk_up=True
+)
+julia = task(
+    name="screening-julia-environment",
+    cmd=[
+        "uv",
+        "run",
+        "--no-sync",
+        "julia",
+        "--project=plots",
+        "-e",
+        "using Pkg; Pkg.resolve(); Pkg.instantiate(); using ArgParse, ScreeningPlots",
+    ],
+    requires=[environment],
+    env=dict(
+        ENV,
+        JULIA_PYTHONCALL_EXE=JULIA_PYTHON,
+        # Include dependency declarations in the setup execution fingerprint.
+        JULIA_PROJECT_SPEC=Path("plots/Project.toml").read_text(),
+    ),
+    executor=shell(),
+    output_dir=Path("plots"),
+    outputs={"manifest": Path("Manifest.toml")},
+    validator=[
+        "julia", "--startup-file=no", "--project=plots", "-e",
+        'using Pkg; if Pkg.is_manifest_current("plots") !== true; ' +
+        'println(stderr, "Julia manifest is stale"); exit(2); end',
+    ],
+)
+zinc = task(
+    name="screening-materialize-zinc20",
+    cmd=[
+        environment.outputs.python,
+        Path("//electrolyte_fm/utils/fetch_datasets.py"),
+        "https://zenodo.org/api/records/21302713/files/zinc_v1.tar.gz/content",
+    ] + sh.args({
+        "archive": Path("//data/screening-workflow/zinc_v1.tar.gz"),
+        "bytes": "19923238822",
+        "md5": "ce05ff346c1f6c2efe2183d033331155",
+        "extract": Path("//data/screening-workflow/zinc20"),
+        "strip-components": "1",
+        "required": ["data/train", "data/val", "data/test"],
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//data/screening-workflow"),
+    outputs={"archive": Path("zinc_v1.tar.gz"), "data": Path("zinc20/data")},
+)
+fasmifra = task(
+    name="screening-stage-fasmifra",
+    cmd=[environment.outputs.python, Path("./scripts/install_fasmifra.py")] + sh.args({
+        "work-dir": CACHE / "screening/fasmifra-build",
+        "output": Path("./vendor/fasmifra"),
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("./vendor"),
+    outputs={"fasmifra": Path("fasmifra"), "fragmenter": Path("fasmifra_fragment.py")},
+)
+fragments = task(
+    name="screening-fragment-zinc20",
+    cmd=[
+        environment.outputs.python,
+        Path("./scripts/fragment_zinc.py"),
+    ] + sh.args({
+        "zinc": zinc.outputs.data,
+        "fragmenter": fasmifra.outputs.fragmenter,
+        "work-dir": CACHE / "screening/zinc-fragments",
+        "output": ROOT / "zinc-fragments.sqlite",
+    }),
+    env=ENV,
+    executor=job(),
+    output_dir=ROOT,
+    outputs={"database": Path("zinc-fragments.sqlite")},
+    resources=job_resources(
+        nodes=1,
+        tasks_per_node=1,
+        cpus_per_task=256,
+        exclusive=True,
+        **JOB,
+    ),
+)
+REFERENCES = {
+    "electrolyte": Path("//opt/design/electrolytes.csv"),
+    "lithium-air": Path("./lithium_air_reference_solvents.csv"),
+}
+references = {}
+for name, source in REFERENCES.items():
+    references[name] = task(
+        name="screening-fragment-reference-" + name,
+        cmd=[environment.outputs.python, "-m", "src.fragment", "fragment-smi", source] + sh.args({
+            "frag-file": ROOT / "references" / (name + ".frag"),
+            "fragmenter": fasmifra.outputs.fragmenter,
+        }),
+        env=ENV,
+        executor=shell(),
+        output_dir=ROOT / "references",
+        outputs={"fragments": Path(name + ".frag")},
+    )
+release = task(
+    name="screening-paper-release",
+    cmd=[
+        environment.outputs.python,
+        Path("//electrolyte_fm/utils/fetch_datasets.py"),
+        "https://zenodo.org/api/records/21302713/files/screening.tar.xz/content",
+    ] + sh.args({
+        "archive": Path("//data/screening-workflow/screening.tar.xz"),
+        "bytes": "19424984",
+        "md5": "62ce2a59a5652a6d2bde716d17bb355a",
+        "extract": Path("//data/screening-workflow/paper-release"),
+        "required": ["screening/electrolytes_predictions.csv", "screening/qm9.jsonl"],
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("//data/screening-workflow/paper-release/screening"),
+    outputs={"data": Path("."), "references": Path("electrolytes_predictions.csv")},
+)
+
+
+def screen(family, campaign, name, gpus, output, settings=PRODUCTION, inputs=[]):
+    nodes = 2 if gpus == 8 else 1
+    per_node = gpus // nodes
+    config = (Path("./campaigns") / (campaign + ".json")).read_json()
+    models = [MODELS[family][critic["model_path"]] for critic in config["critics"]]
+    config["critics"] = [
+        dict(
+            critic,
+            model_path=str(model.relative_to(Path("//opt/screening"), walk_up=True)),
+        )
+        for critic, model in zip(config["critics"], models)
+    ]
+    config["generation"].update(
+        {
+            key: settings[key]
+            for key in ["batch_size", "n_fragments", "epoch_size", "limit_db_fragments"]
+        }
+    )
+    config["generation"].update(
+        db_path=str(
+            fragments.outputs.database.relative_to(
+                Path("//opt/screening"), walk_up=True
+            )
+        ),
+        reference_fragments=str(
+            references[campaign].outputs.fragments.relative_to(
+                Path("//opt/screening"), walk_up=True
+            )
+        ),
+    )
+    config["limit_walltime"] = settings["seconds"]
+    configured = task(
+        name="screening-" + family + "-" + name + "-config",
+        cmd=[
+            environment.outputs.python,
+            "-c",
+            "import ast, json, pathlib, sys; output = pathlib.Path(sys.argv[2]); output.parent.mkdir(parents=True, exist_ok=True); output.write_text(json.dumps(ast.literal_eval(sys.argv[1]), indent=2) + '\\n')",
+            str(config),
+            output / name / "input-config.json",
+        ],
+        # Serializing Paths to strings loses their automatic artifact edges.
+        inputs=models
+        + [fragments.outputs.database, references[campaign].outputs.fragments]
+        + inputs,
+        executor=shell(),
+        output_dir=output / name,
+        outputs={"config": Path("input-config.json")},
+    )
+    return task(
+        name="screening-" + family + "-" + name,
+        cmd=["srun", "--kill-on-bad-exit=1", environment.outputs.python, Path("./screen.py")] + sh.args({
+            "config-path": configured.outputs.config,
+            "run-name": name,
+            "out-dir": output,
+            "precision": "bf16",
+        }),
+        inputs=[fasmifra.outputs.fasmifra] + models,
+        env=OFFLINE,
+        executor=job(),
+        output_dir=output / name,
+        outputs=dict(
+            {
+                "rank_" + str(rank): Path("rank_" + str(rank) + ".sqlite")
+                for rank in range(gpus)
+            },
+            config=Path("config.json"),
+            trace=Path("screen.jsonl"),
+        ),
+        resources=job_resources(
+            nodes=nodes,
+            tasks_per_node=per_node,
+            gpus_per_node=per_node,
+            cpus_per_task=12,
+            memory_per_node=str(64 * per_node) + "GiB",
+            **JOB,
+        ),
+    )
+
+
+def plot_task(family, name, script, inputs, outputs, args, gpu=True):
+    # MISTStyle.savefig writes both formats; make both available to export.
+    outputs = dict(outputs)
+    for key, path in list(outputs.items()):
+        if str(path).endswith(".pdf"):
+            outputs[key + "_png"] = Path(str(path)[:-4] + ".png")
+    return task(
+        name="screening-" + family + "-" + name + "-plots",
+        tags=tags("figures"),
+        cmd=["julia", "--project=plots", Path("./plots") / script] + args,
+        requires=[julia],
+        inputs=inputs,
+        env=dict(
+            OFFLINE,
+            JULIA_PYTHONCALL_EXE=JULIA_PYTHON,
+            JULIA_CONDAPKG_BACKEND="Null",
+        ),
+        executor=job(),
+        output_dir=ROOT / family / "figures" / name,
+        outputs=outputs,
+        resources=job_resources(
+            cpus_per_task=8, gpus_per_node=1 if gpu else None,
+            memory_per_node="64GiB", **JOB
+        ),
+    )
+
+
+def structure_task(family, name, plotted, rows, **kwargs):
+    output = ROOT / family / "figures" / (name + "-structures")
+    return task(
+        name="screening-" + family + "-" + name + "-structures",
+        tags=tags("figures"),
+        cmd=[
+            environment.outputs.python,
+            Path("./plots/smiles_grid.py"),
+            plotted.outputs.smiles,
+            output / "pages/grid.svg",
+        ] + sh.args({
+            "out-dir": output / "molecules",
+            "obabel": environment.outputs.obabel,
+            "rows": str(rows),
+            "cols": "3",
+        }),
+        env=OFFLINE,
+        executor=shell(),
+        output_dir=output,
+        outputs={"pages": Path("pages"), "molecules": Path("molecules")},
+        **kwargs,
+    )
+
+
+LITHIUM_AIR_OUTPUTS = {
+    "pareto": Path("lio2_pareto_front.csv"),
+    "table": Path("lio2_pareto_front_table.tex"),
+    "smiles": Path("lio2_pareto_front_smiles.txt"),
+    "references": Path("reference_predictions.csv"),
+    "figure": Path("lio2_pareto.pdf"),
+    "homo": Path("lio2_homo_colored.pdf"),
+    "homo_pka": Path("lio2_homo_pka.pdf"),
+    "abstraction": Path("lio2_pka_habstraction.pdf"),
+    "attack": Path("lio2_nucleophilic_attack.pdf"),
+    "groups": Path("lio2_functional_groups.pdf"),
+}
+
+# Production: screening -> merge -> molecule plots -> structures.
+FIGURES = {family: {} for family in MODELS}
+STRUCTURES = {family: {} for family in MODELS}
+for family in MODELS:
+    for campaign, gpus in [("electrolyte", 8), ("lithium-air", 4)]:
+        # The six 1.8B lithium-air heads need a smaller batch on 80 GiB GPUs.
+        settings = dict(PRODUCTION, batch_size=256) if family == "mist-1p8b" and campaign == "lithium-air" else PRODUCTION
+        run = screen(family, campaign, campaign, gpus, ROOT / family / "runs", settings=settings)
+        run_dir = ROOT / family / "runs" / campaign
+        merged = task(
+            name="screening-" + family + "-merge-" + campaign,
+            cmd=[environment.outputs.python, "-m", "src.cli", "merge-db", run_dir],
+            inputs=[getattr(run.outputs, "rank_" + str(rank)) for rank in range(gpus)],
+            env=OFFLINE,
+            executor=shell(),
+            output_dir=run_dir,
+            outputs={"database": Path("merged.sqlite")},
+        )
+        figure_dir = ROOT / family / "figures" / campaign
+        if campaign == "electrolyte":
+            plots = plot_task(
+                family,
+                campaign,
+                "plots.jl",
+                [merged.outputs.database],
+                {
+                    "pareto": Path("generated_pareto_front.csv"),
+                    "smiles": Path("pareto_front_smiles.txt"),
+                    "references": Path("reference_predictions.csv"),
+                    "table": Path("pareto_front_table.tex"),
+                    "production": Path("production-electrolyte.pdf"),
+                    "trace": Path("gen-trace-electrolyte.pdf"),
+                    "creativity": Path("surprise_vs_utility.pdf"),
+                    "olfaction": Path("screening_olfaction.pdf"),
+                    "odors": Path("screening_odors.pdf"),
+                    "odorless": Path("electrolyte_odorless.pdf"),
+                    "entropy": Path("renyi_entropy.csv"),
+                },
+                args=[
+                    run_dir,
+                    REFERENCES[campaign],
+                    release.outputs.data,
+                    figure_dir,
+                    BASE_MODELS[family],
+                ]
+                + [MODELS[family][head] for head in ["bp", "mp", "qm9", "odour"]]
+                + sh.args({"predict-reference": True}),
+            )
+        else:
+            plots = plot_task(
+                family,
+                campaign,
+                "plot_lio2.jl",
+                [merged.outputs.database],
+                LITHIUM_AIR_OUTPUTS,
+                args=[run_dir, REFERENCES[campaign], figure_dir]
+                + [
+                    MODELS[family][head]
+                    for head in ["bp", "mp", "qm9", "pka", "etn", "kt"]
+                ],
+            )
+        FIGURES[family][campaign] = plots.outputs
+        structures = structure_task(
+            family, campaign, plots, 5 if campaign == "electrolyte" else 4,
+        )
+        STRUCTURES[family][campaign] = structures.outputs
+
+# Scaling measurements are independent of production. Pomset expands a static
+# graph: submit this generator first, then submit 'screening-*' to load its runs.
+performance = task(
+    name="screening-generate-performance-sweep",
+    cmd=[environment.outputs.python, Path("./electrolyte_sweep.py")] + sh.args({
+        "output": Path("./campaigns/performance.json"),
+    }),
+    env=ENV,
+    executor=shell(),
+    output_dir=Path("./campaigns"),
+    outputs={"settings": Path("performance.json")},
+)
+SWEEP = (
+    performance.outputs.settings.read_json()["runs"]
+    if performance.outputs.settings.is_file()
+    else []
+)
+for family in MODELS:
+    sweeps = [
+        screen(
+            family,
+            "electrolyte",
+            "sweep-" + str(index),
+            settings["gpus"],
+            ROOT / family / "sweeps",
+            settings=settings,
+            inputs=[performance.outputs.settings],
+        )
+        for index, settings in enumerate(SWEEP)
+    ]
+    scaling = plot_task(
+        family,
+        "scaling",
+        "scaling.jl",
+        [run.outputs.trace for run in sweeps] + [run.outputs.config for run in sweeps],
+        {
+            "numbers": Path("scaling.csv"),
+            "table": Path("screening_lm.tex"),
+            "figure": Path("scaling.pdf"),
+        },
+        args=[ROOT / family / "sweeps", ROOT / family / "figures/scaling"]
+        + [
+            MODELS[family][head].relative_to(Path("//opt/screening"), walk_up=True)
+            for head in ["bp", "mp", "qm9"]
+        ],
+        gpu=False,
+    )
+
+
+# Replay the released paper results, separately from newly screened molecules.
+released_scaling = plot_task(
+    "mist-28m",
+    "released-scaling",
+    "scaling.jl",
+    [release.outputs.data],
+    {
+        "numbers": Path("scaling.csv"),
+        "table": Path("screening_lm.tex"),
+        "figure": Path("scaling.pdf"),
+    },
+    args=[
+        release.outputs.data / "runs",
+        ROOT / "mist-28m/figures/released-scaling",
+        "models/mist-26.9M-b302p09x-bp",
+        "models/mist-26.9M-y3ge5pf9-mp",
+        "models/mist-x4i8qzuq-qm9",
+        "122",
+        "88800000",
+    ],
+    gpu=False,
+)
+released = plot_task(
+    "mist-28m",
+    "released",
+    "plots.jl",
+    [],
+    {
+        "pareto": Path("generated_pareto_front.csv"),
+        "production": Path("production-b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df.pdf"),
+        "trace": Path("gen-trace-b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df.pdf"),
+        "validation": Path("veri_v3_parity.pdf"),
+        "validation_v1": Path("veri_v1_parity.pdf"),
+        "validation_v2": Path("veri_v2_parity.pdf"),
+        "parity_rdkit": Path("parity-rdkit-b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df.pdf"),
+        "parity_openbabel": Path("parity-openbabel-b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df.pdf"),
+        "parity_conformer": Path("parity-conformer-b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df.pdf"),
+        "parity_chembl": Path("parity-chembl-b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df.pdf"),
+        "smiles": Path("pareto_front_smiles.txt"),
+        "table": Path("pareto_front_table.tex"),
+        "creativity": Path("surprise_vs_utility.pdf"),
+        "olfaction": Path("screening_olfaction.pdf"),
+        "odors": Path("screening_odors.pdf"),
+        "odorless": Path("electrolyte_odorless.pdf"),
+        "entropy": Path("renyi_entropy.csv"),
+    },
+    args=[
+        release.outputs.data / "runs/b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df",
+        release.outputs.references,
+        release.outputs.data,
+        ROOT / "mist-28m/figures/released",
+        BASE_MODELS["mist-28m"],
+    ]
+    + [MODELS["mist-28m"][head] for head in ["bp", "mp", "qm9", "odour"]]
+    + sh.args({"quantum-validation": True}),
+)
+released_panel = plot_task(
+    "mist-28m",
+    "released-panel",
+    "panel.jl",
+    [],
+    {"panel": Path("panel-b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df.pdf")},
+    args=[
+        release.outputs.data / "runs/b7c6ceb2-2114-4ba5-bd2e-41b9bfa2d5df",
+        release.outputs.references,
+        released_scaling.outputs.numbers,
+        ROOT / "mist-28m/figures/released-panel",
+    ],
+    gpu=False,
+)
+FIGURES["mist-28m"]["released"] = released.outputs
+FIGURES["mist-28m"]["released-scaling"] = released_scaling.outputs
+FIGURES["mist-28m"]["released-panel"] = released_panel.outputs
+
+# These observations are not in the released screening archive. In particular,
+# the electronic descriptors are the paper's quantum calculations, not MIST
+# predictions substituted for its validation data.
+halogens = plot_task(
+    "mist-28m", "mixed-halogens", "supplementary.jl", [],
+    {
+        "electrochemical": Path("coefficients_electrochemical_1x3.pdf"),
+        "thermochemical": Path("coefficients_thermo_2x2.pdf"),
+        "coefficients": Path("halogen_coefficients.csv"),
+    },
+    args=sh.args({
+        "analysis": "halogens",
+        "input": Path("//data/user/screening/mixed-halogen-descriptors.csv"),
+        "output-dir": ROOT / "mist-28m/figures/mixed-halogens",
+    }),
+    gpu=False,
+)
+calibration = plot_task(
+    "mist-28m", "lithium-air-calibration", "supplementary.jl", [],
+    {"figure": Path("Li_vs_SHE_and_O2_superoxide_vs_SHE_1x2.pdf")},
+    args=sh.args({
+        "analysis": "calibration",
+        "input": Path("//data/user/screening/lithium-air-calibration.csv"),
+        "output-dir": ROOT / "mist-28m/figures/lithium-air-calibration",
+    }),
+    gpu=False,
+)
+FIGURES["mist-28m"]["mixed-halogens"] = halogens.outputs
+FIGURES["mist-28m"]["lithium-air-calibration"] = calibration.outputs
+
+released_structures = structure_task(
+    "mist-28m", "released", released, 5,
+    validator=validate_checksums(),
+)
+STRUCTURES["mist-28m"]["released"] = released_structures.outputs
