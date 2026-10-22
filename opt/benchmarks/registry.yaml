@@ -165,6 +165,10 @@ cases:
     microbatch: "1"
     effective_batch: "128"
     release: null
+  # No 28M single-target releases are registered; fit these for screening.
+  - {key: qm9-gap-28m, canonical_task: qm9, target_subset: [gap], path: ../../data/moleculenet/qm9, base: mist-28m, microbatch: "16", effective_batch: "128", release: null}
+  - {key: qm9-homo-28m, canonical_task: qm9, target_subset: [homo], path: ../../data/moleculenet/qm9, base: mist-28m, microbatch: "16", effective_batch: "128", release: null}
+  - {key: qm9-lumo-28m, canonical_task: qm9, target_subset: [lumo], path: ../../data/moleculenet/qm9, base: mist-28m, microbatch: "16", effective_batch: "128", release: null}
   - key: qm9-gap
     canonical_task: qm9
     target_subset: [gap]

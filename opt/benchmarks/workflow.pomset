@@ -550,6 +550,39 @@ for base_key in REGISTRY["base_models"]:
             APPLICATION_MODELS[base_key][dataset_key] = tested.outputs.model
         tests.append(tested.outputs.metrics)
 
+# Single-target screening uses independent QM9 encoders, not slices of the
+# joint head. Stage the pinned 1.8B releases; train the missing 28M heads via
+# benchmark-mist-28m-qm9-*-lr-sweep-bounded*. Each target has the
+# existing two optimizer recipes and seven learning rates (42 cells total).
+# Select using validation only before the single-target screening runs.
+# Both training and screening can be submitted from ch-fe.
+QM9_SINGLE_TARGET_MODELS = {base: {} for base in BASE_MODELS}
+for case in REGISTRY["cases"]:
+    if case.get("canonical_task") == "qm9" and case.get("target_subset") != None:
+        base_key = case["base"]
+        target = case["target_subset"][0]
+        dataset_key = "qm9-" + target
+        if case["release"] != None:
+            selected = stage_release(base_key, dataset_key, case, canonical)
+        else:
+            fitted = sweep_learning_rates(
+                base_key, dataset_key, case, bases[base_key], datasets["qm9"], canonical,
+            )
+            selected = task(
+                name="benchmark-" + base_key + "-" + dataset_key + "-selection",
+                requires=[environment],
+                working_directory=Path("//"),
+                cmd=benchmark_command("select_model") + ["--cells"]
+                    + fitted["cell"] + ["--models"] + fitted["model"]
+                    + sh.args({"output-dir": ROOT / base_key / dataset_key / "selected"}),
+                env=OFFLINE,
+                executor=shell(),
+                output_dir=ROOT / base_key / dataset_key / "selected",
+                outputs={"model": Path("model"), "selection": Path("selection.json")},
+                validator=validate_checksums(follow_symlinks=True),
+            )
+        QM9_SINGLE_TARGET_MODELS[base_key][target] = selected.outputs.model
+
 # Olfaction figures use heads trained on the declared seed-42 split. The
 # released 28M head has unknown split membership; retain it for existing
 # applications and fit a fresh head for held-out olfaction analysis.

@@ -73,7 +73,7 @@ def main() -> None:
             raise FileNotFoundError("uv is not on PATH or installed at ~/.local/bin/uv")
         uv = str(user_uv)
     subprocess.run(
-        [uv, "sync", "--frozen", "--project", str(project)],
+        [uv, "sync", "--project", str(project)],
         env=process_env,
         check=True,
     )

@@ -128,7 +128,7 @@ def test_sync_shares_root_cache_but_keeps_project_venv(tmp_path, monkeypatch, cw
 
     monkeypatch.setattr(sync_env.subprocess, "run", run)
     sync_env.main()
-    assert calls == [["/usr/bin/uv", "sync", "--frozen", "--project", str(project)]]
+    assert calls == [["/usr/bin/uv", "sync", "--project", str(project)]]
     receipt = json.loads((tmp_path / "receipt/receipt.json").read_text())
     assert receipt["cache"] == str(CACHE / "uv")
 

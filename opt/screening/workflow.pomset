@@ -6,6 +6,7 @@ load(
     "BASE_MODELS",
     "APPLICATION_MODELS",
     "MOLECULENET_MODELS",
+    "QM9_SINGLE_TARGET_MODELS",
 )
 
 ROOT = Path("//results/screening")
@@ -15,6 +16,9 @@ MODELS = {
     family: dict(APPLICATION_MODELS[family], qm9=MOLECULENET_MODELS[family]["qm9"])
     for family in BASE_MODELS
 }
+for family, heads in QM9_SINGLE_TARGET_MODELS.items():
+    for target, model in heads.items():
+        MODELS[family]["qm9-" + target] = model
 PRODUCTION = {
     "batch_size": 768,
     "n_fragments": 1000,
@@ -26,9 +30,7 @@ PRODUCTION = {
 # Preparation shared by production screening and scaling measurements.
 environment = task(
     name="screening-python-environment",
-    cmd=["uv", "sync"] + sh.args({
-        "frozen": True,
-    }),
+    cmd=["uv", "sync"],
     env=ENV,
     executor=shell(),
     output_dir=Path(".venv"),
@@ -155,10 +157,21 @@ release = task(
 )
 
 
-def screen(family, campaign, name, gpus, output, settings=PRODUCTION, inputs=[]):
+def screen(family, campaign, name, gpus, output, settings=PRODUCTION, inputs=[], single_target=False):
     nodes = 2 if gpus == 8 else 1
     per_node = gpus // nodes
     config = (Path("./campaigns") / (campaign + ".json")).read_json()
+    if single_target:
+        critics = []
+        for critic in config["critics"]:
+            if critic["model_path"] == "qm9":
+                critics.extend([
+                    dict(critic, model_path="qm9-" + target, limits={target: bounds})
+                    for target, bounds in critic["limits"].items()
+                ])
+            else:
+                critics.append(critic)
+        config["critics"] = critics
     models = [MODELS[family][critic["model_path"]] for critic in config["critics"]]
     config["critics"] = [
         dict(
@@ -298,17 +311,54 @@ LITHIUM_AIR_OUTPUTS = {
     "groups": Path("lio2_functional_groups.pdf"),
 }
 
+def single_target_references(family, name, figure_dir):
+    # Predict with each independently fitted encoder. The electrolyte plotter
+    # can then consume this CSV without predicting with a joint QM9 model.
+    return task(
+        name="screening-" + family + "-" + name + "-references",
+        requires=[julia],
+        cmd=["julia", "--project=plots", "-e", """
+using CSV, DataFrames, ScreeningPlots
+df = DataFrame(CSV.File(ARGS[1]))
+for path in ARGS[3:end]
+    model = ScreeningPlots.load_mist_pretrained(path)
+    predictions = ScreeningPlots.predict_mist(model, String.(df.smi))
+    for column in names(predictions, Not(:smiles))
+        df[!, column] = predictions[!, column]
+    end
+    model.to("cpu")
+end
+mkpath(dirname(ARGS[2]))
+CSV.write(ARGS[2], df)
+""", REFERENCES["electrolyte"], figure_dir / "reference_predictions.csv"]
+        + [MODELS[family][head] for head in ["bp", "mp", "qm9-gap", "qm9-homo", "qm9-lumo"]],
+        env=dict(OFFLINE, JULIA_PYTHONCALL_EXE=JULIA_PYTHON, JULIA_CONDAPKG_BACKEND="Null"),
+        executor=job(),
+        resources=job_resources(cpus_per_task=8, gpus_per_node=1, memory_per_node="64GiB", **JOB),
+        output_dir=figure_dir,
+        outputs={"references": Path("reference_predictions.csv")},
+        validator=validate_checksums(),
+    )
+
+
 # Production: screening -> merge -> molecule plots -> structures.
+# Existing 28M runs use only releases and can be submitted on ch-fe without
+# waiting for single-target training. New runs have distinct names and
+# directories so completed joint-head results cannot satisfy their outputs.
 FIGURES = {family: {} for family in MODELS}
 STRUCTURES = {family: {} for family in MODELS}
 for family in MODELS:
-    for campaign, gpus in [("electrolyte", 8), ("lithium-air", 4)]:
-        # The six 1.8B lithium-air heads need a smaller batch on 80 GiB GPUs.
-        settings = dict(PRODUCTION, batch_size=256) if family == "mist-1p8b" and campaign == "lithium-air" else PRODUCTION
-        run = screen(family, campaign, campaign, gpus, ROOT / family / "runs", settings=settings)
-        run_dir = ROOT / family / "runs" / campaign
+    for campaign, gpus, single_target in [
+        ("electrolyte", 8, False), ("lithium-air", 4, False),
+        ("electrolyte", 8, True), ("lithium-air", 4, True),
+    ]:
+        name = campaign + ("-single-target" if single_target else "")
+        # Five or six independent 1.8B encoders need a smaller batch on 80 GiB GPUs.
+        settings = dict(PRODUCTION, batch_size=256) if family == "mist-1p8b" and (campaign == "lithium-air" or single_target) else PRODUCTION
+        run = screen(family, campaign, name, gpus, ROOT / family / "runs", settings=settings, single_target=single_target)
+        run_dir = ROOT / family / "runs" / name
         merged = task(
-            name="screening-" + family + "-merge-" + campaign,
+            name="screening-" + family + "-merge-" + name,
             cmd=[environment.outputs.python, "-m", "src.cli", "merge-db", run_dir],
             inputs=[getattr(run.outputs, "rank_" + str(rank)) for rank in range(gpus)],
             env=OFFLINE,
@@ -316,54 +366,62 @@ for family in MODELS:
             output_dir=run_dir,
             outputs={"database": Path("merged.sqlite")},
         )
-        figure_dir = ROOT / family / "figures" / campaign
+        figure_dir = ROOT / family / "figures" / name
+        plot_models = dict(MODELS[family])
+        if single_target:
+            plot_models["qm9"] = MODELS[family]["qm9-homo"]
         if campaign == "electrolyte":
+            reference_csv = REFERENCES[campaign]
+            reference_outputs = {"references": Path("reference_predictions.csv")}
+            if single_target:
+                predicted = single_target_references(family, name, figure_dir)
+                reference_csv = predicted.outputs.references
+                reference_outputs = {}
             plots = plot_task(
                 family,
-                campaign,
+                name,
                 "plots.jl",
                 [merged.outputs.database],
-                {
+                dict({
                     "pareto": Path("generated_pareto_front.csv"),
                     "smiles": Path("pareto_front_smiles.txt"),
-                    "references": Path("reference_predictions.csv"),
                     "table": Path("pareto_front_table.tex"),
-                    "production": Path("production-electrolyte.pdf"),
-                    "trace": Path("gen-trace-electrolyte.pdf"),
+                    "production": Path("production-" + name + ".pdf"),
+                    "trace": Path("gen-trace-" + name + ".pdf"),
                     "creativity": Path("surprise_vs_utility.pdf"),
                     "olfaction": Path("screening_olfaction.pdf"),
                     "odors": Path("screening_odors.pdf"),
                     "odorless": Path("electrolyte_odorless.pdf"),
                     "entropy": Path("renyi_entropy.csv"),
-                },
+                }, **reference_outputs),
                 args=[
                     run_dir,
-                    REFERENCES[campaign],
+                    reference_csv,
                     release.outputs.data,
                     figure_dir,
                     BASE_MODELS[family],
                 ]
-                + [MODELS[family][head] for head in ["bp", "mp", "qm9", "odour"]]
-                + sh.args({"predict-reference": True}),
+                + [plot_models[head] for head in ["bp", "mp", "qm9", "odour"]]
+                + sh.args({"predict-reference": not single_target}),
             )
         else:
             plots = plot_task(
                 family,
-                campaign,
+                name,
                 "plot_lio2.jl",
                 [merged.outputs.database],
                 LITHIUM_AIR_OUTPUTS,
                 args=[run_dir, REFERENCES[campaign], figure_dir]
                 + [
-                    MODELS[family][head]
+                    plot_models[head]
                     for head in ["bp", "mp", "qm9", "pka", "etn", "kt"]
                 ],
             )
-        FIGURES[family][campaign] = plots.outputs
+        FIGURES[family][name] = plots.outputs
         structures = structure_task(
-            family, campaign, plots, 5 if campaign == "electrolyte" else 4,
+            family, name, plots, 5 if campaign == "electrolyte" else 4,
         )
-        STRUCTURES[family][campaign] = structures.outputs
+        STRUCTURES[family][name] = structures.outputs
 
 # Scaling measurements are independent of production. Pomset expands a static
 # graph: submit this generator first, then submit 'screening-*' to load its runs.
