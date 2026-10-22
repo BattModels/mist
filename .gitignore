@@ -6,6 +6,7 @@ electrolyte-fm/
 lightning_logs/
 runs/
 .venv/
+uv.lock
 build/
 data/
 /results/
