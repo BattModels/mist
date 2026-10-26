@@ -97,6 +97,8 @@ def maybe_best_ckpt(path: Path) -> Path:
 
 def read_training_config(ckpt: Path) -> dict:
     cfg_path = ckpt / "config.json"
+    if not cfg_path.is_file():
+        cfg_path = ckpt.parent.parent / "config.json"
     return json.loads(cfg_path.read_text())
 
 
@@ -359,6 +361,7 @@ def export_mixtures(ckpt: Path, dataset: Optional[str] = None) -> MISTMixtures:
     tokenizer = load_tokenizer(get_ckpt_tokenizer(best_ckpt))
 
     model_cfg = train_cfg.get("model", {}).get("init_args", {})
+    data_cfg = train_cfg.get("data", {}).get("init_args", {})
     n_components = model_cfg.get("n_components", 5)
     output_size = model_cfg.get("output_size", 2)
 
@@ -380,6 +383,7 @@ def export_mixtures(ckpt: Path, dataset: Optional[str] = None) -> MISTMixtures:
         n_components=n_components,
         temperature_condition=temperature_condition,
         output_size=output_size,
+        max_length=data_cfg.get("max_length", 512),
         channels=channels,
     )
     return model, best_ckpt
@@ -424,6 +428,7 @@ def mixtures(
         model_class=MISTMixtures,
         dep_classes=dep_classes,
         module_basename="modeling_mist_mixtures",
+        only_referenced=True,
     )
 
     patch_auto_map(

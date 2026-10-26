@@ -1,5 +1,6 @@
 import ast
 import inspect
+from textwrap import dedent
 from isort import code as isort_code
 from pathlib import Path
 from typing import Iterable, Type, Optional, List, Tuple, Set, Dict
@@ -48,12 +49,12 @@ def is_relative_import(n: ast.ImportFrom) -> bool:
 
 
 def top_level_names(src: str) -> List[str]:
-    t = ast.parse(src)
+    t = ast.parse(dedent(src))
     return [n.name for n in t.body if is_top_level_def(n)]
 
 
 def find_def_node(src: str, name: str) -> Optional[ast.AST]:
-    t = ast.parse(src)
+    t = ast.parse(dedent(src))
     for n in t.body:
         if is_top_level_def(n) and n.name == name:
             return n
@@ -431,6 +432,7 @@ def write_modeling_module(
     dep_classes: Iterable[Type],
     model_type_aliases: dict | None = None,
     module_basename: str,
+    only_referenced: bool = False,
 ) -> Path:
     all_classes = [config_class, model_class, *dep_classes]
     imports = set().union(*(extract_imports_from_class(c) for c in all_classes))
@@ -451,6 +453,36 @@ def write_modeling_module(
     config_src = strip_type_hints_src(get_source_code(config_class))
     model_src = strip_type_hints_src(get_source_code(model_class))
 
+    if only_referenced:
+        # Relative modules also contain training classes. Include only definitions
+        # reachable from this inference model, including names used in methods.
+        definitions = {
+            node.name: node
+            for node in ast.parse(deps_src).body
+            if is_top_level_def(node)
+        }
+        pending = [config_src, model_src]
+        required = set()
+        while pending:
+            source = pending.pop()
+            for node in ast.walk(ast.parse(source)):
+                if (
+                    isinstance(node, ast.Name)
+                    and node.id in definitions
+                    and node.id not in required
+                ):
+                    required.add(node.id)
+                    pending.append(ast.unparse(definitions[node.id]))
+        deps_src = "\n\n".join(
+            topo_sort_sources(
+                [
+                    ast.unparse(node)
+                    for name, node in definitions.items()
+                    if name in required
+                ]
+            )
+        )
+
     text = render_template(
         template_path,
         model_type_aliases=model_type_aliases or {},
@@ -459,6 +491,30 @@ def write_modeling_module(
         config_src=config_src,
         model_src=model_src,
     )
+    if only_referenced:
+        tree = ast.parse(text)
+        used_names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        kept = []
+        for node in tree.body:
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                node.names = [
+                    alias
+                    for alias in node.names
+                    if (
+                        alias.asname
+                        or (
+                            alias.name.split(".")[0]
+                            if isinstance(node, ast.Import)
+                            else alias.name
+                        )
+                    )
+                    in used_names
+                ]
+                if not node.names:
+                    continue
+            kept.append(node)
+        tree.body = kept
+        text = ast.unparse(tree) + "\n"
     out = save_dir / f"{module_basename}.py"
     out.write_text(text)
     return out

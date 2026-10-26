@@ -5,11 +5,7 @@ import torch
 from numpy import geomspace
 from torchmetrics import Metric
 from torchmetrics import MetricCollection as TmMetricCollection
-from torchmetrics.classification import (
-    AUROC,
-    AveragePrecision,
-    BinaryStatScores,
-)
+from torchmetrics.classification import AUROC, AveragePrecision, BinaryStatScores
 from torchmetrics.regression import (
     MeanAbsoluteError,
     MeanAbsolutePercentageError,
@@ -20,6 +16,7 @@ from torchmetrics.regression import (
 from torchmetrics.regression.pearson import (
     _final_aggregation as final_pearson_aggregation,
 )
+from torchmetrics.utilities import rank_zero_warn
 from torchmetrics.wrappers import BootStrapper
 from torchmetrics.wrappers.classwise import ClasswiseWrapper as TmClasswiseWrapper
 
@@ -28,9 +25,16 @@ IGNORE_INDEX = -100
 
 
 class SafeR2Score(R2Score):
+    """R² with a scale-relative constant-target check and safe small sample counts."""
+
     def __init__(self, *args, num_outputs=None, **kwargs):
         self.num_outputs = num_outputs
         super().__init__(*args, **kwargs)
+
+    def update(self, preds: torch.Tensor, target: torch.Tensor) -> None:
+        # Keep the parent's sum-reduced states for distributed evaluation, but
+        # accumulate in float64 to reduce cancellation in the target variance.
+        super().update(preds.double(), target.double())
 
     def compute(self):
         if self.total < 2:
@@ -44,7 +48,40 @@ class SafeR2Score(R2Score):
                 device=self.total.device,
                 dtype=self.sum_error.dtype,
             )
-        return super().compute()
+        mean = self.sum_error / self.total
+        tss = (self.sum_squared_error - self.sum_error * mean).clamp_min(0)
+        tolerance = torch.finfo(tss.dtype).eps * self.sum_squared_error.abs()
+        nonconstant = tss > tolerance
+        denominator = torch.where(nonconstant, tss, torch.ones_like(tss))
+        raw_scores = torch.where(
+            nonconstant,
+            1 - self.residual / denominator,
+            (self.residual == 0).to(tss.dtype),
+        )
+
+        if self.multioutput == "raw_values":
+            score = raw_scores
+        elif self.multioutput == "uniform_average":
+            score = raw_scores.mean()
+        else:  # variance_weighted
+            weights = torch.where(nonconstant, tss, torch.zeros_like(tss))
+            if weights.sum() > 0:
+                score = (raw_scores * (weights / weights.sum())).sum()
+            else:
+                score = raw_scores.mean()
+
+        if self.adjusted:
+            if self.adjusted >= self.total - 1:
+                rank_zero_warn(
+                    "Not enough samples for adjusted r2 score. "
+                    "Falls back to standard r2 score.",
+                    UserWarning,
+                )
+            else:
+                score = 1 - (1 - score) * (self.total - 1) / (
+                    self.total - self.adjusted - 1
+                )
+        return score
 
 
 class HotellingTwoSample(Metric):

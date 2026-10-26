@@ -17,6 +17,8 @@ from transformers import (
 
 from .normalize import AbstractNormalizer, Standardize
 from .physics_task_heads import (
+    ArrheniusTaskHead,
+    VFTTaskHead,
     VFTDecayTaskHead,
     ArrtheniusActivation,
     LinearExogenousEffect,
@@ -42,14 +44,12 @@ def resolve_tokenizer(self, tokenizer=None):
         return tokenizer
     if getattr(self, "tokenizer", None) is not None:
         return self.tokenizer
-    try:
+    source = self.name_or_path or self.config._name_or_path
+    if source:
         return AutoTokenizer.from_pretrained(
-            self.name_or_path, use_fast=True, trust_remote_code=True
+            source, use_fast=True, trust_remote_code=True
         )
-    except Exception:
-        return AutoTokenizer.from_pretrained(
-            self.config._name_or_path, use_fast=True, trust_remote_code=True
-        )
+    return None
 
 
 class MISTIonicConductivityConfig(PretrainedConfig):
@@ -513,8 +513,9 @@ class MISTMixturesConfig(PretrainedConfig):
         task_network: Optional[Dict[str, Any]] = None,
         transform: Optional[Dict[str, Any]] = None,
         n_components: int = 5,
-        temperature_condition: str = "false",
+        temperature_condition: str | bool = False,
         output_size: int = 2,
+        tokenizer_max_length: int = 512,
         channels: Optional[List[Dict[str, Any]]] = None,
         tokenizer_class: Optional[str] = "SmirkTokenizer",
         **kwargs,
@@ -530,6 +531,7 @@ class MISTMixturesConfig(PretrainedConfig):
         self.n_components = int(n_components)
         self.temperature_condition = temperature_condition
         self.output_size = int(output_size)
+        self.tokenizer_max_length = int(tokenizer_max_length)
         self.channels = channels
         self.tokenizer_class = tokenizer_class
 
@@ -546,13 +548,26 @@ class MISTMixtures(PreTrainedModel):
         super().__init__(config)
         self.config = config
         self.encoder = build_encoder_from_dict(config.encoder)
-        self.task_network = PredictionTaskHead(
-            embed_dim=config.task_network.get(
-                "embed_dim", self.encoder.config.hidden_size
+        condition = config.temperature_condition
+        if condition in ("false", "none"):
+            condition = False
+        self.temperature_condition = TemperatureCondition(condition)
+        head_kwargs = {
+            "embed_dim": config.task_network.get(
+                "embed_dim",
+                self.encoder.config.hidden_size
+                + int(self.temperature_condition is TemperatureCondition.CONCAT),
             ),
-            output_size=config.task_network.get("output_size", config.output_size),
-            dropout=config.task_network.get("dropout", 0.1),
-        )
+            "output_size": config.task_network.get("output_size", config.output_size),
+        }
+        if self.temperature_condition is TemperatureCondition.VFT:
+            self.task_network = VFTTaskHead(**head_kwargs)
+        elif self.temperature_condition is TemperatureCondition.ARRHENIUS:
+            self.task_network = ArrheniusTaskHead(**head_kwargs)
+        else:
+            self.task_network = PredictionTaskHead(
+                **head_kwargs, dropout=config.task_network.get("dropout", 0.1)
+            )
 
         # Build transform
         self.transform = AbstractNormalizer.get(
@@ -564,14 +579,7 @@ class MISTMixtures(PreTrainedModel):
         self.output_size = int(config.output_size)
         self.channels = config.channels
 
-        if isinstance(config.temperature_condition, str):
-            self.temperature_condition = TemperatureCondition(
-                config.temperature_condition
-            )
-        else:
-            self.temperature_condition = config.temperature_condition
-
-        self.tokenizer = resolve_tokenizer()
+        self.tokenizer = resolve_tokenizer(self)
         self.post_init()
 
     @classmethod
@@ -582,16 +590,17 @@ class MISTMixtures(PreTrainedModel):
         transform: Any,
         tokenizer=None,
         n_components: int = 5,
-        temperature_condition: str = "false",
+        temperature_condition: str | bool = False,
         output_size: int = 2,
+        max_length: int = 512,
         channels: Optional[List[Dict[str, Any]]] = None,
     ) -> "MISTMixtures":
         cfg = MISTMixturesConfig(
             encoder=encoder.config.to_dict(),
             task_network={
-                "embed_dim": encoder.config.hidden_size,
+                "embed_dim": task_network.fc1.in_features,
                 "output_size": output_size,
-                "dropout": getattr(task_network, "dropout", 0.1),
+                "dropout": getattr(getattr(task_network, "dropout1", None), "p", 0.0),
             },
             transform=transform.to_config()
             if hasattr(transform, "to_config")
@@ -599,6 +608,7 @@ class MISTMixtures(PreTrainedModel):
             n_components=n_components,
             temperature_condition=temperature_condition,
             output_size=output_size,
+            tokenizer_max_length=max_length,
             channels=channels,
             tokenizer_class=(
                 getattr(tokenizer, "__class__", type("T", (), {})).__name__
@@ -608,7 +618,7 @@ class MISTMixtures(PreTrainedModel):
         )
 
         model = cls(cfg)
-        model.encoder.load_state_dict(encoder.state_dict(), strict=False)
+        model.encoder.load_state_dict(encoder.state_dict())
         model.task_network.load_state_dict(task_network.state_dict())
 
         # Load transform state dict if available
@@ -618,7 +628,36 @@ class MISTMixtures(PreTrainedModel):
         model.tokenizer = tokenizer
         return model
 
-    def forward(
+    def forward(self, batch: Dict[str, torch.Tensor], transform: bool = True):
+        """Match MixtureModel's pooling, composition weighting, and head inputs."""
+        embeddings = []
+        for i in range(self.n_components):
+            hidden = self.encoder(
+                batch[f"input_ids_{i}"],
+                attention_mask=batch[f"attention_mask_{i}"],
+                return_dict=True,
+                output_hidden_states=True,
+            ).last_hidden_state
+            embeddings.append(
+                hidden.mean(dim=1) * batch[f"composition_{i}"].view(-1, 1)
+            )
+        mixture_embedding = torch.stack(embeddings, dim=1).sum(dim=1)
+        if self.temperature_condition is TemperatureCondition.CONCAT:
+            mixture_embedding = torch.hstack(
+                (batch["temperature"].view(-1, 1) / 400, mixture_embedding)
+            )
+        if self.temperature_condition in (
+            TemperatureCondition.ARRHENIUS,
+            TemperatureCondition.VFT,
+        ):
+            predictions = self.task_network(mixture_embedding, batch["temperature"])
+        else:
+            predictions = self.task_network(mixture_embedding)
+        if transform:
+            predictions = self.transform(predictions)
+        return predictions, mixture_embedding
+
+    def predict(
         self,
         mixture: Dict[str, float] | List[Dict[str, float]],
         temperature: Optional[float | List[float]] = None,
@@ -639,7 +678,13 @@ class MISTMixtures(PreTrainedModel):
         else:
             temperatures = None
 
-        collator = DataCollatorWithPadding(self.tokenizer)
+        # The training model averages padding tokens too, so its fixed padding
+        # length is part of the learned inference behavior.
+        collator = DataCollatorWithPadding(
+            self.tokenizer,
+            padding="max_length",
+            max_length=self.config.tokenizer_max_length,
+        )
 
         batch_size = len(mixtures)
 
@@ -741,29 +786,11 @@ class MISTMixtures(PreTrainedModel):
 
     def save_pretrained(self, save_directory: str, **kwargs):
         """Save model configuration and weights."""
-        cfg = MISTMixturesConfig(
-            encoder=self.encoder.config.to_dict(),
-            task_network={
-                "embed_dim": self.encoder.config.hidden_size,
-                "output_size": self.output_size,
-                "dropout": getattr(self.task_network, "dropout", 0.1),
-            },
-            transform=self.transform.to_config()
-            if hasattr(self.transform, "to_config")
-            else {"class": "Standardize", "num_outputs": self.output_size},
-            n_components=self.n_components,
-            temperature_condition=self.temperature_condition.value
-            if hasattr(self.temperature_condition, "value")
-            else str(self.temperature_condition),
-            output_size=self.output_size,
-            channels=self.channels,
-            tokenizer_class=(
-                self.tokenizer.__class__.__name__
-                if getattr(self, "tokenizer", None)
-                else "SmirkTokenizer"
-            ),
-        )
-        super().save_pretrained(save_directory, config=cfg, **kwargs)
+        self.config.encoder = self.encoder.config.to_dict()
+        self.config.transform = self.transform.to_config()
+        self.config.temperature_condition = self.temperature_condition.value
+        self.config.channels = self.channels
+        super().save_pretrained(save_directory, **kwargs)
         if getattr(self, "tokenizer", None) is not None:
             self.tokenizer.save_pretrained(save_directory)
 
