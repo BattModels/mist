@@ -76,7 +76,7 @@ def xyz2mol(xyz_block: str) -> (str, int, dict):
 
     # Convert to SMILES
     p = rdmolfiles.SmilesWriteParams()
-    p.isomericSmiles = True
+    p.doIsomericSmiles = True
     p.canonical = True
     p.allHsExplicit = False
     p.allBondsExplicit = False
