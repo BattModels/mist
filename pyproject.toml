@@ -25,6 +25,7 @@ dependencies = [
     "pytorch-lightning~=2.5",
     "pandas>=2.2.3",
     "numpy>=2.2.4",
+    "accelerate>=1.15.0",
 ]
 
 [optional-dependencies]
