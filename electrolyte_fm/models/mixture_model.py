@@ -1,3 +1,4 @@
+from enum import Enum
 from itertools import chain
 from pathlib import Path
 from typing import List, Optional, Union
@@ -5,6 +6,7 @@ from typing import List, Optional, Union
 import torch
 from lightning import LightningModule
 from lightning.pytorch.cli import LRSchedulerCallable, OptimizerCallable
+from lightning.pytorch.loggers import WandbLogger
 
 from ..utils.metrics import (
     bootstrap_collection,
@@ -14,11 +16,8 @@ from ..utils.metrics import (
 )
 from .model_utils import DeepSpeedMixin
 from .normalize import AbstractNormalizer
-from .prediction_task_head import PredictionTaskHead
-
 from .physics_task_heads import ArrheniusTaskHead, VFTTaskHead
-from enum import Enum
-from lightning.pytorch.loggers import WandbLogger
+from .prediction_task_head import PredictionTaskHead
 
 
 class TemperatureCondition(Enum):
@@ -96,10 +95,14 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
             )
         elif self.temperature is TemperatureCondition.ARRHENIUS:
             self.task_network = ArrheniusTaskHead(
-                embed_dim=self.encoder.config.hidden_size
+                embed_dim=self.encoder.config.hidden_size,
+                output_size=output_size,
             )
         elif self.temperature is TemperatureCondition.VFT:
-            self.task_network = VFTTaskHead(embed_dim=self.encoder.config.hidden_size)
+            self.task_network = VFTTaskHead(
+                embed_dim=self.encoder.config.hidden_size,
+                output_size=output_size,
+            )
         elif self.temperature is TemperatureCondition.CONCAT:
             # temperature concat increase emb size passed
             self.task_network = PredictionTaskHead(
@@ -151,11 +154,17 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
             mix_embedding = torch.hstack(
                 (batch["temperature"].view(-1, 1) / 400, mix_embedding)
             )
-        pred_unscaled = self.task_network(mix_embedding)
+        if self.temperature in [
+            TemperatureCondition.VFT,
+            TemperatureCondition.ARRHENIUS,
+        ]:
+            pred_unscaled = self.task_network(
+                mix_embedding, temperature=batch["temperature"]
+            )
+        else:
+            pred_unscaled = self.task_network(mix_embedding)
         if transform:
-            pred_scaled = self.transform.forward(pred_unscaled), mix_embedding
-
-            return pred_scaled
+            return self.transform.forward(pred_unscaled), mix_embedding
         return pred_unscaled, mix_embedding
 
     def _scaled_pred_loss(self, batch):
@@ -248,30 +257,8 @@ class MixtureModel(LightningModule, DeepSpeedMixin):
         self.test_metrics.reset()
 
     def predict_step(self, batch, *args):
-        mix_embedding = None
-        for i in range(self.n_components):
-            embedding = self.encoder(
-                batch[f"input_ids_{i}"],
-                attention_mask=batch[f"attention_mask_{i}"],
-                return_dict=True,
-                output_hidden_states=True,
-            ).last_hidden_state.mean(axis=1)
-
-            embedding = torch.stack(
-                [
-                    torch.mul(embedding[j, :], batch[f"composition_{i}"][j])
-                    for j in range(embedding.shape[0])
-                ]
-            )
-            if mix_embedding is None:
-                mix_embedding = embedding
-            else:
-                mix_embedding += embedding
-
-        pred_unscaled = self.task_network(mix_embedding, batch["temperature"])
-        preds = self.transform.forward(pred_unscaled)
-
-        out = {"embedding": embedding, "prediction": preds}
+        preds, mix_embedding = self.forward(batch)
+        out = {"embedding": mix_embedding, "prediction": preds}
 
         for key in ["target", "is_oov"]:
             if key in batch.keys():
