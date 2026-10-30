@@ -145,12 +145,17 @@ class SpikeDetection(FabricSpikeDetection, Callback):
 
     def state_dict(self):
         return {
-            "checkpoint_path": self.checkpoint_path,
+            "checkpoint_path": (
+                str(self.checkpoint_path) if self.checkpoint_path is not None else None
+            ),
             "checkpoint_spikes": self.checkpoint_spikes,
             **super(FabricSpikeDetection, self).state_dict(),
         }
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        self.checkpoint_path = state_dict["checkpoint_path"]
+        checkpoint_path = state_dict["checkpoint_path"]
+        self.checkpoint_path = (
+            Path(checkpoint_path) if checkpoint_path is not None else None
+        )
         self.checkpoint_spikes = state_dict["checkpoint_spikes"]
         super(FabricSpikeDetection, self).load_state_dict(state_dict)

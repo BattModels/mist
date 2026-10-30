@@ -92,6 +92,10 @@ class PropertyPredictionDataModule(LightningDataModule):
         else:
             ds = ds.select_columns([self.smi_column])
 
+        # Streaming shuffle prefetches shards in threads. Shuffle before mapping
+        # the shared tokenizer so its padding/truncation state is not mutated concurrently.
+        ds["train"] = ds["train"].shuffle(seed=42)
+
         # Tokenize
         ds = ds.map(
             self.tokenize,
@@ -101,7 +105,7 @@ class PropertyPredictionDataModule(LightningDataModule):
         if not self.include_encoding and not self.randomize:
             ds = ds.remove_columns(self.smi_column)
 
-        self.train_dataset: Dataset = ds["train"].shuffle(seed=42)
+        self.train_dataset: Dataset = ds["train"]
         self.val_dataset: Dataset = ds["validation"]
         self.test_dataset: Dataset = ds["test"]
         self.token_collator = DataCollatorWithPadding(self.tokenizer, padding="longest")

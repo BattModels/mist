@@ -1,11 +1,13 @@
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import get_ident
 
 import pytest
 import torch
-from datasets import Dataset
+from datasets import Dataset, IterableDataset, IterableDatasetDict
 from lightning.pytorch import LightningDataModule
+from smirk import SmirkTokenizerFast
 
 from electrolyte_fm.data_modules import (
     RobertaDataSet,
@@ -116,6 +118,47 @@ def test_tmQM_dataset(mol_encoding):
         encoding=mol_encoding,
     )
     check_datamodule(dm)
+
+
+def test_streaming_shuffle_keeps_tokenization_out_of_prefetch_threads(monkeypatch):
+    tokenization_threads = set()
+
+    class RecordingTokenizer(SmirkTokenizerFast):
+        def __call__(self, *args, **kwargs):
+            tokenization_threads.add(get_ident())
+            return super().__call__(*args, **kwargs)
+
+    tokenizer = RecordingTokenizer()
+    monkeypatch.setattr(
+        "electrolyte_fm.data_modules.property_prediction_dataset.load_tokenizer",
+        lambda name: tokenizer,
+    )
+
+    def generate(shards):
+        for shard in shards:
+            for offset in range(4):
+                value = shard * 4 + offset
+                yield {"smiles": "C" * (value + 1), "energy": float(value)}
+
+    class StreamingTMQM(tmQMDataModule):
+        def _get_dataset(self):
+            return IterableDatasetDict(
+                {
+                    split: IterableDataset.from_generator(
+                        generate, gen_kwargs={"shards": list(range(4))}
+                    )
+                    for split in ("train", "validation", "test")
+                }
+            )
+
+    dm = StreamingTMQM(path="unused", tokenizer="smirk", target_columns=["energy"])
+    dm.setup("fit")
+    rows = list(dm.train_dataset)
+
+    assert len(rows) == 16
+    assert sorted(float(row["target"][0]) for row in rows) == list(range(16))
+    assert all("input_ids" in row and "attention_mask" in row for row in rows)
+    assert tokenization_threads == {get_ident()}
 
 
 def test_strip_unknown_tokens():

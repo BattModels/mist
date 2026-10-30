@@ -97,11 +97,12 @@ class Requeue(Callback):
     def state_dict(self):
         return {
             "signal": self.signal.numerator,
-            "ckpt_path": self.ckpt_path,
+            "ckpt_path": str(self.ckpt_path) if self.ckpt_path is not None else None,
             "requeue_count": self.requeue_count,
         }
 
     def load_state_dict(self, state_dict):
         self.signal = signal.Signals(state_dict["signal"])
-        self.ckpt_path = state_dict["ckpt_path"]
+        ckpt_path = state_dict["ckpt_path"]
+        self.ckpt_path = Path(ckpt_path) if ckpt_path is not None else None
         self.requeue_count = state_dict["requeue_count"]

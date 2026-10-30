@@ -62,8 +62,7 @@ def record_summary_stats(logger, metrics: MetricCollection):
             for phase in ["", "_epoch", "_step"]:
                 define_metric(
                     name + phase,
-                    summary="last,best",
-                    goal="maximize" if metric.higher_is_better else "minimize",
+                    summary="last,max" if metric.higher_is_better else "last,min",
                 )
 
 
@@ -72,7 +71,7 @@ def record_loss_summary_stats(logger):
         define_metric = logger.experiment.define_metric
         for m in ["train/loss", "val/loss", "test/loss"]:
             for s in ["", "_step", "_epoch"]:
-                define_metric(m + s, summary="last,best,min", goal="minimize")
+                define_metric(m + s, summary="last,min")
 
 
 class CanSkip:

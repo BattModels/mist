@@ -220,9 +220,7 @@ class MixtureMolecularOptimization:
 
 if __name__ == "__main__":
     run_id = "ur7v2a6y"
-    pretrained_ckpt = (
-        f"mist/{run_id}/checkpoints/last.ckpt"
-    )
+    pretrained_ckpt = f"mist/{run_id}/checkpoints/last.ckpt"
 
     opt = MixtureMolecularOptimization(pretrained_ckpt, temperature=293.15)
     opt.save_inventory(
