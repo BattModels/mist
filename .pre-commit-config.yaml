@@ -20,7 +20,7 @@ repos:
       - id: remove-crlf
       - id: remove-tabs
   - repo: https://github.com/FeryET/pre-commit-rust
-    rev: v1.1.0
+    rev: v1.2.1
     hooks:
       - id: fmt
         args:
